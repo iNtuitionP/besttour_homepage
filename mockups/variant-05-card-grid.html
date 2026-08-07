@@ -161,6 +161,10 @@ ul,ol{padding:0;list-style:none;}
   pointer-events:none;
 }
 .hero-grid{display:grid;grid-template-columns:minmax(360px,.92fr) 1.72fr;gap:var(--s7);align-items:start;position:relative;}
+/* 그리드 아이템의 기본 min-width:auto(=min-content)를 해제한다.
+   해제하지 않으면 1열로 접히는 구간에서 .card-grid{width:max-content}가
+   .hero-cards를 콘텐츠 폭(1500px+)까지 밀어올려 캐러셀 내부 스크롤이 죽는다. */
+.hero-grid > *{min-width:0;}
 
 .hero-copy h1{
   margin-top:var(--s3);
@@ -278,8 +282,8 @@ ul,ol{padding:0;list-style:none;}
 .ticker{background:var(--dark);color:#fff;padding:var(--s4) 0;position:relative;overflow:hidden;}
 .ticker-in{display:flex;align-items:center;gap:var(--s3);}
 .ticker-label{display:flex;align-items:center;gap:10px;flex:0 0 auto;padding-left:20px;}
-.live-dot{position:relative;width:8px;height:8px;border-radius:50%;background:#5EE6A8;flex:0 0 auto;}
-.live-dot::after{content:"";position:absolute;inset:-5px;border-radius:50%;border:2px solid rgba(94,230,168,.5);animation:pulse 1.9s ease-out infinite;}
+.live-dot{position:relative;width:8px;height:8px;border-radius:50%;background:var(--gold);flex:0 0 auto;}
+.live-dot::after{content:"";position:absolute;inset:-5px;border-radius:50%;border:2px solid rgba(212,168,67,.55);animation:pulse 1.9s ease-out infinite;}
 @keyframes pulse{0%{transform:scale(.6);opacity:1}100%{transform:scale(1.5);opacity:0}}
 .ticker-label strong{font-size:14px;font-weight:800;letter-spacing:-.01em;display:block;}
 .ticker-label span{font-size:11px;color:rgba(255,255,255,.5);}
@@ -477,7 +481,9 @@ ul,ol{padding:0;list-style:none;}
 
   /* 카드 그리드 → 가로 스크롤 스냅 */
   .cards-hint{display:block;}
+  .hero-copy,.hero-cards{min-width:0;}
   .card-scroller{
+    min-width:0;
     margin-inline:-16px;padding:4px 16px var(--s2);
     overflow-x:auto;overflow-y:hidden;
     scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;
