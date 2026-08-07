@@ -742,6 +742,61 @@ ul,ol{padding:0;list-style:none;}
   .q-item{width:214px;}
 }
 
+/* ------------------------------------------------------------
+   짧은 데스크톱 뷰포트 대응 (노트북 1280×720 / 1440×900 등)
+   히어로 = 위저드 1단계이므로 "차량 5장 + 예상가 + 다음 버튼"이
+   한 화면에 들어와야 컨셉이 성립한다. 세로 여백·타이포만 압축하고
+   구조·카피·팔레트는 그대로 둔다. (min-width:901px → 모바일 미영향)
+   ------------------------------------------------------------ */
+@media (min-width:901px) and (max-height:940px){
+
+  /* 좌: 브랜드 패널 — 우측 패널이 위로 당겨지도록 함께 압축 */
+  .brand-panel{padding:var(--s5) var(--s6);}
+  .brand-tag{margin-bottom:var(--s3);padding:6px 12px;font-size:12px;}
+  .brand-panel h1{font-size:clamp(28px,2.6vw,38px);}
+  .brand-lead{margin-top:var(--s2);font-size:15px;line-height:1.7;}
+  .stats{margin-top:var(--s4);padding-top:var(--s3);}
+  .stat .v{font-size:clamp(22px,2vw,26px);}
+  .stat .k{font-size:12px;}
+  .brand-note{margin-top:var(--s4);padding:12px;}
+  .brand-note .ico{width:34px;height:34px;font-size:15px;}
+  .brand-note p{font-size:12.5px;}
+
+  /* 우: 위저드 패널 */
+  .wizard-panel{padding:var(--s3) var(--s6);}
+  .step-count b{font-size:18px;}
+  .progress-bar{margin-top:12px;}
+  .progress-bar .seg{height:5px;}
+  .progress-steps{display:none;} /* 01/07 카운터 + 7세그먼트 바로 정보 중복 */
+  .wizard h2{margin-top:var(--s3);font-size:clamp(21px,1.8vw,23px);line-height:1.25;}
+  .wizard .q-sub{margin-top:6px;font-size:13px;}
+
+  .vehicles{margin-top:var(--s2);gap:7px;}
+  .v-card{padding:9px 12px;gap:12px;}
+  .v-card .seat{width:42px;height:42px;border-radius:11px;}
+  .v-card .seat b{font-size:17px;}
+  .v-card .seat span{font-size:9.5px;margin-top:2px;}
+  .v-info .name{font-size:14.5px;line-height:1.45;}
+  .v-info .desc{font-size:11.5px;line-height:1.4;margin-top:2px;}
+  .v-price .amt{font-size:14px;}
+  .v-price .lbl{font-size:10px;}
+
+  .estimate{margin-top:12px;padding:8px 12px 10px;}
+  .est-empty{font-size:12.5px;}
+  .est-badge{padding:6px 12px;font-size:12.5px;}
+  .est-badge .amt{font-size:14px;}
+  .est-grid{margin-top:8px;gap:6px;}
+  .est-cell{padding:6px 10px;}
+  .est-cell .k{font-size:10.5px;line-height:1.35;}
+  .est-cell .v{font-size:12.5px;line-height:1.35;margin-top:2px;}
+  .est-note{margin-top:6px;font-size:10.5px;line-height:1.45;}
+
+  .wizard-actions{margin-top:12px;}
+  .btn-next{padding:12px var(--s3);font-size:15px;}
+  .btn-call-alt{padding:11px var(--s3);}
+  .wizard-foot{display:none;} /* 좌측 브랜드 노트와 문구 중복 */
+}
+
 @media (prefers-reduced-motion:reduce){
   *{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important;}
 }
