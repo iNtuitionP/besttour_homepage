@@ -1,0 +1,1315 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>베스트투어 — 시안 3: 위저드 퍼스트</title>
+<meta name="description" content="전세버스 대절 베스트투어 — 몇 번의 클릭으로 바로 견적. 45·35·28·25·16인승 관광버스 예상가 즉시 확인.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+/* ============================================================
+   베스트투어 — 시안 3 : 위저드 퍼스트
+   히어로 = 견적 위저드 1단계 (차량 선택)
+   ============================================================ */
+
+:root{
+  /* Brand palette (soul.md §7 고정) */
+  --deep:#3B1F5C;
+  --violet:#7C3AED;
+  --lavender:#F3EFFA;
+  --dark:#1A1523;
+  --neutral:#FAF9FC;
+  --gold:#D4A843;
+
+  /* Derived tints (동일 색상군 내) */
+  --deep-900:#241236;
+  --deep-700:#31184D;
+  --violet-100:#EDE6FD;
+  --violet-200:#D9C9FA;
+  --violet-600:#6D28D9;
+  --line:#E4DDF0;
+  --ink:#1A1523;
+  --ink-60:#5C5468;
+  --ink-40:#8A8397;
+  --white:#FFFFFF;
+
+  /* 8px spacing scale */
+  --s1:8px;  --s2:16px; --s3:24px; --s4:32px;
+  --s5:40px; --s6:48px; --s7:64px; --s8:80px; --s9:112px;
+
+  --r-sm:8px; --r-md:14px; --r-lg:20px; --r-xl:28px;
+  --shadow-sm:0 2px 8px rgba(26,21,35,.06);
+  --shadow-md:0 8px 28px rgba(26,21,35,.10);
+  --shadow-lg:0 24px 60px rgba(36,18,54,.22);
+  --ease:cubic-bezier(.22,.8,.28,1);
+  --header-h:64px;
+}
+
+*,*::before,*::after{box-sizing:border-box;}
+html{-webkit-text-size-adjust:100%;}
+body{
+  margin:0;
+  font-family:'Pretendard','Pretendard Variable',-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+  background:var(--neutral);
+  color:var(--ink);
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+img{max-width:100%;display:block;}
+a{color:inherit;text-decoration:none;}
+button{font-family:inherit;}
+h1,h2,h3,h4,p,ul,ol,figure{margin:0;}
+ul,ol{padding:0;list-style:none;}
+:focus-visible{outline:3px solid var(--violet);outline-offset:3px;border-radius:4px;}
+
+.wrap{width:100%;max-width:1240px;margin:0 auto;padding:0 var(--s3);}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;}
+
+/* ---------- eyebrow / section head ---------- */
+.eyebrow{
+  display:inline-flex;align-items:center;gap:var(--s1);
+  font-size:12px;font-weight:800;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--violet-600);
+}
+.eyebrow .num{
+  font-family:ui-monospace,'SFMono-Regular',Menlo,monospace;
+  color:var(--gold);
+}
+.sec-head{margin-bottom:var(--s5);}
+.sec-head h2{
+  margin-top:var(--s2);
+  font-size:clamp(26px,4.2vw,40px);
+  line-height:1.22;letter-spacing:-.03em;font-weight:800;
+}
+.sec-head h2 em{font-style:normal;color:var(--violet);}
+.sec-head p{margin-top:var(--s2);color:var(--ink-60);max-width:56ch;font-size:15px;}
+
+/* ============================================================
+   HEADER
+   ============================================================ */
+.site-header{
+  position:sticky;top:0;z-index:60;
+  height:var(--header-h);
+  background:rgba(36,18,54,.92);
+  backdrop-filter:saturate(160%) blur(12px);
+  border-bottom:1px solid rgba(255,255,255,.10);
+  color:#fff;
+}
+.header-in{
+  height:100%;display:flex;align-items:center;gap:var(--s3);
+  max-width:1240px;margin:0 auto;padding:0 var(--s3);
+}
+.logo{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:-.02em;}
+.logo .mark{
+  width:30px;height:30px;border-radius:9px;flex:none;
+  background:linear-gradient(140deg,var(--violet) 0%,var(--gold) 130%);
+  display:grid;place-items:center;color:#fff;font-size:15px;
+  box-shadow:0 4px 14px rgba(124,58,237,.45);
+}
+.logo .txt{font-size:17px;}
+.logo .txt b{color:var(--gold);font-weight:800;}
+
+.main-nav{margin-left:auto;}
+.main-nav ul{display:flex;align-items:center;gap:var(--s3);}
+.main-nav a{
+  font-size:14.5px;font-weight:600;color:rgba(255,255,255,.82);
+  padding:6px 0;position:relative;transition:color .18s var(--ease);
+}
+.main-nav a::after{
+  content:"";position:absolute;left:0;right:100%;bottom:0;height:2px;
+  background:var(--gold);transition:right .25s var(--ease);
+}
+.main-nav a:hover{color:#fff;}
+.main-nav a:hover::after{right:0;}
+
+.header-tel{
+  display:inline-flex;align-items:center;gap:8px;
+  background:var(--gold);color:var(--deep-900);
+  font-weight:800;font-size:14px;
+  padding:9px 16px;border-radius:999px;
+  transition:transform .18s var(--ease),box-shadow .18s var(--ease);
+  white-space:nowrap;
+}
+.header-tel:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(212,168,67,.4);}
+
+.nav-toggle{
+  display:none;margin-left:auto;width:42px;height:42px;
+  background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.16);
+  border-radius:11px;color:#fff;font-size:17px;cursor:pointer;
+}
+.mobile-nav{display:none;}
+
+/* ============================================================
+   HERO — 위저드 퍼스트 (좌 브랜드 / 우 위저드)
+   ============================================================ */
+.hero{
+  display:grid;
+  grid-template-columns:minmax(0,44fr) minmax(0,56fr);
+  min-height:calc(100vh - var(--header-h));
+  background:var(--white);
+}
+
+/* ---- 좌: 브랜드 패널 ---- */
+.brand-panel{
+  position:relative;isolation:isolate;overflow:hidden;
+  background:var(--deep-900);color:#fff;
+  padding:var(--s8) var(--s6) var(--s7);
+  display:flex;flex-direction:column;justify-content:center;
+}
+.brand-panel .bg{
+  position:absolute;inset:0;z-index:-2;
+  background:url('assets/bus-01.jpg') center 62% / cover no-repeat;
+  filter:saturate(1.15) contrast(1.05) brightness(.62);
+  transform:scale(1.06);
+}
+.brand-panel .veil{
+  position:absolute;inset:0;z-index:-1;
+  background:
+    radial-gradient(120% 80% at 12% 0%,rgba(124,58,237,.55) 0%,rgba(124,58,237,0) 62%),
+    linear-gradient(180deg,rgba(36,18,54,.82) 0%,rgba(36,18,54,.90) 55%,rgba(26,21,35,.96) 100%);
+}
+.brand-tag{
+  display:inline-flex;align-items:center;gap:8px;align-self:flex-start;
+  font-size:12.5px;font-weight:700;letter-spacing:.1em;
+  color:var(--gold);border:1px solid rgba(212,168,67,.45);
+  background:rgba(212,168,67,.10);
+  padding:7px 14px;border-radius:999px;margin-bottom:var(--s4);
+}
+.brand-panel h1{
+  font-size:clamp(34px,3.6vw,54px);
+  line-height:1.14;letter-spacing:-.04em;font-weight:800;
+}
+.brand-panel h1 .hl{
+  color:var(--gold);
+  position:relative;white-space:nowrap;
+}
+.brand-panel h1 .hl::after{
+  content:"";position:absolute;left:-2px;right:-2px;bottom:.06em;height:.3em;
+  background:rgba(212,168,67,.20);border-radius:3px;z-index:-1;
+}
+.brand-lead{
+  margin-top:var(--s3);max-width:34ch;
+  color:rgba(255,255,255,.78);font-size:16px;line-height:1.75;
+}
+.brand-lead strong{color:#fff;font-weight:700;}
+
+.stats{
+  margin-top:var(--s6);padding-top:var(--s4);
+  border-top:1px solid rgba(255,255,255,.16);
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s2);
+}
+.stat .v{
+  display:block;
+  font-size:clamp(24px,2.6vw,32px);font-weight:800;
+  letter-spacing:-.03em;line-height:1.1;color:#fff;
+}
+.stat .v span{font-size:.55em;color:var(--gold);margin-left:3px;font-weight:700;}
+.stat .k{display:block;margin-top:6px;font-size:12.5px;color:rgba(255,255,255,.62);letter-spacing:-.01em;}
+
+.brand-note{
+  margin-top:var(--s5);display:flex;align-items:center;gap:var(--s2);
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);
+  border-radius:var(--r-md);padding:var(--s2);
+}
+.brand-note .ico{
+  width:38px;height:38px;flex:none;border-radius:11px;
+  background:rgba(212,168,67,.16);color:var(--gold);
+  display:grid;place-items:center;font-size:17px;
+}
+.brand-note p{font-size:13px;color:rgba(255,255,255,.72);line-height:1.55;}
+.brand-note b{color:#fff;}
+
+/* ---- 우: 위저드 패널 ---- */
+.wizard-panel{
+  background:var(--white);
+  padding:var(--s7) var(--s6) var(--s6);
+  display:flex;flex-direction:column;justify-content:center;
+  min-width:0;
+}
+.wizard{width:100%;max-width:600px;margin:0 auto;}
+
+/* 진행 인디케이터 */
+.progress-head{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--s2);flex-wrap:wrap;}
+.step-count{
+  font-family:ui-monospace,'SFMono-Regular',Menlo,monospace;
+  font-size:13px;font-weight:700;letter-spacing:.06em;color:var(--violet-600);
+}
+.step-count b{font-size:22px;letter-spacing:-.02em;}
+.step-count .of{color:var(--ink-40);}
+.step-name{font-size:13px;font-weight:700;color:var(--ink-60);}
+.step-name .dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--gold);margin-right:7px;vertical-align:middle;}
+
+.progress-bar{display:flex;gap:6px;margin-top:var(--s2);}
+.progress-bar .seg{
+  height:6px;flex:1;border-radius:999px;background:var(--violet-100);
+  overflow:hidden;position:relative;
+}
+.progress-bar .seg.on{background:var(--violet-200);}
+.progress-bar .seg.on::after{
+  content:"";position:absolute;inset:0;border-radius:999px;
+  background:linear-gradient(90deg,var(--violet) 0%,var(--deep) 100%);
+  animation:segFill 1s var(--ease) both;
+}
+@keyframes segFill{from{transform:scaleX(0);transform-origin:left;}to{transform:scaleX(1);}}
+.progress-steps{
+  margin-top:10px;display:flex;flex-wrap:wrap;gap:6px 14px;
+  font-size:11.5px;color:var(--ink-40);
+}
+.progress-steps li.done{color:var(--violet-600);font-weight:700;}
+
+.wizard h2{
+  margin-top:var(--s5);
+  font-size:clamp(24px,2.7vw,32px);letter-spacing:-.035em;
+  font-weight:800;line-height:1.28;
+}
+.wizard h2 em{font-style:normal;color:var(--violet);}
+.wizard .q-sub{margin-top:10px;color:var(--ink-60);font-size:14.5px;}
+
+/* 차량 카드 리스트 */
+.vehicles{margin-top:var(--s3);display:flex;flex-direction:column;gap:10px;}
+.v-card{
+  display:flex;align-items:center;gap:var(--s2);width:100%;
+  text-align:left;cursor:pointer;
+  background:var(--white);
+  border:1.5px solid var(--line);
+  border-radius:var(--r-md);
+  padding:14px var(--s2);
+  transition:border-color .2s var(--ease),background-color .2s var(--ease),
+             transform .2s var(--ease),box-shadow .2s var(--ease);
+}
+.v-card:hover{
+  border-color:var(--violet-200);
+  background:#FCFAFF;
+  transform:translateY(-2px);
+  box-shadow:var(--shadow-sm);
+}
+.v-card .seat{
+  width:52px;height:52px;flex:none;border-radius:13px;
+  background:var(--lavender);color:var(--deep);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  line-height:1;transition:background-color .2s var(--ease),color .2s var(--ease);
+}
+.v-card .seat b{font-size:19px;font-weight:800;letter-spacing:-.04em;}
+.v-card .seat span{font-size:10px;margin-top:3px;opacity:.7;font-weight:700;}
+.v-info{min-width:0;flex:1;}
+.v-info .name{font-size:15.5px;font-weight:700;letter-spacing:-.02em;}
+.v-info .desc{font-size:12.5px;color:var(--ink-40);margin-top:3px;}
+.v-price{text-align:right;flex:none;}
+.v-price .lbl{
+  display:block;font-size:10.5px;font-weight:800;letter-spacing:.06em;
+  color:var(--gold);
+}
+.v-price .amt{font-size:15px;font-weight:800;letter-spacing:-.025em;color:var(--deep);white-space:nowrap;}
+.v-check{
+  width:22px;height:22px;flex:none;border-radius:50%;
+  border:1.5px solid var(--line);display:grid;place-items:center;
+  color:transparent;font-size:12px;font-weight:900;
+  transition:all .2s var(--ease);
+}
+/* 선택 상태 */
+.v-card.sel{
+  border-color:var(--violet);
+  background:linear-gradient(90deg,var(--violet-100) 0%,#FBF9FF 70%);
+  box-shadow:0 6px 22px rgba(124,58,237,.16);
+}
+.v-card.sel .seat{background:var(--deep);color:#fff;}
+.v-card.sel .seat span{color:var(--gold);opacity:1;}
+.v-card.sel .v-check{background:var(--violet);border-color:var(--violet);color:#fff;}
+.v-card.sel .v-price .amt{color:var(--violet-600);}
+
+/* 예상가 미리보기 뱃지 */
+.estimate{
+  margin-top:var(--s3);border-radius:var(--r-md);
+  border:1px dashed var(--violet-200);background:var(--lavender);
+  padding:var(--s2) var(--s2) 14px;
+}
+.estimate.empty{border-style:dashed;background:#FBFAFD;border-color:var(--line);}
+.est-empty{
+  display:flex;align-items:center;gap:10px;
+  font-size:13px;color:var(--ink-40);
+}
+.est-empty .ico{color:var(--violet-200);font-size:16px;}
+
+.est-live{display:none;}
+.estimate.on .est-live{display:block;animation:pop .32s var(--ease) both;}
+.estimate.on .est-empty{display:none;}
+@keyframes pop{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+
+.est-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.est-badge{
+  display:inline-flex;align-items:center;gap:7px;
+  background:var(--deep);color:#fff;
+  border-radius:999px;padding:7px 14px;
+  font-size:13px;font-weight:700;letter-spacing:-.01em;
+}
+.est-badge .tag{
+  background:var(--gold);color:var(--deep-900);
+  font-size:10.5px;font-weight:900;letter-spacing:.04em;
+  padding:2px 7px;border-radius:999px;
+}
+.est-badge .amt{font-size:15px;font-weight:800;letter-spacing:-.02em;}
+.est-veh{font-size:12.5px;color:var(--ink-60);font-weight:700;}
+
+.est-grid{
+  margin-top:14px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:8px;
+}
+.est-cell{
+  background:rgba(255,255,255,.78);border:1px solid rgba(124,58,237,.14);
+  border-radius:10px;padding:10px 12px;min-width:0;
+}
+.est-cell .k{font-size:11px;color:var(--ink-40);font-weight:700;}
+.est-cell .v{margin-top:3px;font-size:13.5px;font-weight:800;letter-spacing:-.03em;color:var(--deep);white-space:nowrap;}
+.est-cell.main{background:#fff;border-color:var(--violet-200);}
+.est-cell.main .v{color:var(--violet-600);}
+
+.est-note{
+  margin-top:10px;font-size:11.5px;color:var(--ink-40);line-height:1.5;
+  display:flex;gap:6px;
+}
+.est-note .ast{color:var(--gold);font-weight:800;}
+
+/* 다음 단계 */
+.wizard-actions{margin-top:var(--s3);display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;}
+.btn-next{
+  flex:1;min-width:220px;
+  display:inline-flex;align-items:center;justify-content:center;gap:10px;
+  background:linear-gradient(120deg,var(--violet) 0%,var(--deep) 100%);
+  color:#fff;border:0;border-radius:var(--r-md);
+  padding:17px var(--s3);
+  font-size:15.5px;font-weight:800;letter-spacing:-.02em;cursor:pointer;
+  box-shadow:0 10px 26px rgba(124,58,237,.28);
+  transition:transform .18s var(--ease),box-shadow .18s var(--ease),filter .18s var(--ease);
+}
+.btn-next:hover{transform:translateY(-2px);box-shadow:0 16px 34px rgba(124,58,237,.36);}
+.btn-next:active{transform:translateY(0);}
+.btn-next.idle{filter:grayscale(.45) saturate(.6);box-shadow:none;}
+.btn-next .arw{transition:transform .2s var(--ease);}
+.btn-next:hover .arw{transform:translateX(4px);}
+.btn-call-alt{
+  display:inline-flex;align-items:center;gap:8px;
+  border:1.5px solid var(--line);border-radius:var(--r-md);
+  padding:16px var(--s3);font-size:14px;font-weight:700;color:var(--ink-60);
+  transition:border-color .18s var(--ease),color .18s var(--ease),background-color .18s var(--ease);
+}
+.btn-call-alt:hover{border-color:var(--deep);color:var(--deep);background:var(--lavender);}
+
+.wizard-foot{
+  margin-top:var(--s3);padding-top:var(--s2);border-top:1px solid var(--line);
+  display:flex;gap:var(--s3);flex-wrap:wrap;font-size:12px;color:var(--ink-40);
+}
+.wizard-foot span{display:inline-flex;align-items:center;gap:6px;}
+.wizard-foot i{color:var(--violet);font-style:normal;}
+
+/* ============================================================
+   02 실시간 견적 현황
+   ============================================================ */
+.live{background:var(--deep-900);color:#fff;padding:var(--s7) 0 var(--s8);overflow:hidden;}
+.live .sec-head h2{color:#fff;}
+.live .sec-head h2 em{color:var(--gold);}
+.live .sec-head p{color:rgba(255,255,255,.60);}
+.live .eyebrow{color:rgba(255,255,255,.55);}
+.live-pulse{
+  display:inline-flex;align-items:center;gap:8px;
+  font-size:12px;font-weight:700;color:#fff;
+  background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);
+  border-radius:999px;padding:6px 13px;
+}
+.live-pulse .dot{
+  width:8px;height:8px;border-radius:50%;background:#5EE6A8;
+  box-shadow:0 0 0 0 rgba(94,230,168,.6);animation:pulse 1.9s infinite;
+}
+@keyframes pulse{
+  0%{box-shadow:0 0 0 0 rgba(94,230,168,.55);}
+  70%{box-shadow:0 0 0 9px rgba(94,230,168,0);}
+  100%{box-shadow:0 0 0 0 rgba(94,230,168,0);}
+}
+.ticker{margin-top:var(--s5);position:relative;overflow:hidden;
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent);
+  mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent);}
+.ticker-track{display:flex;gap:12px;width:max-content;animation:slide 42s linear infinite;}
+.ticker:hover .ticker-track{animation-play-state:paused;}
+@keyframes slide{from{transform:translateX(0);}to{transform:translateX(-50%);}}
+.q-item{
+  flex:none;width:246px;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.11);
+  border-radius:var(--r-md);padding:var(--s2);
+  transition:background-color .2s var(--ease),border-color .2s var(--ease);
+}
+.q-item:hover{background:rgba(124,58,237,.18);border-color:rgba(124,58,237,.5);}
+.q-item .who{font-size:15px;font-weight:800;letter-spacing:-.02em;}
+.q-item .veh{margin-top:5px;font-size:13px;color:var(--gold);font-weight:700;}
+.q-item .when{
+  margin-top:10px;padding-top:9px;border-top:1px solid rgba(255,255,255,.10);
+  font-size:11.5px;color:rgba(255,255,255,.52);
+  font-family:ui-monospace,'SFMono-Regular',Menlo,monospace;
+  display:flex;justify-content:space-between;align-items:center;
+}
+.q-item .when .ok{color:#5EE6A8;font-family:inherit;font-weight:700;letter-spacing:0;}
+
+/* ============================================================
+   03 이용 방법 4단계
+   ============================================================ */
+.howto{padding:var(--s8) 0;background:var(--neutral);}
+.steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--s2);}
+.step-card{
+  background:#fff;border:1px solid var(--line);border-radius:var(--r-lg);
+  padding:var(--s3);position:relative;overflow:hidden;
+  transition:transform .22s var(--ease),box-shadow .22s var(--ease),border-color .22s var(--ease);
+}
+.step-card::before{
+  content:"";position:absolute;left:0;top:0;width:100%;height:3px;
+  background:linear-gradient(90deg,var(--violet),var(--gold));
+  transform:scaleX(0);transform-origin:left;transition:transform .3s var(--ease);
+}
+.step-card:hover{transform:translateY(-4px);box-shadow:var(--shadow-md);border-color:var(--violet-200);}
+.step-card:hover::before{transform:scaleX(1);}
+.step-card .n{
+  font-family:ui-monospace,'SFMono-Regular',Menlo,monospace;
+  font-size:13px;font-weight:800;color:var(--violet);letter-spacing:.06em;
+}
+.step-card h3{margin-top:var(--s2);font-size:18px;font-weight:800;letter-spacing:-.03em;}
+.step-card p{margin-top:10px;font-size:13.5px;color:var(--ink-60);line-height:1.65;}
+.step-card .badge{
+  margin-top:var(--s2);display:inline-block;
+  font-size:11.5px;font-weight:700;color:var(--deep);
+  background:var(--lavender);border-radius:999px;padding:5px 11px;
+}
+
+/* ============================================================
+   04 강점 그리드
+   ============================================================ */
+.merits{padding:var(--s8) 0;background:#fff;border-top:1px solid var(--line);}
+.merit-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s2);}
+.merit{
+  border:1px solid var(--line);border-radius:var(--r-lg);
+  padding:var(--s3);background:var(--neutral);
+  transition:background-color .22s var(--ease),border-color .22s var(--ease),transform .22s var(--ease);
+}
+.merit:hover{background:var(--lavender);border-color:var(--violet-200);transform:translateY(-3px);}
+.merit .ico{
+  width:44px;height:44px;border-radius:13px;display:grid;place-items:center;
+  background:#fff;border:1px solid var(--line);font-size:19px;
+  box-shadow:var(--shadow-sm);
+}
+.merit h3{margin-top:var(--s2);font-size:16.5px;font-weight:800;letter-spacing:-.03em;}
+.merit p{margin-top:8px;font-size:13.5px;color:var(--ink-60);line-height:1.65;}
+
+.fleet-strip{
+  margin-top:var(--s5);border-radius:var(--r-lg);overflow:hidden;
+  position:relative;background:var(--deep-900);
+  display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  align-items:stretch;
+}
+.fleet-strip .ph{position:relative;min-height:240px;}
+.fleet-strip .ph img{width:100%;height:100%;object-fit:cover;filter:saturate(1.1) contrast(1.04) brightness(.9);}
+.fleet-strip .ph::after{
+  content:"";position:absolute;inset:0;
+  background:linear-gradient(90deg,rgba(36,18,54,.25) 0%,rgba(36,18,54,.75) 100%);
+}
+.fleet-copy{padding:var(--s5);color:#fff;display:flex;flex-direction:column;justify-content:center;}
+.fleet-copy h3{font-size:clamp(20px,2.2vw,26px);font-weight:800;letter-spacing:-.03em;line-height:1.3;}
+.fleet-copy p{margin-top:var(--s2);color:rgba(255,255,255,.70);font-size:14px;line-height:1.7;}
+.fleet-tags{margin-top:var(--s3);display:flex;flex-wrap:wrap;gap:8px;}
+.fleet-tags li{
+  font-size:12px;font-weight:700;color:var(--gold);
+  border:1px solid rgba(212,168,67,.4);background:rgba(212,168,67,.10);
+  padding:6px 12px;border-radius:999px;
+}
+
+/* ============================================================
+   05 갤러리 프리뷰
+   ============================================================ */
+.gallery{padding:var(--s8) 0;background:var(--lavender);}
+.gal-head{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--s3);flex-wrap:wrap;}
+.link-more{
+  display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:700;color:var(--violet-600);
+  border-bottom:2px solid transparent;padding-bottom:3px;transition:border-color .2s var(--ease),gap .2s var(--ease);
+}
+.link-more:hover{border-color:var(--violet-600);gap:12px;}
+.gal-grid{
+  margin-top:var(--s5);
+  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+  grid-auto-rows:150px;gap:12px;
+}
+.gal{
+  position:relative;overflow:hidden;border-radius:var(--r-md);
+  background:var(--deep-900);
+}
+.gal img{
+  width:100%;height:100%;object-fit:cover;
+  transition:transform .55s var(--ease),filter .35s var(--ease);
+  filter:saturate(1.12) contrast(1.05);
+}
+.gal:hover img{transform:scale(1.06);}
+.gal::after{
+  content:"";position:absolute;inset:0;
+  background:linear-gradient(180deg,rgba(36,18,54,0) 40%,rgba(36,18,54,.80) 100%);
+}
+.gal figcaption{
+  position:absolute;left:14px;right:14px;bottom:12px;z-index:2;
+  color:#fff;font-size:12.5px;font-weight:700;letter-spacing:-.01em;
+  text-shadow:0 1px 6px rgba(0,0,0,.5);
+}
+.gal.wide{grid-column:span 2;grid-row:span 2;}
+.gal.tall{grid-row:span 2;}
+.gal.half{grid-column:span 2;}
+/* bus-06: 세피아 원본 보정 */
+.gal.fix img{filter:saturate(1.5) hue-rotate(-18deg) contrast(.96) brightness(1.06);}
+
+/* ============================================================
+   06 공지사항
+   ============================================================ */
+.notice{padding:var(--s8) 0;background:#fff;}
+.notice-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.35fr);gap:var(--s6);align-items:start;}
+.notice-list li a{
+  display:flex;align-items:center;gap:var(--s2);
+  padding:var(--s2) 0;border-bottom:1px solid var(--line);
+  transition:padding-left .2s var(--ease);
+}
+.notice-list li a:hover{padding-left:8px;}
+.notice-list li a:hover .t{color:var(--violet-600);}
+.notice-list .tag{
+  flex:none;font-size:11px;font-weight:800;letter-spacing:.03em;
+  padding:4px 9px;border-radius:6px;background:var(--lavender);color:var(--deep);
+}
+.notice-list .tag.new{background:var(--gold);color:var(--deep-900);}
+.notice-list .t{
+  flex:1;min-width:0;font-size:14.5px;font-weight:600;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  transition:color .2s var(--ease);
+}
+.notice-list .d{
+  flex:none;font-size:12px;color:var(--ink-40);
+  font-family:ui-monospace,'SFMono-Regular',Menlo,monospace;
+}
+.cta-box{
+  background:linear-gradient(140deg,var(--deep) 0%,var(--deep-900) 70%);
+  color:#fff;border-radius:var(--r-xl);padding:var(--s5);
+  box-shadow:var(--shadow-lg);
+}
+.cta-box h3{font-size:clamp(21px,2.3vw,27px);font-weight:800;letter-spacing:-.035em;line-height:1.32;}
+.cta-box h3 em{font-style:normal;color:var(--gold);}
+.cta-box p{margin-top:var(--s2);color:rgba(255,255,255,.72);font-size:14px;line-height:1.7;}
+.cta-row{margin-top:var(--s4);display:flex;gap:12px;flex-wrap:wrap;}
+.btn-gold{
+  display:inline-flex;align-items:center;gap:9px;
+  background:var(--gold);color:var(--deep-900);border:0;
+  border-radius:var(--r-md);padding:15px var(--s3);
+  font-size:14.5px;font-weight:800;cursor:pointer;
+  transition:transform .18s var(--ease),box-shadow .18s var(--ease);
+}
+.btn-gold:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(212,168,67,.35);}
+.btn-ghost{
+  display:inline-flex;align-items:center;gap:9px;
+  border:1.5px solid rgba(255,255,255,.28);color:#fff;
+  border-radius:var(--r-md);padding:14px var(--s3);
+  font-size:14.5px;font-weight:700;
+  transition:background-color .18s var(--ease),border-color .18s var(--ease);
+}
+.btn-ghost:hover{background:rgba(255,255,255,.10);border-color:#fff;}
+.cta-fine{margin-top:var(--s3);font-size:11.5px;color:rgba(255,255,255,.5);line-height:1.6;}
+
+/* ============================================================
+   FOOTER
+   ============================================================ */
+.site-footer{background:var(--dark);color:rgba(255,255,255,.62);padding:var(--s8) 0 var(--s6);font-size:13.5px;}
+.foot-top{display:grid;grid-template-columns:minmax(0,1.2fr) repeat(3,minmax(0,1fr));gap:var(--s5);}
+.foot-brand .logo{color:#fff;}
+.foot-brand p{margin-top:var(--s2);line-height:1.75;max-width:36ch;}
+.foot-tel{
+  margin-top:var(--s3);display:inline-flex;flex-direction:column;
+}
+.foot-tel .k{font-size:11.5px;letter-spacing:.1em;color:var(--gold);font-weight:800;}
+.foot-tel .v{font-size:26px;font-weight:800;color:#fff;letter-spacing:-.03em;line-height:1.2;}
+.foot-col h4{font-size:13px;font-weight:800;color:#fff;letter-spacing:.02em;margin-bottom:var(--s2);}
+.foot-col li{margin-bottom:10px;}
+.foot-col a{transition:color .18s var(--ease);}
+.foot-col a:hover{color:var(--gold);}
+.foot-info{
+  margin-top:var(--s6);padding-top:var(--s3);border-top:1px solid rgba(255,255,255,.10);
+  font-size:12.5px;line-height:1.9;color:rgba(255,255,255,.5);
+}
+.foot-info b{color:rgba(255,255,255,.78);font-weight:700;}
+.foot-info .sep{margin:0 8px;opacity:.35;}
+.foot-copy{margin-top:var(--s3);font-size:12px;color:rgba(255,255,255,.35);}
+
+/* ---------- 플로팅 전화 ---------- */
+.float-call{
+  position:fixed;right:20px;bottom:20px;z-index:70;
+  display:inline-flex;align-items:center;gap:11px;
+  background:linear-gradient(120deg,var(--violet) 0%,var(--deep) 100%);
+  color:#fff;border-radius:999px;padding:14px 22px 14px 16px;
+  box-shadow:0 14px 34px rgba(59,31,92,.42);
+  transition:transform .2s var(--ease),box-shadow .2s var(--ease);
+}
+.float-call:hover{transform:translateY(-3px);box-shadow:0 20px 44px rgba(59,31,92,.52);}
+.float-call .ic{
+  width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.18);
+  display:grid;place-items:center;font-size:16px;flex:none;
+}
+.float-call .tx b{display:block;font-size:15px;font-weight:800;letter-spacing:-.02em;line-height:1.15;}
+.float-call .tx span{display:block;font-size:10.5px;opacity:.72;}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width:1120px){
+  .hero{grid-template-columns:minmax(0,42fr) minmax(0,58fr);}
+  .brand-panel{padding:var(--s7) var(--s4);}
+  .wizard-panel{padding:var(--s6) var(--s4);}
+  .steps{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .merit-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .notice-grid{grid-template-columns:minmax(0,1fr);gap:var(--s5);}
+  .foot-top{grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s4);}
+}
+
+@media (max-width:900px){
+  .main-nav{display:none;}
+  .header-tel{display:none;}
+  .nav-toggle{display:block;}
+  .mobile-nav{
+    display:block;position:fixed;left:0;right:0;top:var(--header-h);z-index:59;
+    background:var(--deep-900);border-bottom:1px solid rgba(255,255,255,.12);
+    padding:var(--s2) var(--s3) var(--s3);
+    transform:translateY(-120%);transition:transform .3s var(--ease);
+  }
+  .mobile-nav.open{transform:translateY(0);box-shadow:var(--shadow-lg);}
+  .mobile-nav ul{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
+  .mobile-nav a{
+    display:block;padding:13px var(--s2);border-radius:11px;
+    background:rgba(255,255,255,.06);color:#fff;font-size:14px;font-weight:700;
+  }
+  .mobile-nav .tel{
+    margin-top:10px;display:flex;align-items:center;justify-content:center;gap:9px;
+    background:var(--gold);color:var(--deep-900);font-weight:800;font-size:15px;
+    padding:14px;border-radius:11px;
+  }
+
+  /* 히어로: 브랜드 패널 상단 축약 */
+  .hero{grid-template-columns:minmax(0,1fr);min-height:0;}
+  .brand-panel{padding:var(--s5) var(--s3) var(--s5);}
+  .brand-panel h1{font-size:clamp(27px,7vw,36px);}
+  .brand-lead{margin-top:var(--s2);font-size:14.5px;max-width:none;}
+  .stats{margin-top:var(--s4);padding-top:var(--s3);gap:8px;}
+  .brand-note{display:none;}
+  .wizard-panel{padding:var(--s5) var(--s3) var(--s6);}
+  .wizard{max-width:none;}
+
+  .fleet-strip{grid-template-columns:minmax(0,1fr);}
+  .fleet-strip .ph{min-height:200px;order:-1;}
+  .fleet-copy{padding:var(--s4) var(--s3);}
+  .gal-grid{grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:132px;}
+}
+
+@media (max-width:560px){
+  .wrap{padding:0 var(--s2);}
+  .header-in{padding:0 var(--s2);}
+  .logo .txt{font-size:16px;}
+
+  .brand-panel{padding:var(--s4) var(--s2);}
+  .brand-tag{margin-bottom:var(--s3);font-size:11.5px;padding:6px 11px;}
+  .stat .v{font-size:20px;}
+  .stat .k{font-size:11px;}
+
+  .wizard-panel{padding:var(--s4) var(--s2) var(--s6);}
+  .wizard h2{margin-top:var(--s4);}
+  .progress-steps{display:none;}
+  .v-card{padding:12px;gap:12px;}
+  .v-card .seat{width:46px;height:46px;border-radius:12px;}
+  .v-card .seat b{font-size:17px;}
+  .v-info .name{font-size:14.5px;}
+  .v-info .desc{font-size:11.5px;}
+  .v-price .amt{font-size:13.5px;}
+  .v-price .lbl{font-size:10px;}
+  .v-check{display:none;}
+  .est-grid{grid-template-columns:minmax(0,1fr);}
+  .est-cell{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  .est-cell .v{margin-top:0;}
+  .btn-next{min-width:0;width:100%;}
+  .btn-call-alt{width:100%;justify-content:center;}
+
+  .steps,.merit-grid{grid-template-columns:minmax(0,1fr);}
+  .gal-grid{grid-auto-rows:118px;gap:8px;}
+  .foot-top{grid-template-columns:minmax(0,1fr);gap:var(--s4);}
+  .notice-list .d{display:none;}
+  .cta-box{padding:var(--s4) var(--s3);}
+  .btn-gold,.btn-ghost{width:100%;justify-content:center;}
+
+  .float-call{right:12px;bottom:12px;padding:12px 18px 12px 13px;}
+  .float-call .tx span{display:none;}
+  .q-item{width:214px;}
+}
+
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important;}
+}
+</style>
+</head>
+<body>
+
+<!-- ============ HEADER ============ -->
+<header class="site-header">
+  <div class="header-in">
+    <a class="logo" href="#top" aria-label="베스트투어 홈">
+      <span class="mark" aria-hidden="true">✿</span>
+      <span class="txt">베스트<b>투어</b></span>
+    </a>
+    <nav class="main-nav" aria-label="주 메뉴">
+      <ul>
+        <li><a href="#company">회사소개</a></li>
+        <li><a href="#fleet">차량소개</a></li>
+        <li><a href="#quote">견적요청</a></li>
+        <li><a href="#gallery">갤러리</a></li>
+        <li><a href="#support">고객센터</a></li>
+        <li><a href="#booking">예약확인</a></li>
+      </ul>
+    </nav>
+    <a class="header-tel" href="tel:1566-6188"><span aria-hidden="true">☎</span> 1566-6188</a>
+    <button class="nav-toggle" type="button" id="navToggle" aria-expanded="false" aria-controls="mobileNav" aria-label="메뉴 열기">☰</button>
+  </div>
+</header>
+
+<nav class="mobile-nav" id="mobileNav" aria-label="모바일 메뉴">
+  <ul>
+    <li><a href="#company">회사소개</a></li>
+    <li><a href="#fleet">차량소개</a></li>
+    <li><a href="#quote">견적요청</a></li>
+    <li><a href="#gallery">갤러리</a></li>
+    <li><a href="#support">고객센터</a></li>
+    <li><a href="#booking">예약확인</a></li>
+  </ul>
+  <a class="tel" href="tel:1566-6188"><span aria-hidden="true">☎</span> 대표전화 1566-6188</a>
+</nav>
+
+<main id="top">
+
+  <!-- ============ HERO = 견적 위저드 1단계 ============ -->
+  <section class="hero" id="quote" aria-label="견적 위저드 1단계 — 차량 선택">
+
+    <!-- 좌: 브랜드 패널 -->
+    <div class="brand-panel">
+      <div class="bg" aria-hidden="true"></div>
+      <div class="veil" aria-hidden="true"></div>
+
+      <span class="brand-tag">경기도 고양시 · 전세버스 대절</span>
+
+      <h1>몇 번의 클릭으로<br><span class="hl">바로 견적</span>.</h1>
+
+      <p class="brand-lead">
+        보라색 버스, <strong>베스트투어</strong>. 복잡한 전화 상담 없이
+        차량만 고르면 예상가가 바로 나옵니다. 예약은 <strong>사장님 확정 후</strong> 연락드립니다.
+      </p>
+
+      <ul class="stats">
+        <li class="stat">
+          <span class="v">5<span>종</span></span>
+          <span class="k">45·35·28·25·16인승</span>
+        </li>
+        <li class="stat">
+          <span class="v">16<span>개 시도</span></span>
+          <span class="k">서울~제주 전국 운행</span>
+        </li>
+        <li class="stat">
+          <span class="v">12<span>건</span></span>
+          <span class="k">최근 접수된 견적</span>
+        </li>
+      </ul>
+
+      <div class="brand-note">
+        <span class="ico" aria-hidden="true">✓</span>
+        <p><b>온라인 결제는 없습니다.</b> 예약 확정은 사장님이 하며, 확정된 예약만 결제가 진행됩니다.</p>
+      </div>
+    </div>
+
+    <!-- 우: 위저드 패널 -->
+    <div class="wizard-panel">
+      <div class="wizard">
+
+        <div class="progress-head">
+          <span class="step-count"><b>01</b> <span class="of">/ 07</span></span>
+          <span class="step-name"><span class="dot" aria-hidden="true"></span>차량 선택</span>
+        </div>
+
+        <div class="progress-bar" role="progressbar" aria-valuemin="1" aria-valuemax="7" aria-valuenow="1" aria-label="견적 위저드 진행률 7단계 중 1단계">
+          <span class="seg on"></span><span class="seg"></span><span class="seg"></span>
+          <span class="seg"></span><span class="seg"></span><span class="seg"></span><span class="seg"></span>
+        </div>
+
+        <ol class="progress-steps">
+          <li class="done">01 차량 선택</li>
+          <li>02 여행 정보</li>
+          <li>03 날짜·시간</li>
+          <li>04 대수·인원</li>
+          <li>05 예상 가격</li>
+          <li>06 연락처</li>
+          <li>07 완료</li>
+        </ol>
+
+        <h2>어떤 <em>차량</em>이 필요하신가요?</h2>
+        <p class="q-sub">차량을 선택하면 당일왕복 기준 예상가가 바로 표시됩니다.</p>
+
+        <div class="vehicles" id="vehicles" role="radiogroup" aria-label="차량 선택">
+
+          <button class="v-card" type="button" role="radio" aria-checked="false"
+                  data-name="45인승 관광버스" data-seat="45" data-price="650000">
+            <span class="seat"><b>45</b><span>인승</span></span>
+            <span class="v-info">
+              <span class="name">45인승 관광버스</span>
+              <span class="desc">단체 워크샵·현장학습·종교단체 행사에 가장 많이 찾는 대형</span>
+            </span>
+            <span class="v-price"><span class="lbl">예상가</span><span class="amt">650,000원~</span></span>
+            <span class="v-check" aria-hidden="true">✓</span>
+          </button>
+
+          <button class="v-card" type="button" role="radio" aria-checked="false"
+                  data-name="35인승 관광버스" data-seat="35" data-price="550000">
+            <span class="seat"><b>35</b><span>인승</span></span>
+            <span class="v-info">
+              <span class="name">35인승 관광버스</span>
+              <span class="desc">중형 단체 · 친목회, 가족여행에 넉넉한 사이즈</span>
+            </span>
+            <span class="v-price"><span class="lbl">예상가</span><span class="amt">550,000원~</span></span>
+            <span class="v-check" aria-hidden="true">✓</span>
+          </button>
+
+          <button class="v-card" type="button" role="radio" aria-checked="false"
+                  data-name="28인승 우등리무진" data-seat="28" data-price="600000">
+            <span class="seat"><b>28</b><span>인승</span></span>
+            <span class="v-info">
+              <span class="name">28인승 우등리무진</span>
+              <span class="desc">넓은 좌석의 우등 사양 · 의전, 장거리 이동에 추천</span>
+            </span>
+            <span class="v-price"><span class="lbl">예상가</span><span class="amt">600,000원~</span></span>
+            <span class="v-check" aria-hidden="true">✓</span>
+          </button>
+
+          <button class="v-card" type="button" role="radio" aria-checked="false"
+                  data-name="25인승 관광버스" data-seat="25" data-price="480000">
+            <span class="seat"><b>25</b><span>인승</span></span>
+            <span class="v-info">
+              <span class="name">25인승 관광버스</span>
+              <span class="desc">소규모 단체 · 대학MT, 관혼상제 이동에 알맞은 크기</span>
+            </span>
+            <span class="v-price"><span class="lbl">예상가</span><span class="amt">480,000원~</span></span>
+            <span class="v-check" aria-hidden="true">✓</span>
+          </button>
+
+          <button class="v-card" type="button" role="radio" aria-checked="false"
+                  data-name="16인승 관광버스" data-seat="16" data-price="400000">
+            <span class="seat"><b>16</b><span>인승</span></span>
+            <span class="v-info">
+              <span class="name">16인승 관광버스</span>
+              <span class="desc">공항픽업·소인원 이동에 가장 합리적인 선택</span>
+            </span>
+            <span class="v-price"><span class="lbl">예상가</span><span class="amt">400,000원~</span></span>
+            <span class="v-check" aria-hidden="true">✓</span>
+          </button>
+
+        </div>
+
+        <!-- 예상가 미리보기 뱃지 -->
+        <div class="estimate empty" id="estimate" aria-live="polite">
+          <p class="est-empty"><span class="ico" aria-hidden="true">◎</span> 차량을 선택하면 예상가 미리보기가 여기에 표시됩니다.</p>
+
+          <div class="est-live">
+            <div class="est-top">
+              <span class="est-badge">
+                <span class="tag">예상가</span>
+                <span>당일왕복</span>
+                <span class="amt" id="estMain">650,000원~</span>
+              </span>
+              <span class="est-veh" id="estVeh">45인승 관광버스 · 서울→강원 기준</span>
+            </div>
+
+            <div class="est-grid">
+              <div class="est-cell main">
+                <div class="k">당일왕복 예상가</div>
+                <div class="v" id="estRound">650,000원~</div>
+              </div>
+              <div class="est-cell">
+                <div class="k">편도 예상가</div>
+                <div class="v" id="estOne">390,000원~</div>
+              </div>
+              <div class="est-cell">
+                <div class="k">1박2일 예상가</div>
+                <div class="v" id="estNight">1,170,000원~</div>
+              </div>
+            </div>
+
+            <p class="est-note"><span class="ast" aria-hidden="true">＊</span>
+              위 금액은 당일왕복·서울→강원 노선 기준 <b>예상가</b>이며, 실제 견적은 확정 시 안내됩니다.
+              노선·일정·대수·주차료·VAT 포함 여부에 따라 달라집니다.</p>
+          </div>
+        </div>
+
+        <div class="wizard-actions">
+          <button class="btn-next idle" type="button" id="btnNext"
+                  onclick="alert('견적 위저드 2단계부터는 시안 선택 후 제작됩니다')">
+            다음: 여행 정보 입력 <span class="arw" aria-hidden="true">→</span>
+          </button>
+          <a class="btn-call-alt" href="tel:1566-6188"><span aria-hidden="true">☎</span> 전화로 상담</a>
+        </div>
+
+        <div class="wizard-foot">
+          <span><i aria-hidden="true">✓</i> 온라인 결제 없음</span>
+          <span><i aria-hidden="true">✓</i> 사장님 확정 후 연락</span>
+          <span><i aria-hidden="true">✓</i> 전국 16개 시도 운행</span>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 02 실시간 견적 현황 ============ -->
+  <section class="live" id="booking">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="live-pulse"><span class="dot" aria-hidden="true"></span> 실시간 견적·예약 현황</span>
+        <h2>방금 견적 받은 <em>사람들</em>.</h2>
+        <p>지금도 베스트투어에서 견적이 접수되고 있습니다. 접수된 견적은 사장님 확인 후 순서대로 연락드립니다.</p>
+      </div>
+    </div>
+    <div class="ticker" aria-label="최근 견적 접수 12건">
+      <ul class="ticker-track" id="tickerTrack"></ul>
+    </div>
+  </section>
+
+  <!-- ============ 03 이용 방법 4단계 ============ -->
+  <section class="howto" id="support">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="eyebrow"><span class="num">03</span> HOW IT WORKS</span>
+        <h2>견적부터 결제까지, <em>네 단계</em>.</h2>
+        <p>온라인 결제는 진행하지 않습니다. 사장님이 확정한 예약에 대해서만 결제가 이루어집니다.</p>
+      </div>
+      <ol class="steps">
+        <li class="step-card">
+          <div class="n">STEP 01</div>
+          <h3>견적 신청</h3>
+          <p>차량·여행정보·날짜·인원을 7단계 위저드로 입력하면 예상 가격이 실시간으로 표시됩니다.</p>
+          <span class="badge">홈 히어로에서 바로 시작</span>
+        </li>
+        <li class="step-card">
+          <div class="n">STEP 02</div>
+          <h3>사장님 확정</h3>
+          <p>접수된 견적을 사장님이 직접 확인하고 차량 배차 가능 여부를 확정합니다.</p>
+          <span class="badge">예약 확정 권한은 사장님</span>
+        </li>
+        <li class="step-card">
+          <div class="n">STEP 03</div>
+          <h3>알림 / 연락</h3>
+          <p>견적확인방법(핸드폰·전화·팩스·이메일) 중 선택하신 경로로 확정 내용을 안내드립니다.</p>
+          <span class="badge">1566-6188 / 010-2048-8585</span>
+        </li>
+        <li class="step-card">
+          <div class="n">STEP 04</div>
+          <h3>결제</h3>
+          <p>현금·카드·세금계산서 발행 중 선택하신 방법으로 진행합니다. 확정된 예약만 결제합니다.</p>
+          <span class="badge">KB국민은행 690101-00-050894</span>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ============ 04 강점 그리드 ============ -->
+  <section class="merits" id="fleet">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="eyebrow"><span class="num">04</span> WHY BESTOUR</span>
+        <h2>보라색 버스를 <em>고르는 이유</em>.</h2>
+        <p>차량 옵션부터 보험, 운임료까지 — 타기 전에 확인할 수 있는 것은 모두 공개합니다.</p>
+      </div>
+
+      <div class="merit-grid">
+        <article class="merit">
+          <div class="ico" aria-hidden="true">📺</div>
+          <h3>DVD · 노래방 시설</h3>
+          <p>이동 시간이 지루하지 않도록 차량 내 DVD와 노래방 시설을 갖췄습니다. 단체 행사·MT에 특히 만족도가 높습니다.</p>
+        </article>
+        <article class="merit">
+          <div class="ico" aria-hidden="true">🧊</div>
+          <h3>정수기 · 냉장고 구비</h3>
+          <p>장거리 운행에도 시원한 음료를 챙길 수 있도록 정수기와 냉장고를 운영합니다.</p>
+        </article>
+        <article class="merit">
+          <div class="ico" aria-hidden="true">🛡️</div>
+          <h3>보험 내용 공개</h3>
+          <p>전세버스 운행에 필요한 보험 내용을 차량소개 페이지에서 그대로 확인하실 수 있습니다.</p>
+        </article>
+        <article class="merit">
+          <div class="ico" aria-hidden="true">💴</div>
+          <h3>차량 운임료 투명 공개</h3>
+          <p>차종별 운임료 기준을 공개하고, 견적 화면에서 예상가를 먼저 보여드립니다. 실제 견적은 확정 시 안내됩니다.</p>
+        </article>
+        <article class="merit">
+          <div class="ico" aria-hidden="true">🗺️</div>
+          <h3>전국 16개 시도 운행</h3>
+          <p>서울부터 제주까지 출발지·도착지를 자유롭게 지정하고, 경유지도 함께 신청할 수 있습니다.</p>
+        </article>
+        <article class="merit">
+          <div class="ico" aria-hidden="true">🎯</div>
+          <h3>목적별 맞춤 배차</h3>
+          <p>가족여행·관혼상제·워크샵·친목회·종교단체·공항픽업·대학MT·현장학습·외국인 의전 관광까지 목적에 맞게 배차합니다.</p>
+        </article>
+      </div>
+
+      <div class="fleet-strip">
+        <div class="ph"><img src="assets/bus-04.jpg" alt="베스트투어 보라색 45인승 관광버스 측면" loading="lazy"></div>
+        <div class="fleet-copy">
+          <h3>차량 5종, 모두 베스트투어 보라색.</h3>
+          <p>45인승·35인승 관광버스, 28인승 우등리무진, 25인승·16인승 관광버스. 인원과 예산에 맞춰 고르시면 견적 위저드가 나머지를 안내합니다.</p>
+          <ul class="fleet-tags">
+            <li>45인승 관광버스</li><li>35인승 관광버스</li><li>28인승 우등리무진</li>
+            <li>25인승 관광버스</li><li>16인승 관광버스</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 05 갤러리 프리뷰 ============ -->
+  <section class="gallery" id="gallery">
+    <div class="wrap">
+      <div class="gal-head">
+        <div class="sec-head" style="margin-bottom:0">
+          <span class="eyebrow"><span class="num">05</span> GALLERY</span>
+          <h2>운행 중인 <em>보라색 버스</em>.</h2>
+        </div>
+        <a class="link-more" href="#gallery">갤러리 전체 보기 <span aria-hidden="true">→</span></a>
+      </div>
+
+      <div class="gal-grid">
+        <figure class="gal wide">
+          <img src="assets/bus-01.jpg" alt="주간 행사장 앞에 정차한 베스트투어 45인승 관광버스" loading="lazy">
+          <figcaption>행사장 배차 · 45인승 관광버스</figcaption>
+        </figure>
+        <figure class="gal tall">
+          <img src="assets/bus-05.jpg" alt="야간 도심에서 대기 중인 베스트투어 소형 버스" loading="lazy">
+          <figcaption>야간 도심 픽업 · 소형 차량</figcaption>
+        </figure>
+        <figure class="gal">
+          <img src="assets/bus-02.jpg" alt="차고지에 나란히 주차된 베스트투어 버스들" loading="lazy">
+          <figcaption>고양시 차고지</figcaption>
+        </figure>
+        <figure class="gal">
+          <img src="assets/bus-03.jpg" alt="터미널에 정차한 베스트투어 버스 3대의 후면" loading="lazy">
+          <figcaption>단체 배차 3대</figcaption>
+        </figure>
+        <figure class="gal half fix">
+          <img src="assets/bus-06.jpg" alt="산사 앞에 정차한 베스트투어 관광버스" loading="lazy">
+          <figcaption>지방 사찰 관광 운행</figcaption>
+        </figure>
+        <figure class="gal half">
+          <img src="assets/bus-04.jpg" alt="통근버스로 운행 중인 베스트투어 관광버스 측면" loading="lazy">
+          <figcaption>산업단지 통근 운행</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 06 공지사항 ============ -->
+  <section class="notice" id="company">
+    <div class="wrap">
+      <div class="notice-grid">
+        <div>
+          <div class="sec-head">
+            <span class="eyebrow"><span class="num">06</span> NOTICE</span>
+            <h2>공지사항</h2>
+          </div>
+          <ul class="notice-list">
+            <li><a href="#support"><span class="tag new">NEW</span><span class="t">홈페이지 견적 위저드 오픈 — 7단계로 예상가 즉시 확인</span><span class="d">2026-08-06</span></a></li>
+            <li><a href="#support"><span class="tag">안내</span><span class="t">예약 확정 및 결제 절차 안내 — 확정된 예약만 결제가 진행됩니다</span><span class="d">2026-07-21</span></a></li>
+            <li><a href="#fleet"><span class="tag">차량</span><span class="t">차종별 차량 운임료 및 보험 내용 안내</span><span class="d">2026-06-30</span></a></li>
+            <li><a href="#fleet"><span class="tag">이용</span><span class="t">경유지 신청 및 왕복·편도·편도편도 운행구분 이용안내</span><span class="d">2026-05-18</span></a></li>
+            <li><a href="#company"><span class="tag">회사</span><span class="t">본사(고양 일산동구) · 지사(서울 마포) 찾아오시는 길</span><span class="d">2026-04-02</span></a></li>
+          </ul>
+        </div>
+
+        <aside class="cta-box">
+          <h3>차량만 고르면<br><em>예상가</em>가 바로 나옵니다.</h3>
+          <p>견적 위저드 1단계는 차량 선택입니다. 45·35·28·25·16인승 중 하나를 고르면 당일왕복·편도·1박2일 예상가를 함께 보여드립니다.</p>
+          <div class="cta-row">
+            <a class="btn-gold" href="#quote"><span aria-hidden="true">⚡</span> 견적 시작하기</a>
+            <a class="btn-ghost" href="tel:1566-6188"><span aria-hidden="true">☎</span> 1566-6188</a>
+          </div>
+          <p class="cta-fine">표기된 금액은 모두 <b>예상가</b>이며 실제 견적은 확정 시 안내됩니다. 온라인 결제는 진행하지 않으며, 사장님 확정 후 연락드립니다.</p>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ============ FOOTER ============ -->
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="foot-top">
+      <div class="foot-brand">
+        <span class="logo"><span class="mark" aria-hidden="true">✿</span><span class="txt">베스트<b>투어</b></span></span>
+        <p>경기도 고양시의 전세버스 대절 알선업체. 보라색 버스로 전국 16개 시도를 운행합니다.</p>
+        <span class="foot-tel">
+          <span class="k">대표전화</span>
+          <a class="v" href="tel:1566-6188">1566-6188</a>
+        </span>
+      </div>
+
+      <div class="foot-col">
+        <h4>메뉴</h4>
+        <ul>
+          <li><a href="#company">회사소개</a></li>
+          <li><a href="#fleet">차량소개</a></li>
+          <li><a href="#quote">견적요청</a></li>
+          <li><a href="#gallery">갤러리</a></li>
+          <li><a href="#support">고객센터</a></li>
+          <li><a href="#booking">예약확인</a></li>
+        </ul>
+      </div>
+
+      <div class="foot-col">
+        <h4>차량</h4>
+        <ul>
+          <li><a href="#quote">45인승 관광버스</a></li>
+          <li><a href="#quote">35인승 관광버스</a></li>
+          <li><a href="#quote">28인승 우등리무진</a></li>
+          <li><a href="#quote">25인승 관광버스</a></li>
+          <li><a href="#quote">16인승 관광버스</a></li>
+        </ul>
+      </div>
+
+      <div class="foot-col">
+        <h4>연락</h4>
+        <ul>
+          <li><a href="tel:1566-6188">대표 1566-6188</a></li>
+          <li><a href="tel:010-2048-8585">직통 010-2048-8585</a></li>
+          <li>팩스 0303-3443-5252</li>
+          <li><a href="mailto:bestour2013@naver.com">bestour2013@naver.com</a></li>
+          <li><a href="#support">네이버 블로그</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="foot-info">
+      <b>합자회사 베스트투어</b><span class="sep">|</span>대표 이승묵<span class="sep">|</span>사업자등록번호 130-86-77328<span class="sep">|</span>통신판매업신고 제 2020-고양일산동-1211호<br>
+      본사 경기도 고양시 일산동구 동국로 99-19<span class="sep">|</span>지사 서울시 마포구 월드컵북로 23길 18<br>
+      이메일 bestour2013@naver.com<span class="sep">|</span>대표 1566-6188<span class="sep">|</span>직통 010-2048-8585<span class="sep">|</span>팩스 0303-3443-5252<br>
+      입금계좌 KB국민은행 690101-00-050894 (예금주 합자회사 베스트투어)
+      <p class="foot-copy">© 2026 합자회사 베스트투어. 본 페이지는 리디자인 컨펌용 시안이며 표기 금액은 모두 예상가입니다.</p>
+    </div>
+  </div>
+</footer>
+
+<a class="float-call" href="tel:1566-6188" aria-label="베스트투어 대표전화 1566-6188 걸기">
+  <span class="ic" aria-hidden="true">☎</span>
+  <span class="tx"><b>1566-6188</b><span>전화 상담</span></span>
+</a>
+
+<script>
+(function(){
+  'use strict';
+
+  /* ---------- 더미 요금표 (soul.md §9) ----------
+     기준: 당일왕복 · 서울→강원
+     편도 = 당일왕복 × 0.6 / 1박2일 = 당일왕복 × 1.8            */
+  var RATE_ONEWAY = 0.6;
+  var RATE_OVERNIGHT = 1.8;
+
+  function won(n){ return Math.round(n).toLocaleString('ko-KR') + '원~'; }
+
+  /* ---------- 위저드 1단계: 차량 선택 ---------- */
+  var group    = document.getElementById('vehicles');
+  var cards    = group ? Array.prototype.slice.call(group.querySelectorAll('.v-card')) : [];
+  var estimate = document.getElementById('estimate');
+  var estMain  = document.getElementById('estMain');
+  var estVeh   = document.getElementById('estVeh');
+  var estRound = document.getElementById('estRound');
+  var estOne   = document.getElementById('estOne');
+  var estNight = document.getElementById('estNight');
+  var btnNext  = document.getElementById('btnNext');
+
+  function select(card){
+    cards.forEach(function(c){
+      var on = (c === card);
+      c.classList.toggle('sel', on);
+      c.setAttribute('aria-checked', on ? 'true' : 'false');
+      c.tabIndex = on ? 0 : -1;
+    });
+
+    var base = parseInt(card.getAttribute('data-price'), 10);
+    var name = card.getAttribute('data-name');
+
+    estMain.textContent  = won(base);
+    estRound.textContent = won(base);
+    estOne.textContent   = won(base * RATE_ONEWAY);
+    estNight.textContent = won(base * RATE_OVERNIGHT);
+    estVeh.textContent   = name + ' · 서울→강원 기준';
+
+    estimate.classList.remove('empty');
+    estimate.classList.add('on');
+    btnNext.classList.remove('idle');
+    btnNext.innerHTML = '다음: 여행 정보 입력 <span class="arw" aria-hidden="true">→</span>';
+  }
+
+  cards.forEach(function(card, i){
+    card.tabIndex = (i === 0) ? 0 : -1;
+    card.addEventListener('click', function(){ select(card); });
+    card.addEventListener('keydown', function(e){
+      var k = e.key, next = null;
+      if(k === 'ArrowDown' || k === 'ArrowRight'){ next = cards[(i + 1) % cards.length]; }
+      else if(k === 'ArrowUp' || k === 'ArrowLeft'){ next = cards[(i - 1 + cards.length) % cards.length]; }
+      if(next){ e.preventDefault(); next.focus(); select(next); }
+    });
+  });
+
+  /* ---------- 실시간 견적현황 티커 (soul.md §8 · 더미 12건) ---------- */
+  var QUOTES = [
+    ['한**','45인승 관광버스','2026-08-06'],
+    ['김**','28인승 우등리무진','2026-03-15'],
+    ['이**','35인승 관광버스','2026-04-22'],
+    ['박**','16인승 관광버스','2026-05-03'],
+    ['최**','25인승 관광버스','2026-03-28'],
+    ['정**','45인승 관광버스','2026-06-11'],
+    ['강**','28인승 우등리무진','2026-07-19'],
+    ['조**','35인승 관광버스','2026-04-09'],
+    ['윤**','16인승 관광버스','2026-08-02'],
+    ['임**','25인승 관광버스','2026-05-27'],
+    ['한**','45인승 관광버스','2026-06-30'],
+    ['오**','28인승 우등리무진','2026-07-05']
+  ];
+
+  var track = document.getElementById('tickerTrack');
+  if(track){
+    var html = QUOTES.map(function(q){
+      return '<li class="q-item">' +
+               '<div class="who">' + q[0] + '</div>' +
+               '<div class="veh">' + q[1] + '</div>' +
+               '<div class="when"><span>' + q[2] + '</span><span class="ok">접수완료</span></div>' +
+             '</li>';
+    }).join('');
+    track.innerHTML = html + html; /* seamless loop */
+  }
+
+  /* ---------- 모바일 내비게이션 ---------- */
+  var toggle = document.getElementById('navToggle');
+  var mnav   = document.getElementById('mobileNav');
+  if(toggle && mnav){
+    toggle.addEventListener('click', function(){
+      var open = mnav.classList.toggle('open');
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      toggle.textContent = open ? '✕' : '☰';
+      toggle.setAttribute('aria-label', open ? '메뉴 닫기' : '메뉴 열기');
+    });
+    mnav.addEventListener('click', function(e){
+      if(e.target.closest('a')){
+        mnav.classList.remove('open');
+        toggle.setAttribute('aria-expanded','false');
+        toggle.textContent = '☰';
+      }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>
