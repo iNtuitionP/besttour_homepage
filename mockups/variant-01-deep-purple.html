@@ -1,0 +1,1331 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>베스트투어 — 시안 1: 딥퍼플 프리미엄</title>
+<meta name="description" content="합자회사 베스트투어 — 전세버스 대절. 몇 번의 클릭으로 바로 견적. 45인승부터 16인승까지." />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+<style>
+/* ============================================================
+   베스트투어 — 시안 1: 딥퍼플 프리미엄
+   한 색 계열 몰입 + 타이포 대비 + 골드 액센트
+   ============================================================ */
+
+/* --- Tokens ------------------------------------------------ */
+:root{
+  /* 브랜드 팔레트 (soul.md §7) */
+  --deep:      #3B1F5C;
+  --violet:    #7C3AED;
+  --lavender:  #F3EFFA;
+  --dark:      #1A1523;
+  --neutral:   #FAF9FC;
+  --gold:      #D4A843;
+
+  /* 동일 색상군 내 틴트 (몰입형 표현용) */
+  --deep-950:  #100D18;
+  --deep-900:  #1A1523;
+  --deep-850:  #201830;
+  --deep-800:  #26193C;
+  --deep-700:  #2E1749;
+  --deep-600:  #351B53;
+  --deep-500:  #3B1F5C;
+  --deep-400:  #4C2A74;
+  --deep-300:  #613991;
+  --lav-300:   #B9A4DE;
+  --lav-200:   #D5C7EE;
+  --lav-100:   #E9E1F7;
+  --gold-soft: #E8C87A;
+  --gold-deep: #A87F2C;
+
+  --line:      rgba(214,196,246,.16);
+  --line-str:  rgba(214,196,246,.28);
+  --glass:     rgba(255,255,255,.055);
+
+  /* 8px 배수 스페이싱 스케일 */
+  --s1: 8px;  --s2: 16px; --s3: 24px; --s4: 32px;
+  --s5: 40px; --s6: 48px; --s7: 64px; --s8: 80px;
+  --s9: 96px; --s10:128px;
+
+  --r-sm: 10px; --r-md: 16px; --r-lg: 24px; --r-xl: 32px;
+  --ease: cubic-bezier(.22,.85,.3,1);
+  --t-fast: .18s var(--ease);
+  --t: .34s var(--ease);
+  --t-slow: .7s var(--ease);
+
+  --shadow-card: 0 24px 60px -24px rgba(9,5,20,.75);
+  --shadow-lift: 0 32px 72px -28px rgba(9,5,20,.9);
+}
+
+*,*::before,*::after{ box-sizing:border-box; }
+html{ -webkit-text-size-adjust:100%; scroll-behavior:smooth; }
+html,body{ max-width:100%; overflow-x:clip; }
+body{
+  margin:0;
+  background:var(--deep-900);
+  color:var(--lav-100);
+  font-family:'Pretendard','Pretendard Variable',-apple-system,BlinkMacSystemFont,system-ui,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;
+  font-size:16px; line-height:1.65;
+  letter-spacing:-.01em;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+img{ max-width:100%; display:block; }
+a{ color:inherit; text-decoration:none; }
+button,input,select{ font:inherit; color:inherit; }
+h1,h2,h3,h4,p,figure,ul,ol{ margin:0; }
+ul,ol{ list-style:none; padding:0; }
+::selection{ background:var(--gold); color:var(--deep-950); }
+:focus-visible{ outline:2px solid var(--gold); outline-offset:3px; border-radius:4px; }
+
+/* --- Layout primitives ------------------------------------- */
+.wrap{ width:min(1200px, 100% - 32px); margin-inline:auto; }
+@media(min-width:768px){ .wrap{ width:min(1200px, 100% - 64px); } }
+
+.section{ padding-block:clamp(56px, 8vw, 120px); position:relative; }
+.section--tight{ padding-block:clamp(48px, 6vw, 88px); }
+
+/* 섹션 리듬 — 퍼플 틴트 농도 교차 (soul #6) */
+.tone-deepest{ background:var(--deep-950); }
+.tone-dark   { background:var(--deep-900); }
+.tone-mid    { background:linear-gradient(180deg, var(--deep-700), var(--deep-800)); }
+.tone-light  { background:var(--lavender); color:var(--deep-700); }
+.tone-light .eyebrow{ color:var(--gold-deep); }
+.tone-light .eyebrow::before{ background:var(--gold-deep); }
+.tone-light .gold{ color:var(--gold-deep); }
+.tone-light .cscard .gold{ color:var(--gold); }
+
+/* --- Type -------------------------------------------------- */
+.eyebrow{
+  display:inline-flex; align-items:center; gap:var(--s1);
+  font-size:12px; font-weight:700; letter-spacing:.16em;
+  text-transform:uppercase; color:var(--gold);
+  margin-bottom:var(--s2);
+}
+.eyebrow::before{
+  content:''; width:22px; height:2px; background:var(--gold); border-radius:2px;
+}
+.h2{
+  font-size:clamp(26px, 4.6vw, 48px);
+  font-weight:800; line-height:1.18; letter-spacing:-.032em;
+}
+.h3{ font-size:clamp(19px,2.2vw,23px); font-weight:700; letter-spacing:-.02em; line-height:1.35; }
+.lead{
+  font-size:clamp(15px,1.6vw,17px); line-height:1.75;
+  color:var(--lav-300); max-width:56ch;
+}
+.tone-light .lead{ color:#5B4A78; }
+.gold{ color:var(--gold); }
+.sec-head{ margin-bottom:clamp(32px,4.5vw,var(--s7)); }
+.sec-head--split{ display:grid; gap:var(--s3); }
+@media(min-width:900px){
+  .sec-head--split{ grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); align-items:end; gap:var(--s7); }
+}
+
+/* --- Buttons ----------------------------------------------- */
+.btn{
+  --btn-bg:var(--gold); --btn-fg:var(--deep-950);
+  display:inline-flex; align-items:center; justify-content:center; gap:var(--s1);
+  padding:14px var(--s3); min-height:48px;
+  background:var(--btn-bg); color:var(--btn-fg);
+  border:1px solid transparent; border-radius:999px;
+  font-weight:700; font-size:15px; letter-spacing:-.01em;
+  cursor:pointer; transition:transform var(--t-fast), box-shadow var(--t), background var(--t), border-color var(--t), color var(--t);
+  box-shadow:0 10px 28px -12px rgba(212,168,67,.7);
+}
+.btn:hover{ transform:translateY(-2px); background:var(--gold-soft); box-shadow:0 18px 38px -14px rgba(212,168,67,.85); }
+.btn:active{ transform:translateY(0); }
+.btn--block{ width:100%; }
+.btn--lg{ min-height:56px; font-size:16px; padding-inline:var(--s4); }
+.btn--ghost{
+  --btn-bg:transparent; --btn-fg:var(--lav-100);
+  border-color:var(--line-str); box-shadow:none; backdrop-filter:blur(6px);
+}
+.btn--ghost:hover{ background:var(--glass); border-color:var(--gold); color:#fff; box-shadow:none; }
+.btn--sm{ min-height:40px; padding:9px 18px; font-size:14px; }
+
+/* --- Header ------------------------------------------------ */
+.hdr{
+  position:sticky; top:0; z-index:80;
+  background:rgba(16,13,24,.55);
+  backdrop-filter:blur(18px) saturate(140%);
+  border-bottom:1px solid transparent;
+  transition:background var(--t), border-color var(--t), box-shadow var(--t);
+}
+.hdr.is-stuck{
+  background:rgba(16,13,24,.92);
+  border-bottom-color:var(--line);
+  box-shadow:0 12px 40px -28px #000;
+}
+.hdr__inner{ display:flex; align-items:center; gap:var(--s3); min-height:68px; }
+@media(min-width:1024px){ .hdr__inner{ min-height:80px; } }
+
+.logo{ display:flex; align-items:center; gap:10px; flex:0 0 auto; }
+.logo__mark{ width:30px; height:30px; flex:0 0 auto; }
+.logo__mark path{ fill:var(--gold); }
+.logo__mark circle{ fill:var(--lavender); }
+.logo__txt{ font-size:19px; font-weight:800; letter-spacing:-.045em; line-height:1; }
+.logo__txt span{ color:var(--gold); font-weight:500; }
+.logo__ko{ display:none; font-size:11px; color:var(--lav-300); letter-spacing:.1em; padding-left:2px; border-left:1px solid var(--line-str); margin-left:2px; }
+@media(min-width:1024px){ .logo__ko{ display:block; padding-left:10px; margin-left:6px; } }
+
+.nav{ display:none; }
+@media(min-width:1024px){
+  .nav{ display:flex; align-items:center; gap:2px; margin-inline:auto; }
+  .nav a{
+    position:relative; padding:10px 14px; border-radius:999px;
+    font-size:15px; font-weight:600; color:var(--lav-200);
+    transition:color var(--t-fast), background var(--t-fast);
+  }
+  .nav a::after{
+    content:''; position:absolute; left:14px; right:14px; bottom:4px; height:2px;
+    background:var(--gold); border-radius:2px; transform:scaleX(0); transform-origin:left;
+    transition:transform var(--t);
+  }
+  .nav a:hover{ color:#fff; background:var(--glass); }
+  .nav a:hover::after{ transform:scaleX(1); }
+}
+.hdr__cta{ display:none; margin-left:auto; align-items:center; gap:var(--s2); }
+@media(min-width:1024px){ .hdr__cta{ display:flex; margin-left:0; } }
+.hdr__tel{ display:flex; flex-direction:column; line-height:1.15; text-align:right; }
+.hdr__tel b{ font-size:17px; font-weight:800; letter-spacing:-.02em; color:#fff; }
+.hdr__tel small{ font-size:11px; color:var(--lav-300); letter-spacing:.08em; }
+
+.burger{
+  margin-left:auto; width:44px; height:44px; display:grid; place-items:center; gap:0;
+  background:var(--glass); border:1px solid var(--line); border-radius:12px; cursor:pointer;
+  transition:background var(--t-fast), border-color var(--t-fast);
+}
+.burger:hover{ border-color:var(--gold); }
+@media(min-width:1024px){ .burger{ display:none; } }
+.burger i{ display:block; width:18px; height:2px; background:var(--lav-100); border-radius:2px; transition:transform var(--t), opacity var(--t-fast); }
+.burger i + i{ margin-top:5px; }
+.burger.is-open i:nth-child(1){ transform:translateY(7px) rotate(45deg); }
+.burger.is-open i:nth-child(2){ opacity:0; }
+.burger.is-open i:nth-child(3){ transform:translateY(-7px) rotate(-45deg); }
+
+.drawer{
+  display:grid; grid-template-rows:0fr;
+  overflow:hidden; transition:grid-template-rows var(--t);
+  background:rgba(16,13,24,.98); border-bottom:1px solid var(--line);
+}
+.drawer.is-open{ grid-template-rows:1fr; }
+.drawer__in{ min-height:0; }
+.drawer nav{ display:grid; padding:var(--s2) 0 var(--s3); }
+.drawer nav a{
+  padding:13px 4px; font-size:16px; font-weight:600; color:var(--lav-200);
+  border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center;
+}
+.drawer nav a::after{ content:'→'; color:var(--gold); opacity:.55; }
+.drawer .btn{ margin-top:var(--s3); }
+@media(min-width:1024px){ .drawer{ display:none; } }
+
+/* --- Hero -------------------------------------------------- */
+.hero{ position:relative; isolation:isolate; overflow:hidden; background:var(--deep-950); }
+.hero__bg{ position:absolute; inset:0; z-index:-2; }
+.hero__bg img{
+  width:100%; height:100%; object-fit:cover; object-position:50% 62%;
+  filter:saturate(1.05) contrast(1.05);
+}
+.hero__bg::after{
+  content:''; position:absolute; inset:0;
+  background:
+    radial-gradient(80% 60% at 78% 18%, rgba(124,58,237,.42), transparent 62%),
+    linear-gradient(104deg, rgba(16,13,24,.97) 0%, rgba(26,21,35,.93) 34%, rgba(59,31,92,.86) 62%, rgba(59,31,92,.66) 100%),
+    linear-gradient(0deg, var(--deep-950) 2%, rgba(16,13,24,0) 42%);
+}
+.hero__grid{
+  position:relative; display:grid; gap:var(--s5);
+  padding-block:clamp(var(--s5), 6vw, var(--s9)) clamp(var(--s6), 7vw, var(--s10));
+}
+@media(min-width:1024px){
+  .hero__grid{ grid-template-columns:minmax(0,1.1fr) minmax(400px,428px); gap:var(--s8); align-items:center; }
+}
+
+.hero__eyebrow{
+  display:inline-flex; align-items:center; gap:10px; flex-wrap:wrap;
+  padding:7px 14px 7px 10px; border:1px solid var(--line-str); border-radius:999px;
+  background:var(--glass); backdrop-filter:blur(8px);
+  font-size:12px; font-weight:600; letter-spacing:.02em; color:var(--lav-200);
+  margin-bottom:var(--s3);
+}
+.dot-live{
+  width:7px; height:7px; border-radius:50%; background:var(--gold);
+  box-shadow:0 0 0 0 rgba(212,168,67,.65); animation:pulse 2.4s infinite;
+}
+@keyframes pulse{
+  0%{ box-shadow:0 0 0 0 rgba(212,168,67,.6); }
+  70%{ box-shadow:0 0 0 9px rgba(212,168,67,0); }
+  100%{ box-shadow:0 0 0 0 rgba(212,168,67,0); }
+}
+
+.hero h1{
+  font-size:clamp(34px, 7.2vw, 76px);
+  font-weight:800; line-height:1.1; letter-spacing:-.04em;
+  color:#fff; text-wrap:balance;
+}
+.hero h1 em{
+  position:relative; font-style:normal; color:var(--gold);
+  padding-inline:2px;
+}
+.hero h1 em::after{
+  content:''; position:absolute; left:0; right:0; bottom:.06em; height:.1em;
+  background:linear-gradient(90deg, var(--gold), rgba(212,168,67,0));
+  border-radius:4px; transform-origin:left; animation:swash 1.1s .5s both var(--ease);
+}
+@keyframes swash{ from{ transform:scaleX(0); } to{ transform:scaleX(1); } }
+.hero__sub{
+  margin-top:var(--s3); font-size:clamp(14px,1.6vw,17.5px); line-height:1.7;
+  color:var(--lav-200); max-width:46ch;
+}
+.hero__sub b{ color:#fff; font-weight:700; }
+.hero__actions{ display:flex; flex-wrap:wrap; gap:12px; margin-top:var(--s4); }
+
+/* 스탯 블록 (soul #4) */
+.stats{
+  display:grid; grid-template-columns:repeat(3,1fr);
+  gap:var(--s2); margin-top:clamp(var(--s4), 5vw, var(--s6));
+  border-top:1px solid var(--line); padding-top:var(--s3);
+}
+.stat b{
+  display:block; font-size:clamp(24px,3.6vw,40px); font-weight:800;
+  letter-spacing:-.04em; line-height:1.05; color:#fff;
+  font-variant-numeric:tabular-nums;
+}
+.stat b i{ font-style:normal; color:var(--gold); }
+.stat span{ display:block; font-size:11.5px; color:var(--lav-300); letter-spacing:.04em; margin-top:5px; }
+@media(min-width:600px){ .stat span{ font-size:13px; } }
+
+/* --- 견적 위젯 카드 (soul #1) -------------------------------- */
+.quote{
+  position:relative; border-radius:var(--r-lg);
+  background:linear-gradient(168deg, rgba(48,28,76,.92), rgba(22,17,32,.96));
+  border:1px solid var(--line-str);
+  box-shadow:var(--shadow-card);
+  backdrop-filter:blur(16px);
+  overflow:hidden;
+}
+.quote::before{
+  content:''; position:absolute; inset-inline:0; top:0; height:3px;
+  background:linear-gradient(90deg, var(--gold-deep), var(--gold), var(--gold-soft), var(--gold-deep));
+}
+.quote__hd{ padding:var(--s3) var(--s3) 0; display:flex; align-items:flex-start; justify-content:space-between; gap:var(--s2); }
+.quote__hd h2{ font-size:19px; font-weight:800; letter-spacing:-.03em; color:#fff; }
+.quote__hd p{ font-size:12.5px; color:var(--lav-300); margin-top:3px; }
+.quote__badge{
+  flex:0 0 auto; font-size:11px; font-weight:700; letter-spacing:.02em;
+  color:var(--gold); background:rgba(212,168,67,.12);
+  border:1px solid rgba(212,168,67,.34); border-radius:999px; padding:5px 10px;
+}
+.quote__form{ padding:var(--s3); display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.field{ display:grid; gap:6px; min-width:0; }
+.field label{
+  font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--lav-300);
+}
+.field .ctrl{
+  position:relative; display:flex; align-items:center;
+  background:rgba(255,255,255,.05); border:1px solid var(--line);
+  border-radius:var(--r-sm); transition:border-color var(--t-fast), background var(--t-fast), box-shadow var(--t-fast);
+}
+.field .ctrl:hover{ border-color:var(--line-str); background:rgba(255,255,255,.08); }
+.field .ctrl:focus-within{ border-color:var(--gold); box-shadow:0 0 0 3px rgba(212,168,67,.18); }
+.field select,.field input{
+  appearance:none; -webkit-appearance:none;
+  width:100%; min-width:0; background:transparent; border:0; outline:none;
+  padding:12px 30px 12px 12px; font-size:14.5px; font-weight:600; color:#fff;
+  border-radius:var(--r-sm); cursor:pointer;
+}
+.field input[type="date"]{ padding-right:12px; }
+.field input::-webkit-calendar-picker-indicator{ filter:invert(1) opacity(.55); cursor:pointer; }
+.field select option{ background:#241a35; color:#fff; }
+.field .ctrl::after{
+  content:''; position:absolute; right:12px; width:7px; height:7px; pointer-events:none;
+  border-right:2px solid var(--lav-300); border-bottom:2px solid var(--lav-300);
+  transform:translateY(-2px) rotate(45deg); border-radius:1px;
+}
+.field--date .ctrl::after{ display:none; }
+
+.quote__price{
+  margin:0 var(--s3); padding:14px var(--s2);
+  display:flex; align-items:center; justify-content:space-between; gap:var(--s2);
+  background:linear-gradient(100deg, rgba(212,168,67,.14), rgba(124,58,237,.14));
+  border:1px solid rgba(212,168,67,.28); border-radius:var(--r-sm);
+}
+.quote__price .lbl{ font-size:11.5px; color:var(--lav-200); letter-spacing:.02em; }
+.quote__price .lbl b{ display:block; color:var(--gold); font-size:11px; letter-spacing:.12em; text-transform:uppercase; margin-bottom:2px; }
+.quote__price .val{
+  font-size:clamp(20px,3.6vw,26px); font-weight:800; color:#fff; letter-spacing:-.03em;
+  font-variant-numeric:tabular-nums; white-space:nowrap;
+  transition:opacity var(--t-fast), transform var(--t-fast);
+}
+.quote__price .val.is-flip{ opacity:0; transform:translateY(-6px); }
+.quote__foot{ padding:var(--s2) var(--s3) var(--s3); display:grid; gap:10px; }
+.quote__note{ font-size:11.5px; color:var(--lav-300); text-align:center; line-height:1.5; }
+.quote__note b{ color:var(--lav-200); font-weight:600; }
+
+/* --- 실시간 견적현황 (ticker) -------------------------------- */
+.live__top{
+  display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between;
+  gap:var(--s3); margin-bottom:var(--s4);
+}
+.live__count{
+  display:flex; align-items:center; gap:10px; padding:10px 16px;
+  border:1px solid var(--line); border-radius:999px; background:var(--glass);
+  font-size:13px; color:var(--lav-200); white-space:nowrap;
+}
+.live__count b{ color:#fff; font-weight:800; }
+.ticker{
+  position:relative; overflow:hidden;
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent);
+  mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent);
+}
+.ticker + .ticker{ margin-top:12px; }
+.ticker__track{ display:flex; gap:12px; width:max-content; animation:slide 46s linear infinite; }
+.ticker--rev .ticker__track{ animation-direction:reverse; animation-duration:54s; }
+.ticker:hover .ticker__track{ animation-play-state:paused; }
+@keyframes slide{ from{ transform:translateX(0); } to{ transform:translateX(-50%); } }
+.tick{
+  display:flex; align-items:center; gap:10px; white-space:nowrap;
+  padding:12px 18px; border-radius:999px;
+  background:linear-gradient(120deg, rgba(76,42,116,.55), rgba(32,24,48,.55));
+  border:1px solid var(--line); font-size:14px; color:var(--lav-200);
+  transition:border-color var(--t-fast), transform var(--t-fast);
+}
+.tick:hover{ border-color:rgba(212,168,67,.5); transform:translateY(-2px); }
+.tick b{ color:#fff; font-weight:700; }
+.tick .sep{ width:3px; height:3px; border-radius:50%; background:var(--lav-300); opacity:.6; flex:0 0 auto; }
+.tick .d{ color:var(--lav-300); font-size:13px; font-variant-numeric:tabular-nums; }
+.tick .chip{
+  font-size:11px; font-weight:700; color:var(--gold);
+  background:rgba(212,168,67,.12); border:1px solid rgba(212,168,67,.3);
+  border-radius:999px; padding:2px 8px;
+}
+@media(prefers-reduced-motion:reduce){
+  .ticker__track{ animation:none; }
+  .ticker{ overflow-x:auto; }
+}
+
+/* --- 이용 방법 4단계 ---------------------------------------- */
+.steps{ display:grid; gap:var(--s2); counter-reset:step; }
+@media(min-width:640px){ .steps{ grid-template-columns:repeat(2,1fr); gap:var(--s3); } }
+@media(min-width:1024px){ .steps{ grid-template-columns:repeat(4,1fr); } }
+.step{
+  position:relative; padding:var(--s4) var(--s3) var(--s3);
+  background:#fff; border:1px solid rgba(59,31,92,.1); border-radius:var(--r-md);
+  transition:transform var(--t), box-shadow var(--t), border-color var(--t);
+  overflow:hidden;
+}
+.step::before{
+  content:''; position:absolute; left:0; top:0; bottom:0; width:3px;
+  background:linear-gradient(180deg,var(--gold),var(--violet)); transform:scaleY(0); transform-origin:top;
+  transition:transform var(--t);
+}
+.step:hover{ transform:translateY(-4px); box-shadow:0 22px 44px -26px rgba(59,31,92,.55); border-color:rgba(59,31,92,.2); }
+.step:hover::before{ transform:scaleY(1); }
+.step__no{
+  font-size:13px; font-weight:800; letter-spacing:.16em; color:var(--gold-deep);
+  display:block; margin-bottom:var(--s2);
+}
+.step h3{ font-size:18px; font-weight:800; color:var(--deep-700); letter-spacing:-.025em; }
+.step p{ margin-top:8px; font-size:14px; line-height:1.65; color:#63537F; }
+.steps__note{
+  margin-top:var(--s3); padding:16px 20px; border-radius:var(--r-sm);
+  background:rgba(59,31,92,.06); border:1px dashed rgba(59,31,92,.24);
+  font-size:14px; color:var(--deep-700); font-weight:600; text-align:center;
+}
+.steps__note .gold{ color:var(--gold-deep); }
+
+/* --- 차량 카드 5종 ------------------------------------------ */
+.fleet{ display:grid; gap:var(--s3); }
+@media(min-width:640px){ .fleet{ grid-template-columns:repeat(2,1fr); } }
+@media(min-width:1024px){
+  .fleet{ grid-template-columns:repeat(6,1fr); }
+  .fleet > *{ grid-column:span 2; }
+  .fleet > *:nth-child(4){ grid-column:2 / span 2; }
+  .fleet > *:nth-child(5){ grid-column:4 / span 2; }
+}
+.bus{
+  display:flex; flex-direction:column; overflow:hidden;
+  background:linear-gradient(178deg, rgba(76,42,116,.42), rgba(26,21,35,.7));
+  border:1px solid var(--line); border-radius:var(--r-md);
+  transition:transform var(--t), border-color var(--t), box-shadow var(--t);
+}
+.bus:hover{ transform:translateY(-6px); border-color:rgba(212,168,67,.45); box-shadow:var(--shadow-lift); }
+.bus__ph{ position:relative; aspect-ratio:16/10; overflow:hidden; background:var(--deep-800); }
+.bus__ph img{
+  width:100%; height:100%; object-fit:cover;
+  filter:saturate(1.06) contrast(1.04) brightness(.92);
+  transition:transform var(--t-slow);
+}
+.bus:hover .bus__ph img{ transform:scale(1.07); }
+.bus__ph::after{
+  content:''; position:absolute; inset:0;
+  background:linear-gradient(180deg, rgba(59,31,92,.18) 0%, rgba(26,21,35,.28) 45%, rgba(26,21,35,.92) 100%);
+}
+.bus__seat{
+  position:absolute; left:12px; top:12px; z-index:1;
+  font-size:12px; font-weight:800; letter-spacing:.02em; color:var(--deep-950);
+  background:var(--gold); border-radius:999px; padding:4px 11px;
+}
+.bus__body{ padding:var(--s3); display:flex; flex-direction:column; gap:14px; flex:1; }
+.bus__name{ font-size:18px; font-weight:800; color:#fff; letter-spacing:-.025em; }
+.bus__spec{ font-size:13px; color:var(--lav-300); line-height:1.6; }
+.bus__price{
+  margin-top:auto; padding-top:14px; border-top:1px solid var(--line);
+  display:flex; align-items:flex-end; justify-content:space-between; gap:10px;
+}
+.bus__price .tag{ font-size:10.5px; font-weight:800; letter-spacing:.14em; color:var(--gold); text-transform:uppercase; }
+.bus__price .num{ font-size:23px; font-weight:800; color:#fff; letter-spacing:-.035em; font-variant-numeric:tabular-nums; }
+.bus__price .num small{ font-size:13px; font-weight:600; color:var(--lav-300); margin-left:2px; letter-spacing:0; }
+.bus__price .basis{ font-size:11px; color:var(--lav-300); text-align:right; line-height:1.45; }
+.fleet__disc{
+  margin-top:var(--s3); font-size:12.5px; color:var(--lav-300); text-align:center;
+}
+.fleet__disc b{ color:var(--gold); font-weight:700; }
+
+/* --- 강점 그리드 -------------------------------------------- */
+.perks{ display:grid; gap:var(--s2); }
+@media(min-width:640px){ .perks{ grid-template-columns:repeat(2,1fr); gap:var(--s3); } }
+@media(min-width:1024px){ .perks{ grid-template-columns:repeat(3,1fr); } }
+.perk{
+  padding:var(--s3); border-radius:var(--r-md);
+  background:var(--glass); border:1px solid var(--line);
+  transition:background var(--t), border-color var(--t), transform var(--t);
+}
+.perk:hover{ background:rgba(124,58,237,.12); border-color:rgba(212,168,67,.4); transform:translateY(-3px); }
+.perk__ico{
+  width:44px; height:44px; border-radius:12px; display:grid; place-items:center;
+  background:linear-gradient(150deg, rgba(212,168,67,.22), rgba(124,58,237,.22));
+  border:1px solid var(--line-str); margin-bottom:var(--s2);
+}
+.perk__ico svg{ width:22px; height:22px; stroke:var(--gold); fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+.perk h3{ font-size:16.5px; font-weight:800; color:#fff; letter-spacing:-.02em; }
+.perk p{ margin-top:7px; font-size:13.5px; line-height:1.65; color:var(--lav-300); }
+
+.optbar{
+  margin-top:var(--s3); display:grid; gap:var(--s3);
+  padding:var(--s3); border-radius:var(--r-md);
+  background:linear-gradient(110deg, rgba(124,58,237,.16), rgba(26,21,35,.5));
+  border:1px solid var(--line);
+}
+@media(min-width:900px){ .optbar{ grid-template-columns:repeat(2,1fr); gap:var(--s6); padding:var(--s4); } }
+.optbar h4{ font-size:12px; font-weight:800; letter-spacing:.14em; text-transform:uppercase; color:var(--gold); margin-bottom:12px; }
+.chips{ display:flex; flex-wrap:wrap; gap:8px; }
+.chips span{
+  font-size:13px; padding:7px 13px; border-radius:999px;
+  background:rgba(255,255,255,.06); border:1px solid var(--line); color:var(--lav-200);
+  transition:border-color var(--t-fast), color var(--t-fast);
+}
+.chips span:hover{ border-color:var(--gold); color:#fff; }
+
+/* --- 갤러리 프리뷰 (soul #7) -------------------------------- */
+.gal{ display:grid; gap:12px; grid-template-columns:1fr; }
+.gal figure{
+  position:relative; margin:0; overflow:hidden; border-radius:var(--r-md);
+  border:1px solid var(--line); min-height:200px;
+}
+.gal img{
+  width:100%; height:100%; object-fit:cover; position:absolute; inset:0;
+  filter:saturate(1.05) contrast(1.04) brightness(.9);
+  transition:transform var(--t-slow), filter var(--t);
+}
+/* bus-06은 세피아 원본 → 톤 보정 후 퍼플 오버레이로 통일 */
+.gal .is-sepia img{ filter:saturate(.62) hue-rotate(-16deg) brightness(.9) contrast(1.12); }
+.gal figure::after{
+  content:''; position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(180deg, rgba(59,31,92,.22), rgba(26,21,35,.78));
+  transition:opacity var(--t);
+}
+.gal .is-sepia::after{ background:linear-gradient(180deg, rgba(76,42,116,.5), rgba(26,21,35,.8)); }
+.gal figure:hover img{ transform:scale(1.06); filter:saturate(1.15) contrast(1.06) brightness(1); }
+.gal figure:hover::after{ opacity:.7; }
+.gal figcaption{
+  position:absolute; left:16px; right:16px; bottom:14px; z-index:1;
+  font-size:13.5px; font-weight:700; color:#fff; letter-spacing:-.01em;
+  display:flex; align-items:center; gap:8px;
+}
+.gal figcaption span{
+  font-size:10.5px; font-weight:800; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--gold); border:1px solid rgba(212,168,67,.4); border-radius:999px; padding:2px 8px;
+}
+.gal .g-tall{ min-height:260px; }
+@media(min-width:640px){ .gal{ grid-template-columns:repeat(2,1fr); } }
+@media(min-width:1024px){
+  .gal{ grid-template-columns:repeat(4,1fr); grid-auto-rows:230px; }
+  .gal figure{ min-height:0; }
+  .gal .g-a{ grid-column:span 2; }
+  .gal .g-tall{ grid-column:3; grid-row:1 / span 2; min-height:0; }
+  .gal .g-b{ grid-column:4; }
+  .gal .g-c{ grid-column:1 / span 2; }
+  .gal .g-d{ grid-column:4; }
+}
+
+/* --- 공지 + 고객센터 ---------------------------------------- */
+.notice-grid{ display:grid; gap:var(--s3); }
+@media(min-width:1024px){ .notice-grid{ grid-template-columns:minmax(0,1.5fr) minmax(0,1fr); gap:var(--s6); } }
+.notices li a{
+  display:flex; align-items:baseline; gap:var(--s2); flex-wrap:wrap;
+  padding:18px 4px; border-bottom:1px solid rgba(59,31,92,.14);
+  transition:background var(--t-fast), padding-left var(--t-fast);
+}
+.notices li:first-child a{ border-top:1px solid rgba(59,31,92,.14); }
+.notices li a:hover{ background:rgba(59,31,92,.05); padding-left:12px; }
+.notices .cat{
+  font-size:11px; font-weight:800; letter-spacing:.06em; color:var(--gold-deep);
+  border:1px solid rgba(168,127,44,.4); border-radius:999px; padding:2px 9px; flex:0 0 auto;
+}
+.notices .ttl{ font-size:15px; font-weight:700; color:var(--deep-700); letter-spacing:-.02em; flex:1 1 220px; }
+.notices .date{ font-size:12.5px; color:#7C6B96; font-variant-numeric:tabular-nums; margin-left:auto; }
+
+.cscard{
+  padding:var(--s4); border-radius:var(--r-md); color:var(--lav-100);
+  background:linear-gradient(155deg, var(--deep-500), var(--deep-900));
+  box-shadow:var(--shadow-card); position:relative; overflow:hidden;
+}
+.cscard::after{
+  content:''; position:absolute; right:-60px; top:-60px; width:190px; height:190px; border-radius:50%;
+  background:radial-gradient(circle, rgba(212,168,67,.28), transparent 68%);
+}
+.cscard h3{ font-size:20px; font-weight:800; color:#fff; letter-spacing:-.03em; }
+.cscard p{ margin-top:8px; font-size:13.5px; color:var(--lav-300); line-height:1.6; }
+.cslist{ margin-top:var(--s3); display:grid; gap:12px; position:relative; }
+.cslist div{ display:flex; align-items:baseline; justify-content:space-between; gap:var(--s2); padding-bottom:11px; border-bottom:1px solid var(--line); }
+.cslist dt, .cslist .k{ font-size:12.5px; color:var(--lav-300); letter-spacing:.04em; }
+.cslist .v{ font-size:16px; font-weight:800; color:#fff; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
+.cscard .btn{ margin-top:var(--s3); position:relative; }
+
+/* --- Footer ------------------------------------------------ */
+.ftr{ background:var(--deep-950); border-top:1px solid var(--line); padding-block:var(--s7) var(--s5); }
+.ftr__grid{ display:grid; gap:var(--s5); }
+@media(min-width:900px){ .ftr__grid{ grid-template-columns:minmax(0,1.4fr) repeat(2,minmax(0,1fr)); gap:var(--s7); } }
+.ftr h4{ font-size:12px; font-weight:800; letter-spacing:.14em; text-transform:uppercase; color:var(--gold); margin-bottom:var(--s2); }
+.ftr__menu{ display:grid; gap:11px; }
+.ftr__menu a{ font-size:14.5px; color:var(--lav-300); transition:color var(--t-fast), transform var(--t-fast); width:fit-content; }
+.ftr__menu a:hover{ color:var(--gold); transform:translateX(3px); }
+.ftr__tel{ font-size:clamp(28px,4.4vw,38px); font-weight:800; letter-spacing:-.04em; color:#fff; line-height:1.1; margin-top:var(--s2); display:block; }
+.ftr__tel:hover{ color:var(--gold); }
+.ftr__sub{ font-size:13px; color:var(--lav-300); margin-top:10px; line-height:1.8; }
+.ftr__sub b{ color:var(--lav-200); font-weight:600; }
+.ftr__co{
+  margin-top:var(--s6); padding-top:var(--s3); border-top:1px solid var(--line);
+  font-size:12.5px; line-height:1.9; color:#8B7BA8;
+}
+.ftr__co b{ color:var(--lav-200); font-weight:700; }
+.ftr__co .row{ display:flex; flex-wrap:wrap; gap:4px 14px; }
+.ftr__legal{ margin-top:var(--s3); font-size:12px; color:#6E5F8A; }
+
+/* --- Floating / mobile bar --------------------------------- */
+.float{
+  position:fixed; right:20px; bottom:20px; z-index:70;
+  display:none; align-items:center; gap:10px;
+  padding:14px 22px 14px 18px; border-radius:999px;
+  background:linear-gradient(120deg, var(--gold), var(--gold-soft));
+  color:var(--deep-950); font-weight:800; font-size:16px; letter-spacing:-.02em;
+  box-shadow:0 18px 44px -14px rgba(212,168,67,.6), 0 4px 12px rgba(0,0,0,.3);
+  transition:transform var(--t), box-shadow var(--t);
+}
+.float:hover{ transform:translateY(-3px) scale(1.02); box-shadow:0 26px 56px -16px rgba(212,168,67,.75); }
+.float svg{ width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; }
+.float small{ display:block; font-size:10.5px; font-weight:700; letter-spacing:.1em; opacity:.72; }
+@media(min-width:768px){ .float{ display:inline-flex; } }
+
+.mbar{
+  position:fixed; left:0; right:0; bottom:0; z-index:70;
+  display:grid; grid-template-columns:1fr 1.25fr; gap:8px;
+  padding:10px 12px calc(10px + env(safe-area-inset-bottom));
+  background:rgba(16,13,24,.94); backdrop-filter:blur(14px);
+  border-top:1px solid var(--line);
+}
+@media(min-width:768px){ .mbar{ display:none; } }
+.mbar .btn{ min-height:50px; font-size:15px; }
+
+/* --- Reveal ------------------------------------------------ */
+.rv{ opacity:0; transform:translateY(22px); transition:opacity .7s var(--ease), transform .7s var(--ease); }
+.rv.in{ opacity:1; transform:none; }
+@media(prefers-reduced-motion:reduce){
+  .rv{ opacity:1; transform:none; transition:none; }
+  *{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
+}
+body{ padding-bottom:0; }
+@media(max-width:767px){ body{ padding-bottom:74px; } }
+</style>
+</head>
+<body>
+
+<!-- ================= HEADER ================= -->
+<header class="hdr" id="hdr">
+  <div class="wrap hdr__inner">
+    <a class="logo" href="#top" aria-label="베스트투어 홈">
+      <svg class="logo__mark" viewBox="0 0 40 40" aria-hidden="true">
+        <path d="M20 3c3 0 5.4 3.1 5.4 7s-2.4 7-5.4 7-5.4-3.1-5.4-7S17 3 20 3Z"/>
+        <path d="M35.2 14.4c.9 2.9-1.2 6.3-4.9 7.5s-7.3-.1-8.2-3 1.2-6.3 4.9-7.5 7.3.1 8.2 3Z"/>
+        <path d="M29.4 32.6c-2.4 1.8-6.2.7-8.5-2.5s-2.2-7.1.2-8.9 6.2-.7 8.5 2.5 2.2 7.1-.2 8.9Z"/>
+        <path d="M10.6 32.6c-2.4-1.8-2.5-5.7-.2-8.9s6.1-4.3 8.5-2.5 2.5 5.7.2 8.9-6.1 4.3-8.5 2.5Z"/>
+        <path d="M4.8 14.4c.9-2.9 4.5-4.2 8.2-3s5.8 4.6 4.9 7.5-4.5 4.2-8.2 3-5.8-4.6-4.9-7.5Z"/>
+        <circle cx="20" cy="21" r="3.1"/>
+      </svg>
+      <span class="logo__txt">best<span>tour</span></span>
+      <span class="logo__ko">전세버스 대절</span>
+    </a>
+
+    <nav class="nav" aria-label="주요 메뉴">
+      <a href="#company">회사소개</a>
+      <a href="#fleet">차량소개</a>
+      <a href="#" onclick="alert('견적 위저드는 시안 선택 후 제작됩니다'); return false;">견적요청</a>
+      <a href="#gallery">갤러리</a>
+      <a href="#notice">고객센터</a>
+      <a href="#" onclick="alert('견적 위저드는 시안 선택 후 제작됩니다'); return false;">예약확인</a>
+    </nav>
+
+    <div class="hdr__cta">
+      <a class="hdr__tel" href="tel:1566-6188">
+        <b>1566-6188</b>
+        <small>대표전화 · 연중무휴</small>
+      </a>
+      <a class="btn btn--sm" href="#" onclick="alert('견적 위저드는 시안 선택 후 제작됩니다'); return false;">1분 견적내기</a>
+    </div>
+
+    <button class="burger" id="burger" aria-label="메뉴 열기" aria-expanded="false" aria-controls="drawer">
+      <i></i><i></i><i></i>
+    </button>
+  </div>
+
+  <div class="drawer" id="drawer">
+    <div class="drawer__in">
+      <div class="wrap">
+        <nav aria-label="모바일 메뉴">
+          <a href="#company">회사소개</a>
+          <a href="#fleet">차량소개</a>
+          <a href="#" onclick="alert('견적 위저드는 시안 선택 후 제작됩니다'); return false;">견적요청</a>
+          <a href="#gallery">갤러리</a>
+          <a href="#notice">고객센터</a>
+          <a href="#" onclick="alert('견적 위저드는 시안 선택 후 제작됩니다'); return false;">예약확인</a>
+        </nav>
+        <a class="btn btn--block" href="tel:1566-6188" style="margin-bottom:24px">대표전화 1566-6188</a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+
+<!-- ================= HERO ================= -->
+<section class="hero" aria-label="견적 시작">
+  <div class="hero__bg" aria-hidden="true">
+    <img src="assets/bus-03.jpg" alt="" />
+  </div>
+
+  <div class="wrap hero__grid">
+    <div>
+      <p class="hero__eyebrow">
+        <span class="dot-live" aria-hidden="true"></span>
+        경기 고양 · 합자회사 베스트투어 · 보라색버스
+      </p>
+
+      <h1>전세버스 견적,<br /><em>1분</em>이면 충분합니다</h1>
+
+      <p class="hero__sub">
+        45인승부터 16인승까지 <b>차량 5종</b>. 출발지·도착지·날짜만 고르면
+        <b>예상가가 바로</b> 나옵니다. 거대한 신청서도, 기다림도 없습니다.
+      </p>
+
+      <div class="hero__actions">
+        <a class="btn btn--lg" href="#" onclick="alert('견적 위저드는 시안 선택 후 제작됩니다'); return false;">지금 견적 시작하기</a>
+        <a class="btn btn--lg btn--ghost" href="#fleet">차량 5종 살펴보기</a>
+      </div>
+
+      <!-- 스탯 블록 (soul #4) -->
+      <div class="stats">
+        <div class="stat">
+          <b><span class="cnt" data-to="13">0</span><i>년</i></b>
+          <span>전세버스 운행 경력</span>
+        </div>
+        <div class="stat">
+          <b><span class="cnt" data-to="4800">0</span><i>+</i></b>
+          <span>누적 견적 건수</span>
+        </div>
+        <div class="stat">
+          <b><span class="cnt" data-to="5">0</span><i>종</i></b>
+          <span>16~45인승 차량</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 견적 위젯 카드 (soul #1) -->
+    <aside class="quote" aria-label="빠른 견적 위젯">
+      <div class="quote__hd">
+        <div>
+          <h2>1분 견적</h2>
+          <p>4개만 고르면 예상가가 나옵니다</p>
+        </div>
+        <span class="quote__badge">실시간</span>
+      </div>
+
+      <form class="quote__form" id="qform" onsubmit="return false;">
+        <div class="field">
+          <label for="q-from">출발지</label>
+          <div class="ctrl">
+            <select id="q-from">
+              <option>서울</option><option>부산</option><option>대구</option><option>인천</option>
+              <option>광주</option><option>대전</option><option>울산</option><option selected>경기</option>
+              <option>강원</option><option>충북</option><option>충남</option><option>전북</option>
+              <option>전남</option><option>경북</option><option>경남</option><option>제주</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="q-to">도착지</label>
+          <div class="ctrl">
+            <select id="q-to">
+              <option>서울</option><option>부산</option><option>대구</option><option>인천</option>
+              <option>광주</option><option>대전</option><option>울산</option><option>경기</option>
+              <option selected>강원</option><option>충북</option><option>충남</option><option>전북</option>
+              <option>전남</option><option>경북</option><option>경남</option><option>제주</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field field--date">
+          <label for="q-date">출발일</label>
+          <div class="ctrl">
+            <input type="date" id="q-date" value="2026-08-14" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="q-bus">차량</label>
+          <div class="ctrl">
+            <select id="q-bus">
+              <option value="650000" selected>45인승 관광버스</option>
+              <option value="550000">35인승 관광버스</option>
+              <option value="600000">28인승 우등리무진</option>
+              <option value="480000">25인승 관광버스</option>
+              <option value="400000">16인승 관광버스</option>
+            </select>
+          </div>
+        </div>
+      </form>
+
+      <div class="quote__price">
+        <span class="lbl"><b>예상가</b>당일왕복 기준</span>
+        <span class="val" id="q-price">650,000원</span>
+      </div>
+
+      <div class="quote__foot">
+        <a class="btn btn--block btn--lg" href="#" onclick="alert('견적 위저드는 시안 선택 후 제작됩니다'); return false;">예상가 확인하고 예약 걸기</a>
+        <p class="quote__note">
+          <b>실제 견적은 확정 시 안내</b>드립니다. 온라인 결제는 없습니다 —<br />
+          사장님 확정 후 연락드리며, 확정된 예약만 결제 진행됩니다.
+        </p>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ================= 실시간 견적현황 ================= -->
+<section class="section section--tight tone-deepest" aria-labelledby="live-h">
+  <div class="wrap live__top rv">
+    <div>
+      <p class="eyebrow">01 — 실시간 견적현황</p>
+      <h2 class="h2" id="live-h">방금 <span class="gold">견적 받은</span> 분들</h2>
+    </div>
+    <p class="live__count"><span class="dot-live" aria-hidden="true"></span> 오늘 접수 <b>17</b>건 · 이번 주 <b>103</b>건</p>
+  </div>
+
+  <div class="ticker rv" aria-label="최근 견적 접수 내역 1">
+    <div class="ticker__track" id="track-1"></div>
+  </div>
+  <div class="ticker ticker--rev rv" aria-label="최근 견적 접수 내역 2">
+    <div class="ticker__track" id="track-2"></div>
+  </div>
+</section>
+
+<!-- ================= 이용 방법 4단계 ================= -->
+<section class="section tone-light" aria-labelledby="how-h">
+  <div class="wrap">
+    <div class="sec-head sec-head--split rv">
+      <div>
+        <p class="eyebrow">02 — 이용 방법</p>
+        <h2 class="h2" id="how-h">신청부터 결제까지,<br />단 <span class="gold">네 단계</span></h2>
+      </div>
+      <p class="lead">복잡한 절차는 저희가 대신합니다. 고객님은 차량과 일정만 고르시면 됩니다.</p>
+    </div>
+
+    <ol class="steps">
+      <li class="step rv">
+        <span class="step__no">01</span>
+        <h3>견적 신청</h3>
+        <p>차량 종류, 출발지·도착지, 날짜와 시간, 대수·인원을 고르면 예상 가격이 바로 표시됩니다.</p>
+      </li>
+      <li class="step rv">
+        <span class="step__no">02</span>
+        <h3>사장님 확정</h3>
+        <p>대표가 직접 배차 가능 여부를 확인하고 예약을 확정합니다. 자동 배정이 아닙니다.</p>
+      </li>
+      <li class="step rv">
+        <span class="step__no">03</span>
+        <h3>알림 · 연락</h3>
+        <p>견적확인방법으로 선택하신 핸드폰·전화·팩스·이메일 중 원하시는 경로로 안내드립니다.</p>
+      </li>
+      <li class="step rv">
+        <span class="step__no">04</span>
+        <h3>결제</h3>
+        <p>확정된 예약만 결제가 진행됩니다. 현금·카드·세금계산서 발행 중 선택하실 수 있습니다.</p>
+      </li>
+    </ol>
+
+    <p class="steps__note rv">사장님 확정 후 연락드리며, <span class="gold">확정된 예약만</span> 결제 진행됩니다.</p>
+  </div>
+</section>
+
+<!-- ================= 차량 카드 5종 ================= -->
+<section class="section tone-mid" id="fleet" aria-labelledby="fleet-h">
+  <div class="wrap">
+    <div class="sec-head sec-head--split rv">
+      <div>
+        <p class="eyebrow">03 — 차량소개</p>
+        <h2 class="h2" id="fleet-h">보라색버스 <span class="gold">5종</span>,<br />가격까지 열어둡니다</h2>
+      </div>
+      <p class="lead">아래 예상가는 당일왕복 · 서울→강원 노선 기준입니다. 편도는 60%, 1박2일은 1.8배로 계산됩니다.</p>
+    </div>
+
+    <div class="fleet">
+      <!-- 45인승 -->
+      <article class="bus rv">
+        <div class="bus__ph">
+          <span class="bus__seat">45인승</span>
+          <img src="assets/bus-01.jpg" alt="45인승 관광버스 — 보라색 베스트투어 대형 버스" loading="lazy" />
+        </div>
+        <div class="bus__body">
+          <h3 class="bus__name">45인승 관광버스</h3>
+          <p class="bus__spec">단체 워크샵·현장학습·종교단체 이동에 가장 많이 찾는 대형 차량. DVD·노래방 시스템 완비.</p>
+          <div class="bus__price">
+            <div>
+              <span class="tag">예상가</span>
+              <div class="num">650,000<small>원</small></div>
+            </div>
+            <p class="basis">당일왕복 기준<br />실제 견적은 확정 시 안내</p>
+          </div>
+          <a class="btn btn--block btn--sm" href="#" onclick="alert('견적 위저드는 시안 선택 후 제작됩니다'); return false;">이 차량으로 견적</a>
+        </div>
+      </article>
+
+      <!-- 35인승 -->
+      <article class="bus rv">
+        <div class="bus__ph">
+          <span class="bus__seat">35인승</span>
+          <img src="assets/bus-04.jpg" alt="35인승 관광버스 — 보라색 베스트투어 버스 측면" loading="lazy" />
+        </div>
+        <div class="bus__body">
+          <h3 class="bus__name">35인승 관광버스</h3>
+          <p class="bus__spec">중형 단체에 알맞은 크기. 친목회·가족여행·통근 운행까지 폭넓게 운용합니다.</p>
+          <div class="bus__price">
+            <div>
+              <span class="tag">예상가</span>
+              <div class="num">550,000<small>원</small></div>
+            </div>
+            <p class="basis">당일왕복 기준<br />실제 견적은 확정 시 안내</p>
+          </div>
+          <a class="btn btn--block btn--sm" href="#" onclick="alert('견적 위저드는 시안 선택 후 제작됩니다'); return false;">이 차량으로 견적</a>
+        </div>
+      </article>
+
+      <!-- 28인승 -->
+      <article class="bus rv">
+        <div class="bus__ph">
+          <span class="bus__seat">28인승</span>
+          <img src="assets/bus-03.jpg" alt="28인승 우등리무진 — 야간 대기 중인 베스트투어 차량" loading="lazy" />
+        </div>
+        <div class="bus__body">
+          <h3 class="bus__name">28인승 우등리무진</h3>
+          <p class="bus__spec">넓은 좌석 간격의 우등 시트. 외국인 의전·관광, 관혼상제 등 격이 필요한 일정에 추천합니다.</p>
+          <div class="bus__price">
+            <div>
+              <span class="tag">예상가</span>
+              <div class="num">600,000<small>원</small></div>
+            </div>
+            <p class="basis">당일왕복 기준<br />실제 견적은 확정 시 안내</p>
+          </div>
+          <a class="btn btn--block btn--sm" href="#" onclick="alert('견적 위저드는 시안 선택 후 제작됩니다'); return false;">이 차량으로 견적</a>
+        </div>
+      </article>
+
+      <!-- 25인승 -->
+      <article class="bus rv">
+        <div class="bus__ph">
+          <span class="bus__seat">25인승</span>
+          <img src="assets/bus-02.jpg" alt="25인승 관광버스 — 베스트투어 차고지에 정차한 보라색 버스들" loading="lazy" />
+        </div>
+        <div class="bus__body">
+          <h3 class="bus__name">25인승 관광버스</h3>
+          <p class="bus__spec">소규모 단체의 합리적인 선택. 대학MT·워크샵 등 20명 안팎 일정에 적합합니다.</p>
+          <div class="bus__price">
+            <div>
+              <span class="tag">예상가</span>
+              <div class="num">480,000<small>원</small></div>
+            </div>
+            <p class="basis">당일왕복 기준<br />실제 견적은 확정 시 안내</p>
+          </div>
+          <a class="btn btn--block btn--sm" href="#" onclick="alert('견적 위저드는 시안 선택 후 제작됩니다'); return false;">이 차량으로 견적</a>
+        </div>
+      </article>
+
+      <!-- 16인승 -->
+      <article class="bus rv">
+        <div class="bus__ph">
+          <span class="bus__seat">16인승</span>
+          <img src="assets/bus-05.jpg" alt="16인승 관광버스 — 도심 야경 속 보라색 소형 버스" loading="lazy" />
+        </div>
+        <div class="bus__body">
+          <h3 class="bus__name">16인승 관광버스</h3>
+          <p class="bus__spec">공항픽업과 소규모 이동에 최적. 골목길 진입이 편해 도심 일정에 강합니다.</p>
+          <div class="bus__price">
+            <div>
+              <span class="tag">예상가</span>
+              <div class="num">400,000<small>원</small></div>
+            </div>
+            <p class="basis">당일왕복 기준<br />실제 견적은 확정 시 안내</p>
+          </div>
+          <a class="btn btn--block btn--sm" href="#" onclick="alert('견적 위저드는 시안 선택 후 제작됩니다'); return false;">이 차량으로 견적</a>
+        </div>
+      </article>
+    </div>
+
+    <p class="fleet__disc rv"><b>예상가</b> · 당일왕복 서울→강원 노선 기준 / 편도 60% · 1박2일 1.8배 · 실제 견적은 확정 시 안내드립니다.</p>
+  </div>
+</section>
+
+<!-- ================= 강점 그리드 ================= -->
+<section class="section tone-dark" id="company" aria-labelledby="perk-h">
+  <div class="wrap">
+    <div class="sec-head sec-head--split rv">
+      <div>
+        <p class="eyebrow">04 — 베스트투어 강점</p>
+        <h2 class="h2" id="perk-h">타는 순간부터 <span class="gold">다릅니다</span></h2>
+      </div>
+      <p class="lead">13년간 보라색버스를 운행하며 쌓은 기준. 차량 안의 편의부터 계약 조건의 투명함까지 챙깁니다.</p>
+    </div>
+
+    <div class="perks">
+      <div class="perk rv">
+        <div class="perk__ico"><svg viewBox="0 0 24 24"><rect x="2.5" y="4.5" width="19" height="13" rx="2"/><path d="M8 21h8M12 17.5V21"/><path d="m10.5 9 4 2.3-4 2.3z"/></svg></div>
+        <h3>DVD · 노래방 시스템</h3>
+        <p>전 차량 영상·음향 장비 완비. 이동 시간이 곧 단체 일정의 일부가 됩니다.</p>
+      </div>
+
+      <div class="perk rv">
+        <div class="perk__ico"><svg viewBox="0 0 24 24"><rect x="5" y="2.5" width="14" height="19" rx="2.5"/><path d="M5 10h14M9 6h1M9 14h1"/></svg></div>
+        <h3>냉장고 · 정수기</h3>
+        <p>장거리 운행에도 시원한 음료와 물을 상시 이용하실 수 있습니다.</p>
+      </div>
+
+      <div class="perk rv">
+        <div class="perk__ico"><svg viewBox="0 0 24 24"><path d="M5 18v-6.5A2.5 2.5 0 0 1 7.5 9H10l1-4.5h3l1 4.5h1.5A2.5 2.5 0 0 1 19 11.5V18"/><path d="M4 18h16M8 18v2M16 18v2"/></svg></div>
+        <h3>28인승 우등리무진</h3>
+        <p>넓은 좌석 간격의 우등 시트. 의전·관광 일정에 어울리는 이동 환경.</p>
+      </div>
+
+      <div class="perk rv">
+        <div class="perk__ico"><svg viewBox="0 0 24 24"><path d="M12 2.8 4.5 6v6.2c0 4.6 3.1 7.9 7.5 9 4.4-1.1 7.5-4.4 7.5-9V6z"/><path d="m9 12 2.2 2.2L15.5 10"/></svg></div>
+        <h3>전 차량 종합보험</h3>
+        <p>보험 내용을 차량소개 페이지에 그대로 공개합니다. 확인하고 타십시오.</p>
+      </div>
+
+      <div class="perk rv">
+        <div class="perk__ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9S14.5 18.4 12 21c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3"/></svg></div>
+        <h3>전국 16개 시도 운행</h3>
+        <p>서울부터 제주까지. 왕복 · 편도 · 편도·편도 중 운행 구분을 고르실 수 있습니다.</p>
+      </div>
+
+      <div class="perk rv">
+        <div class="perk__ico"><svg viewBox="0 0 24 24"><path d="M5 3.5h14v17l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M9 8.5h6M9 12.5h6M9 16h3"/></svg></div>
+        <h3>투명한 차량운임료</h3>
+        <p>주차료 포함 여부, VAT 10% 포함 여부까지 견적서에 명시합니다. 나중에 붙는 금액이 없습니다.</p>
+      </div>
+    </div>
+
+    <div class="optbar rv">
+      <div>
+        <h4>견적확인방법</h4>
+        <div class="chips"><span>핸드폰</span><span>전화</span><span>팩스</span><span>이메일</span><span>답변메일받기</span></div>
+      </div>
+      <div>
+        <h4>계산방법 · 여행구분</h4>
+        <div class="chips"><span>현금</span><span>카드</span><span>세금계산서 발행</span><span>가족여행</span><span>관혼상제</span><span>워크샵</span><span>친목회</span><span>종교단체</span><span>공항픽업</span><span>대학MT</span><span>현장학습</span><span>외국인 의전·관광</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 갤러리 프리뷰 ================= -->
+<section class="section tone-mid" id="gallery" aria-labelledby="gal-h">
+  <div class="wrap">
+    <div class="sec-head sec-head--split rv">
+      <div>
+        <p class="eyebrow">05 — 갤러리</p>
+        <h2 class="h2" id="gal-h">보라색버스가<br />다녀온 <span class="gold">자리들</span></h2>
+      </div>
+      <p class="lead">전국 어디든 갑니다. 갤러리 게시판에서 더 많은 운행 사진을 보실 수 있습니다.</p>
+    </div>
+
+    <div class="gal">
+      <figure class="g-a rv">
+        <img src="assets/bus-01.jpg" alt="대학 캠퍼스 본관 앞에 정차한 45인승 보라색 관광버스" loading="lazy" />
+        <figcaption><span>대학 행사</span> 캠퍼스 단체 운행</figcaption>
+      </figure>
+      <figure class="g-tall rv">
+        <img src="assets/bus-05.jpg" alt="도심 야경 속 대기 중인 16인승 보라색 버스" loading="lazy" />
+        <figcaption><span>공항픽업</span> 도심 야간 배차</figcaption>
+      </figure>
+      <figure class="g-b rv">
+        <img src="assets/bus-03.jpg" alt="야간 터미널에 나란히 정차한 베스트투어 버스 3대" loading="lazy" />
+        <figcaption><span>단체 배차</span> 3대 동시 운행</figcaption>
+      </figure>
+      <figure class="g-c is-sepia rv">
+        <img src="assets/bus-06.jpg" alt="산사 앞마당에 정차한 보라색 관광버스" loading="lazy" />
+        <figcaption><span>종교단체</span> 사찰 순례 일정</figcaption>
+      </figure>
+      <figure class="g-d rv">
+        <img src="assets/bus-02.jpg" alt="차고지에 정렬된 베스트투어 보라색 버스 차량들" loading="lazy" />
+        <figcaption><span>차고지</span> 출발 전 점검</figcaption>
+      </figure>
+    </div>
+
+    <div style="text-align:center; margin-top:32px" class="rv">
+      <a class="btn btn--ghost" href="#gallery">갤러리 전체 보기</a>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 공지사항 + 고객센터 ================= -->
+<section class="section tone-light" id="notice" aria-labelledby="notice-h">
+  <div class="wrap notice-grid">
+    <div>
+      <div class="sec-head rv">
+        <p class="eyebrow">06 — 공지사항</p>
+        <h2 class="h2" id="notice-h">고객센터 <span class="gold">소식</span></h2>
+      </div>
+      <ul class="notices rv">
+        <li><a href="#notice"><span class="cat">공지</span><span class="ttl">2026 하계 성수기 45인승 배차 마감 임박 — 8월 주말 예약 서둘러 주세요</span><span class="date">2026-08-01</span></a></li>
+        <li><a href="#notice"><span class="cat">안내</span><span class="ttl">예약 확정 절차 안내 — 사장님 확정 후 연락, 확정된 예약만 결제 진행</span><span class="date">2026-07-15</span></a></li>
+        <li><a href="#notice"><span class="cat">공지</span><span class="ttl">전 차량 종합보험 갱신 완료 — 차량소개 페이지에서 보험내용 확인</span><span class="date">2026-06-20</span></a></li>
+        <li><a href="#notice"><span class="cat">안내</span><span class="ttl">차량운임료 안내 — 주차료 및 VAT 10% 포함 여부는 견적서에 별도 표기됩니다</span><span class="date">2026-05-08</span></a></li>
+        <li><a href="#notice"><span class="cat">공지</span><span class="ttl">28인승 우등리무진 배차 확대 운영 — 의전·관광 일정 문의 환영</span><span class="date">2026-04-02</span></a></li>
+      </ul>
+    </div>
+
+    <aside class="cscard rv">
+      <h3>고객센터</h3>
+      <p>견적·예약확인·이용안내 문의는 언제든 전화 주십시오. 대표가 직접 확인합니다.</p>
+      <div class="cslist">
+        <div><span class="k">대표전화</span><a class="v" href="tel:1566-6188">1566-6188</a></div>
+        <div><span class="k">직통</span><a class="v" href="tel:010-2048-8585">010-2048-8585</a></div>
+        <div><span class="k">팩스</span><span class="v">0303-3443-5252</span></div>
+        <div><span class="k">이메일</span><a class="v" href="mailto:bestour2013@naver.com" style="font-size:14px">bestour2013@naver.com</a></div>
+      </div>
+      <a class="btn btn--block" href="#" onclick="alert('견적 위저드는 시안 선택 후 제작됩니다'); return false;">예약확인 바로가기</a>
+    </aside>
+  </div>
+</section>
+
+</main>
+
+<!-- ================= FOOTER ================= -->
+<footer class="ftr">
+  <div class="wrap">
+    <div class="ftr__grid">
+      <div>
+        <a class="logo" href="#top" aria-label="베스트투어 홈">
+          <svg class="logo__mark" viewBox="0 0 40 40" aria-hidden="true">
+            <path d="M20 3c3 0 5.4 3.1 5.4 7s-2.4 7-5.4 7-5.4-3.1-5.4-7S17 3 20 3Z"/>
+            <path d="M35.2 14.4c.9 2.9-1.2 6.3-4.9 7.5s-7.3-.1-8.2-3 1.2-6.3 4.9-7.5 7.3.1 8.2 3Z"/>
+            <path d="M29.4 32.6c-2.4 1.8-6.2.7-8.5-2.5s-2.2-7.1.2-8.9 6.2-.7 8.5 2.5 2.2 7.1-.2 8.9Z"/>
+            <path d="M10.6 32.6c-2.4-1.8-2.5-5.7-.2-8.9s6.1-4.3 8.5-2.5 2.5 5.7.2 8.9-6.1 4.3-8.5 2.5Z"/>
+            <path d="M4.8 14.4c.9-2.9 4.5-4.2 8.2-3s5.8 4.6 4.9 7.5-4.5 4.2-8.2 3-5.8-4.6-4.9-7.5Z"/>
+            <circle cx="20" cy="21" r="3.1"/>
+          </svg>
+          <span class="logo__txt">best<span>tour</span></span>
+        </a>
+        <a class="ftr__tel" href="tel:1566-6188">1566-6188</a>
+        <p class="ftr__sub">
+          직통 <b>010-2048-8585</b> · 팩스 0303-3443-5252<br />
+          <b>bestour2013@naver.com</b><br />
+          KB국민은행 690101-00-050894
+        </p>
+      </div>
+
+      <div>
+        <h4>메뉴</h4>
+        <div class="ftr__menu">
+          <a href="#company">회사소개 · 인사말</a>
+          <a href="#company">찾아오시는 길</a>
+          <a href="#fleet">차량소개 · 보험내용</a>
+          <a href="#fleet">차량운임료</a>
+          <a href="#" onclick="alert('견적 위저드는 시안 선택 후 제작됩니다'); return false;">견적요청</a>
+          <a href="#" onclick="alert('견적 위저드는 시안 선택 후 제작됩니다'); return false;">예약확인</a>
+        </div>
+      </div>
+
+      <div>
+        <h4>고객센터</h4>
+        <div class="ftr__menu">
+          <a href="#notice">공지사항</a>
+          <a href="#notice">이용안내</a>
+          <a href="#gallery">갤러리</a>
+          <a href="#" onclick="alert('네이버 블로그 링크는 시안 확정 후 연결됩니다'); return false;">네이버 블로그</a>
+        </div>
+        <h4 style="margin-top:32px">사무소</h4>
+        <p class="ftr__sub" style="margin-top:0">
+          <b>본사</b> 경기도 고양시 일산동구 동국로 99-19<br />
+          <b>지사</b> 서울시 마포구 월드컵북로 23길 18
+        </p>
+      </div>
+    </div>
+
+    <div class="ftr__co">
+      <div class="row">
+        <span><b>합자회사 베스트투어</b></span>
+        <span>대표 <b>이승묵</b></span>
+        <span>사업자등록번호 130-86-77328</span>
+        <span>통신판매업신고 제 2020-고양일산동-1211호</span>
+      </div>
+      <div class="row" style="margin-top:4px">
+        <span>본사 경기도 고양시 일산동구 동국로 99-19</span>
+        <span>지사 서울시 마포구 월드컵북로 23길 18</span>
+        <span>대표전화 1566-6188</span>
+        <span>직통 010-2048-8585</span>
+        <span>팩스 0303-3443-5252</span>
+        <span>bestour2013@naver.com</span>
+        <span>KB국민은행 690101-00-050894</span>
+      </div>
+      <p class="ftr__legal">© 2026 합자회사 베스트투어. All rights reserved. — 본 페이지는 클라이언트 컨펌용 UIUX 시안입니다.</p>
+    </div>
+  </div>
+</footer>
+
+<!-- ================= 플로팅 ================= -->
+<a class="float" href="tel:1566-6188" aria-label="대표전화 1566-6188 걸기">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h3l1.5 4-2 1.4a12.5 12.5 0 0 0 6.1 6.1l1.4-2 4 1.5v3a2 2 0 0 1-2.2 2A17.5 17.5 0 0 1 4.5 5.7a2 2 0 0 1 2-2.2Z"/></svg>
+  <span>1566-6188<small>바로 전화 상담</small></span>
+</a>
+
+<div class="mbar">
+  <a class="btn btn--ghost" href="tel:1566-6188">전화 상담</a>
+  <a class="btn" href="#" onclick="alert('견적 위저드는 시안 선택 후 제작됩니다'); return false;">1분 견적 시작</a>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  /* ---- 헤더 스크롤 상태 ---- */
+  var hdr = document.getElementById('hdr');
+  var onScroll = function(){ hdr.classList.toggle('is-stuck', window.scrollY > 12); };
+  window.addEventListener('scroll', onScroll, { passive:true });
+  onScroll();
+
+  /* ---- 모바일 드로어 ---- */
+  var burger = document.getElementById('burger');
+  var drawer = document.getElementById('drawer');
+  burger.addEventListener('click', function(){
+    var open = drawer.classList.toggle('is-open');
+    burger.classList.toggle('is-open', open);
+    burger.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+  drawer.addEventListener('click', function(e){
+    if (e.target.tagName === 'A') {
+      drawer.classList.remove('is-open');
+      burger.classList.remove('is-open');
+      burger.setAttribute('aria-expanded','false');
+    }
+  });
+
+  /* ---- 견적 위젯 실시간 예상가 (soul.md §9 더미 요금표) ---- */
+  var busSel = document.getElementById('q-bus');
+  var priceEl = document.getElementById('q-price');
+  var fmt = function(n){ return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ','); };
+  var updatePrice = function(){
+    var v = parseInt(busSel.value, 10);
+    priceEl.classList.add('is-flip');
+    window.setTimeout(function(){
+      priceEl.textContent = fmt(v) + '원';
+      priceEl.classList.remove('is-flip');
+    }, 160);
+  };
+  busSel.addEventListener('change', updatePrice);
+
+  /* ---- 실시간 견적현황 티커 (soul.md §8 더미 12건) ---- */
+  var feed = [
+    ['한**','45인승 관광버스','2026-08-06'],
+    ['김**','28인승 우등리무진','2026-03-15'],
+    ['이**','35인승 관광버스','2026-04-22'],
+    ['박**','16인승 관광버스','2026-05-03'],
+    ['최**','25인승 관광버스','2026-03-28'],
+    ['정**','45인승 관광버스','2026-06-11'],
+    ['강**','28인승 우등리무진','2026-07-19'],
+    ['조**','35인승 관광버스','2026-04-09'],
+    ['윤**','16인승 관광버스','2026-08-02'],
+    ['임**','25인승 관광버스','2026-05-27'],
+    ['한**','45인승 관광버스','2026-06-30'],
+    ['오**','28인승 우등리무진','2026-07-05']
+  ];
+  var item = function(r){
+    var el = document.createElement('div');
+    el.className = 'tick';
+    el.innerHTML = '<span class="chip">견적완료</span><b>' + r[0] + '</b>' +
+                   '<i class="sep"></i><span>' + r[1] + '</span>' +
+                   '<i class="sep"></i><span class="d">' + r[2] + '</span>';
+    return el;
+  };
+  var fill = function(id, rows){
+    var track = document.getElementById(id);
+    for (var pass = 0; pass < 2; pass++) {
+      for (var i = 0; i < rows.length; i++) track.appendChild(item(rows[i]));
+    }
+  };
+  fill('track-1', feed.slice(0, 6));
+  fill('track-2', feed.slice(6));
+
+  /* ---- 스크롤 리빌 ---- */
+  var rvs = document.querySelectorAll('.rv');
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(en){
+        if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+    rvs.forEach(function(el, i){ el.style.transitionDelay = (Math.min(i % 6, 5) * 55) + 'ms'; io.observe(el); });
+  } else {
+    rvs.forEach(function(el){ el.classList.add('in'); });
+  }
+
+  /* ---- 스탯 카운트업 ---- */
+  var counts = document.querySelectorAll('.cnt');
+  var run = function(el){
+    var to = parseInt(el.getAttribute('data-to'), 10);
+    var start = null, dur = 1100;
+    var tick = function(ts){
+      if (!start) start = ts;
+      var p = Math.min((ts - start) / dur, 1);
+      var eased = 1 - Math.pow(1 - p, 3);
+      el.textContent = fmt(Math.round(to * eased));
+      if (p < 1) window.requestAnimationFrame(tick);
+    };
+    window.requestAnimationFrame(tick);
+  };
+  if ('IntersectionObserver' in window) {
+    var io2 = new IntersectionObserver(function(entries){
+      entries.forEach(function(en){
+        if (en.isIntersecting) { run(en.target); io2.unobserve(en.target); }
+      });
+    }, { threshold: 0.5 });
+    counts.forEach(function(el){ io2.observe(el); });
+  } else {
+    counts.forEach(function(el){ el.textContent = fmt(parseInt(el.getAttribute('data-to'),10)); });
+  }
+})();
+</script>
+</body>
+</html>
