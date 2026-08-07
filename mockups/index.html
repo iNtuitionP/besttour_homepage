@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>베스트투어 — 시안 비교 갤러리</title>
+<style>
+  :root {
+    --deep-purple: #3B1F5C;
+    --lavender-bg: #F3EFFA;
+    --gold: #D4A843;
+    --text-dark: #241537;
+    --text-muted: #6B5C82;
+    --card-bg: #FFFFFF;
+    --card-border: #E4DBF5;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--lavender-bg);
+    color: var(--text-dark);
+    line-height: 1.5;
+  }
+
+  header.page-header {
+    background: linear-gradient(135deg, var(--deep-purple) 0%, #55317F 100%);
+    color: #fff;
+    padding: 40px 24px 32px;
+    text-align: center;
+  }
+
+  header.page-header h1 {
+    margin: 0 0 8px;
+    font-size: clamp(24px, 4vw, 32px);
+    font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+
+  header.page-header p {
+    margin: 0;
+    color: #D9C9EE;
+    font-size: 15px;
+  }
+
+  header.page-header .gold-rule {
+    width: 56px;
+    height: 3px;
+    background: var(--gold);
+    margin: 16px auto 0;
+    border-radius: 2px;
+  }
+
+  main {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 32px 20px 80px;
+  }
+
+  .toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 20px;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+
+  .toolbar .hint {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .toolbar .hint .pin-icon-sample {
+    color: var(--gold);
+  }
+
+  #reset-pins {
+    border: 1px solid var(--card-border);
+    background: #fff;
+    color: var(--text-muted);
+    font-size: 13px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  #reset-pins:hover {
+    border-color: var(--deep-purple);
+    color: var(--deep-purple);
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+  }
+
+  @media (max-width: 760px) {
+    .grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(59, 31, 92, 0.06);
+    display: flex;
+    flex-direction: column;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, order 0.2s ease;
+    order: 2;
+  }
+
+  .card.pinned {
+    order: 1;
+    border: 2px solid var(--gold);
+    box-shadow: 0 4px 18px rgba(212, 168, 67, 0.28);
+  }
+
+  .preview-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    background: #EDE6F7;
+    overflow: hidden;
+    border-bottom: 1px solid var(--card-border);
+  }
+
+  .preview-wrap iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1280px;
+    height: 800px;
+    border: 0;
+    pointer-events: none;
+    transform-origin: top left;
+    /* scale set dynamically via CSS var, computed by JS based on card width */
+    transform: scale(var(--preview-scale, 0.25));
+  }
+
+  .preview-overlay-link {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    text-decoration: none;
+  }
+
+  .card-number {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background: rgba(59, 31, 92, 0.85);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 999px;
+    letter-spacing: 0.3px;
+    z-index: 3;
+    pointer-events: none;
+  }
+
+  .pin-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 3;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid var(--card-border);
+    background: rgba(255, 255, 255, 0.92);
+    color: var(--text-muted);
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+  }
+
+  .pin-btn:hover {
+    border-color: var(--gold);
+    color: var(--gold);
+    transform: scale(1.06);
+  }
+
+  .pin-btn.active {
+    background: var(--gold);
+    border-color: var(--gold);
+    color: #fff;
+  }
+
+  .card-body {
+    padding: 18px 20px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+  }
+
+  .card-body h2 {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--deep-purple);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .pinned-badge {
+    display: none;
+    font-size: 11px;
+    font-weight: 700;
+    color: #8A6A1A;
+    background: #FBEFD2;
+    border: 1px solid var(--gold);
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+
+  .card.pinned .pinned-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+
+  .card-body .mood {
+    margin: 0;
+    font-size: 13.5px;
+    color: var(--text-muted);
+    flex: 1;
+  }
+
+  .card-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 6px;
+  }
+
+  .btn-view {
+    flex: 1;
+    text-align: center;
+    text-decoration: none;
+    background: var(--deep-purple);
+    color: #fff;
+    font-size: 13.5px;
+    font-weight: 600;
+    padding: 10px 14px;
+    border-radius: 9px;
+    transition: background 0.15s ease;
+  }
+
+  .btn-view:hover {
+    background: #4E2C7A;
+  }
+
+  footer {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 12.5px;
+    padding: 24px 20px 40px;
+  }
+</style>
+</head>
+<body>
+
+<header class="page-header">
+  <h1>베스트투어 리디자인 — 시안 비교 갤러리</h1>
+  <p>6개 UI/UX 시안을 비교하고 마음에 드는 시안을 핀으로 고정해 보세요.</p>
+  <div class="gold-rule"></div>
+</header>
+
+<main>
+  <div class="toolbar">
+    <span class="hint"><span class="pin-icon-sample">★</span> 핀을 클릭하면 해당 시안이 목록 상단에 고정됩니다 (골드 테두리로 표시).</span>
+    <button id="reset-pins" type="button">핀 전체 초기화</button>
+  </div>
+
+  <div class="grid" id="mockup-grid">
+    <!-- cards injected by JS -->
+  </div>
+</main>
+
+<footer>
+  베스트투어 UI/UX 리디자인 프로젝트 · 시안 비교 갤러리
+</footer>
+
+<script>
+(function () {
+  var STORAGE_KEY = 'bestour-mockup-pins';
+
+  var variants = [
+    {
+      id: 'variant-01',
+      file: 'variant-01-deep-purple.html',
+      name: '시안 1 — 딥퍼플 프리미엄',
+      mood: '딥퍼플 몰입 배경 + 골드 액센트, 히어로 우측 견적 위젯'
+    },
+    {
+      id: 'variant-02',
+      file: 'variant-02-clean-white.html',
+      name: '시안 2 — 클린 화이트',
+      mood: '화이트 + 퍼플 절제 액센트, 대여백 에디토리얼, 중앙 견적 위젯'
+    },
+    {
+      id: 'variant-03',
+      file: 'variant-03-wizard-first.html',
+      name: '시안 3 — 위저드 퍼스트',
+      mood: '히어로 자체가 견적 위저드 1단계, 실시간 예상가 뱃지'
+    },
+    {
+      id: 'variant-04',
+      file: 'variant-04-photo-hero.html',
+      name: '시안 4 — 포토 히어로',
+      mood: '100vh 풀블리드 버스 사진 + 오버랩 견적 위젯 바'
+    },
+    {
+      id: 'variant-05',
+      file: 'variant-05-card-grid.html',
+      name: '시안 5 — 카드 그리드',
+      mood: '라벤더 배경 + 차량 카드 그리드, 견적현황 티커'
+    },
+    {
+      id: 'variant-06',
+      file: 'variant-06-dark-premium.html',
+      name: '시안 6 — 다크 프리미엄',
+      mood: '다크 + 골드 럭셔리, 필터 탭, 글래스 부킹 위젯'
+    }
+  ];
+
+  function loadPins() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return {};
+      var parsed = JSON.parse(raw);
+      return (parsed && typeof parsed === 'object') ? parsed : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function savePins(pins) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(pins));
+    } catch (e) {
+      /* localStorage unavailable; ignore silently */
+    }
+  }
+
+  var pins = loadPins();
+
+  var grid = document.getElementById('mockup-grid');
+
+  function buildCard(variant, index) {
+    var card = document.createElement('article');
+    card.className = 'card';
+    card.dataset.id = variant.id;
+    if (pins[variant.id]) card.classList.add('pinned');
+
+    var previewWrap = document.createElement('div');
+    previewWrap.className = 'preview-wrap';
+
+    var numberBadge = document.createElement('span');
+    numberBadge.className = 'card-number';
+    numberBadge.textContent = (index + 1) + ' / 6';
+    previewWrap.appendChild(numberBadge);
+
+    var iframe = document.createElement('iframe');
+    iframe.src = variant.file;
+    iframe.loading = 'lazy';
+    iframe.setAttribute('tabindex', '-1');
+    iframe.setAttribute('title', variant.name + ' 미리보기');
+    previewWrap.appendChild(iframe);
+
+    var overlayLink = document.createElement('a');
+    overlayLink.className = 'preview-overlay-link';
+    overlayLink.href = variant.file;
+    overlayLink.target = '_blank';
+    overlayLink.rel = 'noopener';
+    overlayLink.setAttribute('aria-label', variant.name + ' 전체 보기');
+    previewWrap.appendChild(overlayLink);
+
+    var pinBtn = document.createElement('button');
+    pinBtn.type = 'button';
+    pinBtn.className = 'pin-btn';
+    pinBtn.setAttribute('aria-label', '핀 고정 토글');
+    pinBtn.textContent = pins[variant.id] ? '★' : '☆';
+    if (pins[variant.id]) pinBtn.classList.add('active');
+    pinBtn.addEventListener('click', function () {
+      var nowPinned = !pins[variant.id];
+      if (nowPinned) {
+        pins[variant.id] = true;
+      } else {
+        delete pins[variant.id];
+      }
+      savePins(pins);
+      card.classList.toggle('pinned', nowPinned);
+      pinBtn.classList.toggle('active', nowPinned);
+      pinBtn.textContent = nowPinned ? '★' : '☆';
+      reorderCards();
+    });
+    previewWrap.appendChild(pinBtn);
+
+    var body = document.createElement('div');
+    body.className = 'card-body';
+
+    var title = document.createElement('h2');
+    title.textContent = variant.name;
+    var pinnedBadge = document.createElement('span');
+    pinnedBadge.className = 'pinned-badge';
+    pinnedBadge.textContent = '★ 핀 고정됨';
+    title.appendChild(pinnedBadge);
+    body.appendChild(title);
+
+    var mood = document.createElement('p');
+    mood.className = 'mood';
+    mood.textContent = variant.mood;
+    body.appendChild(mood);
+
+    var actions = document.createElement('div');
+    actions.className = 'card-actions';
+    var viewLink = document.createElement('a');
+    viewLink.className = 'btn-view';
+    viewLink.href = variant.file;
+    viewLink.target = '_blank';
+    viewLink.rel = 'noopener';
+    viewLink.textContent = '전체 보기 ↗';
+    actions.appendChild(viewLink);
+    body.appendChild(actions);
+
+    card.appendChild(previewWrap);
+    card.appendChild(body);
+
+    return card;
+  }
+
+  variants.forEach(function (variant, index) {
+    grid.appendChild(buildCard(variant, index));
+  });
+
+  function reorderCards() {
+    var cards = Array.prototype.slice.call(grid.children);
+    cards.sort(function (a, b) {
+      var aPinned = pins[a.dataset.id] ? 1 : 0;
+      var bPinned = pins[b.dataset.id] ? 1 : 0;
+      if (aPinned !== bPinned) return bPinned - aPinned;
+      return 0;
+    });
+    cards.forEach(function (c) { grid.appendChild(c); });
+  }
+
+  reorderCards();
+
+  document.getElementById('reset-pins').addEventListener('click', function () {
+    pins = {};
+    savePins(pins);
+    Array.prototype.forEach.call(grid.querySelectorAll('.card'), function (card) {
+      card.classList.remove('pinned');
+      var btn = card.querySelector('.pin-btn');
+      btn.classList.remove('active');
+      btn.textContent = '☆';
+    });
+  });
+
+  function updatePreviewScale() {
+    var wraps = grid.querySelectorAll('.preview-wrap');
+    Array.prototype.forEach.call(wraps, function (wrap) {
+      var scale = wrap.clientWidth / 1280;
+      wrap.style.setProperty('--preview-scale', scale);
+    });
+  }
+
+  window.addEventListener('resize', updatePreviewScale);
+  updatePreviewScale();
+})();
+</script>
+
+</body>
+</html>
