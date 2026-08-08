@@ -264,6 +264,25 @@
     background: #4E2C7A;
   }
 
+  .group-label {
+    margin: 44px 0 18px;
+    padding-top: 22px;
+    border-top: 1px solid var(--card-border);
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: -0.2px;
+  }
+
+  .group-label small {
+    display: block;
+    margin-top: 4px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text-muted);
+    opacity: 0.85;
+  }
+
   footer {
     text-align: center;
     color: var(--text-muted);
@@ -276,7 +295,7 @@
 
 <header class="page-header">
   <h1>베스트투어 리디자인 — 시안 비교 갤러리</h1>
-  <p>6개 UI/UX 시안을 비교하고 마음에 드는 시안을 핀으로 고정해 보세요.</p>
+  <p>최종안과 연결 화면을 먼저 확인하고, 아래 참고 아카이브에서 초기 탐색 시안을 비교해 보세요.</p>
   <div class="gold-rule"></div>
 </header>
 
@@ -285,6 +304,15 @@
     <span class="hint"><span class="pin-icon-sample">★</span> 핀을 클릭하면 해당 시안이 목록 상단에 고정됩니다 (골드 테두리로 표시).</span>
     <button id="reset-pins" type="button">핀 전체 초기화</button>
   </div>
+
+  <div class="grid" id="final-grid">
+    <!-- 최종안 + 연결 화면 cards injected by JS -->
+  </div>
+
+  <h2 class="group-label">
+    참고 아카이브 — 방향 확정 전 탐색 시안
+    <small>아래 시안 1~6은 방향을 정하기 위해 탐색했던 초기 시안입니다.</small>
+  </h2>
 
   <div class="grid" id="mockup-grid">
     <!-- cards injected by JS -->
@@ -298,6 +326,27 @@
 <script>
 (function () {
   var STORAGE_KEY = 'bestour-mockup-pins';
+
+  var finals = [
+    {
+      id: 'variant-07-final',
+      file: 'variant-07-final.html',
+      name: '★ 최종안 (시안 7)',
+      mood: '확정 방향 — 딥퍼플 프리미엄 + 골드 액센트 통합안, 히어로 견적 위젯 · 공항 픽업·샌딩 (송영 전문) 라인'
+    },
+    {
+      id: 'wizard',
+      file: 'wizard.html',
+      name: '견적 위저드',
+      mood: '단계별 견적 요청 플로우 — 차량 · 일정 · 노선 선택, 실시간 예상가 산출'
+    },
+    {
+      id: 'admin',
+      file: 'admin.html',
+      name: '관리자 페이지',
+      mood: '예약 · 견적 접수 관리 화면 — 접수 목록, 상태 관리, 상세 확인'
+    }
+  ];
 
   var variants = [
     {
@@ -359,9 +408,11 @@
 
   var pins = loadPins();
 
+  var finalGrid = document.getElementById('final-grid');
   var grid = document.getElementById('mockup-grid');
+  var grids = [finalGrid, grid];
 
-  function buildCard(variant, index) {
+  function buildCard(variant, index, total, hostGrid) {
     var card = document.createElement('article');
     card.className = 'card';
     card.dataset.id = variant.id;
@@ -372,7 +423,7 @@
 
     var numberBadge = document.createElement('span');
     numberBadge.className = 'card-number';
-    numberBadge.textContent = (index + 1) + ' / 6';
+    numberBadge.textContent = (index + 1) + ' / ' + total;
     previewWrap.appendChild(numberBadge);
 
     var iframe = document.createElement('iframe');
@@ -407,7 +458,7 @@
       card.classList.toggle('pinned', nowPinned);
       pinBtn.classList.toggle('active', nowPinned);
       pinBtn.textContent = nowPinned ? '★' : '☆';
-      reorderCards();
+      reorderCards(hostGrid);
     });
     previewWrap.appendChild(pinBtn);
 
@@ -444,39 +495,46 @@
     return card;
   }
 
-  variants.forEach(function (variant, index) {
-    grid.appendChild(buildCard(variant, index));
+  finals.forEach(function (variant, index) {
+    finalGrid.appendChild(buildCard(variant, index, finals.length, finalGrid));
   });
 
-  function reorderCards() {
-    var cards = Array.prototype.slice.call(grid.children);
+  variants.forEach(function (variant, index) {
+    grid.appendChild(buildCard(variant, index, variants.length, grid));
+  });
+
+  function reorderCards(hostGrid) {
+    var cards = Array.prototype.slice.call(hostGrid.children);
     cards.sort(function (a, b) {
       var aPinned = pins[a.dataset.id] ? 1 : 0;
       var bPinned = pins[b.dataset.id] ? 1 : 0;
       if (aPinned !== bPinned) return bPinned - aPinned;
       return 0;
     });
-    cards.forEach(function (c) { grid.appendChild(c); });
+    cards.forEach(function (c) { hostGrid.appendChild(c); });
   }
 
-  reorderCards();
+  grids.forEach(reorderCards);
 
   document.getElementById('reset-pins').addEventListener('click', function () {
     pins = {};
     savePins(pins);
-    Array.prototype.forEach.call(grid.querySelectorAll('.card'), function (card) {
-      card.classList.remove('pinned');
-      var btn = card.querySelector('.pin-btn');
-      btn.classList.remove('active');
-      btn.textContent = '☆';
+    grids.forEach(function (hostGrid) {
+      Array.prototype.forEach.call(hostGrid.querySelectorAll('.card'), function (card) {
+        card.classList.remove('pinned');
+        var btn = card.querySelector('.pin-btn');
+        btn.classList.remove('active');
+        btn.textContent = '☆';
+      });
     });
   });
 
   function updatePreviewScale() {
-    var wraps = grid.querySelectorAll('.preview-wrap');
-    Array.prototype.forEach.call(wraps, function (wrap) {
-      var scale = wrap.clientWidth / 1280;
-      wrap.style.setProperty('--preview-scale', scale);
+    grids.forEach(function (hostGrid) {
+      Array.prototype.forEach.call(hostGrid.querySelectorAll('.preview-wrap'), function (wrap) {
+        var scale = wrap.clientWidth / 1280;
+        wrap.style.setProperty('--preview-scale', scale);
+      });
     });
   }
 
