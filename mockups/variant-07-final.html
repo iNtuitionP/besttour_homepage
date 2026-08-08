@@ -1377,7 +1377,7 @@ ul,ol{ padding:0; list-style:none; }
     </div>
 
     <div class="pop__bd">
-      <p>인천공항에서 <b>나가는 버스</b>에 함께 모십니다. 8월 한 달간 공항 픽업·샌딩(송영) 노선 예약 시 <b>예상가 15% 할인</b>이 적용됩니다.</p>
+      <p>인천공항에서 <b>나가는 버스</b>에 함께 모십니다. 8월 한 달간 공항 픽업·샌딩 (송영 전문) 노선 예약 시 <b>예상가 15% 할인</b>이 적용됩니다.</p>
       <ul class="pop__list">
         <li>대상 : 인천공항 출발 또는 도착 일정 전 차종</li>
         <li>기간 : 2026-08-01 ~ 2026-08-31 접수분</li>
@@ -1615,21 +1615,36 @@ ul,ol{ padding:0; list-style:none; }
   /* ============================================================
      모달 공통 — 열기/닫기 + ESC + 배경 클릭
      ============================================================ */
-  var lastFocus = null;
+  /* 열린 순서를 스택으로 보관 — 겹쳐 열려도 ESC는 항상 "맨 위" 오버레이를 닫는다 */
+  var ovStack = [];
   function openOv(ov, focusEl){
-    lastFocus = document.activeElement;
+    if (ovStack.indexOf(ov) === -1) {
+      ov._lastFocus = document.activeElement;
+      ovStack.push(ov);
+    }
     ov.classList.add('is-open');
     document.body.style.overflow = 'hidden';
     if (focusEl) window.setTimeout(function(){ focusEl.focus(); }, 40);
   }
   function closeOv(ov){
     ov.classList.remove('is-open');
-    if (!document.querySelector('.ov.is-open')) document.body.style.overflow = '';
-    if (lastFocus && lastFocus.focus) lastFocus.focus();
+    var i = ovStack.indexOf(ov);
+    if (i > -1) ovStack.splice(i, 1);
+    if (!ovStack.length) document.body.style.overflow = '';
+    /* 아래에 다른 오버레이가 남아 있으면 포커스를 뺏지 않는다 */
+    if (!ovStack.length && ov._lastFocus && ov._lastFocus.focus) ov._lastFocus.focus();
+    ov._lastFocus = null;
+  }
+  function topOv(){
+    for (var i = ovStack.length - 1; i >= 0; i--) {
+      if (ovStack[i].classList.contains('is-open')) return ovStack[i];
+    }
+    var open = document.querySelectorAll('.ov.is-open');   /* 스택이 비어도 DOM 마지막을 사용 */
+    return open.length ? open[open.length - 1] : null;
   }
   document.addEventListener('keydown', function(e){
     if (e.key !== 'Escape') return;
-    var open = document.querySelector('.ov.is-open');
+    var open = topOv();
     if (open) closeOv(open);
   });
   var ovs = document.querySelectorAll('.ov');
@@ -1647,6 +1662,8 @@ ul,ol{ padding:0; list-style:none; }
 
   function routeTxt(){ return fromEl.value + ' → ' + toEl.value; }
   function openBooking(){
+    /* 진입 팝업이 떠 있으면 먼저 닫아 오버레이가 겹치지 않게 한다 */
+    if (popOv && popOv.classList.contains('is-open')) closePopup();
     bkStep.style.display = '';
     bkDone.style.display = 'none';
     $('tf-name').classList.remove('is-err');
