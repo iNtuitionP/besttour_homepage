@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>베스트투어 — 관리자</title>
+<meta name="description" content="베스트투어 관리자 페이지 목업 — 예약 현황 관리, 팝업 관리" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+<style>
+/* ============================================================
+   베스트투어 관리자 페이지 목업
+   실용적 관리 도구 — 큰 글씨, 명확한 버튼, 최소 메뉴
+   ============================================================ */
+
+:root{
+  --lavender: #F3EFFA;
+  --card:     #FFFFFF;
+  --text:     #1A1523;
+  --deep:     #3B1F5C;
+  --violet:   #7C3AED;
+  --gold:     #D4A843;
+
+  --text-sub: #5E5470;
+  --line:     #E3DCF3;
+  --line-str: #D2C6EA;
+
+  --state-new-bg:   #EFE6FB;
+  --state-new-fg:   #5B2C9C;
+  --state-confirm-bg: #FBF1DC;
+  --state-confirm-fg: #8A6412;
+  --state-done-bg:  #EDEBF2;
+  --state-done-fg:  #5A5468;
+  --state-cancel-bg: #FBE7E7;
+  --state-cancel-fg: #B0322F;
+
+  --r-sm: 6px; --r-md: 8px;
+  --shadow-card: 0 4px 16px rgba(59,31,92,.08);
+  --shadow-pop: 0 20px 48px rgba(26,21,35,.28);
+  --ease: cubic-bezier(.22,.85,.3,1);
+}
+
+*,*::before,*::after{ box-sizing:border-box; }
+html{ -webkit-text-size-adjust:100%; }
+html,body{ max-width:100%; overflow-x:hidden; }
+body{
+  margin:0;
+  background:var(--lavender);
+  color:var(--text);
+  font-family:'Pretendard','Pretendard Variable',-apple-system,BlinkMacSystemFont,system-ui,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;
+  font-size:17px; line-height:1.6;
+  letter-spacing:-.01em;
+  -webkit-font-smoothing:antialiased;
+}
+img{ max-width:100%; display:block; }
+a{ color:inherit; text-decoration:none; }
+button,input,select,textarea{ font:inherit; color:inherit; }
+h1,h2,h3,h4,p,ul,ol{ margin:0; }
+ul,ol{ list-style:none; padding:0; }
+:focus-visible{ outline:3px solid var(--violet); outline-offset:2px; border-radius:4px; }
+
+.hidden{ display:none !important; }
+
+button{ cursor:pointer; border:none; background:none; }
+
+/* =============== 로그인 화면 =============== */
+#loginScreen{
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:24px;
+}
+.login-card{
+  width:100%;
+  max-width:420px;
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:12px;
+  box-shadow:var(--shadow-card);
+  padding:40px 32px;
+}
+.login-logo{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin-bottom:8px;
+}
+.login-logo .mark{
+  width:44px; height:44px;
+  border-radius:10px;
+  background:var(--deep);
+  color:#fff;
+  display:flex; align-items:center; justify-content:center;
+  font-weight:800; font-size:18px;
+  flex-shrink:0;
+}
+.login-logo .name{
+  font-size:20px;
+  font-weight:800;
+  color:var(--deep);
+}
+.login-sub{
+  color:var(--text-sub);
+  font-size:15px;
+  margin-bottom:28px;
+}
+.field{
+  margin-bottom:16px;
+}
+.field label{
+  display:block;
+  font-size:15px;
+  font-weight:700;
+  margin-bottom:8px;
+}
+.field input{
+  width:100%;
+  padding:14px 16px;
+  border:1.5px solid var(--line-str);
+  border-radius:var(--r-md);
+  font-size:17px;
+  background:#fff;
+  transition:border-color .15s var(--ease);
+}
+.field input:focus{
+  border-color:var(--violet);
+}
+.btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  border-radius:var(--r-md);
+  font-weight:700;
+  cursor:pointer;
+  transition:transform .12s var(--ease), background .15s var(--ease), box-shadow .15s var(--ease);
+  border:1.5px solid transparent;
+  white-space:nowrap;
+}
+.btn:active{ transform:scale(.97); }
+.btn-primary{
+  background:var(--deep);
+  color:#fff;
+  font-size:17px;
+  padding:15px 24px;
+}
+.btn-primary:hover{ background:#2E1749; }
+.btn-block{ width:100%; }
+.login-hint{
+  margin-top:20px;
+  padding:14px 16px;
+  background:var(--lavender);
+  border-radius:var(--r-md);
+  color:var(--text-sub);
+  font-size:14px;
+  line-height:1.55;
+}
+.login-err{
+  color:#B0322F;
+  font-size:14px;
+  margin-top:10px;
+  min-height:20px;
+}
+
+/* =============== 상단 바 =============== */
+#appShell{ min-height:100vh; display:flex; flex-direction:column; }
+.topbar{
+  background:var(--card);
+  border-bottom:1px solid var(--line);
+  position:sticky; top:0; z-index:40;
+}
+.topbar-inner{
+  max-width:1280px;
+  margin:0 auto;
+  padding:14px 20px;
+  display:flex;
+  align-items:center;
+  gap:20px;
+  flex-wrap:wrap;
+}
+.topbar-brand{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-weight:800;
+  font-size:19px;
+  color:var(--deep);
+  flex-shrink:0;
+}
+.topbar-brand .mark{
+  width:34px; height:34px;
+  border-radius:8px;
+  background:var(--deep);
+  color:#fff;
+  display:flex; align-items:center; justify-content:center;
+  font-weight:800; font-size:15px;
+}
+.tabs{
+  display:flex;
+  gap:6px;
+  flex:1;
+  min-width:0;
+}
+.tab-btn{
+  padding:11px 18px;
+  border-radius:var(--r-md);
+  font-size:16px;
+  font-weight:700;
+  color:var(--text-sub);
+  transition:background .15s var(--ease), color .15s var(--ease);
+}
+.tab-btn:hover{ background:var(--lavender); color:var(--text); }
+.tab-btn.active{
+  background:var(--deep);
+  color:#fff;
+}
+.logout-btn{
+  padding:11px 18px;
+  border-radius:var(--r-md);
+  font-size:15px;
+  font-weight:700;
+  color:var(--text-sub);
+  border:1.5px solid var(--line-str);
+  flex-shrink:0;
+}
+.logout-btn:hover{ background:var(--lavender); }
+
+.main{
+  flex:1;
+  max-width:1280px;
+  width:100%;
+  margin:0 auto;
+  padding:28px 20px 80px;
+}
+
+/* =============== 대시보드: 요약 카드 =============== */
+.page-title{
+  font-size:24px;
+  font-weight:800;
+  margin-bottom:20px;
+}
+.summary-grid{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:14px;
+  margin-bottom:28px;
+}
+.summary-card{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:20px;
+  box-shadow:var(--shadow-card);
+}
+.summary-card .label{
+  font-size:14px;
+  color:var(--text-sub);
+  font-weight:700;
+  margin-bottom:10px;
+}
+.summary-card .value{
+  font-size:32px;
+  font-weight:800;
+  color:var(--deep);
+  display:flex;
+  align-items:baseline;
+  gap:4px;
+}
+.summary-card .value .unit{
+  font-size:16px;
+  font-weight:700;
+  color:var(--text-sub);
+}
+.summary-card.new .value{ color:var(--violet); }
+.summary-card.confirm .value{ color:#8A6412; }
+
+/* =============== 테이블 =============== */
+.table-wrap{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:10px;
+  box-shadow:var(--shadow-card);
+  overflow-x:auto;
+}
+table{
+  border-collapse:collapse;
+  width:100%;
+  min-width:980px;
+}
+thead th{
+  text-align:left;
+  font-size:14px;
+  font-weight:700;
+  color:var(--text-sub);
+  padding:14px 14px;
+  border-bottom:2px solid var(--line);
+  background:var(--lavender);
+  white-space:nowrap;
+}
+tbody td{
+  padding:16px 14px;
+  border-bottom:1px solid var(--line);
+  font-size:15px;
+  vertical-align:middle;
+}
+tbody tr{ cursor:pointer; transition:background .12s var(--ease); }
+tbody tr:hover{ background:#FBF9FE; }
+tbody tr:last-child td{ border-bottom:none; }
+.td-strong{ font-weight:700; }
+.td-nowrap{ white-space:nowrap; }
+.route{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  white-space:nowrap;
+  font-weight:600;
+}
+.route .arrow{ color:var(--violet); font-weight:800; }
+.route.airport::after{
+  content:"공항";
+  margin-left:6px;
+  font-size:11px;
+  font-weight:800;
+  color:#0E7C66;
+  background:#E1F5EF;
+  padding:2px 7px;
+  border-radius:20px;
+}
+.price{ font-weight:800; color:var(--deep); white-space:nowrap; }
+
+.badge{
+  display:inline-block;
+  padding:6px 12px;
+  border-radius:20px;
+  font-size:13px;
+  font-weight:800;
+  white-space:nowrap;
+}
+.badge-new{ background:var(--state-new-bg); color:var(--state-new-fg); }
+.badge-confirm{ background:var(--state-confirm-bg); color:var(--state-confirm-fg); }
+.badge-done{ background:var(--state-done-bg); color:var(--state-done-fg); }
+.badge-cancel{ background:var(--state-cancel-bg); color:var(--state-cancel-fg); }
+
+.row-actions{
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
+}
+.act-btn{
+  padding:8px 13px;
+  border-radius:var(--r-sm);
+  font-size:13px;
+  font-weight:800;
+  border:1.5px solid transparent;
+  white-space:nowrap;
+}
+.act-confirm{ background:var(--deep); color:#fff; }
+.act-confirm:hover{ background:#2E1749; }
+.act-cancel{ background:#fff; color:#B0322F; border-color:#F0C6C4; }
+.act-cancel:hover{ background:#FBE7E7; }
+.act-done{ background:var(--gold); color:#3B2A08; }
+.act-done:hover{ background:#c69a3a; }
+.act-none{ color:var(--text-sub); font-size:13px; }
+
+/* =============== 상세 패널(오버레이) =============== */
+.overlay{
+  position:fixed; inset:0;
+  background:rgba(26,21,35,.5);
+  z-index:80;
+  display:flex;
+  align-items:flex-start;
+  justify-content:flex-end;
+}
+.detail-panel{
+  width:min(460px, 100%);
+  height:100%;
+  background:var(--card);
+  box-shadow:var(--shadow-pop);
+  overflow-y:auto;
+  padding:24px;
+  animation:slideIn .22s var(--ease);
+}
+@keyframes slideIn{ from{ transform:translateX(24px); opacity:0; } to{ transform:translateX(0); opacity:1; } }
+.detail-header{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  margin-bottom:18px;
+  padding-bottom:16px;
+  border-bottom:1px solid var(--line);
+}
+.detail-header h3{ font-size:20px; font-weight:800; }
+.detail-close{
+  width:36px; height:36px;
+  border-radius:8px;
+  font-size:20px;
+  color:var(--text-sub);
+  flex-shrink:0;
+}
+.detail-close:hover{ background:var(--lavender); }
+.detail-row{
+  display:flex;
+  justify-content:space-between;
+  gap:16px;
+  padding:12px 0;
+  border-bottom:1px solid var(--line);
+  font-size:15px;
+}
+.detail-row dt{ color:var(--text-sub); font-weight:700; flex-shrink:0; }
+.detail-row dd{ margin:0; text-align:right; font-weight:600; }
+.detail-note{
+  margin-top:18px;
+  padding:16px;
+  background:var(--lavender);
+  border-radius:var(--r-md);
+}
+.detail-note h4{ font-size:14px; font-weight:800; color:var(--text-sub); margin-bottom:8px; }
+.detail-note p{ font-size:15px; line-height:1.6; }
+.detail-actions{
+  margin-top:22px;
+  display:flex;
+  gap:8px;
+}
+.detail-actions .act-btn{ padding:12px 18px; font-size:14px; flex:1; text-align:center; }
+
+/* =============== 팝업 관리 탭 =============== */
+.popup-grid{
+  display:grid;
+  grid-template-columns:1.1fr .9fr;
+  gap:20px;
+  align-items:start;
+}
+.panel-card{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:10px;
+  box-shadow:var(--shadow-card);
+  padding:24px;
+}
+.panel-card h3{ font-size:18px; font-weight:800; margin-bottom:18px; }
+.form-field{ margin-bottom:16px; }
+.form-field label{
+  display:block;
+  font-size:15px;
+  font-weight:700;
+  margin-bottom:8px;
+}
+.form-field input[type=text],
+.form-field textarea,
+.form-field input[type=date]{
+  width:100%;
+  padding:12px 14px;
+  border:1.5px solid var(--line-str);
+  border-radius:var(--r-md);
+  font-size:16px;
+  background:#fff;
+}
+.form-field textarea{ resize:vertical; min-height:88px; line-height:1.55; }
+.form-field input:focus, .form-field textarea:focus{ border-color:var(--violet); }
+.date-range{ display:flex; align-items:center; gap:10px; }
+.date-range input{ flex:1; }
+.date-range .to{ color:var(--text-sub); font-weight:700; flex-shrink:0; }
+
+.img-pick-grid{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:10px;
+}
+.img-pick{
+  position:relative;
+  border-radius:8px;
+  overflow:hidden;
+  border:2.5px solid transparent;
+  cursor:pointer;
+  aspect-ratio:4/3;
+  background:var(--lavender);
+}
+.img-pick img{ width:100%; height:100%; object-fit:cover; }
+.img-pick input{ position:absolute; top:8px; left:8px; width:20px; height:20px; accent-color:var(--violet); }
+.img-pick.selected{ border-color:var(--violet); }
+.img-pick.selected::after{
+  content:"선택됨";
+  position:absolute; bottom:0; left:0; right:0;
+  background:var(--violet);
+  color:#fff;
+  font-size:12px;
+  font-weight:800;
+  text-align:center;
+  padding:4px 0;
+}
+
+.notice-line{
+  margin-top:6px;
+  font-size:14px;
+  color:var(--text-sub);
+  background:var(--lavender);
+  border-radius:var(--r-md);
+  padding:12px 14px;
+  line-height:1.55;
+}
+
+.current-popup-empty{
+  text-align:center;
+  padding:48px 20px;
+  color:var(--text-sub);
+  font-size:15px;
+  line-height:1.7;
+}
+.current-popup-empty .ico{ font-size:36px; margin-bottom:10px; }
+
+.popup-preview-card{
+  border:1px solid var(--line);
+  border-radius:10px;
+  overflow:hidden;
+  background:var(--lavender);
+}
+.popup-preview-frame{
+  padding:22px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:
+    linear-gradient(rgba(26,21,35,.35), rgba(26,21,35,.35));
+  min-height:260px;
+}
+.popup-modal-mock{
+  width:100%;
+  max-width:280px;
+  background:#fff;
+  border-radius:14px;
+  overflow:hidden;
+  box-shadow:0 24px 48px rgba(26,21,35,.35);
+}
+.popup-modal-mock img{ width:100%; aspect-ratio:16/10; object-fit:cover; }
+.popup-modal-mock .pm-body{ padding:18px; }
+.popup-modal-mock .pm-title{ font-size:17px; font-weight:800; margin-bottom:8px; }
+.popup-modal-mock .pm-text{ font-size:14px; color:var(--text-sub); line-height:1.6; white-space:pre-line; margin-bottom:14px; }
+.popup-modal-mock .pm-close{ font-size:12px; text-align:center; color:var(--text-sub); border-top:1px solid var(--line); padding-top:12px; }
+.popup-meta{
+  padding:16px 20px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  background:#fff;
+  flex-wrap:wrap;
+}
+.popup-meta .period{ font-size:14px; color:var(--text-sub); font-weight:700; }
+.popup-meta .status-live{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  font-size:13px;
+  font-weight:800;
+  color:#0E7C66;
+}
+.popup-meta .status-live .dot{
+  width:8px; height:8px; border-radius:50%;
+  background:#0E7C66;
+  animation:pulse 1.6s infinite;
+}
+@keyframes pulse{ 0%,100%{ opacity:1; } 50%{ opacity:.35; } }
+.btn-stop{
+  padding:10px 16px;
+  border-radius:var(--r-sm);
+  font-size:14px;
+  font-weight:800;
+  color:#B0322F;
+  border:1.5px solid #F0C6C4;
+  background:#fff;
+}
+.btn-stop:hover{ background:#FBE7E7; }
+
+/* =============== 토스트 =============== */
+#toast{
+  position:fixed;
+  bottom:28px;
+  left:50%;
+  transform:translateX(-50%) translateY(20px);
+  background:var(--deep);
+  color:#fff;
+  padding:15px 24px;
+  border-radius:var(--r-md);
+  font-size:15px;
+  font-weight:700;
+  box-shadow:var(--shadow-pop);
+  z-index:200;
+  opacity:0;
+  pointer-events:none;
+  transition:opacity .2s var(--ease), transform .2s var(--ease);
+  display:flex;
+  align-items:center;
+  gap:10px;
+  max-width:90vw;
+}
+#toast.show{
+  opacity:1;
+  transform:translateX(-50%) translateY(0);
+}
+#toast .ico{
+  width:22px; height:22px;
+  border-radius:50%;
+  background:var(--gold);
+  color:#3B2A08;
+  display:flex; align-items:center; justify-content:center;
+  font-size:13px; font-weight:900;
+  flex-shrink:0;
+}
+
+/* =============== 반응형 =============== */
+@media (max-width: 860px){
+  .summary-grid{ grid-template-columns:repeat(2,1fr); }
+  .popup-grid{ grid-template-columns:1fr; }
+  .tabs{ order:3; width:100%; }
+  .topbar-inner{ justify-content:space-between; }
+}
+@media (max-width: 480px){
+  .summary-grid{ grid-template-columns:1fr; }
+  .login-card{ padding:28px 20px; }
+  .main{ padding:20px 12px 64px; }
+  .page-title{ font-size:20px; }
+  .detail-panel{ width:100%; padding:18px; }
+  .img-pick-grid{ grid-template-columns:repeat(2,1fr); }
+}
+</style>
+</head>
+<body>
+
+<!-- =============== 로그인 화면 =============== -->
+<div id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="mark">BT</div>
+      <div class="name">베스트투어 관리자</div>
+    </div>
+    <p class="login-sub">사장님 전용 예약·팝업 관리 화면입니다.</p>
+    <form id="loginForm">
+      <div class="field">
+        <label for="loginId">아이디</label>
+        <input type="text" id="loginId" placeholder="아이디를 입력하세요" autocomplete="username" />
+      </div>
+      <div class="field">
+        <label for="loginPw">비밀번호</label>
+        <input type="password" id="loginPw" placeholder="비밀번호를 입력하세요" autocomplete="current-password" />
+      </div>
+      <div class="login-err" id="loginErr"></div>
+      <button type="submit" class="btn btn-primary btn-block">로그인</button>
+    </form>
+    <div class="login-hint">데모 화면입니다. 아이디·비밀번호에 아무 값이나 입력하고 로그인을 누르면 대시보드로 이동합니다.</div>
+  </div>
+</div>
+
+<!-- =============== 관리자 화면 =============== -->
+<div id="appShell" class="hidden">
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="topbar-brand"><span class="mark">BT</span>베스트투어 관리자</div>
+      <nav class="tabs">
+        <button class="tab-btn active" data-tab="dashboard" onclick="switchTab('dashboard')">예약 현황</button>
+        <button class="tab-btn" data-tab="popup" onclick="switchTab('popup')">팝업 관리</button>
+      </nav>
+      <button class="logout-btn" onclick="logout()">로그아웃</button>
+    </div>
+  </header>
+
+  <main class="main">
+
+    <!-- ============ 예약 현황 탭 ============ -->
+    <section id="tab-dashboard">
+      <h1 class="page-title">예약 현황</h1>
+
+      <div class="summary-grid">
+        <div class="summary-card new">
+          <div class="label">신규 예약</div>
+          <div class="value" id="statNew">0<span class="unit">건</span></div>
+        </div>
+        <div class="summary-card confirm">
+          <div class="label">확정 대기</div>
+          <div class="value" id="statConfirm">0<span class="unit">건</span></div>
+        </div>
+        <div class="summary-card">
+          <div class="label">이번 주 운행</div>
+          <div class="value">4<span class="unit">건</span></div>
+        </div>
+        <div class="summary-card">
+          <div class="label">이번 달 완료</div>
+          <div class="value">7<span class="unit">건</span></div>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>접수일</th>
+              <th>고객명</th>
+              <th>전화번호</th>
+              <th>차량</th>
+              <th>노선</th>
+              <th>운행일</th>
+              <th>예상가</th>
+              <th>상태</th>
+              <th>처리</th>
+            </tr>
+          </thead>
+          <tbody id="bookingTbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ 팝업 관리 탭 ============ -->
+    <section id="tab-popup" class="hidden">
+      <h1 class="page-title">팝업 관리</h1>
+
+      <div class="popup-grid">
+        <div class="panel-card">
+          <h3>새 팝업 등록</h3>
+          <form id="popupForm">
+            <div class="form-field">
+              <label for="pTitle">제목</label>
+              <input type="text" id="pTitle" placeholder="예: 여름 성수기 예약 안내" />
+            </div>
+            <div class="form-field">
+              <label for="pText">문구</label>
+              <textarea id="pText" placeholder="방문자에게 보여줄 안내 문구를 입력하세요. 줄바꿈이 그대로 반영됩니다.">7월 20일 ~ 8월 31일은 성수기 예약이 몰리는 기간입니다.
+원하시는 날짜에 배정받으시려면 최소 5일 전 예약을 부탁드립니다.</textarea>
+            </div>
+            <div class="form-field">
+              <label>이미지 선택</label>
+              <div class="img-pick-grid" id="imgPickGrid"></div>
+            </div>
+            <div class="form-field">
+              <label>노출 기간</label>
+              <div class="date-range">
+                <input type="date" id="pStart" value="2026-08-08" />
+                <span class="to">~</span>
+                <input type="date" id="pEnd" value="2026-08-31" />
+              </div>
+            </div>
+            <div class="notice-line">등록된 팝업은 홈페이지 방문자에게 즉시 노출됩니다. 방문자가 "오늘 하루 보지 않기"를 선택하면 해당 방문자에게는 하루 동안 다시 노출되지 않습니다.</div>
+            <button type="submit" class="btn btn-primary btn-block" style="margin-top:18px;">등록하기</button>
+          </form>
+        </div>
+
+        <div class="panel-card">
+          <h3>현재 팝업</h3>
+          <div id="currentPopupWrap">
+            <div class="current-popup-empty">
+              <div class="ico">🔕</div>
+              현재 노출 중인 팝업이 없습니다.<br />왼쪽에서 팝업을 등록하면 여기에 미리보기가 표시됩니다.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- 상세 패널 -->
+<div id="detailOverlay" class="overlay hidden" onclick="closeDetailOnOverlay(event)">
+  <div class="detail-panel" id="detailPanel"></div>
+</div>
+
+<div id="toast"><span class="ico">✓</span><span id="toastMsg"></span></div>
+
+<script>
+/* ============================================================
+   더미 데이터
+   ============================================================ */
+const BUS_IMAGES = [
+  'assets/bus-01.jpg','assets/bus-02.jpg','assets/bus-03.jpg',
+  'assets/bus-04.jpg','assets/bus-05.jpg','assets/bus-06.jpg'
+];
+
+let bookings = [
+  { id:1,  received:'2026-08-08', name:'한**', phone:'010-****-2231', bus:'45인승 관광버스', from:'인천공항', to:'서울 시내', airport:true,  date:'2026-08-14', price:'520,000원', status:'new',
+    type:'공항 픽업·샌딩(송영)', people:'40명', trip:'편도', pay:'카드', vat:'포함', note:'외국인 단체 관광객입니다. 영어 가능 기사님이면 좋겠습니다.' },
+  { id:2,  received:'2026-08-07', name:'김**', phone:'010-****-7742', bus:'28인승 우등리무진', from:'서울', to:'강원 속초', airport:false, date:'2026-08-20', price:'600,000원', status:'new',
+    type:'가족여행', people:'24명', trip:'당일왕복', pay:'현금', vat:'별도', note:'짐이 많아 트렁크 넉넉한 차량 부탁드립니다.' },
+  { id:3,  received:'2026-08-06', name:'이**', phone:'010-****-1290', bus:'35인승 관광버스', from:'인천공항', to:'경기 고양', airport:true,  date:'2026-08-12', price:'470,000원', status:'confirm',
+    type:'공항 픽업·샌딩(송영)', people:'30명', trip:'편도', pay:'세금계산서', vat:'포함', note:'도착 시간이 유동적일 수 있어 연락 부탁드립니다.' },
+  { id:4,  received:'2026-08-05', name:'박**', phone:'010-****-5588', bus:'16인승 관광버스', from:'서울', to:'경기 가평', airport:false, date:'2026-08-09', price:'400,000원', status:'confirm',
+    type:'친목회', people:'15명', trip:'당일왕복', pay:'현금', vat:'포함', note:'-' },
+  { id:5,  received:'2026-08-04', name:'최**', phone:'010-****-3312', bus:'25인승 관광버스', from:'서울', to:'충남 부여', airport:false, date:'2026-08-08', price:'480,000원', status:'done',
+    type:'관혼상제', people:'22명', trip:'당일왕복', pay:'카드', vat:'포함', note:'예식장 앞 하차 부탁드립니다.' },
+  { id:6,  received:'2026-08-03', name:'정**', phone:'010-****-9021', bus:'45인승 관광버스', from:'서울', to:'강원 강릉', airport:false, date:'2026-07-30', price:'650,000원', status:'done',
+    type:'워크샵', people:'42명', trip:'1박2일', pay:'세금계산서', vat:'포함', note:'회사 워크샵으로 명함 계산서 발행 요청드립니다.' },
+  { id:7,  received:'2026-08-02', name:'강**', phone:'010-****-6674', bus:'28인승 우등리무진', from:'김포공항', to:'서울 시내', airport:true,  date:'2026-08-06', price:'380,000원', status:'cancel',
+    type:'공항 픽업·샌딩(송영)', people:'26명', trip:'편도', pay:'카드', vat:'포함', note:'일정 변경으로 취소되었습니다.' },
+  { id:8,  received:'2026-08-01', name:'조**', phone:'010-****-4409', bus:'35인승 관광버스', from:'서울', to:'전북 전주', airport:false, date:'2026-08-16', price:'550,000원', status:'new',
+    type:'대학 MT', people:'32명', trip:'당일왕복', pay:'현금', vat:'별도', note:'학생회 행사입니다. 견적서 별도 요청드립니다.' },
+  { id:9,  received:'2026-07-31', name:'윤**', phone:'010-****-8856', bus:'16인승 관광버스', from:'서울', to:'경기 파주', airport:false, date:'2026-08-05', price:'400,000원', status:'done',
+    type:'현장학습', people:'14명', trip:'당일왕복', pay:'세금계산서', vat:'포함', note:'-' },
+  { id:10, received:'2026-07-30', name:'임**', phone:'010-****-2765', bus:'25인승 관광버스', from:'인천공항', to:'경기 파주', airport:true,  date:'2026-08-10', price:'440,000원', status:'confirm',
+    type:'외국인의전·관광', people:'20명', trip:'편도', pay:'카드', vat:'포함', note:'외국인 바이어 의전입니다. 정장 착용 기사님 요청드립니다.' },
+  { id:11, received:'2026-07-29', name:'오**', phone:'010-****-1123', bus:'45인승 관광버스', from:'서울', to:'경북 경주', airport:false, date:'2026-08-22', price:'650,000원', status:'new',
+    type:'종교단체', people:'44명', trip:'1박2일', pay:'현금', vat:'포함', note:'새벽 5시 출발 예정입니다.' }
+];
+
+const STATUS_LABEL = { new:'신규', confirm:'확정', done:'완료', cancel:'취소' };
+const STATUS_CLASS = { new:'badge-new', confirm:'badge-confirm', done:'badge-done', cancel:'badge-cancel' };
+
+/* ============================================================
+   로그인
+   ============================================================ */
+document.getElementById('loginForm').addEventListener('submit', function(e){
+  e.preventDefault();
+  const id = document.getElementById('loginId').value.trim();
+  const pw = document.getElementById('loginPw').value.trim();
+  const err = document.getElementById('loginErr');
+  if(!id || !pw){
+    err.textContent = '아이디와 비밀번호를 입력해 주세요.';
+    return;
+  }
+  err.textContent = '';
+  document.getElementById('loginScreen').classList.add('hidden');
+  document.getElementById('appShell').classList.remove('hidden');
+  renderBookings();
+  renderImgPicker();
+});
+
+function logout(){
+  document.getElementById('appShell').classList.add('hidden');
+  document.getElementById('loginScreen').classList.remove('hidden');
+  document.getElementById('loginId').value = '';
+  document.getElementById('loginPw').value = '';
+  document.getElementById('loginErr').textContent = '';
+  switchTab('dashboard');
+}
+
+/* ============================================================
+   탭 전환
+   ============================================================ */
+function switchTab(tab){
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.getElementById('tab-dashboard').classList.toggle('hidden', tab !== 'dashboard');
+  document.getElementById('tab-popup').classList.toggle('hidden', tab !== 'popup');
+}
+
+/* ============================================================
+   예약 현황 렌더링
+   ============================================================ */
+function renderBookings(){
+  const tbody = document.getElementById('bookingTbody');
+  tbody.innerHTML = bookings.map(b => {
+    const routeCls = 'route' + (b.airport ? ' airport' : '');
+    let actions = '<span class="act-none">-</span>';
+    if(b.status === 'new'){
+      actions = `<div class="row-actions">
+        <button class="act-btn act-confirm" onclick="event.stopPropagation(); setStatus(${b.id},'confirm')">확정</button>
+        <button class="act-btn act-cancel" onclick="event.stopPropagation(); setStatus(${b.id},'cancel')">취소</button>
+      </div>`;
+    } else if(b.status === 'confirm'){
+      actions = `<div class="row-actions">
+        <button class="act-btn act-done" onclick="event.stopPropagation(); setStatus(${b.id},'done')">완료 처리</button>
+      </div>`;
+    }
+    return `<tr onclick="openDetail(${b.id})">
+      <td class="td-nowrap">${b.received}</td>
+      <td class="td-strong">${b.name}</td>
+      <td class="td-nowrap">${b.phone}</td>
+      <td class="td-nowrap">${b.bus}</td>
+      <td><span class="${routeCls}">${b.from} <span class="arrow">→</span> ${b.to}</span></td>
+      <td class="td-nowrap">${b.date}</td>
+      <td class="price">${b.price}</td>
+      <td><span class="badge ${STATUS_CLASS[b.status]}">${STATUS_LABEL[b.status]}</span></td>
+      <td>${actions}</td>
+    </tr>`;
+  }).join('');
+  updateStats();
+}
+
+function updateStats(){
+  document.getElementById('statNew').innerHTML = bookings.filter(b => b.status === 'new').length + '<span class="unit">건</span>';
+  document.getElementById('statConfirm').innerHTML = bookings.filter(b => b.status === 'confirm').length + '<span class="unit">건</span>';
+}
+
+function setStatus(id, status){
+  const b = bookings.find(x => x.id === id);
+  if(!b) return;
+  b.status = status;
+  renderBookings();
+  if(status === 'confirm'){
+    showToast('고객에게 확정 문자를 발송했습니다.');
+  } else if(status === 'cancel'){
+    showToast('예약을 취소 처리했습니다.');
+  } else if(status === 'done'){
+    showToast('운행 완료로 처리했습니다.');
+  }
+}
+
+/* ============================================================
+   상세 패널
+   ============================================================ */
+function openDetail(id){
+  const b = bookings.find(x => x.id === id);
+  if(!b) return;
+  const panel = document.getElementById('detailPanel');
+  let actionsHtml = '';
+  if(b.status === 'new'){
+    actionsHtml = `<div class="detail-actions">
+      <button class="act-btn act-confirm" onclick="setStatus(${b.id},'confirm'); closeDetail();">확정</button>
+      <button class="act-btn act-cancel" onclick="setStatus(${b.id},'cancel'); closeDetail();">취소</button>
+    </div>`;
+  } else if(b.status === 'confirm'){
+    actionsHtml = `<div class="detail-actions">
+      <button class="act-btn act-done" onclick="setStatus(${b.id},'done'); closeDetail();">완료 처리</button>
+    </div>`;
+  }
+  panel.innerHTML = `
+    <div class="detail-header">
+      <h3>${b.name} 고객 예약 상세</h3>
+      <button class="detail-close" onclick="closeDetail()">✕</button>
+    </div>
+    <dl>
+      <div class="detail-row"><dt>상태</dt><dd><span class="badge ${STATUS_CLASS[b.status]}">${STATUS_LABEL[b.status]}</span></dd></div>
+      <div class="detail-row"><dt>접수일</dt><dd>${b.received}</dd></div>
+      <div class="detail-row"><dt>전화번호</dt><dd>${b.phone}</dd></div>
+      <div class="detail-row"><dt>여행구분</dt><dd>${b.type}</dd></div>
+      <div class="detail-row"><dt>차량</dt><dd>${b.bus}</dd></div>
+      <div class="detail-row"><dt>노선</dt><dd>${b.from} → ${b.to}${b.airport ? ' (공항)' : ''}</dd></div>
+      <div class="detail-row"><dt>운행구분</dt><dd>${b.trip}</dd></div>
+      <div class="detail-row"><dt>운행일</dt><dd>${b.date}</dd></div>
+      <div class="detail-row"><dt>예상 인원</dt><dd>${b.people}</dd></div>
+      <div class="detail-row"><dt>예상가</dt><dd>${b.price}</dd></div>
+      <div class="detail-row"><dt>결제방법</dt><dd>${b.pay}</dd></div>
+      <div class="detail-row"><dt>VAT</dt><dd>${b.vat}</dd></div>
+    </dl>
+    <div class="detail-note">
+      <h4>남기신 말씀</h4>
+      <p>${b.note}</p>
+    </div>
+    ${actionsHtml}
+  `;
+  document.getElementById('detailOverlay').classList.remove('hidden');
+}
+
+function closeDetail(){
+  document.getElementById('detailOverlay').classList.add('hidden');
+}
+function closeDetailOnOverlay(e){
+  if(e.target.id === 'detailOverlay') closeDetail();
+}
+
+/* ============================================================
+   팝업 관리
+   ============================================================ */
+let selectedImgIdx = 0;
+
+function renderImgPicker(){
+  const grid = document.getElementById('imgPickGrid');
+  grid.innerHTML = BUS_IMAGES.map((src, i) => `
+    <label class="img-pick ${i === selectedImgIdx ? 'selected' : ''}" data-idx="${i}">
+      <input type="radio" name="pImg" value="${i}" ${i === selectedImgIdx ? 'checked' : ''} onchange="selectImg(${i})" />
+      <img src="${src}" alt="버스 사진 ${i+1}" />
+    </label>
+  `).join('');
+}
+
+function selectImg(idx){
+  selectedImgIdx = idx;
+  document.querySelectorAll('.img-pick').forEach(el => {
+    el.classList.toggle('selected', Number(el.dataset.idx) === idx);
+  });
+}
+
+document.getElementById('popupForm').addEventListener('submit', function(e){
+  e.preventDefault();
+  const title = document.getElementById('pTitle').value.trim() || '제목 없는 팝업';
+  const text = document.getElementById('pText').value.trim() || '내용을 입력해 주세요.';
+  const start = document.getElementById('pStart').value || '-';
+  const end = document.getElementById('pEnd').value || '-';
+  const img = BUS_IMAGES[selectedImgIdx];
+
+  const wrap = document.getElementById('currentPopupWrap');
+  wrap.innerHTML = `
+    <div class="popup-preview-card">
+      <div class="popup-preview-frame">
+        <div class="popup-modal-mock">
+          <img src="${img}" alt="팝업 이미지" />
+          <div class="pm-body">
+            <div class="pm-title">${escapeHtml(title)}</div>
+            <div class="pm-text">${escapeHtml(text)}</div>
+            <div class="pm-close">☐ 오늘 하루 보지 않기 &nbsp;·&nbsp; 닫기</div>
+          </div>
+        </div>
+      </div>
+      <div class="popup-meta">
+        <div>
+          <div class="status-live"><span class="dot"></span>노출 중</div>
+          <div class="period">${start} ~ ${end}</div>
+        </div>
+        <button class="btn-stop" onclick="stopPopup()">노출 중지</button>
+      </div>
+    </div>
+  `;
+  showToast('팝업이 등록되어 홈페이지에 노출됩니다.');
+});
+
+function stopPopup(){
+  const wrap = document.getElementById('currentPopupWrap');
+  wrap.innerHTML = `
+    <div class="current-popup-empty">
+      <div class="ico">🔕</div>
+      현재 노출 중인 팝업이 없습니다.<br />왼쪽에서 팝업을 등록하면 여기에 미리보기가 표시됩니다.
+    </div>
+  `;
+  showToast('팝업 노출을 중지했습니다.');
+}
+
+function escapeHtml(str){
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+/* ============================================================
+   토스트
+   ============================================================ */
+let toastTimer = null;
+function showToast(msg){
+  const toast = document.getElementById('toast');
+  document.getElementById('toastMsg').textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 2600);
+}
+
+/* Esc로 상세 패널 닫기 */
+document.addEventListener('keydown', function(e){
+  if(e.key === 'Escape') closeDetail();
+});
+</script>
+</body>
+</html>
