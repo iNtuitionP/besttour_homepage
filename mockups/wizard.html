@@ -266,6 +266,39 @@ textarea.control{min-height:110px;resize:vertical;line-height:1.6;}
   .seg button small{font-size:13px;}
 }
 
+/* ---------- 경유지 목록 ---------- */
+.via-list{display:flex;flex-direction:column;gap:8px;}
+.via-row{display:flex;align-items:center;gap:8px;}
+.via-row .idx{
+  flex:0 0 auto;width:32px;height:32px;border-radius:var(--r-sm);
+  background:var(--lav-soft);border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;
+  font-size:13.5px;font-weight:800;color:var(--deep);
+}
+.via-row .control{flex:1 1 auto;min-width:0;}
+.via-del{
+  flex:0 0 auto;width:48px;min-height:54px;
+  border:1.5px solid var(--line-strong);border-radius:var(--r);
+  background:var(--white);color:var(--muted);
+  font-size:17px;font-weight:800;cursor:pointer;line-height:1;
+}
+.via-del:hover{background:var(--danger-bg);border-color:#F3C9C4;color:var(--danger);}
+.via-empty{font-size:14.5px;font-weight:600;color:var(--muted-2);}
+.btn-add{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  margin-top:10px;min-height:52px;padding:0 20px;
+  border:1.5px dashed var(--line-strong);border-radius:var(--r);
+  background:var(--white);color:var(--deep);
+  font-size:16px;font-weight:800;cursor:pointer;transition:all .15s ease;
+}
+.btn-add:hover{background:var(--lav-soft);border-color:var(--violet);}
+.btn-add:disabled{opacity:.5;cursor:not-allowed;border-style:solid;}
+@media (max-width:400px){
+  .via-row .idx{width:26px;height:26px;font-size:12.5px;}
+  .via-del{width:44px;}
+  .btn-add{width:100%;}
+}
+
 /* 공항 강조 배너 */
 .airport-note{
   display:flex;gap:12px;align-items:flex-start;
@@ -647,9 +680,12 @@ textarea.control{min-height:110px;resize:vertical;line-height:1.6;}
       </div>
 
       <div class="field">
-        <label class="flabel" for="viaInput">경유지 <span class="opt">선택</span></label>
-        <p class="fhint">중간에 들르는 곳이 있다면 적어주세요. (예: 서울역, 판교 IC)</p>
-        <input type="text" class="control" id="viaInput" placeholder="경유지 입력 (선택)">
+        <span class="flabel">경유지 <span class="opt">선택</span></span>
+        <p class="fhint">중간에 들르는 곳이 있으면 추가해 주세요. 추가한 순서대로 운행합니다. (최대 5곳)</p>
+        <div class="via-list" id="viaList"></div>
+        <p class="via-empty" id="viaEmpty">추가된 경유지가 없습니다 — 출발지에서 도착지로 바로 운행합니다.</p>
+        <button type="button" class="btn-add" id="viaAdd">＋ 경유지 추가</button>
+        <p class="err" id="err-via">추가하신 경유지를 선택하시거나, ✕ 버튼으로 삭제해 주세요.</p>
       </div>
 
       <div class="field">
@@ -919,8 +955,20 @@ textarea.control{min-height:110px;resize:vertical;line-height:1.6;}
     v16:{name:"16인승 관광버스", cap:16, rate:400000}
   };
 
+  /* 장소 목록 — 출발지/도착지/경유지 공통 (인천공항 강조 + 16개 시도) */
+  var SIDO = ["서울","부산","대구","인천","광주","대전","울산","경기","강원","충북","충남","전북","전남","경북","경남","제주"];
+  var MAX_VIA = 5;
+  function placeOptions(placeholder){
+    var s = '<option value="">' + placeholder + '</option>';
+    s += '<optgroup label="✈ 공항 노선 — 주력 (더 저렴)"><option value="인천공항">인천공항 ✈ 픽업·샌딩 전문</option></optgroup>';
+    s += '<optgroup label="전국 16개 시도">';
+    for(var i=0;i<SIDO.length;i++){ s += '<option value="'+SIDO[i]+'">'+SIDO[i]+'</option>'; }
+    s += '</optgroup>';
+    return s;
+  }
+
   var state = {
-    veh:"", purpose:"", from:"", to:"", via:"", trip:"",
+    veh:"", purpose:"", from:"", to:"", vias:[], trip:"",
     depDate:"", depTime:"08:00", retDate:"", retTime:"18:00",
     buses:1, pax:30,
     name:"", phone:"", email:"",
@@ -973,10 +1021,53 @@ textarea.control{min-height:110px;resize:vertical;line-height:1.6;}
   /* ---------- 2단계 : 셀렉트 ---------- */
   $("fromSel").addEventListener("change", function(){ state.from = this.value; hideErr("err-route"); updateAirportHints(); });
   $("toSel").addEventListener("change", function(){ state.to = this.value; hideErr("err-route"); updateAirportHints(); });
-  $("viaInput").addEventListener("input", function(){ state.via = this.value.trim(); });
+  /* ---------- 2단계 : 경유지 목록 (0~5개) ---------- */
+  function viaFilled(){
+    return state.vias.filter(function(v){ return !!v; });
+  }
+  function renderVias(){
+    var list = $("viaList");
+    list.innerHTML = "";
+    state.vias.forEach(function(val, i){
+      var row = document.createElement("div");
+      row.className = "via-row";
+      row.innerHTML =
+        '<span class="idx" aria-hidden="true">' + (i+1) + '</span>' +
+        '<select class="control" aria-label="경유지 ' + (i+1) + '">' + placeOptions("경유지 " + (i+1) + " 선택") + '</select>' +
+        '<button type="button" class="via-del" aria-label="경유지 ' + (i+1) + ' 삭제" title="삭제">✕</button>';
+      var sel = row.querySelector("select");
+      sel.value = val;
+      sel.addEventListener("change", function(){
+        state.vias[i] = this.value;
+        this.classList.remove("invalid");
+        if(viaFilled().length === state.vias.length) hideErr("err-via");
+        updateAirportHints();
+      });
+      row.querySelector(".via-del").addEventListener("click", function(){
+        state.vias.splice(i, 1);
+        hideErr("err-via");
+        renderVias();
+        updateAirportHints();
+        $("viaAdd").focus();
+      });
+      list.appendChild(row);
+    });
+    $("viaEmpty").hidden = state.vias.length > 0;
+    var add = $("viaAdd");
+    add.disabled = state.vias.length >= MAX_VIA;
+    add.textContent = add.disabled ? "경유지는 최대 5곳까지 추가할 수 있습니다" : "＋ 경유지 추가";
+  }
+  $("viaAdd").addEventListener("click", function(){
+    if(state.vias.length >= MAX_VIA) return;
+    state.vias.push("");
+    renderVias();
+    var sels = $("viaList").querySelectorAll("select");
+    if(sels.length) sels[sels.length - 1].focus();
+  });
 
   function isAirport(){
-    return state.from === "인천공항" || state.to === "인천공항" || state.purpose === "공항픽업";
+    return state.from === "인천공항" || state.to === "인천공항" ||
+           state.purpose === "공항픽업" || viaFilled().indexOf("인천공항") > -1;
   }
   function updateAirportHints(){
     var on = isAirport();
@@ -1117,7 +1208,10 @@ textarea.control{min-height:110px;resize:vertical;line-height:1.6;}
     return p[0].slice(2) + "." + p[1] + "." + p[2] + " " + (t || "");
   }
   function routeText(){
-    return (state.from || "—") + " → " + (state.to || "—");
+    var parts = [state.from || "—"];
+    viaFilled().forEach(function(v){ parts.push(v); });
+    parts.push(state.to || "—");
+    return parts.join(" → ");
   }
   function condText(){
     var arr = [];
@@ -1133,11 +1227,14 @@ textarea.control{min-height:110px;resize:vertical;line-height:1.6;}
   function renderSummary(){
     var c = calc();
     var totalVat = c.total * 1.1;
+    var vf = viaFilled();
     $("doneSub").innerHTML = (state.name || "고객") + "님, 접수번호 <b>" + bookingNo() + "</b>";
     $("s-veh").textContent = c.veh.name;
     $("s-purpose").textContent = state.purpose + (isAirport() ? " · 공항 픽업·샌딩 (송영 전문) 노선" : "");
     $("s-route").textContent = routeText();
-    $("s-via").textContent = state.via || "없음";
+    $("s-via").textContent = vf.length
+      ? vf.map(function(v, i){ return (i+1) + ". " + v; }).join("  ·  ") + "  (" + vf.length + "곳)"
+      : "없음";
     $("s-trip").textContent = state.trip;
     $("s-dep").textContent = fmtDT(state.depDate, state.depTime);
     $("s-ret").textContent = (state.trip === "편도") ? "편도 — 해당 없음" : fmtDT(state.retDate, state.retTime);
@@ -1175,7 +1272,8 @@ textarea.control{min-height:110px;resize:vertical;line-height:1.6;}
       state.name + " / " + state.phone + "\n" +
       state.purpose + (isAirport() ? " · ✈공항노선" : "") + "\n" +
       c.veh.name + " " + state.buses + "대 · " + state.pax + "명\n" +
-      routeText() + " (" + state.trip + ")" + (state.via ? " / 경유 " + state.via : "") + "\n" +
+      routeText() + " (" + state.trip + ")" + "\n" +
+      (vf.length ? "경유 " + vf.length + "곳: " + vf.join(" → ") + "\n" : "") +
       dateLine + "\n" +
       "예상가 " + priceLine + "\n" +
       "계산 " + state.pay + " · " + condText() + "\n" +
@@ -1198,6 +1296,12 @@ textarea.control{min-height:110px;resize:vertical;line-height:1.6;}
     if(n === 2){
       if(!state.purpose){ showErr("err-purpose"); ok = false; firstBad = firstBad || $("purposeChips"); }
       if(!state.from || !state.to){ showErr("err-route"); ok = false; firstBad = firstBad || $("fromSel"); }
+      if(state.vias.length && viaFilled().length !== state.vias.length){
+        showErr("err-via"); ok = false;
+        var empties = $("viaList").querySelectorAll("select");
+        Array.prototype.forEach.call(empties, function(s){ if(!s.value) s.classList.add("invalid"); });
+        firstBad = firstBad || $("viaList").querySelector("select.invalid");
+      }
       if(!state.trip){ showErr("err-trip"); ok = false; firstBad = firstBad || $("tripSeg"); }
     }
     if(n === 3){
@@ -1271,6 +1375,7 @@ textarea.control{min-height:110px;resize:vertical;line-height:1.6;}
   });
 
   // 초기화
+  renderVias();
   syncTripUI();
   go(1);
 })();
