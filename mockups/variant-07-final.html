@@ -328,6 +328,28 @@ ul,ol{ padding:0; list-style:none; }
 .field optgroup{ font-size:12px; color:var(--deep-55); }
 .field optgroup.air{ color:var(--violet-deep); }
 
+/* 경유지(선택) — 기본 상태에는 행이 없다(위젯을 가볍게 유지) · 최대 3개 · 가격 영향 없음 */
+.field--wp{ grid-column:1 / -1; gap:8px; }
+.wp-list{ display:grid; gap:8px; min-width:0; }
+.wp-list:empty{ display:none; }
+.wp-row{ display:grid; grid-template-columns:auto minmax(0,1fr) 34px; gap:6px; align-items:center; min-width:0; }
+.wp-row .ctrl{ min-width:0; }
+.wp-n{ font-size:11.5px; font-weight:800; letter-spacing:-.02em; color:var(--deep-55); white-space:nowrap; }
+.wp-del{
+  width:34px; height:34px; flex:0 0 auto;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--neutral); border:1.5px solid var(--lav-line); border-radius:var(--r-s);
+  font-size:13px; font-weight:800; line-height:1; color:var(--deep-55); cursor:pointer;
+  transition:border-color var(--t), color var(--t);
+}
+.wp-del:hover{ border-color:var(--deep-40); color:var(--deep); }
+.wp-add{
+  justify-self:start; padding:2px 0; background:none; border:0; cursor:pointer;
+  font-size:12.5px; font-weight:800; letter-spacing:.01em; color:var(--violet-deep);
+}
+.wp-add:hover{ text-decoration:underline; }
+.wp-add[disabled]{ color:var(--deep-40); cursor:default; text-decoration:none; }
+
 .quote__air{
   margin:0 var(--s3) 0; padding:10px 12px;
   display:flex; align-items:flex-start; gap:8px;
@@ -659,8 +681,8 @@ ul,ol{ padding:0; list-style:none; }
 /* 예약 모달 */
 .bk-sum{ background:var(--lav); border:1px solid var(--lav-line); border-radius:var(--r-s); padding:14px; display:grid; gap:7px; }
 .bk-sum div{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; font-size:13px; }
-.bk-sum .k{ color:var(--deep-55); }
-.bk-sum .v{ font-weight:700; text-align:right; }
+.bk-sum .k{ color:var(--deep-55); flex:0 0 auto; }
+.bk-sum .v{ font-weight:700; text-align:right; min-width:0; word-break:keep-all; overflow-wrap:anywhere; }
 .bk-sum .v--price{ font-size:17px; font-weight:800; letter-spacing:-.03em; font-variant-numeric:tabular-nums; }
 .tf{ display:grid; gap:6px; }
 .tf label{ font-size:12.5px; font-weight:800; color:var(--deep-55); }
@@ -791,8 +813,8 @@ ul,ol{ padding:0; list-style:none; }
           <article class="slide slide--a is-on" id="sl-1" role="group" aria-roledescription="슬라이드" aria-label="1 / 3 인천공항 픽업·샌딩">
             <div class="slide__bg" aria-hidden="true"><img src="assets/bus-05.jpg" alt="" /></div>
             <p class="slide__tag">공항 픽업·샌딩 (송영 전문)</p>
-            <h1>인천공항 갈 때, 올 때 —<br /><em>나가는 버스에 모시니까</em><br />더 저렴합니다</h1>
-            <p>외국인 관광 단체를 공항에서 태우고 나가는 운행이 많습니다. 그 노선에 함께 태워드리기 때문에 <b>공항 출발·도착 일정은 가격이 내려갑니다.</b></p>
+            <h1>인천공항 갈 때, 올 때 —<br /><em>공항 노선, 자신 있게</em><br />저렴합니다</h1>
+            <p>외국인 관광 전문 13년, 공항 노선을 매일 운행합니다. 노선 운영 노하우로 <b>공항 출발·도착 일정은 특히 합리적인 가격</b>으로 모십니다.</p>
             <ul class="slide__chips">
               <li class="on">인천공항 픽업</li>
               <li class="on">인천공항 샌딩</li>
@@ -899,6 +921,12 @@ ul,ol{ padding:0; list-style:none; }
               </optgroup>
             </select>
           </div>
+        </div>
+
+        <!-- 경유지(선택) — 기본 상태에는 행이 없습니다. 최대 3개, 가격에는 영향 없음 -->
+        <div class="field field--wp">
+          <div class="wp-list" id="q-wp-list"></div>
+          <button type="button" class="wp-add" id="q-wp-add">+ 경유지 추가</button>
         </div>
 
         <div class="field field--date">
@@ -1240,7 +1268,7 @@ ul,ol{ padding:0; list-style:none; }
         <h2 class="sec-title" id="notice-h">고객센터 <span class="ac">소식</span></h2>
       </div>
       <ul class="notices rv">
-        <li><a href="#notice"><span class="cat cat--air">공항</span><span class="ttl">8월 인천공항 픽업·샌딩 특가 진행 — 나가는 버스 노선, 더 저렴한 견적 가능</span><time datetime="2026-08-05">2026-08-05</time></a></li>
+        <li><a href="#notice"><span class="cat cat--air">공항</span><span class="ttl">8월 인천공항 픽업·샌딩 특가 진행 — 공항 노선 전문, 합리적 견적</span><time datetime="2026-08-05">2026-08-05</time></a></li>
         <li><a href="#notice"><span class="cat">공지</span><span class="ttl">2026 하계 성수기 45인승 배차 마감 임박 — 8월 주말 예약 서둘러 주세요</span><time datetime="2026-08-01">2026-08-01</time></a></li>
         <li><a href="#notice"><span class="cat">안내</span><span class="ttl">예약 확정 절차 안내 — 접수 후 문자 발송, 사장님 확정 후 연락드립니다</span><time datetime="2026-07-15">2026-07-15</time></a></li>
         <li><a href="#notice"><span class="cat">공지</span><span class="ttl">전 차량 종합보험 갱신 완료 — 차량소개 페이지에서 보험내용 확인</span><time datetime="2026-06-20">2026-06-20</time></a></li>
@@ -1377,7 +1405,7 @@ ul,ol{ padding:0; list-style:none; }
     </div>
 
     <div class="pop__bd">
-      <p>인천공항에서 <b>나가는 버스</b>에 함께 모십니다. 8월 한 달간 공항 픽업·샌딩 (송영 전문) 노선은 <b>공항 노선 특가 — 더 저렴한 견적</b>이 가능합니다.</p>
+      <p>공항 노선을 매일 운행하는 베스트투어의 8월 특가. <b>공항 픽업·샌딩 (송영 전문)</b> 노선을 특가 견적으로 만나보세요.</p>
       <ul class="pop__list">
         <li>대상 : 인천공항 출발 또는 도착 일정 전 차종</li>
         <li>기간 : 2026-08-01 ~ 2026-08-31 접수분</li>
@@ -1558,6 +1586,47 @@ ul,ol{ padding:0; list-style:none; }
   dateEl.addEventListener('change', render);
   render();
 
+  /* ---- 경유지(선택) — 최대 3개. 선택지는 출발지와 동일하며 금액에는 반영하지 않습니다. ---- */
+  var WP_MAX = 3;
+  var wpList = $('q-wp-list'), wpAdd = $('q-wp-add');
+  var WP_OPTS = fromEl.innerHTML.replace(/\s+selected/g, '');   /* 출발지와 동일한 optgroup 구성 */
+
+  function wpRows(){ return wpList.querySelectorAll('.wp-row'); }
+  function wpVals(){
+    var rows = wpRows(), out = [], i;
+    for (i = 0; i < rows.length; i++) {
+      var v = rows[i].querySelector('select').value;
+      if (v) out.push(v);
+    }
+    return out;
+  }
+  function wpSync(){
+    var rows = wpRows(), full = rows.length >= WP_MAX, i;
+    for (i = 0; i < rows.length; i++) rows[i].querySelector('.wp-n').textContent = '경유' + (i + 1);
+    wpAdd.disabled = full;
+    wpAdd.textContent = full ? '경유지는 최대 ' + WP_MAX + '개까지' : '+ 경유지 추가';
+  }
+  function wpAddRow(){
+    if (wpRows().length >= WP_MAX) return;
+    var row = document.createElement('div');
+    row.className = 'wp-row';
+    row.innerHTML = '<span class="wp-n"></span>' +
+                    '<div class="ctrl"><select aria-label="경유지">' + WP_OPTS + '</select></div>' +
+                    '<button type="button" class="wp-del" aria-label="경유지 삭제">&#10005;</button>';
+    wpList.appendChild(row);
+    var sel = row.querySelector('select');
+    sel.value = toEl.value;   /* 기본값은 도착지와 동일 — 사용자가 바로 바꿔 고른다 */
+    row.querySelector('.wp-del').addEventListener('click', function(){
+      if (row.parentNode) row.parentNode.removeChild(row);
+      wpSync();
+      wpAdd.focus();
+    });
+    wpSync();
+    sel.focus();
+  }
+  wpAdd.addEventListener('click', wpAddRow);
+  wpSync();
+
   /* 차량 카드의 "이 차량으로 견적" 버튼은 wizard.html 로 이동합니다. */
 
   /* ============================================================
@@ -1640,7 +1709,8 @@ ul,ol{ padding:0; list-style:none; }
   var bkOv = $('bk-ov'), bkStep = $('bk-step'), bkDone = $('bk-done');
   var nameEl = $('bk-name'), telEl = $('bk-tel');
 
-  function routeTxt(){ return fromEl.value + ' → ' + toEl.value; }
+  /* 출발지 → 경유1 → … → 도착지 */
+  function routeTxt(){ return [fromEl.value].concat(wpVals()).concat([toEl.value]).join(' → '); }
   function openBooking(){
     /* 진입 팝업이 떠 있으면 먼저 닫아 오버레이가 겹치지 않게 한다 */
     if (popOv && popOv.classList.contains('is-open')) closePopup();
