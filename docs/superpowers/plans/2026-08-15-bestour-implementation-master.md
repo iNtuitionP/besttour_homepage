@@ -1,142 +1,159 @@
-# 베스트투어 실구현 마스터 플랜
+# 베스트투어 실구현 마스터 플랜 (v2 — 2026-08-15 eng review + Codex 아웃사이드 보이스 반영)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-> 이 문서는 **마스터 플랜**이다: 공유 아키텍처·DB 스키마·API 계약·데이터 체크리스트 + **Phase A의 상세 태스크**를 담는다. Phase B~E는 범위·수용 기준까지 정의되어 있고, 각각 착수 시점에 이 문서를 참조하는 별도 상세 플랜(`2026-MM-DD-bestour-phase-X.md`)으로 확장한다.
+> 이 문서는 **마스터 플랜**이다: 공유 아키텍처·DB 스키마·계약 + **Phase A의 상세 태스크**. Phase B~E는 범위·수용 기준까지 정의되어 있고 착수 시 별도 상세 플랜으로 확장한다.
+> v2 변경: 리뷰 결정 [1A~4A, 5A, 6A] + Codex 수용 15건 + 크로스모델 결정 [T1-A, T2-A, T3-A] 반영. 상세는 문서 말미 GSTACK REVIEW REPORT.
 
 **Goal:** 컨펌된 목업(시안 7 + 위저드 + admin)을 실제 서비스로 구현한다 — 예약 접수·문자 알림·관리자 운영까지.
 
-**Architecture:** Next.js App Router가 프론트와 API를 모두 담당하고, Supabase가 DB(Postgres)·관리자 인증·이미지 스토리지를 담당한다. 문자/알림톡은 Solapi를 서버 측에서만 호출한다. 가격 계산은 DB의 요금 설정을 읽는 순수 TypeScript 함수로 구현해 홈 위젯·위저드·admin이 공유한다.
+**Architecture:** Next.js App Router가 프론트를 담당하고, **폼 뮤테이션은 Server Actions**(예약 접수·조회), 캐시 가능한 공개 읽기만 Route Handler(live-feed)로 한다. Supabase가 DB(Postgres)·관리자 인증(@supabase/ssr 쿠키 세션)·이미지 스토리지를 담당한다. 문자/알림톡은 Solapi를 서버에서만 호출하되 **Next.js `after()`로 응답 후 발송**한다. 가격 계산은 순수 함수 `estimate()` 하나를 전 화면이 공유하고 서버가 항상 재계산한다. 운행 일시는 **한국 현지 시각으로 받아 서버가 Asia/Seoul로 해석**한다(UTC 문자열 금지). 장소·여행구분은 **canonical code**로 저장한다(번역 문자열 저장 금지).
 
-**Tech Stack:** Next.js 15(App Router, TS), Supabase(@supabase/supabase-js v2, @supabase/ssr), next-intl(KO 기본/EN 토글), solapi(공식 SDK), zod(입력 검증), vitest(테스트), CSS Modules + 디자인 토큰(Tailwind 미사용).
+**Tech Stack:** Next.js 15(정확 버전 고정, App Router, TS), Supabase(@supabase/supabase-js v2, @supabase/ssr), next-intl(KO 기본/EN 토글), solapi, zod, @upstash/ratelimit(+@upstash/redis), Cloudflare Turnstile, vitest, CSS Modules + 디자인 토큰(Tailwind 미사용).
 
-**Spec:** docs/superpowers/specs/2026-08-07-bestour-redesign-uiux-design.md (§10·§11 우선) + mockups/soul.md (§10 우선) + 컨펌 목업 3종(mockups/variant-07-final.html, wizard.html, admin.html)
+**Spec:** docs/superpowers/specs/2026-08-07-bestour-redesign-uiux-design.md (§10·§11 우선) + mockups/soul.md (§10 우선) + 컨펌 목업 3종
 
 ## Global Constraints
 
-- 팔레트·레이아웃·카피는 컨펌 목업이 원본이다. 픽셀 임의 변경 금지. 팔레트: `#3B1F5C` `#7C3AED` `#F3EFFA` `#1A1523` `#FAF9FC` `#D4A843`
-- BM 비노출: "나가는 버스", "태우고 나가", "공차", "회송" 등 원가 구조 표현은 한/영 모든 카피에서 금지 (soul.md §10.2)
+- 팔레트·레이아웃·카피는 컨펌 목업이 원본. 픽셀 임의 변경 금지. 팔레트: `#3B1F5C` `#7C3AED` `#F3EFFA` `#1A1523` `#FAF9FC` `#D4A843`
+- BM 비노출: "나가는 버스", "태우고 나가", "공차", "회송" 등 원가 구조 표현 금지 (한/영 공통, soul.md §10.2)
 - 공항 표기: "공항 픽업·샌딩 (송영 전문)" / EN: "Airport Pick-up & Sending"
-- 가격 표기에는 항상 "예상가" 라벨 + "실제 견적은 확정 시 안내" 병기. 결제 기능 없음 (스펙 §3)
-- 예약 접수·상태 변경 문구: "사장님 확정 후 연락드리며, 확정된 예약만 결제 진행됩니다." (verbatim)
+- 가격 표기: "예상가" 라벨 + "실제 견적은 확정 시 안내" 병기. 결제 기능 없음
+- 접수·확정 문구 verbatim: "사장님 확정 후 연락드리며, 확정된 예약만 결제 진행됩니다."
 - 차량 5종 고정: 45인승 관광버스 / 35인승 관광버스 / 28인승 우등리무진 / 25인승 관광버스 / 16인승 관광버스
-- 회사 정보는 soul.md §3 원문 그대로 (대표 1566-6188, 직통 010-2048-8585 등)
+- 회사 정보는 soul.md §3 원문 그대로
 - 모바일 375px 가로 스크롤 금지, 1280px 대응
-- Supabase service role key는 서버 전용(클라이언트 번들 유입 금지). 모든 공개 API는 zod 검증 + rate limit
-- 커밋 메시지 끝: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
+- service role key 서버 전용. 모든 공개 뮤테이션 = zod 검증 + Upstash rate limit + Turnstile + 허니팟
+- **운행 일시는 KST 벽시계 값**(`"2026-09-01T08:00"` + 서버에서 Asia/Seoul 해석). `Z` 접미 UTC 입력 금지
+- **장소/여행구분은 code로 저장** (`ICN`, `SEL`, `GG`...; `airport_pickup`, `family`...). 표시 문자열은 messages/{ko,en}.json에서만
+- 모든 커밋 메시지 끝에 트레일러 포함: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>` (아래 커밋 예시들은 `-m "..."` 뒤에 이 트레일러 줄이 있다고 간주)
 
----
-
-## 0. 저장소 구조 (전 Phase 공유)
+## 0. 저장소 구조
 
 ```
 /                          # 저장소 루트 = Next.js 앱 루트
 ├─ app/
-│  ├─ [locale]/            # ko(기본, URL 프리픽스 없음) / en
-│  │  ├─ page.tsx          # 홈 (variant-07-final 이식)
-│  │  ├─ quote/page.tsx    # 견적 위저드 (wizard.html 이식)
-│  │  ├─ company/page.tsx  # 회사소개 + 오시는 길
-│  │  ├─ vehicles/page.tsx # 차량소개 + 보험 + 운임
-│  │  ├─ gallery/page.tsx
-│  │  ├─ notice/page.tsx   # 고객센터(공지)
-│  │  └─ reservation-check/page.tsx  # 예약확인 (이름+전화 조회)
-│  ├─ admin/               # locale 밖 (한국어 전용)
-│  │  ├─ login/page.tsx
-│  │  ├─ page.tsx          # 예약 현황
-│  │  └─ popups/page.tsx   # 팝업/공지 관리
-│  └─ api/
-│     ├─ reservations/route.ts        # POST 접수
-│     ├─ reservations/lookup/route.ts # POST 예약확인 조회
-│     ├─ live-feed/route.ts           # GET 실시간 견적현황(마스킹)
-│     └─ admin/reservations/[id]/route.ts # PATCH 상태 변경(+알림)
+│  ├─ [locale]/            # ko(기본, 프리픽스 없음) / en
+│  │  ├─ page.tsx quote/ company/ vehicles/ gallery/ notice/ reservation-check/
+│  ├─ admin/               # locale 밖 (한국어 전용): login/ page.tsx popups/ notices/ gallery/
+│  └─ api/live-feed/route.ts   # 유일한 Route Handler (GET 캐시)
+├─ actions/                # Server Actions (뮤테이션 전부)
+│  ├─ reservations.ts      # createReservation, lookupReservations
+│  └─ admin.ts             # updateReservationStatus, resendNotification, popup/notice/gallery CRUD
 ├─ lib/
-│  ├─ pricing.ts           # 순수 가격 계산 (핵심 공유 로직)
-│  ├─ notify.ts            # Solapi 발송 (알림톡→SMS 폴백)
-│  ├─ mask.ts              # 이름/전화 마스킹
-│  ├─ supabase/server.ts   # 서버 클라이언트(서비스 롤/SSR)
-│  └─ supabase/client.ts   # 브라우저 클라이언트(anon)
-├─ messages/ko.json, en.json  # next-intl 문자열 (카피 전량)
-├─ styles/tokens.css       # 목업 CSS 변수 이식
-├─ supabase/migrations/0001_init.sql
-├─ tests/                  # vitest
+│  ├─ pricing.ts codes.ts mask.ts notify.ts kst.ts
+│  ├─ rate-limit.ts        # Upstash 래퍼
+│  ├─ turnstile.ts         # 토큰 서버 검증
+│  └─ supabase/ server.ts(서비스 롤) ssr.ts(쿠키 세션) client.ts(anon)
+├─ middleware.ts           # next-intl, matcher: /((?!api|admin|_next|.*\..*).*)
+├─ messages/ko.json, en.json
+├─ styles/tokens.css
+├─ supabase/migrations/0001_init.sql, 0002_admin_policies.sql
+├─ tests/
 └─ mockups/, docs/         # 기존 그대로 (참조용)
 ```
 
-## 1. DB 스키마 (supabase/migrations/0001_init.sql — Phase A Task 2에서 생성)
+## 1. Canonical codes (lib/codes.ts — 전 Phase 공유)
+
+```ts
+export const REGIONS = ['ICN','SEL','BSN','INC','DGU','GWJ','DJN','ULS','GG','GW','CN','CB','GB','GN','JN','JB','JJ'] as const; // ICN=인천공항(특수), 나머지 16개 시도
+export type RegionCode = typeof REGIONS[number];
+export const PURPOSES = ['airport_pickup','family','ceremony','workshop','social','religious','univ_mt','field_trip','foreign_vip','etc'] as const;
+export type PurposeCode = typeof PURPOSES[number];
+export const isAirport = (c: RegionCode) => c === 'ICN';
+```
+표시 문자열(한/영)은 `messages/*.json`의 `regions.*`, `purposes.*` 키. DB·가격·통계는 code만 사용.
+
+## 2. DB 스키마 (supabase/migrations/0001_init.sql)
 
 ```sql
 create type reservation_status as enum ('new','confirmed','done','cancelled');
+create type price_state as enum ('estimated','quote_required');
 
 create table vehicles (
   id serial primary key,
-  slug text unique not null,             -- 'bus45','bus35','limo28','bus25','bus16'
+  slug text unique not null,
   name_ko text not null, name_en text not null,
-  capacity int not null,
-  base_price int not null,               -- 당일왕복 기준가 (원)
+  capacity int not null check (capacity between 1 and 60),
+  base_price int not null check (base_price > 0),
   sort int not null default 0, active boolean not null default true
 );
 
-create table price_rules (                -- 배율/설정 (사장님 요금표 반영 지점)
-  key text primary key,                   -- 'oneway','overnight','oneway_oneway','airport_note'
-  value numeric not null,
-  description text
+create table price_rules (
+  key text primary key, value numeric not null, description text
+);
+
+-- 노선별 실요금표 수령 시 채우는 테이블 (비어 있으면 base_price 폴백)
+create table route_prices (
+  vehicle_slug text not null references vehicles(slug),
+  origin_code text not null, destination_code text not null,
+  price int not null check (price > 0),
+  primary key (vehicle_slug, origin_code, destination_code)
 );
 
 create table reservations (
   id uuid primary key default gen_random_uuid(),
+  public_code text unique not null,          -- 'BT-250901-4F2K' 고객 노출 접수번호
   created_at timestamptz not null default now(),
   status reservation_status not null default 'new',
-  name text not null, phone text not null,
+  name text not null check (length(name) between 1 and 30),
+  phone text not null,                        -- 저장은 숫자만 (하이픈 제거 정규화)
+  email text,
   vehicle_slug text not null references vehicles(slug),
-  purpose text not null,                  -- 여행구분 10종
-  origin text not null, destination text not null,
-  waypoints jsonb not null default '[]',  -- ["대전","부산"] 최대 5
-  trip_type text not null,                -- 'round','oneway','oneway_oneway'
-  depart_at timestamptz not null, return_at timestamptz,
-  bus_count int not null default 1, passengers int,
-  est_price int not null,
+  purpose_code text not null,
+  origin_code text not null, destination_code text not null,
+  waypoint_codes jsonb not null default '[]',
+  trip_type text not null check (trip_type in ('round','oneway','oneway_oneway')),
+  depart_at timestamptz not null,             -- KST 해석 후 저장
+  return_at timestamptz check (return_at is null or return_at > depart_at),
+  nights int not null default 0 check (nights >= 0),
+  bus_count int not null default 1 check (bus_count between 1 and 20),
+  passengers int check (passengers between 1 and 900),
+  price_state price_state not null,
+  est_price int check ((price_state = 'estimated') = (est_price is not null)),
+  price_breakdown jsonb,                      -- 계산 스냅샷 {base, tripMult, nightMult, busCount, ruleVersion}
   contact_method text, payment_method text,
   parking_included boolean, vat_included boolean,
-  message text, locale text not null default 'ko',
-  confirmed_at timestamptz, admin_memo text
+  message text check (message is null or length(message) <= 1000),
+  locale text not null default 'ko' check (locale in ('ko','en')),
+  confirmed_at timestamptz, admin_memo text,
+  check ((trip_type = 'round') = (return_at is not null))
 );
 create index on reservations (status, created_at desc);
 
 create table notifications_log (
   id bigserial primary key,
   reservation_id uuid references reservations(id),
-  channel text not null,                  -- 'sms' | 'alimtalk'
+  event text not null,                        -- 'created' | 'confirmed'
+  channel text not null,                      -- 'sms' | 'alimtalk'
   to_phone text not null, template text not null,
-  status text not null,                   -- 'sent' | 'failed'
+  status text not null,                       -- 'sent' | 'failed'
   provider_message_id text, error text,
   created_at timestamptz not null default now()
 );
+create index on notifications_log (reservation_id, event);
 
 create table popups (
   id serial primary key,
-  title text not null, body text not null,
-  image_path text,                        -- Supabase storage 경로
-  starts_at date not null, ends_at date not null,
+  title text not null, body text not null, image_path text,
+  starts_at date not null, ends_at date not null check (ends_at >= starts_at),
   active boolean not null default true,
   created_at timestamptz not null default now()
 );
-
 create table notices (
-  id serial primary key,
-  title text not null, body text not null,
-  category text not null default '안내',
-  published_at date not null default current_date,
-  active boolean not null default true
+  id serial primary key, title text not null, body text not null,
+  category text not null default 'info',
+  published_at date not null default current_date, active boolean not null default true
 );
-
 create table gallery (
-  id serial primary key,
-  image_path text not null, caption text,
+  id serial primary key, image_path text not null, caption text,
   sort int not null default 0, active boolean not null default true
 );
 
--- RLS: 공개 테이블은 읽기만 공개, 쓰기는 서비스 롤 전용
-alter table reservations enable row level security;   -- 정책 없음 = 서비스 롤만
+-- RLS: 공개 읽기 최소화, 쓰기는 서비스 롤 전용
+alter table reservations enable row level security;
 alter table notifications_log enable row level security;
+alter table route_prices enable row level security;
+create policy route_prices_read on route_prices for select using (true);
 alter table vehicles enable row level security;
 create policy vehicles_read on vehicles for select using (true);
 alter table price_rules enable row level security;
@@ -146,9 +163,9 @@ create policy popups_read on popups for select using (active and current_date be
 alter table notices enable row level security;
 create policy notices_read on notices for select using (active);
 alter table gallery enable row level security;
-create policy gallery_read on gallery for select using (active);
+create policy gallery_read on gallery for select using (true);
 
--- 시드 (목업 더미 요금표 — 사장님 실값으로 교체 예정)
+-- 시드: 차량 5종 + 배율 (목업 검증값. 실요금표 수령 시 route_prices로 대체)
 insert into vehicles (slug,name_ko,name_en,capacity,base_price,sort) values
  ('bus45','45인승 관광버스','45-seat Coach',45,650000,1),
  ('bus35','35인승 관광버스','35-seat Coach',35,550000,2),
@@ -161,289 +178,305 @@ insert into price_rules (key,value,description) values
  ('oneway_oneway',1.2,'편도·편도 = 편도 x 2');
 ```
 
-## 2. API 계약 (전 Phase 공유 — 이름·타입 고정)
+`0002_admin_policies.sql` (Phase D): profiles(role) 없이 **단일 관리자 UUID 화이트리스트** — `create policy popups_admin on popups for all using (auth.uid() = '<사장님 auth user id>'::uuid)` 방식으로 popups/notices/gallery insert/update/delete. `authenticated` 전체 부여 금지.
 
-| 엔드포인트 | 입력(zod) | 출력 | 비고 |
-|---|---|---|---|
-| `POST /api/reservations` | `ReservationInput` (아래) | `{ id: string }` 201 | 접수 + 사장님/고객 알림 발송(Phase C에서 활성화) |
-| `POST /api/reservations/lookup` | `{ name: string, phone: string }` | `ReservationPublic[]` | 본인 예약 조회. 분당 5회 rate limit |
-| `GET /api/live-feed` | — | `{ name: string, vehicle: string, date: string }[]` 최근 12건 | name은 `mask.ts`로 "한**" 마스킹 |
-| `PATCH /api/admin/reservations/:id` | `{ status: 'confirmed'\|'done'\|'cancelled' }` | `ReservationAdmin` | Supabase 세션 필수. confirmed 시 고객 알림 |
+개인정보: reservations는 운행 종료 후 1년 보존 → 마스킹 삭제 배치(Phase E 문서화, 개인정보처리방침에 명시).
+
+## 3. 계약 (이름·타입 고정 — 전 Phase 공유)
 
 ```ts
-// lib/types.ts — 전 Phase 공유 타입 (이름 고정)
+// lib/types.ts
 export const ReservationInput = z.object({
   name: z.string().min(1).max(30),
-  phone: z.string().regex(/^01[016789]-\d{3,4}-\d{4}$/),
+  phone: z.string().regex(/^01[016789]-?\d{3,4}-?\d{4}$/),            // ko
+  phoneIntl: z.string().regex(/^\+[1-9]\d{6,14}$/).optional(),        // en 로케일은 국제형식 허용 (둘 중 하나 필수는 refine)
+  email: z.string().email().optional(),
   vehicleSlug: z.enum(['bus45','bus35','limo28','bus25','bus16']),
-  purpose: z.string().min(1),
-  origin: z.string().min(1), destination: z.string().min(1),
-  waypoints: z.array(z.string()).max(5).default([]),
+  purposeCode: z.enum(PURPOSES),
+  originCode: z.enum(REGIONS), destinationCode: z.enum(REGIONS),
+  waypointCodes: z.array(z.enum(REGIONS)).max(5).default([]),
   tripType: z.enum(['round','oneway','oneway_oneway']),
-  departAt: z.string().datetime(), returnAt: z.string().datetime().optional(),
+  departAtLocal: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/), // KST 벽시계
+  returnAtLocal: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/).optional(),
   busCount: z.number().int().min(1).max(20).default(1),
   passengers: z.number().int().min(1).max(900).optional(),
   contactMethod: z.string().optional(), paymentMethod: z.string().optional(),
   parkingIncluded: z.boolean().optional(), vatIncluded: z.boolean().optional(),
   message: z.string().max(1000).optional(),
   locale: z.enum(['ko','en']).default('ko'),
+  turnstileToken: z.string(),
+  website: z.string().max(0).optional(),      // 허니팟: 값이 있으면 무시
 });
-export type ReservationInput = z.infer<typeof ReservationInput>;
+
+export interface ReservationPublic {          // lookup 반환 최소 필드
+  publicCode: string; status: ReservationStatus; vehicleSlug: string;
+  originCode: string; destinationCode: string; departAt: string;
+  priceState: 'estimated'|'quote_required'; estPrice: number|null;
+}
 ```
 
 ```ts
-// lib/pricing.ts — 시그니처 고정 (Phase A Task 3)
-export type TripType = 'round' | 'oneway' | 'oneway_oneway';
-export interface PriceConfig { basePrices: Record<string, number>; rules: { oneway: number; overnight: number; oneway_oneway: number } }
-export interface EstimateInput { vehicleSlug: string; tripType: TripType; nights: 0 | 1; busCount: number }
-export function estimate(cfg: PriceConfig, input: EstimateInput): number
+// lib/pricing.ts — 시그니처 (노선 인지 + 별도견적 상태)
+export type TripType = 'round'|'oneway'|'oneway_oneway';
+export interface PriceConfig {
+  basePrices: Record<string, number>;
+  rules: { oneway: number; overnight: number; oneway_oneway: number };
+  routePrices?: Record<string, number>;       // `${vehicleSlug}:${origin}:${dest}` → 원 (실요금표 수령 후)
+}
+export interface EstimateInput { vehicleSlug: string; originCode: string; destinationCode: string; tripType: TripType; nights: number; busCount: number }
+export type EstimateResult =
+  | { kind: 'estimated'; total: number; breakdown: { base: number; tripMult: number; nightMult: number; busCount: number } }
+  | { kind: 'quote_required'; reason: 'multi_night' };   // nights >= 2
+export function estimate(cfg: PriceConfig, input: EstimateInput): EstimateResult
 ```
 
-## 3. 환경 변수 (Vercel 프로젝트 설정)
+```ts
+// actions/reservations.ts — Server Actions
+export async function createReservation(input: unknown): Promise<
+  | { ok: true; publicCode: string; priceState: 'estimated'|'quote_required'; estPrice: number|null }
+  | { ok: false; error: 'validation'|'rate_limited'|'bot_check_failed'; issues?: ZodIssue[] }>
+// 순서: 허니팟 → Turnstile 검증(lib/turnstile.ts) → Upstash RL(ip, 5/min) → zod → KST 파싱(lib/kst.ts) → nights 산출 → estimate 재계산 → public_code 생성 → insert → after(() => notifyReservationCreated(r)) → 반환
+export async function lookupReservations(input: { name: string; phone: string }): Promise<ReservationPublic[]>
+// Upstash RL(ip, 5/min). 불일치 = 빈 배열 (존재 여부 비노출)
+```
+
+```ts
+// actions/admin.ts — 상태 머신 + 재발송 (Phase D 구현, 계약만 고정)
+const ALLOWED: Record<ReservationStatus, ReservationStatus[]> =
+  { new: ['confirmed','cancelled'], confirmed: ['done','cancelled'], done: [], cancelled: [] };
+export async function updateReservationStatus(id: string, to: ReservationStatus): Promise<...>
+// 전이 검증 + confirmed 시 notifications_log에 event='confirmed' 기존 sent 있으면 발송 생략(중복 방지)
+export async function resendNotification(reservationId: string, event: 'created'|'confirmed'): Promise<...>
+```
+
+`GET /api/live-feed`: `{ name, vehicle, date, sample?: true }[]` 12건, `revalidate = 60`. 실데이터 0건이면 시드 12건에 `sample: true` → UI가 "예시" 라벨 표시 [T1-A]. 접수 폼에 "접수 내역은 이름 마스킹 형태로 실시간 현황에 표시됩니다" 고지 포함.
+
+## 4. 환경 변수
 
 | 변수 | 용도 |
 |---|---|
-| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 공개 읽기(차량/요금/팝업/공지/갤러리) |
-| `SUPABASE_SERVICE_ROLE_KEY` | 서버 전용 쓰기(예약/로그/관리) |
-| `SOLAPI_API_KEY`, `SOLAPI_API_SECRET` | 문자 발송 |
-| `SMS_SENDER` = `15666188` | 발신번호(사전 등록 필수) |
-| `OWNER_PHONE` = `01020488585` | 사장님 수신 번호 |
-| `NEXT_PUBLIC_KAKAO_CHANNEL_URL`, `NEXT_PUBLIC_NAVER_TALK_URL` | 문의 채널 링크(개설 후 주입, 그 전엔 버튼 숨김 아님 — "준비 중" 안내) |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | DB |
+| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | rate limit (무료 티어) |
+| `TURNSTILE_SECRET_KEY`, `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | 봇 방어 (무료) |
+| `SOLAPI_API_KEY`, `SOLAPI_API_SECRET`, `SMS_SENDER=15666188`, `OWNER_PHONE=01020488585` | 문자 |
+| `NEXT_PUBLIC_KAKAO_CHANNEL_URL`, `NEXT_PUBLIC_NAVER_TALK_URL` | 문의 채널 (미개설 시 "준비 중" 안내) |
+| `PRICE_DISPLAY_MODE=estimate\|inquiry` | [T2-A] 런치 게이트: 실요금표 미수령 시 inquiry 모드(숫자 대신 "견적 문의") |
 
-## 4. 사장님에게 받아야 하는 데이터 (Phase 진행 조건)
+## 5. 사장님 데이터 체크리스트
 
-| 데이터 | 막히는 Phase | 없을 때 임시값 |
+| 데이터 | 막히는 Phase | 없을 때 |
 |---|---|---|
-| 노선별 실제 요금표 + 공항 노선 할인 폭 | E(런치) | 목업 더미 요금표 유지 + "예상가" 고지 |
-| 창업연도·누적 운행 실적 | B(홈 카피) | "13년/4,800건" 임시값 + 내부 표시 |
-| 발신번호(1566-6188) 등록 서류 (통신서비스 이용증명원) | C | 발송 기능 스텁(로그만) |
-| 사업자등록증 + 카카오 비즈니스 채널 | C(알림톡) | SMS(LMS)로만 발송 |
-| 카카오톡 채널 URL / 네이버 톡톡 URL | B | 버튼 클릭 시 "채널 준비 중, 전화 주세요" 안내 |
-| 이벤트 팝업 소재(사진+문구) | D | admin에서 사장님이 직접 등록하는 구조라 데모 팝업으로 시연 |
-| 도메인(bestour.co.kr) 관리 계정 | E | Vercel 기본 도메인으로 검수 |
-| 갤러리 원본 사진, 이관할 공지 목록 | E | 기존 사이트 스크랩 6장 + 공지 2건 |
-| 영문 회사 표기·주소 영문 표기 | B | 로마자 표기 초안 작성 후 컨펌 |
+| 노선별 실요금표 + 공항 할인 폭 | **E 도메인 오픈 (전제조건)** [T2-A] | 개발·검수는 더미로, 오픈은 `PRICE_DISPLAY_MODE=inquiry` |
+| 창업연도·실적 수치 | B | 임시값 + "확인 필요" 내부 표시 |
+| 발신번호 등록 서류 / 사업자등록증+카카오 채널 | C | 발송 스텁(로그만) / SMS만 |
+| 카카오 채널·네이버 톡톡 URL | B | "준비 중" 안내 |
+| 도메인 관리 계정 (**기존 MX 레코드 목록 포함** — 메일 두절 방지) | E | Vercel 기본 도메인 검수 |
+| 갤러리 원본·공지 이관 목록 / 영문 표기 | E / B | 스크랩 6장 / 로마자 초안 |
+| **개인정보처리방침 문안 확인** (통신판매업자 법적 필수) | E | 표준 템플릿 초안 → 사장님 검수 |
 
-## 5. Phase 분해
+## 6. Phase 분해
 
 | Phase | 산출물 | 완료 기준 |
 |---|---|---|
-| **A. 기반** (이 문서에 상세) | Next.js 스캐폴드 + Supabase 스키마 + 가격 엔진 + 예약 API + Vercel 배포 | `POST /api/reservations`가 프리뷰 URL에서 실제 DB에 저장, vitest 전부 통과 |
-| **B. 공개 사이트** | 홈(v7)·위저드·서브페이지 5종 이식, KO/EN 토글, 팝업 노출, 실시간 피드 | 목업과 시각적 동일(스크린샷 대조), EN 전환 동작, Lighthouse 모바일 90+ |
-| **C. 알림** | notify.ts(Solapi), 접수/확정 발송, notifications_log | 실기기 문자 수신 확인, 실패 시 로그·폴백 동작 |
-| **D. admin** | Supabase Auth 로그인, 예약 현황(상태 변경→알림), 팝업/공지/갤러리 CRUD + 이미지 업로드 | 사장님 시나리오 E2E: 로그인→신규 예약 확정→고객 문자 수신→팝업 등록→홈 노출 |
-| **E. 이관·런치** | 기존 콘텐츠 이관, 도메인 전환, SEO(메타/OG/sitemap), 접속 통계(Vercel Analytics), 런치 체크리스트 | bestour.co.kr에서 신규 사이트 서비스, 구 그누보드 견적 게시판 접수 중단 안내 |
+| **A. 기반** (하단 상세) | 스캐폴드 + 스키마 + 가격 엔진 + 예약/조회 Server Actions + live-feed + 배포 | 프리뷰 URL에서 실제 접수 → DB 저장 + public_code 반환, vitest 전 경로 통과 |
+| **B. 공개 사이트** | 목업 3종 이식, KO/EN, 팝업, 피드, 위저드(경유지·다박 별도견적 UX), Turnstile 위젯, 접수 고지문 | 목업 스크린샷 대조 동일, EN 전환, Lighthouse 모바일 90+, next/image 적용, Pretendard 서브셋 self-host |
+| **C. 알림** | notify.ts(전화 정규화 포함), created/confirmed 발송, 로그, **admin 재발송**, 중복 발송 가드 | 실기기 수신, 실패 로그·재발송 동작, mock 3경로 테스트 |
+| **D. admin** | @supabase/ssr 세션 + 단일 관리자 정책(0002), 예약 현황(상태 머신), 팝업/공지/갤러리 CRUD [T3-A] | 사장님 E2E: 로그인→확정→문자→팝업 등록→홈 노출. 비관리자 계정 차단 확인 |
+| **E. 이관·런치** | 콘텐츠 이관, **개인정보처리방침 페이지**, 보존·삭제 정책, SEO/hreflang/OG/sitemap, 도메인 전환(MX 보존+TTL+롤백 계획), 런치 게이트 확인 | bestour.co.kr 서비스 개시. `PRICE_DISPLAY_MODE` 확정. 구 게시판 접수 중단 안내 |
 
-의존 관계: A → B, C는 A 이후 B와 병렬 가능, D는 A·C 이후, E는 전부 이후.
+의존: A → B, C는 A 이후 B와 병렬, D는 A·C 이후, E는 전부 이후.
+
+### 데이터 플로우 (ASCII)
+
+```
+[방문자] ── 홈 위젯/위저드 ──> createReservation (Server Action)
+              │ 허니팟→Turnstile→RateLimit→zod→KST해석→estimate()재계산
+              │ insert(reservations, public_code, price_breakdown)
+              │ after(): notify(사장님 SMS, 고객 SMS/알림톡) ─> notifications_log
+              └─> { publicCode, estPrice | quote_required }
+[방문자] ── 예약확인 ──> lookupReservations ──> ReservationPublic[] (마스킹·최소 필드)
+[방문자] ── 홈 현황  ──> GET /api/live-feed (60s 캐시, 마스킹, sample 라벨)
+[사장님] ── /admin ──> @supabase/ssr 세션 ──> updateReservationStatus (상태 머신)
+              └ confirmed: 중복 가드 후 고객 통지 + resendNotification 백업
+```
 
 ---
 
-## Phase A 상세 태스크
+## Phase A 상세 태스크 (v2)
 
-### Task A1: Next.js 스캐폴드 + 도구 체인
+### Task A1: 스캐폴드 + 도구 체인
 
-**Files:**
-- Create: `package.json`, `tsconfig.json`, `next.config.ts`, `vitest.config.ts`, `app/layout.tsx`, `app/page.tsx`(임시), `styles/tokens.css`, `.env.example`, `.gitignore` 갱신
+**Files:** Create: `package.json` `tsconfig.json` `next.config.ts` `vitest.config.ts` `middleware.ts` `app/layout.tsx` `styles/tokens.css` `.env.example`
 
-**Interfaces:**
-- Produces: 실행 가능한 Next.js 앱 (`npm run dev`), `npm test`(vitest)
-
-- [ ] **Step 1: 스캐폴드 생성** — 저장소 루트에서 (mockups/, docs/ 보존 확인):
+- [ ] **Step 1: 스캐폴드** — 루트가 비어있지 않으므로(mockups/, docs/, README) create-next-app 직접 실행 금지. 임시 폴더에 생성 후 이동:
 ```bash
-npx create-next-app@latest . --ts --app --no-tailwind --eslint --src-dir=false --import-alias "@/*" --use-npm
-npm i zod @supabase/supabase-js @supabase/ssr next-intl solapi
+npx create-next-app@15 _scaffold --ts --app --no-tailwind --eslint --src-dir=false --import-alias "@/*" --use-npm
+# _scaffold의 내용물을 루트로 이동(기존 파일과 충돌 없음 확인: README.md는 기존 것 유지, .gitignore는 병합)
+# 버전 고정 확인: package.json의 next가 15.x인지 확인, 아니면 npm i next@15
+npm i zod @supabase/supabase-js @supabase/ssr next-intl solapi @upstash/ratelimit @upstash/redis
 npm i -D vitest @vitest/coverage-v8
 ```
-- [ ] **Step 2: vitest 설정** — `vitest.config.ts`:
+- [ ] **Step 2: vitest 설정** — v1과 동일 (`tests/**/*.test.ts`, alias `@`).
+- [ ] **Step 3: middleware.ts** — next-intl 미들웨어 + **matcher에서 /api·/admin·정적 파일 제외** [4A]:
 ```ts
-import { defineConfig } from 'vitest/config';
-import path from 'node:path';
-export default defineConfig({
-  test: { environment: 'node', include: ['tests/**/*.test.ts'] },
-  resolve: { alias: { '@': path.resolve(__dirname, '.') } },
-});
+export const config = { matcher: ['/((?!api|admin|_next|.*\\..*).*)'] };
 ```
-`package.json` scripts에 `"test": "vitest run"` 추가.
-- [ ] **Step 3: 디자인 토큰 이식** — `styles/tokens.css`에 variant-07-final.html의 `:root` CSS 변수 블록을 그대로 복사(팔레트 6색 + 간격/라운드 변수). `app/layout.tsx`에서 import.
-- [ ] **Step 4: .env.example 작성** — §3의 변수 전체를 키만 나열.
-- [ ] **Step 5: 검증** — `npm run dev` 기동 + `npm test`가 "no tests" 아닌 정상 종료(빈 테스트 1개 추가: `tests/smoke.test.ts`에 `expect(1).toBe(1)`).
-- [ ] **Step 6: Commit** — `git add -A && git commit -m "feat: scaffold Next.js app with tokens and toolchain"`
+- [ ] **Step 4: 토큰 이식 + .env.example(§4 전체 키) + smoke 테스트** → `npm run dev`·`npm test` 통과
+- [ ] **Step 5: Commit** — `git commit -m "feat: scaffold Next.js 15 app with i18n middleware and toolchain"` (+트레일러)
 
-### Task A2: Supabase 프로젝트 + 마이그레이션
+### Task A2: Supabase 스키마 + 클라이언트 + 타입
 
-**Files:**
-- Create: `supabase/migrations/0001_init.sql` (§1 SQL 전문), `lib/supabase/server.ts`, `lib/supabase/client.ts`, `lib/types.ts`(§2의 ReservationInput)
+**Files:** Create: `supabase/migrations/0001_init.sql`(§2 전문) `lib/supabase/server.ts` `lib/supabase/ssr.ts` `lib/supabase/client.ts` `lib/types.ts`(§3) `lib/codes.ts`(§1)
 
-**Interfaces:**
-- Produces: `createServiceClient(): SupabaseClient`(서버 전용), `createBrowserClient(): SupabaseClient`, `ReservationInput` zod 스키마
+- [ ] **Step 1**: Supabase 프로젝트 생성(서울 리전, 사용자 수행) → 키 3개 `.env.local`
+- [ ] **Step 2**: §2 SQL 저장 + 실행. §1 codes.ts, §3 types.ts 작성
+- [ ] **Step 3**: 클라이언트 3종 — server.ts(서비스 롤), ssr.ts(@supabase/ssr `createServerClient` 쿠키 연동 — Phase D admin용 기반), client.ts(anon)
+- [ ] **Step 4**: 스모크 테스트 — vehicles 5행, `bus45=650000`, CHECK 제약 위반 insert가 실제로 거부되는지 1건 (`bus_count=21` → error). 환경변수 없으면 skip하되 **CI에서는 실행**(A7에서 Supabase 프로젝트의 CI용 스키마 또는 `supabase start` 로컬 스택 연결 — "전부 skip = 통과" 금지)
+- [ ] **Step 5: Commit**
 
-- [ ] **Step 1: Supabase 프로젝트 생성** — supabase.com에서 신규 프로젝트(리전 ap-northeast-2 서울). URL/anon/service key를 `.env.local`에 기입. **사용자(개발자)가 대시보드에서 직접 수행** — 에이전트는 키를 받은 뒤 진행.
-- [ ] **Step 2: 마이그레이션 작성** — §1 SQL을 `supabase/migrations/0001_init.sql`로 저장, Supabase SQL Editor에서 실행(또는 `npx supabase db push`).
-- [ ] **Step 3: 클라이언트 모듈**:
+### Task A3: 가격 엔진 (TDD, 노선 인지 + 별도견적)
+
+**Files:** Create: `lib/pricing.ts`, Test: `tests/pricing.test.ts`
+
+- [ ] **Step 1: 실패 테스트** — 목업 확정 기대값 + 신규 계약:
 ```ts
-// lib/supabase/server.ts
-import { createClient } from '@supabase/supabase-js';
-export function createServiceClient() {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } });
-}
+const cfg: PriceConfig = { basePrices: { bus45: 650000, bus35: 550000, limo28: 600000, bus25: 480000, bus16: 400000 },
+  rules: { oneway: 0.6, overnight: 1.8, oneway_oneway: 1.2 } };
+const base = { originCode: 'SEL', destinationCode: 'GW', busCount: 1 };
+it('당일왕복 45인승 = 650,000', () => expect(estimate(cfg, { ...base, vehicleSlug: 'bus45', tripType: 'round', nights: 0 }))
+  .toEqual({ kind: 'estimated', total: 650000, breakdown: { base: 650000, tripMult: 1, nightMult: 1, busCount: 1 } }));
+it('편도 60% = 390,000', ...);            // total 390000
+it('1박2일 1.8배 = 1,170,000', ...);      // nights: 1
+it('편도·편도 1.2배 = 780,000', ...);
+it('16인승 2대 = 800,000', ...);
+it('2박 이상 → quote_required', () => expect(estimate(cfg, { ...base, vehicleSlug: 'bus45', tripType: 'round', nights: 2 }))
+  .toEqual({ kind: 'quote_required', reason: 'multi_night' }));   // [5A]
+it('노선 요금표 우선', () => expect(estimate({ ...cfg, routePrices: { 'bus45:ICN:SEL': 490000 } },
+  { ...base, originCode: 'ICN', destinationCode: 'SEL', vehicleSlug: 'bus45', tripType: 'round', nights: 0 }).total).toBe(490000));
+it('미지 차량 throw', ...);
 ```
-- [ ] **Step 4: 연결 스모크 테스트** — `tests/db.test.ts`: `vehicles` select가 5행, `bus45.base_price === 650000` (환경변수 없으면 `describe.skipIf`).
-- [ ] **Step 5: Commit** — `git commit -m "feat: supabase schema, seed, and clients"`
+- [ ] **Step 2: FAIL 확인 → Step 3: 구현** — routePrices `${slug}:${o}:${d}` 조회(왕복은 역방향도 조회) → 없으면 basePrices 폴백. nights≥2 → quote_required. breakdown 포함 반환.
+- [ ] **Step 4: PASS → Step 5: Commit**
 
-### Task A3: 가격 엔진 (TDD)
+### Task A4: KST 유틸 + 마스킹 (TDD)
 
-**Files:**
-- Create: `lib/pricing.ts`, Test: `tests/pricing.test.ts`
+**Files:** Create: `lib/kst.ts` `lib/mask.ts`, Test: `tests/kst.test.ts` `tests/mask.test.ts`
 
-**Interfaces:**
-- Consumes: 없음 (순수 함수)
-- Produces: §2의 `estimate(cfg, input)` — 홈 위젯·위저드·예약 API가 공유
+- [ ] **Step 1: 테스트** — kst: `parseKst('2026-09-01T08:00')`이 UTC `2026-08-31T23:00:00Z` timestamptz로 변환(Asia/Seoul 고정, 서버 TZ 무관), `nightsBetween('2026-09-01T08:00','2026-09-01T20:00')===0`, `…'09-02…'===1`, `…'09-04…'===3`, 역순이면 throw. mask: v1 4종 + `maskPhone('01012345678')`(하이픈 없는 입력) + 패턴 불일치 입력은 원문 대신 `***` 반환
+- [ ] **Step 2~4: FAIL→구현→PASS** — kst는 `Date.UTC(y,m,d,h-9,min)` 고정 오프셋(한국은 DST 없음) + 주석으로 근거 명시
+- [ ] **Step 5: Commit**
 
-- [ ] **Step 1: 실패하는 테스트 작성** — 목업 검증 때 확정된 기대값 그대로:
+### Task A5: createReservation Server Action (TDD)
+
+**Files:** Create: `actions/reservations.ts` `lib/rate-limit.ts` `lib/turnstile.ts` `lib/public-code.ts`, Test: `tests/create-reservation.test.ts`
+
+**Interfaces:** Consumes A2~A4 전부. Produces §3 계약. **est_price는 서버 재계산만 신뢰.**
+
+- [ ] **Step 1: 유틸** — rate-limit.ts: `@upstash/ratelimit` slidingWindow(5, '1 m'), env 없으면 dev에서 통과+경고 로그 [2A]. turnstile.ts: siteverify POST, 실패 시 `bot_check_failed` [2A]. public-code.ts: `BT-YYMMDD-` + 4자 base32 난수, 충돌 시 재생성.
+- [ ] **Step 2: 실패 테스트** — Turnstile/RL/Supabase는 vi.mock 주입:
 ```ts
-import { describe, it, expect } from 'vitest';
-import { estimate, type PriceConfig } from '@/lib/pricing';
-const cfg: PriceConfig = {
-  basePrices: { bus45: 650000, bus35: 550000, limo28: 600000, bus25: 480000, bus16: 400000 },
-  rules: { oneway: 0.6, overnight: 1.8, oneway_oneway: 1.2 },
-};
-describe('estimate', () => {
-  it('당일왕복 45인승 1대 = 650,000', () => expect(estimate(cfg, { vehicleSlug: 'bus45', tripType: 'round', nights: 0, busCount: 1 })).toBe(650000));
-  it('편도 = 60%', () => expect(estimate(cfg, { vehicleSlug: 'bus45', tripType: 'oneway', nights: 0, busCount: 1 })).toBe(390000));
-  it('1박2일 = 1.8배', () => expect(estimate(cfg, { vehicleSlug: 'bus45', tripType: 'round', nights: 1, busCount: 1 })).toBe(1170000));
-  it('편도·편도 = 1.2배', () => expect(estimate(cfg, { vehicleSlug: 'bus45', tripType: 'oneway_oneway', nights: 0, busCount: 1 })).toBe(780000));
-  it('16인승 2대 = 800,000', () => expect(estimate(cfg, { vehicleSlug: 'bus16', tripType: 'round', nights: 0, busCount: 2 })).toBe(800000));
-  it('미지의 차량은 throw', () => expect(() => estimate(cfg, { vehicleSlug: 'nope', tripType: 'round', nights: 0, busCount: 1 })).toThrow());
-});
+유효 입력 → { ok:true, publicCode: /^BT-\d{6}-[A-Z2-7]{4}$/, priceState:'estimated', estPrice:650000 }
+전화 '123' → validation / waypointCodes 6개 → validation / busCount 21 → validation
+returnAtLocal < departAtLocal → validation (kst throw 매핑)
+departAtLocal '2026-09-01T08:00' → DB에 UTC 2026-08-31T23:00Z 저장 확인 (mock insert 캡처)
+2026-09-01 → 09-03 (2박) → { priceState:'quote_required', estPrice:null }
+Turnstile mock 실패 → bot_check_failed / RL mock 초과 → rate_limited
+허니팟 website='x' → { ok:true } 반환하되 insert 미호출 (silent drop)
+notify mock이 던져도 { ok:true } 유지 (after 격리)
 ```
-- [ ] **Step 2: 실패 확인** — `npm test` → FAIL (estimate not defined)
-- [ ] **Step 3: 구현**:
-```ts
-export function estimate(cfg: PriceConfig, input: EstimateInput): number {
-  const base = cfg.basePrices[input.vehicleSlug];
-  if (base === undefined) throw new Error(`unknown vehicle: ${input.vehicleSlug}`);
-  const trip = input.tripType === 'oneway' ? cfg.rules.oneway
-    : input.tripType === 'oneway_oneway' ? cfg.rules.oneway_oneway : 1;
-  const nights = input.nights === 1 ? cfg.rules.overnight : 1;
-  return Math.round(base * trip * nights) * input.busCount;
-}
-```
-- [ ] **Step 4: 통과 확인** — `npm test` → 6 passed
-- [ ] **Step 5: Commit** — `git commit -m "feat: pricing engine with mockup-verified expectations"`
+- [ ] **Step 3: 구현** — §3 계약 순서대로. `after()`로 `notifyReservationCreated(r)` (Phase A에서는 no-op 구현 + 로그) [3A]. phone은 숫자만 정규화 저장. price_breakdown 저장.
+- [ ] **Step 4: PASS → Step 5: Commit**
 
-### Task A4: 마스킹 유틸 (TDD)
+### Task A6: lookup Action + live-feed Handler (TDD)
 
-**Files:**
-- Create: `lib/mask.ts`, Test: `tests/mask.test.ts`
+**Files:** Create: `actions/reservations.ts`에 lookup 추가, `app/api/live-feed/route.ts`, Test: `tests/lookup-feed.test.ts`
 
-**Interfaces:**
-- Produces: `maskName(name: string): string`("한**"), `maskPhone(phone: string): string`("010-****-5678")
+- [ ] **Step 1: 테스트** — lookup: 일치 → ReservationPublic[](§3 최소 필드만, phone·message 미포함 확인), 불일치 → `[]`, RL 초과 → rate_limited. feed: 마스킹 패턴, 12건 상한, **DB 0건 → 시드 12건 + `sample:true`** [T1-A]
+- [ ] **Step 2~4: FAIL→구현→PASS** — feed `export const revalidate = 60`
+- [ ] **Step 5: Commit**
 
-- [ ] **Step 1: 테스트**:
-```ts
-import { maskName, maskPhone } from '@/lib/mask';
-it('이름은 첫 글자만', () => expect(maskName('한지원')).toBe('한**'));
-it('한 글자 이름', () => expect(maskName('한')).toBe('한*'));
-it('영문 이름', () => expect(maskName('John')).toBe('J**'));
-it('전화 가운데 마스킹', () => expect(maskPhone('010-1234-5678')).toBe('010-****-5678'));
-```
-- [ ] **Step 2: 실패 확인** → **Step 3: 구현**:
-```ts
-export const maskName = (n: string) => n.slice(0, 1) + '*'.repeat(Math.min(Math.max(n.length - 1, 1), 2));
-export const maskPhone = (p: string) => p.replace(/^(\d{2,3})-(\d{3,4})-(\d{4})$/, (_, a, b, c) => `${a}-${'*'.repeat(b.length)}-${c}`);
-```
-- [ ] **Step 4: 통과 확인** → **Step 5: Commit** — `git commit -m "feat: masking utils for public feed"`
+### Task A7: 배포 + CI
 
-### Task A5: 예약 접수 API
+**Files:** Create: `.github/workflows/ci.yml`, Modify: `next.config.ts`(Supabase 이미지 도메인)
 
-**Files:**
-- Create: `app/api/reservations/route.ts`, `lib/rate-limit.ts`, Test: `tests/reservations-api.test.ts`
-
-**Interfaces:**
-- Consumes: `ReservationInput`(A2), `estimate`(A3), `createServiceClient`(A2)
-- Produces: `POST /api/reservations` → 201 `{ id }` / 400 zod 에러 / 429 rate limit. **est_price는 서버에서 재계산**(클라이언트 값 신뢰 금지)
-
-- [ ] **Step 1: rate limit 유틸** — `lib/rate-limit.ts`: 메모리 Map 기반 `allow(ip: string, limit: number, windowMs: number): boolean` (Vercel 단일 인스턴스 한계는 주석으로 명시, Phase E에서 필요 시 Upstash 교체).
-- [ ] **Step 2: 핸들러 테스트** — route handler를 직접 import해 Request 객체로 호출:
-```ts
-import { POST } from '@/app/api/reservations/route';
-const valid = { name: '한지원', phone: '010-1234-5678', vehicleSlug: 'bus45', purpose: '공항픽업',
-  origin: '인천공항', destination: '서울', waypoints: [], tripType: 'round',
-  departAt: '2026-09-01T08:00:00Z', returnAt: '2026-09-01T20:00:00Z', busCount: 1, locale: 'ko' };
-it('유효 입력 → 201 + id', async () => {
-  const res = await POST(new Request('http://t/api/reservations', { method: 'POST', body: JSON.stringify(valid), headers: { 'x-forwarded-for': '1.1.1.1' } }));
-  expect(res.status).toBe(201);
-  expect((await res.json()).id).toMatch(/[0-9a-f-]{36}/);
-});
-it('전화 형식 오류 → 400', async () => {
-  const res = await POST(new Request('http://t', { method: 'POST', body: JSON.stringify({ ...valid, phone: '123' }) }));
-  expect(res.status).toBe(400);
-});
-```
-(DB 의존 테스트는 A2와 같은 skipIf 패턴. zod 400 케이스는 DB 없이도 통과해야 함 — 검증을 insert보다 먼저.)
-- [ ] **Step 3: 구현** — zod parse → `estimate` 서버 재계산(nights는 departAt/returnAt 날짜 차이로 산출) → insert → `{ id }` 201. 알림 발송 지점은 `// TODO(Phase C): notify` 주석이 아니라 **no-op 함수 `notifyReservationCreated(r)` 호출**로 남긴다(C에서 구현 교체).
-- [ ] **Step 4: 통과 확인** — `npm test`
-- [ ] **Step 5: Commit** — `git commit -m "feat: reservation intake API with server-side pricing"`
-
-### Task A6: 실시간 피드 + 예약확인 API
-
-**Files:**
-- Create: `app/api/live-feed/route.ts`, `app/api/reservations/lookup/route.ts`, Test: `tests/feed-lookup.test.ts`
-
-**Interfaces:**
-- Consumes: `maskName`(A4), `createServiceClient`(A2)
-- Produces: §2 계약대로. live-feed는 60초 캐시(`export const revalidate = 60`)
-
-- [ ] **Step 1: 테스트** — live-feed 응답 항목이 `{ name, vehicle, date }` 형태이고 name이 `/^.\*{1,2}$/` 마스킹 패턴인지, lookup은 이름+전화 일치 시만 반환하고 불일치 시 빈 배열(404 아님 — 존재 여부 노출 방지)인지.
-- [ ] **Step 2: 실패 확인** → **Step 3: 구현** — lookup은 `allow(ip, 5, 60_000)` rate limit.
-- [ ] **Step 4: 통과 확인** → **Step 5: Commit** — `git commit -m "feat: live feed and reservation lookup APIs"`
-
-### Task A7: Vercel 배포 파이프라인
-
-**Files:**
-- Modify: `next.config.ts` (이미지 도메인: Supabase storage 호스트)
-
-**Interfaces:**
-- Produces: main 푸시 = 프로덕션, PR = 프리뷰 URL
-
-- [ ] **Step 1: Vercel 프로젝트 연결** — GitHub 저장소 import(사용자가 Vercel 대시보드에서 1회 수행), 환경 변수 §3 입력.
-- [ ] **Step 2: 프리뷰 검증** — 브랜치 푸시 → 프리뷰 URL에서 `POST /api/reservations`를 curl로 실호출 → Supabase 대시보드에서 행 확인:
-```bash
-curl -sS -X POST https://<preview>/api/reservations -H 'content-type: application/json' -d '{"name":"테스트","phone":"010-0000-0000","vehicleSlug":"bus45","purpose":"공항픽업","origin":"인천공항","destination":"서울","tripType":"round","departAt":"2026-09-01T08:00:00Z","busCount":1,"locale":"ko"}'
-```
-- [ ] **Step 3: Commit** — 설정 변경분 커밋 + Phase A 완료를 레저에 기록
+- [ ] **Step 1**: Vercel 연결(사용자 수행) + §4 env 입력
+- [ ] **Step 2**: CI — push 시 `npm test` 실행. DB 테스트는 `supabase start`(로컬 Postgres 스택) 후 마이그레이션 적용해 실행 — "환경변수 없어 전부 skip"으로 green 되는 것 금지
+- [ ] **Step 3**: 프리뷰 검증 — 배포된 페이지의 실제 폼(임시 테스트 페이지)에서 Server Action 호출 → Supabase 행 + public_code 확인
+- [ ] **Step 4: Commit** + 레저 기록
 
 ---
 
-## Phase B~E 범위 정의 (착수 시 별도 상세 플랜으로 확장)
+## Phase B~E 범위 (착수 시 상세 플랜 확장)
 
-### Phase B: 공개 사이트 이식
-- **원칙**: 목업 HTML/CSS를 컴포넌트로 분해 이식하되 렌더 결과가 목업과 시각적으로 동일해야 한다(browse 스크린샷 대조를 수용 기준에 포함).
-- 컴포넌트 단위: `Header`(KO/EN 토글 포함), `HeroCarousel`, `QuoteWidget`(경유지 포함, `estimate` 공유), `LiveTicker`(live-feed API), `Steps4`, `VehicleCards`, `Gallery`, `NoticeList`, `Footer`, `FloatingContact`(전화/카카오/톡톡), `EventPopup`(popups API + localStorage), 위저드 7단계(`app/[locale]/quote`).
-- i18n: 모든 카피를 `messages/ko.json`으로 추출 → `en.json` 번역(BM 비노출 규칙 동일 적용, "공항 픽업·샌딩 (송영 전문)" = "Airport Pick-up & Sending"). 헤더 토글은 현재 경로 유지 전환(`/quote` ↔ `/en/quote`).
-- 서브페이지 콘텐츠 원천: 기존 사이트(회사소개/차량소개/보험/운임/오시는길) — soul.md §1~3 + 기존 사이트 텍스트 이관.
+**B 공개 사이트**: v1 정의 + 추가 — Turnstile 위젯/허니팟 필드, 접수 고지문(현황 표시 동의 [T1-A]), 다박 선택 시 "장기 일정은 확정 시 별도 안내" UX [5A], `PRICE_DISPLAY_MODE=inquiry` 렌더 분기 [T2-A], 위저드 인라인 계산 JS를 lib/pricing.ts import로 대체(중복 로직 금지), next/image 갤러리, Pretendard 서브셋 woff2 self-host, EN 전화 국제형식 입력.
+**C 알림**: v1 정의 + 추가 — 전화번호 정규화(발신 시 숫자만), event별 중복 발송 가드(notifications_log 조회), admin 재발송 액션, Solapi 클라이언트 주입식 mock 테스트(성공/실패/폴백).
+**D admin**: v1 정의 + 추가 — @supabase/ssr 쿠키 세션(ssr.ts 활용), 0002 단일 관리자 정책, 상태 머신 ALLOWED 전이표(§3) UI 반영, 비관리자 로그인 차단 테스트.
+**E 이관·런치**: v1 정의 + 추가 — 개인정보처리방침 페이지(법적 필수) + 보존·삭제(1년) 문서화 + 접수 폼 동의 체크, DNS 전환 시 기존 MX/TXT 레코드 목록 백업·이관 + TTL 사전 단축 + 롤백 절차, 런치 게이트: 실요금표 수령 여부로 `PRICE_DISPLAY_MODE` 확정 [T2-A], Vercel Analytics.
 
-### Phase C: 알림 파이프라인
-- `lib/notify.ts`: `notifyReservationCreated(r)`, `notifyReservationConfirmed(r)` — Solapi SDK로 LMS 발송(고객+사장님), 결과를 notifications_log에 기록, 실패해도 예약 API는 성공 응답(발송은 best-effort, 로그로 추적).
-- 메시지 본문은 목업 wizard.html 7단계의 문자 미리보기 텍스트를 그대로 사용(경로 "출발지 → 경유 → 도착지" 포함).
-- 알림톡: 카카오 비즈니스 채널·템플릿 승인 후 `channel: 'alimtalk'` 우선 발송 + SMS 폴백으로 교체. 템플릿 문구는 승인 요건(변수 표기 `#{name}`)에 맞춰 이 Phase에서 작성.
-- 테스트: Solapi 클라이언트를 주입 가능하게 만들어(mock) 성공/실패/폴백 3경로 단위 테스트. 실발송은 개발자 본인 번호로 1회 수동 확인.
+## NOT in scope (검토 후 명시 제외)
 
-### Phase D: admin
-- 인증: Supabase Auth 이메일/비밀번호 계정 1개(사장님). `middleware.ts`로 `/admin/*` 보호. RLS: authenticated 롤에 popups/notices/gallery insert/update 정책 추가(별도 마이그레이션 `0002_admin_policies.sql`).
-- 예약 현황: admin.html 목업 그대로 — 요약 카드 4개(상태별 count 쿼리), 목록(전화번호는 마스킹 없이 표시 — 사장님 화면), 상태 변경 버튼 → PATCH API → confirmed 시 `notifyReservationConfirmed`.
-- 팝업 관리: 이미지 업로드(Supabase Storage 버킷 `popups`, 공개 읽기), 등록/중지, 미리보기는 실제 `EventPopup` 컴포넌트 재사용.
-- 공지/갤러리 관리: 동일 CRUD 패턴.
+- 온라인 결제 — 스펙 §3 확정 (확정 예약만 오프라인 결제)
+- 자동 재시도 큐(발송 실패 시) — 소규모에 과함. admin 재발송 버튼으로 대체
+- Upstash 외 분산 인프라(큐, 캐시 서버) — 트래픽 규모상 불요
+- 기존 그누보드 견적 게시글 이관 — 개인정보 (동의 없는 이전 금지)
+- 다국어 3개 이상(중/일) — EN까지만, 추후 messages 파일 추가로 확장 가능
+- 모바일 앱 / 외부 API 공개 — Server Actions 선택의 전제. 필요 시 그때 Route Handler 추가
 
-### Phase E: 이관·런치
-- 콘텐츠 이관: 기존 갤러리 게시판 이미지 스크랩(browse `scrape`) → Storage 업로드 + gallery 행 생성, 공지 2건 이관, 회사소개/오시는길 텍스트 검수.
-- SEO: 페이지별 metadata(제목/설명, 한/영 hreflang), OG 이미지(버스 사진), `sitemap.ts`, `robots.ts`, 네이버 서치어드바이저·구글 서치콘솔 등록(그누보드 URL → 신규 URL 301은 도메인 전환 시 Vercel redirects로).
-- 도메인: bestour.co.kr DNS를 Vercel로 전환(기존 호스팅 해지 전 갤러리/공지 이관 완료 필수), 사장님께 전환 시점 합의.
-- 런치 체크리스트: 실요금표 반영, 실적 수치 교체, 채널 URL 주입, 발신번호 승인 확인, 375px/1280px 전 페이지 QA, admin 사장님 온보딩(사용법 1페이지 문서).
+## What already exists (재사용 자산)
 
-## 리스크·주의
+- 목업 3종 = 프론트 원본 (이식 대상, 재작성 아님) / soul.md = 카피·정책 원천
+- 가격 기대값 = 목업 QA에서 검증된 수치 그대로 테스트로
+- 버스 실사진 6장 (mockups/assets) / 기존 사이트 갤러리·공지 (Phase E 이관 원천)
+- 이 저장소의 SDD 레저·리뷰 프로세스
 
-- **요금표가 끝까지 안 오면**: 더미 요금 + "예상가" 고지로 런치 가능하나, 사장님과 "예상가와 실견적 괴리" 리스크 합의 필요.
-- **알림톡 심사 소요(수일~수주)**: C는 SMS로 먼저 완성하고 알림톡은 non-blocking으로 후속.
-- **rate limit이 메모리 기반**: Vercel 콜드스타트마다 리셋됨. 악용 징후 보이면 Upstash Redis(무료 티어)로 교체 — Phase E 체크리스트에 포함.
-- **기존 사이트의 견적 게시판 데이터**: 개인정보(이름/전화)가 있으므로 이관하지 않는다. 신규 DB는 빈 상태로 시작, 실시간 피드는 신규 예약 누적 전까지 시드 12건(soul §8 더미)을 fallback으로 표시.
+## 실패 모드 (신규 코드패스별)
+
+| 코드패스 | 프로덕션 실패 시나리오 | 테스트 | 에러 처리 | 사용자 가시성 |
+|---|---|---|---|---|
+| createReservation | Turnstile 서비스 다운 | A5 mock | bot_check_failed 반환 | "확인 실패, 다시 시도" 명시 |
+| KST 파싱 | 해외 브라우저 시간대 개입 | A4 고정 오프셋 테스트 | 벽시계 문자열만 수신 | 없음(정상) |
+| after() 발송 | Solapi 장애 → 문자 유실 | A5 격리 + C mock | log 'failed' + admin 재발송 | 접수는 성공, 사장님이 로그 확인 |
+| 상태 전이 | PATCH 중복 → 문자 중복 | D 가드 테스트 | 전이표 + 발송 1회 가드 | 없음(방지됨) |
+| live-feed | DB 장애 | A6 | 시드 폴백 | 예시 라벨로 정상 표시 |
+| 도메인 전환 | MX 유실 → 메일 두절 | — (체크리스트) | E 절차 (레코드 백업) | 사전 방지 |
+
+Critical gap 없음 — 전 실패 모드에 테스트 또는 절차 존재.
+
+## 병렬화 전략
+
+| Step | 모듈 | 의존 |
+|---|---|---|
+| A1 스캐폴드 | 루트 설정 | — |
+| A2 스키마/타입 | supabase/, lib/ | A1 |
+| A3·A4 순수 유틸 | lib/ | A1 (A2와 병렬 가능) |
+| A5·A6 액션 | actions/, app/api/ | A2~A4 |
+| A7 배포 | CI | A5·A6 |
+| B 프론트 | app/[locale]/ | A |
+| C 알림 | lib/notify | A (B와 병렬) |
+| D admin | app/admin/, actions/admin | A, C |
+| E 런치 | 콘텐츠/DNS | 전부 |
+
+Lane A: A1→A2→A5→A6→A7 / Lane B(A1 후 병렬): A3+A4 / 이후 Lane C(공개 사이트)와 Lane D(알림) 병렬 → admin → 런치. B·C는 서로 다른 모듈(app/[locale] vs lib/notify)이라 워크트리 병렬 안전.
+
+## Implementation Tasks (리뷰 발견 → 액션)
+
+- [x] **T1 (P1)** — 플랜 개정: 1A~4A, 5A, 6A, Codex 수용분, T1~T3 전부 본문 반영 (이 v2 문서)
+- [ ] **T2 (P1, CC: Phase A 실행)** — A1~A7 구현
+- [ ] **T3 (P2, CC: ~10min)** — Phase B 상세 플랜 작성 시 v2 추가 항목(고지문/게이트/서브셋) 포함 확인
+- [ ] **T4 (P3)** — 실요금표 수령 시 route_prices 시드 + PRICE_DISPLAY_MODE=estimate 전환
+
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 0 | — | — |
+| Codex Review | outside voice (codex exec) | Independent 2nd opinion | 1 | ISSUES_FOLDED | 19건 지적 → 15 수용, 3 크로스모델 결정(T1-A/T2-A/T3-A), 1 기수용(트레일러) |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | CLEAR (PLAN) | 6 issues (arch 4, quality 1, tests 1) — 전부 수용·v2 반영, critical gap 0 |
+| Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | 목업 단계에서 시각 QA 완료 |
+| DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | — |
+
+- **CODEX:** 가격 모델 노선 부재·KST 시간대·canonical code·admin 권한·상태 머신·개인정보처리방침 등 15건 수용, v2에 전부 반영
+- **CROSS-MODEL:** Eng 리뷰와 Codex가 겹친 영역(rate limit 실효성, 다박 처리)은 동일 방향 — 강한 신호. 충돌 3건은 사용자 결정으로 해소 (T1-A 고지+예시 라벨, T2-A 런치 게이트, T3-A CMS 유지)
+- **VERDICT:** ENG CLEARED — ready to implement (Phase A부터)
+
+NO UNRESOLVED DECISIONS
