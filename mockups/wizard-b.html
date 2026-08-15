@@ -1,0 +1,1247 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>베스트투어 — 견적 위저드 B (가격 미표시안)</title>
+<meta name="description" content="베스트투어 전세버스 견적 위저드 — 차량 선택부터 연락처 입력까지 6단계 견적 신청">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+/* ==========================================================
+   베스트투어 — 견적 위저드 (6단계 · 가격 표시 없음)
+   팔레트: 지면 #F3EFFA / 카드 #FFFFFF / 텍스트 #1A1523
+           주조 #3B1F5C / 액센트 #7C3AED / CTA 골드 #D4A843
+   톤: 오래 운영한 신뢰 업체 — 라운드 8px 이하, 큰 글씨, 명확한 라벨
+   ========================================================== */
+
+:root{
+  --deep:#3B1F5C;
+  --violet:#7C3AED;
+  --lav:#F3EFFA;
+  --ink:#1A1523;
+  --gold:#D4A843;
+  --white:#FFFFFF;
+
+  --lav-soft:#EFE9F9;
+  --violet-soft:#F1EAFD;
+  --line:#DCD2EC;
+  --line-strong:#C6B8DE;
+  --muted:#5E5570;
+  --muted-2:#7C7490;
+  --danger:#B3261E;
+  --danger-bg:#FDECEA;
+  --ok:#1F6B44;
+
+  --s1:8px; --s2:16px; --s3:24px; --s4:32px; --s5:40px; --s6:56px;
+  --r:8px; --r-sm:6px; --r-xs:4px;
+  --maxw:1080px;
+  --shadow:0 1px 2px rgba(26,21,35,.05), 0 6px 18px rgba(59,31,92,.07);
+  --shadow-sm:0 1px 2px rgba(26,21,35,.06);
+}
+
+*,*::before,*::after{box-sizing:border-box;}
+html{-webkit-text-size-adjust:100%;overflow-x:hidden;scroll-behavior:smooth;}
+body{
+  margin:0;
+  font-family:"Pretendard","Pretendard Variable",-apple-system,BlinkMacSystemFont,system-ui,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  background:var(--lav);
+  color:var(--ink);
+  font-size:17px;
+  line-height:1.62;
+  -webkit-font-smoothing:antialiased;
+  word-break:keep-all;
+}
+img{max-width:100%;display:block;}
+a{color:inherit;text-decoration:none;}
+button{font:inherit;color:inherit;}
+h1,h2,h3,h4,p,ul,ol,dl,figure{margin:0;}
+ul,ol{padding:0;list-style:none;}
+:focus-visible{outline:3px solid var(--violet);outline-offset:2px;border-radius:var(--r-xs);}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;}
+
+.wrap{width:100%;max-width:var(--maxw);margin:0 auto;padding-inline:16px;}
+@media (min-width:768px){ .wrap{padding-inline:24px;} }
+
+/* ---------- 헤더 ---------- */
+.site-header{
+  position:sticky;top:0;z-index:50;
+  background:var(--white);
+  border-bottom:1px solid var(--line);
+}
+.header-in{
+  display:flex;align-items:center;justify-content:space-between;gap:var(--s2);
+  min-height:64px;
+}
+.logo{display:flex;align-items:baseline;gap:8px;}
+.logo-mark{
+  font-size:21px;font-weight:800;letter-spacing:-.02em;color:var(--deep);
+}
+.logo-mark .dot{color:var(--gold);}
+.logo-ko{font-size:15px;font-weight:700;color:var(--muted);}
+.home-link{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:9px 14px;border:1px solid var(--line-strong);border-radius:var(--r);
+  font-size:15px;font-weight:700;color:var(--deep);background:var(--white);
+}
+.home-link:hover{background:var(--lav-soft);}
+.tel-strip{
+  background:var(--deep);color:#fff;font-size:13.5px;font-weight:600;
+  letter-spacing:-.01em;
+}
+.tel-strip .wrap{display:flex;align-items:center;justify-content:center;gap:10px;min-height:36px;text-align:center;}
+.tel-strip b{color:var(--gold);font-weight:800;}
+
+/* ---------- 페이지 타이틀 ---------- */
+.page-head{padding:var(--s4) 0 var(--s2);}
+.eyebrow{
+  display:inline-flex;align-items:center;gap:8px;
+  font-size:12.5px;font-weight:800;letter-spacing:.09em;color:var(--violet);
+  text-transform:uppercase;
+}
+.eyebrow::before{content:"";width:20px;height:2px;background:var(--gold);border-radius:2px;}
+.page-title{margin-top:10px;font-size:clamp(24px,5vw,32px);font-weight:800;letter-spacing:-.025em;line-height:1.3;}
+.page-sub{margin-top:8px;font-size:15.5px;color:var(--muted);}
+
+/* ---------- 진행 인디케이터 ---------- */
+.progress{
+  margin-top:var(--s3);
+  background:var(--white);
+  border:1px solid var(--line);
+  border-radius:var(--r);
+  padding:16px 12px 12px;
+  box-shadow:var(--shadow-sm);
+}
+.pbar{height:6px;background:var(--lav-soft);border-radius:99px;overflow:hidden;margin-bottom:14px;}
+.pbar span{display:block;height:100%;background:var(--violet);border-radius:99px;transition:width .28s ease;}
+.psteps{display:flex;align-items:flex-start;gap:2px;}
+.pstep{
+  flex:1 1 0;min-width:0;
+  display:flex;flex-direction:column;align-items:center;gap:6px;
+  text-align:center;
+}
+.pstep .num{
+  width:30px;height:30px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:14px;font-weight:800;
+  background:var(--lav-soft);color:var(--muted-2);
+  border:1px solid var(--line);
+  transition:background .2s ease,color .2s ease,border-color .2s ease;
+}
+.pstep .lbl{font-size:11.5px;font-weight:700;color:var(--muted-2);letter-spacing:-.03em;line-height:1.25;}
+.pstep.done .num{background:var(--violet-soft);color:var(--deep);border-color:#D9C9F6;}
+.pstep.done .lbl{color:var(--muted);}
+.pstep.current .num{background:var(--deep);color:#fff;border-color:var(--deep);}
+.pstep.current .lbl{color:var(--deep);font-weight:800;}
+.pnow{display:none;margin-top:10px;font-size:14px;font-weight:800;color:var(--deep);text-align:center;}
+@media (max-width:600px){
+  .pstep .lbl{display:none;}
+  .pstep .num{width:28px;height:28px;font-size:13px;}
+  .pnow{display:block;}
+}
+
+/* ---------- 카드 / 스텝 ---------- */
+main{padding-bottom:var(--s6);}
+.card{
+  margin-top:var(--s3);
+  background:var(--white);
+  border:1px solid var(--line);
+  border-radius:var(--r);
+  box-shadow:var(--shadow);
+  padding:var(--s3) var(--s2) var(--s3);
+}
+@media (min-width:768px){ .card{padding:var(--s5) var(--s5) var(--s4);} }
+.step[hidden]{display:none;}
+.step-head{margin-bottom:var(--s3);padding-bottom:var(--s2);border-bottom:1px solid var(--lav-soft);}
+.step-kicker{font-size:13px;font-weight:800;color:var(--violet);letter-spacing:.02em;}
+.step-title{margin-top:6px;font-size:clamp(21px,4.2vw,26px);font-weight:800;letter-spacing:-.02em;line-height:1.32;}
+.step-desc{margin-top:8px;font-size:15.5px;color:var(--muted);}
+
+.field{margin-bottom:var(--s3);}
+.field:last-child{margin-bottom:0;}
+.flabel{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  font-size:16.5px;font-weight:800;color:var(--ink);margin-bottom:10px;
+}
+.req{
+  font-size:11.5px;font-weight:800;color:#fff;background:var(--violet);
+  padding:2px 7px;border-radius:var(--r-xs);letter-spacing:.02em;
+}
+.opt{
+  font-size:11.5px;font-weight:700;color:var(--muted-2);background:var(--lav-soft);
+  padding:2px 7px;border-radius:var(--r-xs);border:1px solid var(--line);
+}
+.fhint{font-size:14px;color:var(--muted-2);margin-top:-2px;margin-bottom:10px;}
+
+/* 폼 컨트롤 */
+.control{
+  width:100%;min-height:54px;
+  padding:12px 14px;
+  font-size:17px;font-weight:600;color:var(--ink);
+  background:var(--white);
+  border:1.5px solid var(--line-strong);
+  border-radius:var(--r);
+  font-family:inherit;
+  transition:border-color .15s ease, box-shadow .15s ease;
+}
+select.control{
+  appearance:none;-webkit-appearance:none;
+  background-image:url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='9' viewBox='0 0 14 9'%3E%3Cpath d='M1 1.5L7 7.5L13 1.5' stroke='%233B1F5C' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 14px center;
+  padding-right:40px;
+}
+textarea.control{min-height:110px;resize:vertical;line-height:1.6;}
+.control:focus{border-color:var(--violet);box-shadow:0 0 0 3px rgba(124,58,237,.16);outline:none;}
+.control.invalid{border-color:var(--danger);background:#FFFBFB;}
+.grid-2{display:grid;grid-template-columns:1fr;gap:var(--s2);}
+@media (min-width:640px){ .grid-2{grid-template-columns:1fr 1fr;} }
+
+.err{
+  display:none;align-items:center;gap:6px;
+  margin-top:8px;padding:8px 10px;
+  font-size:14.5px;font-weight:700;color:var(--danger);
+  background:var(--danger-bg);border:1px solid #F3C9C4;border-radius:var(--r-sm);
+}
+.err.show{display:flex;}
+.err::before{content:"!";flex:0 0 auto;width:18px;height:18px;border-radius:50%;background:var(--danger);color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;}
+
+/* ---------- 1단계: 차량 카드 ---------- */
+.veh-grid{display:grid;grid-template-columns:1fr;gap:var(--s2);}
+@media (min-width:560px){ .veh-grid{grid-template-columns:1fr 1fr;} }
+@media (min-width:960px){ .veh-grid{grid-template-columns:repeat(3,1fr);} }
+.veh{
+  position:relative;display:flex;flex-direction:column;text-align:left;
+  background:var(--white);border:1.5px solid var(--line);border-radius:var(--r);
+  overflow:hidden;cursor:pointer;padding:0;
+  transition:border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+.veh:hover{border-color:var(--line-strong);box-shadow:var(--shadow);}
+.veh img{width:100%;height:150px;object-fit:cover;background:var(--lav-soft);}
+.veh-body{padding:14px 16px 16px;flex:1;display:flex;flex-direction:column;}
+.veh-name{font-size:18px;font-weight:800;letter-spacing:-.02em;}
+.veh-meta{margin-top:4px;font-size:14.5px;color:var(--muted);font-weight:600;}
+.veh-note{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);font-size:13.5px;color:var(--muted-2);font-weight:600;}
+.veh-check{
+  position:absolute;top:10px;right:10px;
+  width:28px;height:28px;border-radius:50%;
+  background:rgba(255,255,255,.92);border:1.5px solid var(--line-strong);
+  display:flex;align-items:center;justify-content:center;
+  font-size:15px;font-weight:800;color:transparent;
+}
+.veh[aria-pressed="true"]{border-color:var(--violet);box-shadow:0 0 0 3px rgba(124,58,237,.18);}
+.veh[aria-pressed="true"] .veh-check{background:var(--violet);border-color:var(--violet);color:#fff;}
+.veh[aria-pressed="true"] .veh-name{color:var(--deep);}
+
+/* ---------- 칩 / 세그먼트 ---------- */
+.chips{display:flex;flex-wrap:wrap;gap:8px;}
+.chip{
+  padding:11px 15px;
+  background:var(--white);border:1.5px solid var(--line);border-radius:var(--r);
+  font-size:15.5px;font-weight:700;color:var(--muted);cursor:pointer;
+  transition:all .15s ease;
+}
+.chip:hover{border-color:var(--line-strong);background:var(--lav-soft);}
+.chip[aria-pressed="true"]{background:var(--deep);border-color:var(--deep);color:#fff;}
+.chip.feature{border-color:var(--gold);background:#FDF8ED;color:#7A5A12;}
+.chip.feature::after{
+  content:"주력";margin-left:7px;padding:2px 6px;border-radius:var(--r-xs);
+  background:var(--gold);color:#241A05;font-size:11px;font-weight:800;vertical-align:1px;
+}
+.chip.feature[aria-pressed="true"]{background:var(--deep);border-color:var(--gold);color:#fff;}
+
+.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+.seg button{
+  min-height:56px;padding:8px 6px;
+  background:var(--white);border:1.5px solid var(--line);border-radius:var(--r);
+  font-size:15.5px;font-weight:700;color:var(--muted);cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  transition:all .15s ease;
+}
+.seg button small{font-size:12px;font-weight:600;color:var(--muted-2);}
+.seg button[aria-pressed="true"]{background:var(--deep);border-color:var(--deep);color:#fff;}
+.seg button[aria-pressed="true"] small{color:rgba(255,255,255,.75);}
+@media (max-width:520px){
+  .seg{grid-template-columns:1fr;}
+  .seg button{flex-direction:row;gap:8px;min-height:52px;}
+  .seg button small{font-size:13px;}
+}
+
+/* ---------- 경유지 목록 ---------- */
+.via-list{display:flex;flex-direction:column;gap:8px;}
+.via-row{display:flex;align-items:center;gap:8px;}
+.via-row .idx{
+  flex:0 0 auto;width:32px;height:32px;border-radius:var(--r-sm);
+  background:var(--lav-soft);border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;
+  font-size:13.5px;font-weight:800;color:var(--deep);
+}
+.via-row .control{flex:1 1 auto;min-width:0;}
+.via-del{
+  flex:0 0 auto;width:48px;min-height:54px;
+  border:1.5px solid var(--line-strong);border-radius:var(--r);
+  background:var(--white);color:var(--muted);
+  font-size:17px;font-weight:800;cursor:pointer;line-height:1;
+}
+.via-del:hover{background:var(--danger-bg);border-color:#F3C9C4;color:var(--danger);}
+.via-empty{font-size:14.5px;font-weight:600;color:var(--muted-2);}
+.btn-add{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  margin-top:10px;min-height:52px;padding:0 20px;
+  border:1.5px dashed var(--line-strong);border-radius:var(--r);
+  background:var(--white);color:var(--deep);
+  font-size:16px;font-weight:800;cursor:pointer;transition:all .15s ease;
+}
+.btn-add:hover{background:var(--lav-soft);border-color:var(--violet);}
+.btn-add:disabled{opacity:.5;cursor:not-allowed;border-style:solid;}
+@media (max-width:400px){
+  .via-row .idx{width:26px;height:26px;font-size:12.5px;}
+  .via-del{width:44px;}
+  .btn-add{width:100%;}
+}
+
+/* 공항 강조 배너 */
+.airport-note{
+  display:flex;gap:12px;align-items:flex-start;
+  margin-top:var(--s2);padding:14px 16px;
+  background:#FDF8ED;border:1px solid #EBD9A8;border-left:4px solid var(--gold);
+  border-radius:var(--r-sm);
+}
+.airport-note .ic{flex:0 0 auto;font-size:20px;line-height:1.2;}
+.airport-note p{font-size:15px;font-weight:700;color:#6E5210;}
+.airport-note p span{display:block;margin-top:3px;font-size:13.5px;font-weight:600;color:#8A6D2A;}
+
+/* ---------- 스테퍼 ---------- */
+.stepper{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  border:1.5px solid var(--line-strong);border-radius:var(--r);
+  padding:10px 12px;background:var(--white);
+}
+.stepper button{
+  flex:0 0 auto;width:48px;height:48px;border-radius:var(--r-sm);
+  border:1.5px solid var(--line-strong);background:var(--lav-soft);
+  font-size:24px;font-weight:800;color:var(--deep);cursor:pointer;line-height:1;
+  display:flex;align-items:center;justify-content:center;
+}
+.stepper button:hover{background:var(--violet-soft);border-color:var(--violet);}
+.stepper button:disabled{opacity:.4;cursor:not-allowed;}
+.stepper .val{flex:1;text-align:center;font-size:26px;font-weight:800;letter-spacing:-.02em;}
+.stepper .val small{font-size:15px;font-weight:700;color:var(--muted);margin-left:3px;}
+.cap-note{margin-top:10px;font-size:14.5px;font-weight:700;color:var(--muted);}
+.cap-note.warn{color:#8A5B0B;background:#FDF8ED;border:1px solid #EBD9A8;border-radius:var(--r-sm);padding:9px 12px;}
+
+/* ---------- 안내 문구 박스 ---------- */
+.notice{
+  margin-top:var(--s2);padding:13px 15px;
+  background:var(--lav-soft);border:1px solid var(--line);border-radius:var(--r-sm);
+  font-size:14.5px;color:var(--muted);font-weight:600;
+}
+.notice b{color:var(--deep);font-weight:800;}
+
+/* ---------- 체크/라디오 옵션 행 ---------- */
+.optrow{
+  display:flex;align-items:center;gap:12px;
+  padding:14px 15px;border:1.5px solid var(--line);border-radius:var(--r);
+  cursor:pointer;background:var(--white);margin-bottom:8px;
+  transition:all .15s ease;
+}
+.optrow:last-child{margin-bottom:0;}
+.optrow:hover{background:var(--lav-soft);}
+.optrow input{width:22px;height:22px;accent-color:var(--violet);flex:0 0 auto;margin:0;}
+.optrow .t{font-size:16px;font-weight:700;}
+.optrow .d{display:block;font-size:13.5px;font-weight:600;color:var(--muted-2);margin-top:1px;}
+.optrow:has(input:checked){border-color:var(--violet);background:var(--violet-soft);}
+
+/* ---------- 6단계 완료 ---------- */
+.done-hero{text-align:center;padding:var(--s2) 0 var(--s3);}
+.done-badge{
+  width:64px;height:64px;margin:0 auto;border-radius:50%;
+  background:var(--violet-soft);border:2px solid var(--violet);
+  display:flex;align-items:center;justify-content:center;
+  font-size:30px;font-weight:800;color:var(--deep);
+}
+.done-title{margin-top:16px;font-size:clamp(22px,4.6vw,28px);font-weight:800;letter-spacing:-.025em;}
+.done-sub{margin-top:10px;font-size:16px;color:var(--muted);font-weight:600;}
+.summary{
+  border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin-top:var(--s2);
+}
+.summary h3{
+  padding:13px 16px;background:var(--deep);color:#fff;
+  font-size:15px;font-weight:800;display:flex;justify-content:space-between;align-items:center;gap:8px;
+}
+.summary h3 span{font-size:12.5px;font-weight:700;color:rgba(255,255,255,.7);}
+.summary .row{
+  display:flex;gap:12px;padding:11px 16px;border-bottom:1px solid var(--lav-soft);font-size:15.5px;
+}
+.summary .row:last-child{border-bottom:0;}
+.summary .row dt{flex:0 0 104px;color:var(--muted-2);font-weight:700;font-size:14.5px;}
+.summary .row dd{margin:0;flex:1;font-weight:700;min-width:0;}
+
+.kakao-note{
+  margin-top:var(--s3);padding:16px;border-radius:var(--r);
+  background:var(--violet-soft);border:1px solid #D9C9F6;
+}
+.kakao-note p{font-size:15.5px;font-weight:700;color:var(--deep);line-height:1.6;}
+.kakao-note p + p{margin-top:8px;font-weight:600;color:var(--muted);font-size:14.5px;}
+
+/* 문자 미리보기 */
+.sms-wrap{margin-top:var(--s4);}
+.sms-h{font-size:17px;font-weight:800;letter-spacing:-.02em;}
+.sms-sub{margin-top:6px;font-size:14.5px;color:var(--muted-2);font-weight:600;}
+.sms-grid{display:grid;grid-template-columns:1fr;gap:var(--s2);margin-top:var(--s2);}
+@media (min-width:768px){ .sms-grid{grid-template-columns:1fr 1fr;} }
+.phone{
+  background:var(--lav-soft);border:1px solid var(--line);border-radius:var(--r);
+  padding:14px;
+}
+.phone-top{
+  display:flex;align-items:center;gap:8px;padding-bottom:10px;margin-bottom:12px;
+  border-bottom:1px solid var(--line);
+  font-size:13px;font-weight:800;color:var(--deep);
+}
+.phone-top .who{
+  padding:2px 8px;border-radius:99px;background:var(--deep);color:#fff;font-size:11.5px;font-weight:800;
+}
+.bubble{
+  position:relative;background:var(--white);border:1px solid var(--line);
+  border-radius:var(--r);padding:13px 15px;
+  font-size:14.5px;line-height:1.65;font-weight:600;color:var(--ink);
+  white-space:pre-line;
+  box-shadow:var(--shadow-sm);
+}
+.bubble.kakao{background:#FEF6D8;border-color:#F0DFA0;}
+.bubble b{font-weight:800;color:var(--deep);}
+.bubble-tag{
+  display:inline-block;margin-bottom:8px;padding:2px 8px;border-radius:var(--r-xs);
+  font-size:11.5px;font-weight:800;background:var(--violet);color:#fff;letter-spacing:.02em;
+}
+.bubble.kakao .bubble-tag{background:#3C1E1E;color:#FEE500;}
+.bubble-time{margin-top:8px;font-size:12px;color:var(--muted-2);font-weight:600;text-align:right;}
+
+/* ---------- 하단 네비 ---------- */
+.navbar{
+  position:sticky;bottom:0;z-index:40;
+  margin:var(--s4) -16px calc(-1 * var(--s3));
+  background:var(--white);
+  border-top:1px solid var(--line);
+  border-radius:0 0 var(--r) var(--r);
+  padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+  display:flex;gap:10px;align-items:center;
+  box-shadow:0 -4px 16px rgba(59,31,92,.07);
+}
+@media (min-width:768px){
+  .navbar{margin:var(--s5) -40px calc(-1 * var(--s4));padding:16px 40px calc(16px + env(safe-area-inset-bottom));}
+}
+.navbar .spacer{flex:1;}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  min-height:54px;padding:0 22px;border-radius:var(--r);
+  font-size:17px;font-weight:800;letter-spacing:-.02em;cursor:pointer;
+  border:1.5px solid transparent;transition:all .15s ease;
+}
+.btn-prev{background:var(--white);border-color:var(--line-strong);color:var(--deep);}
+.btn-prev:hover{background:var(--lav-soft);}
+.btn-next{background:var(--gold);color:#241A05;border-color:#C1962F;flex:1;max-width:340px;}
+.btn-next:hover{background:#C89B32;}
+.btn-deep{background:var(--deep);color:#fff;border-color:var(--deep);flex:1;max-width:340px;}
+.btn-deep:hover{background:#2E1749;}
+.btn:disabled{opacity:.5;cursor:not-allowed;}
+@media (max-width:420px){
+  .btn{padding:0 14px;font-size:16px;}
+}
+
+/* ---------- 푸터 ---------- */
+.site-footer{
+  background:var(--ink);color:rgba(255,255,255,.72);
+  padding:var(--s4) 0;font-size:13.5px;line-height:1.75;
+}
+.site-footer strong{color:#fff;font-weight:800;font-size:15px;display:block;margin-bottom:8px;}
+.site-footer .tel{color:var(--gold);font-weight:800;}
+
+@media (prefers-reduced-motion:reduce){
+  *{transition:none !important;animation:none !important;scroll-behavior:auto !important;}
+}
+</style>
+</head>
+<body>
+
+<div class="tel-strip">
+  <div class="wrap"><span>전세버스 대절 문의</span> <b>1566-6188</b> <span>· 평일 09:00–18:00</span></div>
+</div>
+
+<header class="site-header">
+  <div class="wrap header-in">
+    <a href="#" class="logo" aria-label="베스트투어 홈">
+      <span class="logo-mark">bestour<span class="dot">.</span></span>
+      <span class="logo-ko">베스트투어</span>
+    </a>
+    <a href="variant-07-final.html" class="home-link">← 홈으로</a>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <div class="page-head">
+    <span class="eyebrow">온라인 견적</span>
+    <h1 class="page-title">6단계로 끝내는 전세버스 견적 신청</h1>
+    <p class="page-sub">차량과 일정만 알려주시면 접수됩니다. 사장님이 확인 후 견적을 문자로 보내드립니다.</p>
+  </div>
+
+  <!-- 진행 인디케이터 -->
+  <nav class="progress" aria-label="견적 진행 단계">
+    <div class="pbar"><span id="pbarFill" style="width:16.66%"></span></div>
+    <ol class="psteps" id="psteps">
+      <li class="pstep current" data-step="1"><span class="num">1</span><span class="lbl">차량 선택</span></li>
+      <li class="pstep" data-step="2"><span class="num">2</span><span class="lbl">여행 정보</span></li>
+      <li class="pstep" data-step="3"><span class="num">3</span><span class="lbl">날짜·시간</span></li>
+      <li class="pstep" data-step="4"><span class="num">4</span><span class="lbl">대수·인원</span></li>
+      <li class="pstep" data-step="5"><span class="num">5</span><span class="lbl">연락처</span></li>
+      <li class="pstep" data-step="6"><span class="num">6</span><span class="lbl">접수 완료</span></li>
+    </ol>
+    <p class="pnow" id="pnow" aria-live="polite">1 / 6 · 차량 선택</p>
+  </nav>
+
+  <div class="card">
+
+    <!-- ============ 1단계 : 차량 선택 ============ -->
+    <section class="step" id="step1" aria-labelledby="t1">
+      <div class="step-head">
+        <p class="step-kicker">STEP 1 / 6</p>
+        <h2 class="step-title" id="t1">어떤 차량이 필요하신가요?</h2>
+        <p class="step-desc">인원수에 맞는 차량을 골라주세요. 정원보다 조금 여유 있게 고르시면 짐 싣기가 편합니다.</p>
+      </div>
+
+      <div class="field">
+        <span class="flabel">차량 종류 <span class="req">필수</span></span>
+        <div class="veh-grid" id="vehGrid">
+          <button type="button" class="veh" aria-pressed="false" data-veh="v45">
+            <img src="assets/bus-01.jpg" alt="45인승 관광버스">
+            <span class="veh-check" aria-hidden="true">✓</span>
+            <span class="veh-body">
+              <span class="veh-name">45인승 관광버스</span>
+              <span class="veh-meta">정원 45명 · 단체 행사에 가장 많이 이용</span>
+              <span class="veh-note">DVD · 노래방 · 냉장고 등 편의시설 문의 가능</span>
+            </span>
+          </button>
+          <button type="button" class="veh" aria-pressed="false" data-veh="v35">
+            <img src="assets/bus-02.jpg" alt="35인승 관광버스">
+            <span class="veh-check" aria-hidden="true">✓</span>
+            <span class="veh-body">
+              <span class="veh-name">35인승 관광버스</span>
+              <span class="veh-meta">정원 35명 · 중형 단체·워크샵</span>
+              <span class="veh-note">좁은 길·주차장 진입이 쉬운 중형 차량</span>
+            </span>
+          </button>
+          <button type="button" class="veh" aria-pressed="false" data-veh="v28">
+            <img src="assets/bus-03.jpg" alt="28인승 우등리무진">
+            <span class="veh-check" aria-hidden="true">✓</span>
+            <span class="veh-body">
+              <span class="veh-name">28인승 우등리무진</span>
+              <span class="veh-meta">정원 28명 · 넓은 좌석, 장거리 편안</span>
+              <span class="veh-note">우등 시트 · 어르신 모시는 일정에 추천</span>
+            </span>
+          </button>
+          <button type="button" class="veh" aria-pressed="false" data-veh="v25">
+            <img src="assets/bus-04.jpg" alt="25인승 관광버스">
+            <span class="veh-check" aria-hidden="true">✓</span>
+            <span class="veh-body">
+              <span class="veh-name">25인승 관광버스</span>
+              <span class="veh-meta">정원 25명 · 소규모 모임·연수</span>
+              <span class="veh-note">소규모 단체 일정에 두루 쓰이는 차량</span>
+            </span>
+          </button>
+          <button type="button" class="veh" aria-pressed="false" data-veh="v16">
+            <img src="assets/bus-05.jpg" alt="16인승 관광버스">
+            <span class="veh-check" aria-hidden="true">✓</span>
+            <span class="veh-body">
+              <span class="veh-name">16인승 관광버스</span>
+              <span class="veh-meta">정원 16명 · 공항 픽업·샌딩에 적합</span>
+              <span class="veh-note">짐이 많은 공항 노선에 가장 많이 나가는 차량</span>
+            </span>
+          </button>
+        </div>
+        <p class="err" id="err-veh">차량을 한 가지 선택해 주세요.</p>
+      </div>
+
+      <p class="notice">이 화면에서는 <b>견적 신청만 접수</b>합니다. 노선·일정·차량 상황에 따라 금액이 달라지기 때문에, 접수 내용을 사장님이 직접 확인한 뒤 <b>견적을 문자로 보내드립니다.</b></p>
+    </section>
+
+    <!-- ============ 2단계 : 여행 정보 ============ -->
+    <section class="step" id="step2" aria-labelledby="t2" hidden>
+      <div class="step-head">
+        <p class="step-kicker">STEP 2 / 6</p>
+        <h2 class="step-title" id="t2">어디로, 어떤 일정으로 가시나요?</h2>
+        <p class="step-desc">출발지 또는 도착지가 <b>인천공항</b>이면 더 저렴한 견적이 가능합니다.</p>
+      </div>
+
+      <div class="field">
+        <span class="flabel">여행 구분 <span class="req">필수</span></span>
+        <div class="chips" id="purposeChips">
+          <button type="button" class="chip feature" aria-pressed="false" data-val="공항픽업">공항픽업</button>
+          <button type="button" class="chip" aria-pressed="false" data-val="가족여행">가족여행</button>
+          <button type="button" class="chip" aria-pressed="false" data-val="관혼상제">관혼상제</button>
+          <button type="button" class="chip" aria-pressed="false" data-val="워크샵">워크샵</button>
+          <button type="button" class="chip" aria-pressed="false" data-val="친목회">친목회</button>
+          <button type="button" class="chip" aria-pressed="false" data-val="종교단체">종교단체</button>
+          <button type="button" class="chip" aria-pressed="false" data-val="대학MT">대학MT</button>
+          <button type="button" class="chip" aria-pressed="false" data-val="현장학습">현장학습</button>
+          <button type="button" class="chip" aria-pressed="false" data-val="외국인의전.관광">외국인의전.관광</button>
+          <button type="button" class="chip" aria-pressed="false" data-val="기타">기타</button>
+        </div>
+        <p class="err" id="err-purpose">여행 구분을 선택해 주세요.</p>
+      </div>
+
+      <div class="field">
+        <span class="flabel">출발지 · 도착지 <span class="req">필수</span></span>
+        <div class="grid-2">
+          <div>
+            <label class="fhint" for="fromSel">출발지</label>
+            <select class="control" id="fromSel">
+              <option value="">출발지를 선택하세요</option>
+              <optgroup label="✈ 공항 노선 — 주력 (더 저렴)">
+                <option value="인천공항">인천공항 ✈ 픽업·샌딩 전문</option>
+              </optgroup>
+              <optgroup label="전국 16개 시도">
+                <option value="서울">서울</option><option value="부산">부산</option>
+                <option value="대구">대구</option><option value="인천">인천</option>
+                <option value="광주">광주</option><option value="대전">대전</option>
+                <option value="울산">울산</option><option value="경기">경기</option>
+                <option value="강원">강원</option><option value="충북">충북</option>
+                <option value="충남">충남</option><option value="전북">전북</option>
+                <option value="전남">전남</option><option value="경북">경북</option>
+                <option value="경남">경남</option><option value="제주">제주</option>
+              </optgroup>
+            </select>
+          </div>
+          <div>
+            <label class="fhint" for="toSel">도착지</label>
+            <select class="control" id="toSel">
+              <option value="">도착지를 선택하세요</option>
+              <optgroup label="✈ 공항 노선 — 주력 (더 저렴)">
+                <option value="인천공항">인천공항 ✈ 픽업·샌딩 전문</option>
+              </optgroup>
+              <optgroup label="전국 16개 시도">
+                <option value="서울">서울</option><option value="부산">부산</option>
+                <option value="대구">대구</option><option value="인천">인천</option>
+                <option value="광주">광주</option><option value="대전">대전</option>
+                <option value="울산">울산</option><option value="경기">경기</option>
+                <option value="강원">강원</option><option value="충북">충북</option>
+                <option value="충남">충남</option><option value="전북">전북</option>
+                <option value="전남">전남</option><option value="경북">경북</option>
+                <option value="경남">경남</option><option value="제주">제주</option>
+              </optgroup>
+            </select>
+          </div>
+        </div>
+        <p class="err" id="err-route">출발지와 도착지를 모두 선택해 주세요.</p>
+        <div class="airport-note" id="airportHint2" hidden>
+          <span class="ic" aria-hidden="true">✈</span>
+          <p>공항 픽업·샌딩 (송영 전문) 노선 — 더 저렴한 견적이 가능합니다.
+            <span>공항 노선을 상시 운행하는 전문 업체라, 일반 노선보다 유리한 조건으로 안내드릴 수 있습니다.</span></p>
+        </div>
+      </div>
+
+      <div class="field">
+        <span class="flabel">경유지 <span class="opt">선택</span></span>
+        <p class="fhint">중간에 들르는 곳이 있으면 추가해 주세요. 추가한 순서대로 운행합니다. (최대 5곳)</p>
+        <div class="via-list" id="viaList"></div>
+        <p class="via-empty" id="viaEmpty">추가된 경유지가 없습니다 — 출발지에서 도착지로 바로 운행합니다.</p>
+        <button type="button" class="btn-add" id="viaAdd">＋ 경유지 추가</button>
+        <p class="err" id="err-via">추가하신 경유지를 선택하시거나, ✕ 버튼으로 삭제해 주세요.</p>
+      </div>
+
+      <div class="field">
+        <span class="flabel">운행 구분 <span class="req">필수</span></span>
+        <div class="seg" id="tripSeg">
+          <button type="button" aria-pressed="false" data-val="왕복">왕복<small>갔다가 함께 귀가</small></button>
+          <button type="button" aria-pressed="false" data-val="편도">편도<small>가는 편만</small></button>
+          <button type="button" aria-pressed="false" data-val="편도·편도">편도·편도<small>갈 때·올 때 따로</small></button>
+        </div>
+        <p class="err" id="err-trip">운행 구분을 선택해 주세요.</p>
+      </div>
+    </section>
+
+    <!-- ============ 3단계 : 날짜·시간 ============ -->
+    <section class="step" id="step3" aria-labelledby="t3" hidden>
+      <div class="step-head">
+        <p class="step-kicker">STEP 3 / 6</p>
+        <h2 class="step-title" id="t3">언제 출발하시나요?</h2>
+        <p class="step-desc">출발 일시를 기준으로 배차를 잡습니다. 일정이 유동적이면 대략으로 넣으셔도 됩니다.</p>
+      </div>
+
+      <div class="field">
+        <span class="flabel">출발 일시 <span class="req">필수</span></span>
+        <div class="grid-2">
+          <div>
+            <label class="fhint" for="depDate">출발일</label>
+            <input type="date" class="control" id="depDate">
+          </div>
+          <div>
+            <label class="fhint" for="depTime">출발 시각</label>
+            <input type="time" class="control" id="depTime" value="08:00" step="600">
+          </div>
+        </div>
+        <p class="err" id="err-dep">출발 일시를 입력해 주세요.</p>
+      </div>
+
+      <div class="field" id="retField">
+        <span class="flabel">상행(돌아오는) 일시 <span class="req">필수</span></span>
+        <p class="fhint">출발일과 같은 날이면 <b>당일왕복</b>, 다음 날이면 <b>1박 2일</b> 일정으로 접수됩니다.</p>
+        <div class="grid-2">
+          <div>
+            <label class="fhint" for="retDate">상행일</label>
+            <input type="date" class="control" id="retDate">
+          </div>
+          <div>
+            <label class="fhint" for="retTime">상행 시각</label>
+            <input type="time" class="control" id="retTime" value="18:00" step="600">
+          </div>
+        </div>
+        <p class="err" id="err-ret">상행 일시를 출발 일시 이후로 입력해 주세요.</p>
+      </div>
+
+      <p class="notice" id="oneWayNote" hidden><b>편도</b>를 선택하셔서 상행 일시는 입력하지 않습니다.</p>
+    </section>
+
+    <!-- ============ 4단계 : 대수·인원 ============ -->
+    <section class="step" id="step4" aria-labelledby="t4" hidden>
+      <div class="step-head">
+        <p class="step-kicker">STEP 4 / 6</p>
+        <h2 class="step-title" id="t4">몇 대, 몇 분이 타시나요?</h2>
+        <p class="step-desc">정확하지 않아도 괜찮습니다. 대략의 인원으로 넣어주세요.</p>
+      </div>
+
+      <div class="grid-2">
+        <div class="field">
+          <span class="flabel">차량 대수 <span class="req">필수</span></span>
+          <div class="stepper">
+            <button type="button" id="busMinus" aria-label="차량 대수 줄이기">−</button>
+            <span class="val" id="busVal" aria-live="polite">1<small>대</small></span>
+            <button type="button" id="busPlus" aria-label="차량 대수 늘리기">+</button>
+          </div>
+        </div>
+        <div class="field">
+          <span class="flabel">예상 인원 <span class="req">필수</span></span>
+          <div class="stepper">
+            <button type="button" id="paxMinus" aria-label="예상 인원 줄이기">−</button>
+            <span class="val" id="paxVal" aria-live="polite">30<small>명</small></span>
+            <button type="button" id="paxPlus" aria-label="예상 인원 늘리기">+</button>
+          </div>
+        </div>
+      </div>
+      <p class="cap-note" id="capNote">45인승 관광버스 1대 · 최대 45명까지 탑승 가능합니다.</p>
+    </section>
+
+    <!-- ============ 5단계 : 연락처 ============ -->
+    <section class="step" id="step5" aria-labelledby="t5" hidden>
+      <div class="step-head">
+        <p class="step-kicker">STEP 5 / 6</p>
+        <h2 class="step-title" id="t5">연락받으실 곳을 알려주세요</h2>
+        <p class="step-desc">성명과 핸드폰 번호만 있으면 접수됩니다. 나머지는 선택 사항입니다.</p>
+      </div>
+
+      <div class="field">
+        <label class="flabel" for="nameInput">성명 <span class="req">필수</span></label>
+        <input type="text" class="control" id="nameInput" placeholder="예: 홍길동" autocomplete="name">
+        <p class="err" id="err-name">성명을 입력해 주세요.</p>
+      </div>
+
+      <div class="field">
+        <label class="flabel" for="phoneInput">핸드폰 번호 <span class="req">필수</span></label>
+        <p class="fhint">010-0000-0000 형식으로 입력해 주세요. 숫자만 넣으면 자동으로 하이픈이 붙습니다.</p>
+        <input type="tel" class="control" id="phoneInput" placeholder="010-0000-0000" inputmode="numeric" maxlength="13" autocomplete="tel">
+        <p class="err" id="err-phone">핸드폰 번호를 010-0000-0000 형식으로 입력해 주세요.</p>
+      </div>
+
+      <div class="field">
+        <label class="flabel" for="emailInput">이메일 <span class="opt">선택</span></label>
+        <input type="email" class="control" id="emailInput" placeholder="예: bestour2013@naver.com" autocomplete="email">
+      </div>
+
+      <div class="field">
+        <span class="flabel">견적 확인 방법 <span class="opt">선택</span></span>
+        <div class="chips" id="contactChips">
+          <button type="button" class="chip" aria-pressed="true" data-val="핸드폰">핸드폰</button>
+          <button type="button" class="chip" aria-pressed="false" data-val="전화">전화</button>
+          <button type="button" class="chip" aria-pressed="false" data-val="팩스">팩스</button>
+          <button type="button" class="chip" aria-pressed="false" data-val="이메일">이메일</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <span class="flabel">계산 방법 <span class="opt">선택</span></span>
+        <div class="chips" id="payChips">
+          <button type="button" class="chip" aria-pressed="true" data-val="현금">현금</button>
+          <button type="button" class="chip" aria-pressed="false" data-val="카드">카드</button>
+          <button type="button" class="chip" aria-pressed="false" data-val="세금계산서발행">세금계산서발행</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <span class="flabel">견적 조건 <span class="opt">선택</span></span>
+        <label class="optrow">
+          <input type="checkbox" id="parkChk">
+          <span><span class="t">주차료 포함으로 견적</span><span class="d">주차료·통행료를 포함한 조건으로 견적을 받아보시겠습니까?</span></span>
+        </label>
+        <label class="optrow">
+          <input type="checkbox" id="vatChk">
+          <span><span class="t">부가세(VAT) 10% 포함으로 견적</span><span class="d">체크하시면 VAT 포함 조건으로 견적을 산정해 회신드립니다.</span></span>
+        </label>
+      </div>
+
+      <div class="field">
+        <label class="flabel" for="memoInput">남기고 싶은 말씀 <span class="opt">선택</span></label>
+        <textarea class="control" id="memoInput" placeholder="예: 오전 7시 30분까지 정문 앞으로 와주세요. 어르신이 많아 계단이 낮은 차량이면 좋겠습니다."></textarea>
+      </div>
+    </section>
+
+    <!-- ============ 6단계 : 완료 ============ -->
+    <section class="step" id="step6" aria-labelledby="t6" hidden>
+      <div class="done-hero">
+        <div class="done-badge" aria-hidden="true">✓</div>
+        <h2 class="done-title" id="t6">견적 신청이 접수되었습니다</h2>
+        <p class="done-sub" id="doneSub">홍길동님, 접수번호 <b>BT-20260808-0417</b></p>
+      </div>
+
+      <div class="summary">
+        <h3>접수 내역 <span>신청하신 조건</span></h3>
+        <dl id="sumList">
+          <div class="row"><dt>차량</dt><dd id="s-veh">—</dd></div>
+          <div class="row"><dt>여행 구분</dt><dd id="s-purpose">—</dd></div>
+          <div class="row"><dt>노선</dt><dd id="s-route">—</dd></div>
+          <div class="row"><dt>경유지</dt><dd id="s-via">—</dd></div>
+          <div class="row"><dt>운행 구분</dt><dd id="s-trip">—</dd></div>
+          <div class="row"><dt>출발 일시</dt><dd id="s-dep">—</dd></div>
+          <div class="row"><dt>상행 일시</dt><dd id="s-ret">—</dd></div>
+          <div class="row"><dt>대수·인원</dt><dd id="s-count">—</dd></div>
+          <div class="row"><dt>신청인</dt><dd id="s-name">—</dd></div>
+          <div class="row"><dt>연락처</dt><dd id="s-phone">—</dd></div>
+          <div class="row"><dt>이메일</dt><dd id="s-email">—</dd></div>
+          <div class="row"><dt>견적 확인</dt><dd id="s-contact">—</dd></div>
+          <div class="row"><dt>계산 방법</dt><dd id="s-pay">—</dd></div>
+          <div class="row"><dt>견적 조건</dt><dd id="s-cond">—</dd></div>
+          <div class="row"><dt>남기신 말씀</dt><dd id="s-memo">—</dd></div>
+        </dl>
+      </div>
+
+      <div class="kakao-note">
+        <p>견적을 확인해 문자로 보내드립니다. 사장님 확정 후 연락드리며, 확정된 예약만 결제 진행됩니다.</p>
+        <p>온라인 결제는 진행하지 않습니다. 확정 전까지는 어떤 비용도 청구되지 않으니 안심하세요. 급하시면 <b>1566-6188</b>로 전화 주셔도 됩니다.</p>
+      </div>
+
+      <div class="sms-wrap">
+        <h3 class="sms-h">발송되는 문자 미리보기</h3>
+        <p class="sms-sub">접수와 동시에 아래 두 통의 알림이 나갑니다. (시안용 예시 화면입니다)</p>
+        <div class="sms-grid">
+          <div class="phone">
+            <div class="phone-top"><span class="who">고객</span> <span id="smsToCustomer">010-0000-0000</span> 님이 받는 알림톡</div>
+            <div class="bubble kakao" id="smsCustomer">—</div>
+            <p class="bubble-time">방금 전 · 카카오 알림톡</p>
+          </div>
+          <div class="phone">
+            <div class="phone-top"><span class="who">사장님</span> 010-2048-8585 로 가는 접수 알림</div>
+            <div class="bubble" id="smsOwner">—</div>
+            <p class="bubble-time">방금 전 · SMS</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 하단 네비 -->
+    <div class="navbar">
+      <button type="button" class="btn btn-prev" id="btnPrev">← 이전</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn btn-next" id="btnNext">다음 →</button>
+    </div>
+
+  </div><!-- /card -->
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <strong>합자회사 베스트투어</strong>
+    대표 이승묵 · 사업자 130-86-77328 · 통신판매업 제 2020-고양일산동-1211호<br>
+    본사 경기도 고양시 일산동구 동국로 99-19 · 지사 서울시 마포구 월드컵북로 23길 18<br>
+    bestour2013@naver.com · 대표 <span class="tel">1566-6188</span> · 직통 010-2048-8585 · 팩스 0303-3443-5252<br>
+    KB국민은행 690101-00-050894
+  </div>
+</footer>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------- 차량 목록 (요금 정보 없음 — soul.md §11) ---------- */
+  var VEH = {
+    v45:{name:"45인승 관광버스", cap:45},
+    v35:{name:"35인승 관광버스", cap:35},
+    v28:{name:"28인승 우등리무진", cap:28},
+    v25:{name:"25인승 관광버스", cap:25},
+    v16:{name:"16인승 관광버스", cap:16}
+  };
+
+  /* 장소 목록 — 출발지/도착지/경유지 공통 (인천공항 강조 + 16개 시도) */
+  var SIDO = ["서울","부산","대구","인천","광주","대전","울산","경기","강원","충북","충남","전북","전남","경북","경남","제주"];
+  var MAX_VIA = 5;
+  function placeOptions(placeholder){
+    var s = '<option value="">' + placeholder + '</option>';
+    s += '<optgroup label="✈ 공항 노선 — 주력 (더 저렴)"><option value="인천공항">인천공항 ✈ 픽업·샌딩 전문</option></optgroup>';
+    s += '<optgroup label="전국 16개 시도">';
+    for(var i=0;i<SIDO.length;i++){ s += '<option value="'+SIDO[i]+'">'+SIDO[i]+'</option>'; }
+    s += '</optgroup>';
+    return s;
+  }
+
+  var state = {
+    veh:"", purpose:"", from:"", to:"", vias:[], trip:"",
+    depDate:"", depTime:"08:00", retDate:"", retTime:"18:00",
+    buses:1, pax:30,
+    name:"", phone:"", email:"",
+    contact:"핸드폰", pay:"현금", park:false, vat:false, memo:""
+  };
+
+  var step = 1, MAX = 6;
+  var STEP_NAMES = ["차량 선택","여행 정보","날짜·시간","대수·인원","연락처","접수 완료"];
+
+  var $ = function(id){ return document.getElementById(id); };
+
+  /* ---------- 기본 날짜 세팅 ---------- */
+  var today = new Date();
+  var pad = function(n){ return (n<10?"0":"")+n; };
+  var iso = function(d){ return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()); };
+  var minDay = iso(today);
+  $("depDate").min = minDay;
+  $("retDate").min = minDay;
+
+  /* ---------- 1단계 : 차량 카드 ---------- */
+  var vehBtns = document.querySelectorAll("#vehGrid .veh");
+  Array.prototype.forEach.call(vehBtns, function(b){
+    b.addEventListener("click", function(){
+      Array.prototype.forEach.call(vehBtns, function(x){ x.setAttribute("aria-pressed","false"); });
+      b.setAttribute("aria-pressed","true");
+      state.veh = b.dataset.veh;
+      hideErr("err-veh");
+      updateCapNote();
+    });
+  });
+
+  /* ---------- 칩 그룹 공통 (단일 선택) ---------- */
+  function chipGroup(containerId, key, onPick){
+    var btns = document.querySelectorAll("#"+containerId+" .chip, #"+containerId+" button");
+    Array.prototype.forEach.call(btns, function(b){
+      b.addEventListener("click", function(){
+        Array.prototype.forEach.call(btns, function(x){ x.setAttribute("aria-pressed","false"); });
+        b.setAttribute("aria-pressed","true");
+        state[key] = b.dataset.val;
+        if(onPick) onPick(b.dataset.val);
+      });
+    });
+  }
+  chipGroup("purposeChips","purpose", function(){ hideErr("err-purpose"); updateAirportHints(); });
+  chipGroup("tripSeg","trip", function(){ hideErr("err-trip"); syncTripUI(); });
+  chipGroup("contactChips","contact");
+  chipGroup("payChips","pay");
+
+  /* ---------- 2단계 : 셀렉트 ---------- */
+  $("fromSel").addEventListener("change", function(){ state.from = this.value; hideErr("err-route"); updateAirportHints(); });
+  $("toSel").addEventListener("change", function(){ state.to = this.value; hideErr("err-route"); updateAirportHints(); });
+  /* ---------- 2단계 : 경유지 목록 (0~5개) ---------- */
+  function viaFilled(){
+    return state.vias.filter(function(v){ return !!v; });
+  }
+  function renderVias(){
+    var list = $("viaList");
+    list.innerHTML = "";
+    state.vias.forEach(function(val, i){
+      var row = document.createElement("div");
+      row.className = "via-row";
+      row.innerHTML =
+        '<span class="idx" aria-hidden="true">' + (i+1) + '</span>' +
+        '<select class="control" aria-label="경유지 ' + (i+1) + '">' + placeOptions("경유지 " + (i+1) + " 선택") + '</select>' +
+        '<button type="button" class="via-del" aria-label="경유지 ' + (i+1) + ' 삭제" title="삭제">✕</button>';
+      var sel = row.querySelector("select");
+      sel.value = val;
+      sel.addEventListener("change", function(){
+        state.vias[i] = this.value;
+        this.classList.remove("invalid");
+        if(viaFilled().length === state.vias.length) hideErr("err-via");
+        updateAirportHints();
+      });
+      row.querySelector(".via-del").addEventListener("click", function(){
+        state.vias.splice(i, 1);
+        hideErr("err-via");
+        renderVias();
+        updateAirportHints();
+        $("viaAdd").focus();
+      });
+      list.appendChild(row);
+    });
+    $("viaEmpty").hidden = state.vias.length > 0;
+    var add = $("viaAdd");
+    add.disabled = state.vias.length >= MAX_VIA;
+    add.textContent = add.disabled ? "경유지는 최대 5곳까지 추가할 수 있습니다" : "＋ 경유지 추가";
+  }
+  $("viaAdd").addEventListener("click", function(){
+    if(state.vias.length >= MAX_VIA) return;
+    state.vias.push("");
+    renderVias();
+    var sels = $("viaList").querySelectorAll("select");
+    if(sels.length) sels[sels.length - 1].focus();
+  });
+
+  function isAirport(){
+    return state.from === "인천공항" || state.to === "인천공항" ||
+           state.purpose === "공항픽업" || viaFilled().indexOf("인천공항") > -1;
+  }
+  function updateAirportHints(){
+    $("airportHint2").hidden = !isAirport();
+  }
+
+  /* ---------- 3단계 : 날짜 ---------- */
+  function syncTripUI(){
+    var oneWay = (state.trip === "편도");
+    $("retField").hidden = oneWay;
+    $("oneWayNote").hidden = !oneWay;
+  }
+  $("depDate").addEventListener("change", function(){
+    state.depDate = this.value;
+    $("retDate").min = this.value || minDay;
+    if(!state.retDate){ $("retDate").value = this.value; state.retDate = this.value; }
+    hideErr("err-dep");
+  });
+  $("depTime").addEventListener("change", function(){ state.depTime = this.value; });
+  $("retDate").addEventListener("change", function(){ state.retDate = this.value; hideErr("err-ret"); });
+  $("retTime").addEventListener("change", function(){ state.retTime = this.value; });
+
+  /* ---------- 4단계 : 스테퍼 ---------- */
+  function bindStepper(minusId, plusId, valId, key, min, max, unit){
+    function render(){
+      $(valId).innerHTML = state[key] + '<small>' + unit + '</small>';
+      $(minusId).disabled = state[key] <= min;
+      $(plusId).disabled = state[key] >= max;
+      updateCapNote();
+    }
+    $(minusId).addEventListener("click", function(){ if(state[key] > min){ state[key]--; render(); } });
+    $(plusId).addEventListener("click", function(){ if(state[key] < max){ state[key]++; render(); } });
+    render();
+  }
+  bindStepper("busMinus","busPlus","busVal","buses",1,20,"대");
+  bindStepper("paxMinus","paxPlus","paxVal","pax",1,900,"명");
+
+  function updateCapNote(){
+    var el = $("capNote");
+    if(!el) return;
+    if(!state.veh){ el.className = "cap-note"; el.textContent = "차량을 선택하면 정원 안내가 표시됩니다."; return; }
+    var v = VEH[state.veh];
+    var total = v.cap * state.buses;
+    if(state.pax > total){
+      el.className = "cap-note warn";
+      el.textContent = v.name + " " + state.buses + "대는 최대 " + total + "명까지 탑승 가능합니다. 현재 " + state.pax + "명 — 차량 대수를 늘리시거나 접수 후 담당자와 조정하실 수 있습니다.";
+    } else {
+      el.className = "cap-note";
+      el.textContent = v.name + " " + state.buses + "대 · 최대 " + total + "명까지 탑승 가능합니다. (현재 " + state.pax + "명)";
+    }
+  }
+
+  /* ---------- 5단계 : 입력 ---------- */
+  $("nameInput").addEventListener("input", function(){
+    state.name = this.value.trim();
+    if(state.name){ hideErr("err-name"); this.classList.remove("invalid"); }
+  });
+  var phoneEl = $("phoneInput");
+  phoneEl.addEventListener("input", function(){
+    var d = this.value.replace(/\D/g,"").slice(0,11);
+    var out = d;
+    if(d.length > 7){ out = d.slice(0,3) + "-" + d.slice(3,7) + "-" + d.slice(7); }
+    else if(d.length > 3){ out = d.slice(0,3) + "-" + d.slice(3); }
+    this.value = out;
+    state.phone = out;
+    if(isPhoneValid(out)){ hideErr("err-phone"); this.classList.remove("invalid"); }
+  });
+  function isPhoneValid(v){ return /^01[016789]-\d{3,4}-\d{4}$/.test(v || ""); }
+  $("emailInput").addEventListener("input", function(){ state.email = this.value.trim(); });
+  $("parkChk").addEventListener("change", function(){ state.park = this.checked; });
+  $("vatChk").addEventListener("change", function(){ state.vat = this.checked; });
+  $("memoInput").addEventListener("input", function(){ state.memo = this.value.trim(); });
+
+  /* ---------- 요약 / 문자 ---------- */
+  function vehInfo(){ return VEH[state.veh] || VEH.v45; }
+  function fmtDT(d, t){
+    if(!d) return "—";
+    var p = d.split("-");
+    var dt = new Date(d + "T00:00:00");
+    var wk = ["일","월","화","수","목","금","토"][dt.getDay()];
+    return p[0] + "년 " + Number(p[1]) + "월 " + Number(p[2]) + "일(" + wk + ") " + (t || "");
+  }
+  function fmtDTShort(d, t){
+    if(!d) return "-";
+    var p = d.split("-");
+    return p[0].slice(2) + "." + p[1] + "." + p[2] + " " + (t || "");
+  }
+  function routeText(){
+    var parts = [state.from || "—"];
+    viaFilled().forEach(function(v){ parts.push(v); });
+    parts.push(state.to || "—");
+    return parts.join(" → ");
+  }
+  function condText(){
+    var arr = [];
+    arr.push(state.park ? "주차료 포함" : "주차료 별도");
+    arr.push(state.vat ? "VAT 10% 포함" : "VAT 별도");
+    return arr.join(" · ");
+  }
+  function bookingNo(){
+    var d = state.depDate ? state.depDate.replace(/-/g,"") : iso(today).replace(/-/g,"");
+    return "BT-" + d + "-0417";
+  }
+
+  function renderSummary(){
+    var v = vehInfo();
+    var vf = viaFilled();
+    $("doneSub").innerHTML = (state.name || "고객") + "님, 접수번호 <b>" + bookingNo() + "</b>";
+    $("s-veh").textContent = v.name;
+    $("s-purpose").textContent = state.purpose + (isAirport() ? " · 공항 픽업·샌딩 (송영 전문) 노선" : "");
+    $("s-route").textContent = routeText();
+    $("s-via").textContent = vf.length
+      ? vf.map(function(v, i){ return (i+1) + ". " + v; }).join("  ·  ") + "  (" + vf.length + "곳)"
+      : "없음";
+    $("s-trip").textContent = state.trip;
+    $("s-dep").textContent = fmtDT(state.depDate, state.depTime);
+    $("s-ret").textContent = (state.trip === "편도") ? "편도 — 해당 없음" : fmtDT(state.retDate, state.retTime);
+    $("s-count").textContent = state.buses + "대 · 예상 " + state.pax + "명";
+    $("s-name").textContent = state.name;
+    $("s-phone").textContent = state.phone;
+    $("s-email").textContent = state.email || "미입력";
+    $("s-contact").textContent = state.contact;
+    $("s-pay").textContent = state.pay;
+    $("s-cond").textContent = condText();
+    $("s-memo").textContent = state.memo || "없음";
+
+    $("smsToCustomer").textContent = state.phone;
+
+    var dateLine = fmtDTShort(state.depDate, state.depTime) + (state.trip === "편도" ? "" : " ~ " + fmtDTShort(state.retDate, state.retTime));
+
+    $("smsCustomer").innerHTML =
+      '<span class="bubble-tag">베스트투어 알림톡</span>' +
+      "<b>[베스트투어] 견적 신청 접수 완료</b>\n" +
+      state.name + "님, 견적 신청이 정상 접수되었습니다.\n\n" +
+      "· 접수번호 " + bookingNo() + "\n" +
+      "· 차량 " + v.name + " " + state.buses + "대 (" + state.pax + "명)\n" +
+      "· 노선 " + routeText() + " / " + state.trip + "\n" +
+      "· 일정 " + dateLine + "\n" +
+      "· 견적: 확인 후 회신드립니다\n\n" +
+      "※ 실제 견적은 확정 시 문자로 안내드립니다.\n" +
+      "사장님 확정 후 연락드리며, 확정된 예약만 결제 진행됩니다.\n" +
+      "문의 1566-6188";
+
+    $("smsOwner").innerHTML =
+      '<span class="bubble-tag">관리자 알림</span>' +
+      "<b>[베스트투어] 신규 견적 신청</b>\n" +
+      state.name + " / " + state.phone + "\n" +
+      state.purpose + (isAirport() ? " · ✈공항노선" : "") + "\n" +
+      v.name + " " + state.buses + "대 · " + state.pax + "명\n" +
+      routeText() + " (" + state.trip + ")" + "\n" +
+      (vf.length ? "경유 " + vf.length + "곳: " + vf.join(" → ") + "\n" : "") +
+      dateLine + "\n" +
+      "계산 " + state.pay + " · " + condText() + "\n" +
+      (state.memo ? "요청사항: " + state.memo + "\n" : "") +
+      "▶ 견적 산정 후 문자 회신 · 관리자 페이지에서 확정 처리";
+  }
+
+  /* ---------- 검증 ---------- */
+  function showErr(id){ var e = $(id); if(e){ e.classList.add("show"); } }
+  function hideErr(id){ var e = $(id); if(e){ e.classList.remove("show"); } }
+  function clearErrs(){
+    Array.prototype.forEach.call(document.querySelectorAll(".err"), function(e){ e.classList.remove("show"); });
+  }
+
+  function validate(n){
+    var ok = true, firstBad = null;
+    if(n === 1){
+      if(!state.veh){ showErr("err-veh"); ok = false; firstBad = $("vehGrid"); }
+    }
+    if(n === 2){
+      if(!state.purpose){ showErr("err-purpose"); ok = false; firstBad = firstBad || $("purposeChips"); }
+      if(!state.from || !state.to){ showErr("err-route"); ok = false; firstBad = firstBad || $("fromSel"); }
+      if(state.vias.length && viaFilled().length !== state.vias.length){
+        showErr("err-via"); ok = false;
+        var empties = $("viaList").querySelectorAll("select");
+        Array.prototype.forEach.call(empties, function(s){ if(!s.value) s.classList.add("invalid"); });
+        firstBad = firstBad || $("viaList").querySelector("select.invalid");
+      }
+      if(!state.trip){ showErr("err-trip"); ok = false; firstBad = firstBad || $("tripSeg"); }
+    }
+    if(n === 3){
+      if(!state.depDate || !state.depTime){ showErr("err-dep"); ok = false; firstBad = firstBad || $("depDate"); }
+      if(state.trip !== "편도"){
+        var bad = !state.retDate || !state.retTime;
+        if(!bad && state.depDate){
+          var a = new Date(state.depDate + "T" + (state.depTime || "00:00"));
+          var b = new Date(state.retDate + "T" + (state.retTime || "00:00"));
+          if(b <= a) bad = true;
+        }
+        if(bad){ showErr("err-ret"); ok = false; firstBad = firstBad || $("retDate"); }
+      }
+    }
+    if(n === 5){
+      if(!state.name){
+        showErr("err-name"); $("nameInput").classList.add("invalid");
+        ok = false; firstBad = firstBad || $("nameInput");
+      }
+      if(!isPhoneValid(state.phone)){
+        showErr("err-phone"); $("phoneInput").classList.add("invalid");
+        ok = false; firstBad = firstBad || $("phoneInput");
+      }
+    }
+    if(!ok && firstBad){
+      firstBad.scrollIntoView({behavior:"smooth", block:"center"});
+      if(firstBad.focus) { try{ firstBad.focus({preventScroll:true}); }catch(e){} }
+    }
+    return ok;
+  }
+
+  /* ---------- 단계 전환 ---------- */
+  function go(n){
+    step = n;
+    for(var i=1;i<=MAX;i++){ $("step"+i).hidden = (i !== n); }
+
+    var items = document.querySelectorAll("#psteps .pstep");
+    Array.prototype.forEach.call(items, function(li, idx){
+      var s = idx + 1;
+      li.className = "pstep" + (s === n ? " current" : (s < n ? " done" : ""));
+      if(s === n){ li.setAttribute("aria-current","step"); } else { li.removeAttribute("aria-current"); }
+    });
+    $("pbarFill").style.width = (n / MAX * 100) + "%";
+    $("pnow").textContent = n + " / " + MAX + " · " + STEP_NAMES[n-1];
+
+    if(n === 6) renderSummary();
+    if(n === 4) updateCapNote();
+    if(n === 3) syncTripUI();
+
+    // 버튼 상태
+    $("btnPrev").style.display = (n === 1 || n === MAX) ? "none" : "inline-flex";
+    var next = $("btnNext");
+    next.className = "btn btn-next";
+    if(n === 5){ next.textContent = "견적 신청하기"; }
+    else if(n === 6){ next.textContent = "처음부터 다시 견적 신청하기"; next.className = "btn btn-deep"; }
+    else { next.textContent = "다음 →"; }
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  $("btnNext").addEventListener("click", function(){
+    if(step === MAX){ location.reload(); return; }
+    if(!validate(step)) return;
+    clearErrs();
+    go(step + 1);
+  });
+  $("btnPrev").addEventListener("click", function(){
+    if(step > 1){ clearErrs(); go(step - 1); }
+  });
+
+  // 초기화
+  renderVias();
+  syncTripUI();
+  go(1);
+})();
+</script>
+</body>
+</html>
