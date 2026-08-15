@@ -1,0 +1,488 @@
+<title>베스트투어 확인 시트</title>
+<style>
+  :root{
+    --deep:#3B1F5C; --violet:#7C3AED; --lav:#F3EFFA; --ink:#1A1523;
+    --gold:#B8860B; --paper:#FFFFFF; --line:#E2DAEF; --sub:#6B6178;
+    --must:#B3261E; --nice:#1F6B44;
+  }
+  /* 인쇄·대면 미팅용 문서 — 의도적으로 라이트 단일 테마 (배경 명시 도색) */
+  *{box-sizing:border-box}
+  html{background:var(--lav)}
+  body{margin:0;background:var(--lav);color:var(--ink);
+    font-family:'Malgun Gothic','Apple SD Gothic Neo',Pretendard,system-ui,sans-serif;
+    font-size:16px;line-height:1.55}
+  .wrap{max-width:860px;margin:0 auto;padding:24px 16px 80px}
+  header.doc{background:var(--deep);color:#fff;border-radius:10px;padding:28px 28px 22px;margin-bottom:8px}
+  header.doc h1{margin:0 0 6px;font-size:26px;letter-spacing:-.3px}
+  header.doc h1 em{font-style:normal;color:#E8C468}
+  header.doc p{margin:0;font-size:14px;color:#D9CBEE}
+  .meta{display:flex;gap:16px;flex-wrap:wrap;margin-top:14px;font-size:13.5px}
+  .meta label{color:#C9B8E6}
+  .meta input{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.3);color:#fff;
+    border-radius:6px;padding:4px 8px;font-size:13.5px;width:130px}
+  .bar{position:sticky;top:0;z-index:5;background:var(--paper);border:1px solid var(--line);
+    border-radius:8px;padding:10px 16px;margin:10px 0 22px;display:flex;align-items:center;gap:14px;
+    box-shadow:0 2px 8px rgba(59,31,92,.08)}
+  .bar .track{flex:1;height:10px;background:var(--lav);border-radius:99px;overflow:hidden}
+  .bar .fill{height:100%;width:0%;background:linear-gradient(90deg,var(--violet),var(--deep));transition:width .3s}
+  .bar b{font-size:14px;white-space:nowrap}
+  .bar button{border:1px solid var(--deep);background:var(--deep);color:#fff;border-radius:6px;
+    padding:7px 14px;font-size:13.5px;cursor:pointer}
+  .legend{font-size:13px;color:var(--sub);margin:0 0 18px}
+  .legend b.m{color:var(--must)} .legend b.n{color:var(--nice)}
+  section{background:var(--paper);border:1px solid var(--line);border-radius:10px;margin:0 0 22px;overflow:hidden}
+  section>h2{margin:0;background:var(--lav);color:var(--deep);font-size:18px;padding:14px 20px;
+    border-bottom:1px solid var(--line)}
+  section>h2 small{display:block;font-size:12.5px;font-weight:400;color:var(--sub);margin-top:2px}
+  .item{padding:16px 20px;border-bottom:1px solid var(--line)}
+  .item:last-child{border-bottom:none}
+  .q{display:flex;gap:10px;align-items:baseline}
+  .q .no{flex:none;font-weight:800;color:var(--violet);font-size:15px;min-width:34px}
+  .q .badge{flex:none;font-size:11px;font-weight:700;border-radius:4px;padding:2px 6px;color:#fff}
+  .badge.must{background:var(--must)} .badge.nice{background:var(--nice)}
+  .q h3{margin:0;font-size:16.5px;flex:1}
+  .why{margin:6px 0 10px 44px;font-size:13.5px;color:var(--sub)}
+  .ans{margin-left:44px}
+  input[type=text],textarea,select{width:100%;border:1.5px solid var(--line);border-radius:6px;
+    padding:9px 11px;font-size:15px;font-family:inherit;background:#FDFCFE;color:var(--ink)}
+  input[type=text]:focus,textarea:focus{outline:2px solid var(--violet);border-color:var(--violet)}
+  textarea{min-height:64px;resize:vertical}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .row>*{flex:1;min-width:140px}
+  .opts{display:flex;gap:14px;flex-wrap:wrap;padding:4px 0}
+  .opts label{display:flex;gap:6px;align-items:center;font-size:14.5px;cursor:pointer;
+    border:1.5px solid var(--line);border-radius:6px;padding:8px 12px;background:#FDFCFE}
+  .opts label:has(input:checked){border-color:var(--violet);background:var(--lav);font-weight:700}
+  .opts input{accent-color:var(--violet);width:17px;height:17px}
+  table.grid{width:100%;border-collapse:collapse;font-size:13.5px}
+  table.grid th{background:var(--lav);color:var(--deep);padding:7px 6px;border:1px solid var(--line);font-size:12.5px}
+  table.grid td{border:1px solid var(--line);padding:3px}
+  table.grid td input{border:none;background:transparent;width:100%;padding:6px 4px;font-size:13.5px}
+  .grid-scroll{overflow-x:auto}
+  .hint{font-size:12.5px;color:var(--sub);margin-top:6px}
+  .preset{margin-left:44px;background:var(--lav);border-radius:6px;padding:10px 14px;font-size:13.5px;margin-bottom:10px}
+  .preset b{color:var(--deep)}
+  footer.doc{text-align:center;font-size:12.5px;color:var(--sub);margin-top:30px}
+  @media print{
+    html,body{background:#fff}
+    .bar,.noprint{display:none}
+    section{break-inside:avoid;border-color:#bbb}
+    header.doc{background:#fff;color:#000;border:2px solid #000}
+    header.doc p,.meta label{color:#333}
+  }
+</style>
+
+<div class="wrap">
+  <header class="doc">
+    <h1>베스트투어 홈페이지 — <em>사장님 확인 시트</em></h1>
+    <p>이 시트의 빈칸이 모두 채워지면 개발이 멈추지 않고 끝까지 갑니다. 함께 채워주세요 (약 30~40분)</p>
+    <div class="meta">
+      <label>작성일 <input type="text" data-k="meta-date" placeholder="2026-08-__" /></label>
+      <label>참석 <input type="text" data-k="meta-who" placeholder="이승묵 대표 외" /></label>
+    </div>
+  </header>
+
+  <div class="bar noprint">
+    <b id="prog-label">0 / 0 항목</b>
+    <div class="track"><div class="fill" id="prog-fill"></div></div>
+    <button onclick="window.print()">🖨 인쇄</button>
+  </div>
+  <p class="legend"><b class="m">■ 필수</b> = 이게 없으면 정식 오픈이 막힙니다 · <b class="n">■ 권장</b> = 없어도 임시값으로 진행 가능, 있으면 품질 상승 · 입력 내용은 이 브라우저에 자동 저장됩니다</p>
+
+  <!-- A. 요금 -->
+  <section>
+    <h2>A. 요금 — 가장 중요합니다 <small>지금 홈페이지의 모든 가격은 개발용 가짜 숫자입니다. 실제 요금이 확정되어야 "예상가"를 보여줄 수 있습니다.</small></h2>
+
+    <div class="item">
+      <div class="q"><span class="no">A1</span><span class="badge must">필수</span><h3>주요 노선별 기본 요금 (당일왕복 기준)</h3></div>
+      <p class="why">자주 나가는 노선부터 적어주세요. 여기 없는 노선은 차량별 기본가로 계산됩니다. 나중에 언제든 추가·수정 가능합니다.</p>
+      <div class="ans grid-scroll">
+        <table class="grid">
+          <tr><th style="width:90px">출발</th><th style="width:90px">도착</th><th>45인승</th><th>35인승</th><th>28우등</th><th>25인승</th><th>16인승</th></tr>
+          <tr><td><input data-k="a1-r1-o" placeholder="인천공항"/></td><td><input data-k="a1-r1-d" placeholder="서울"/></td><td><input data-k="a1-r1-45" placeholder="원"/></td><td><input data-k="a1-r1-35"/></td><td><input data-k="a1-r1-28"/></td><td><input data-k="a1-r1-25"/></td><td><input data-k="a1-r1-16"/></td></tr>
+          <tr><td><input data-k="a1-r2-o" placeholder="인천공항"/></td><td><input data-k="a1-r2-d" placeholder="경기"/></td><td><input data-k="a1-r2-45"/></td><td><input data-k="a1-r2-35"/></td><td><input data-k="a1-r2-28"/></td><td><input data-k="a1-r2-25"/></td><td><input data-k="a1-r2-16"/></td></tr>
+          <tr><td><input data-k="a1-r3-o" placeholder="서울"/></td><td><input data-k="a1-r3-d" placeholder="강원"/></td><td><input data-k="a1-r3-45"/></td><td><input data-k="a1-r3-35"/></td><td><input data-k="a1-r3-28"/></td><td><input data-k="a1-r3-25"/></td><td><input data-k="a1-r3-16"/></td></tr>
+          <tr><td><input data-k="a1-r4-o"/></td><td><input data-k="a1-r4-d"/></td><td><input data-k="a1-r4-45"/></td><td><input data-k="a1-r4-35"/></td><td><input data-k="a1-r4-28"/></td><td><input data-k="a1-r4-25"/></td><td><input data-k="a1-r4-16"/></td></tr>
+          <tr><td><input data-k="a1-r5-o"/></td><td><input data-k="a1-r5-d"/></td><td><input data-k="a1-r5-45"/></td><td><input data-k="a1-r5-35"/></td><td><input data-k="a1-r5-28"/></td><td><input data-k="a1-r5-25"/></td><td><input data-k="a1-r5-16"/></td></tr>
+          <tr><td><input data-k="a1-r6-o"/></td><td><input data-k="a1-r6-d"/></td><td><input data-k="a1-r6-45"/></td><td><input data-k="a1-r6-35"/></td><td><input data-k="a1-r6-28"/></td><td><input data-k="a1-r6-25"/></td><td><input data-k="a1-r6-16"/></td></tr>
+          <tr><td><input data-k="a1-r7-o"/></td><td><input data-k="a1-r7-d"/></td><td><input data-k="a1-r7-45"/></td><td><input data-k="a1-r7-35"/></td><td><input data-k="a1-r7-28"/></td><td><input data-k="a1-r7-25"/></td><td><input data-k="a1-r7-16"/></td></tr>
+          <tr><td><input data-k="a1-r8-o"/></td><td><input data-k="a1-r8-d"/></td><td><input data-k="a1-r8-45"/></td><td><input data-k="a1-r8-35"/></td><td><input data-k="a1-r8-28"/></td><td><input data-k="a1-r8-25"/></td><td><input data-k="a1-r8-16"/></td></tr>
+        </table>
+        <p class="hint">노선이 더 많으면 별지에 적어주세요. 요금표 파일(엑셀·사진)이 이미 있다면 그걸 주시는 게 제일 좋습니다 → <label style="display:inline"><input type="checkbox" data-k="a1-file"/> 요금표 파일로 전달함</label></p>
+      </div>
+    </div>
+
+    <div class="item">
+      <div class="q"><span class="no">A2</span><span class="badge must">필수</span><h3>노선 표에 없는 지역의 차량별 기본가</h3></div>
+      <p class="why">전국 어디서나 견적이 나와야 하므로, 표에 없는 노선은 이 기본가로 보여줍니다.</p>
+      <div class="ans row">
+        <input type="text" data-k="a2-45" placeholder="45인승: 원"/>
+        <input type="text" data-k="a2-35" placeholder="35인승: 원"/>
+        <input type="text" data-k="a2-28" placeholder="28우등: 원"/>
+        <input type="text" data-k="a2-25" placeholder="25인승: 원"/>
+        <input type="text" data-k="a2-16" placeholder="16인승: 원"/>
+      </div>
+    </div>
+
+    <div class="item">
+      <div class="q"><span class="no">A3</span><span class="badge must">필수</span><h3>운행 형태별 계산 규칙</h3></div>
+      <div class="preset">현재 개발용 가정: <b>편도 = 왕복의 60%</b> · <b>1박2일 = 왕복의 1.8배</b> · <b>편도로 두 번(편도·편도) = 편도×2</b></div>
+      <div class="ans">
+        <div class="opts">
+          <label><input type="radio" name="a3" data-k="a3-ok"/> 위 가정 그대로 좋다</label>
+          <label><input type="radio" name="a3" data-k="a3-no"/> 다르다 (아래에 적음)</label>
+        </div>
+        <textarea data-k="a3-detail" placeholder="예: 편도는 왕복의 70%, 1박2일은 왕복×2 - 5만원 ..."></textarea>
+      </div>
+    </div>
+
+    <div class="item">
+      <div class="q"><span class="no">A4</span><span class="badge must">필수</span><h3>2박 이상 장기 일정의 가격</h3></div>
+      <p class="why">현재는 2박 이상이면 가격 없이 "확정 시 별도 안내"로 접수만 받게 설계했습니다.</p>
+      <div class="ans">
+        <div class="opts">
+          <label><input type="radio" name="a4" data-k="a4-quote"/> 그렇게 접수만 받는다 (권장)</label>
+          <label><input type="radio" name="a4" data-k="a4-rule"/> 계산 규칙이 있다:</label>
+        </div>
+        <input type="text" data-k="a4-detail" placeholder="예: 1박 추가마다 +40만원"/>
+      </div>
+    </div>
+
+    <div class="item">
+      <div class="q"><span class="no">A5</span><span class="badge must">필수</span><h3>공항 노선은 실제로 얼마나 저렴한가요?</h3></div>
+      <p class="why">홈페이지의 핵심 세일즈 포인트입니다. "더 저렴하다"고 쓰려면 실제로 그런지, 요금표에 이미 반영됐는지 확인이 필요합니다.</p>
+      <div class="ans">
+        <div class="opts">
+          <label><input type="radio" name="a5" data-k="a5-intable"/> A1 요금표에 이미 반영됨</label>
+          <label><input type="radio" name="a5" data-k="a5-pct"/> 일반 노선 대비 약 <input type="text" data-k="a5-pct-val" style="width:60px;display:inline" placeholder="%"/> 저렴</label>
+          <label><input type="radio" name="a5" data-k="a5-case"/> 건별로 다름 (문구만 "합리적 가격"으로)</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="item">
+      <div class="q"><span class="no">A6</span><span class="badge must">필수</span><h3>성수기·주말 할증이 있나요?</h3></div>
+      <p class="why">있다면 예상가에 반영하거나 "성수기 할증 별도" 문구를 넣어야 합니다. 안 그러면 예상가와 실제 견적이 달라져 클레임이 됩니다.</p>
+      <div class="ans">
+        <div class="opts">
+          <label><input type="radio" name="a6" data-k="a6-none"/> 없음</label>
+          <label><input type="radio" name="a6" data-k="a6-yes"/> 있음 (아래에 적음)</label>
+        </div>
+        <textarea data-k="a6-detail" placeholder="예: 4~5월·10월 주말 +10%, 명절 +20% ..."></textarea>
+      </div>
+    </div>
+
+    <div class="item">
+      <div class="q"><span class="no">A7</span><span class="badge must">필수</span><h3>예상가에 무엇이 포함되나요?</h3></div>
+      <p class="why">고객이 보는 숫자의 의미를 정해야 문자·화면·실제 청구가 일치합니다. 해당하는 것에 모두 체크해주세요.</p>
+      <div class="ans opts">
+        <label><input type="checkbox" data-k="a7-toll"/> 통행료 포함</label>
+        <label><input type="checkbox" data-k="a7-park"/> 주차료 포함</label>
+        <label><input type="checkbox" data-k="a7-fuel"/> 유류비 포함</label>
+        <label><input type="checkbox" data-k="a7-driver"/> 기사 식대·숙박 포함</label>
+        <label><input type="checkbox" data-k="a7-vat"/> 부가세(VAT) 포함가로 표시</label>
+      </div>
+      <div class="ans"><textarea data-k="a7-note" placeholder="별도 청구 항목이 있으면 적어주세요"></textarea></div>
+    </div>
+  </section>
+
+  <!-- B. 회사 정보 -->
+  <section>
+    <h2>B. 회사 소개 숫자 <small>홈페이지에 "운행 13년 · 누적 4,800건"이라고 임시로 넣어뒀습니다 — 진짜 숫자로 바꿔야 합니다.</small></h2>
+    <div class="item">
+      <div class="q"><span class="no">B1</span><span class="badge must">필수</span><h3>창업(운행 시작) 연도</h3></div>
+      <div class="ans"><input type="text" data-k="b1" placeholder="예: 2013년"/></div>
+    </div>
+    <div class="item">
+      <div class="q"><span class="no">B2</span><span class="badge nice">권장</span><h3>누적 운행(또는 견적) 건수 — 대략이라도</h3></div>
+      <p class="why">"누적 4,800건" 같은 숫자는 신뢰에 큰 역할을 합니다. 정확하지 않아도 "○○건 이상"으로 표기 가능합니다.</p>
+      <div class="ans"><input type="text" data-k="b2" placeholder="예: 연 400건 × 13년 ≈ 5,000건 이상"/></div>
+    </div>
+    <div class="item">
+      <div class="q"><span class="no">B3</span><span class="badge nice">권장</span><h3>보유·협력 차량 대수 / 기사님 수</h3></div>
+      <div class="ans row"><input type="text" data-k="b3-bus" placeholder="차량: 대"/><input type="text" data-k="b3-driver" placeholder="기사: 명"/></div>
+    </div>
+    <div class="item">
+      <div class="q"><span class="no">B4</span><span class="badge must">필수</span><h3>기존 사이트의 보험 안내·회사 소개 문구, 지금도 유효한가요?</h3></div>
+      <p class="why">보험 내용은 법적 책임이 걸린 문구라 그대로 옮기기 전에 확인이 필요합니다.</p>
+      <div class="ans">
+        <div class="opts">
+          <label><input type="radio" name="b4" data-k="b4-ok"/> 그대로 사용</label>
+          <label><input type="radio" name="b4" data-k="b4-fix"/> 수정 필요 (아래에)</label>
+        </div>
+        <textarea data-k="b4-detail" placeholder="바뀐 내용"></textarea>
+      </div>
+    </div>
+    <div class="item">
+      <div class="q"><span class="no">B5</span><span class="badge must">필수</span><h3>사업자 정보 최신 확인</h3></div>
+      <div class="preset">현재 표기: 합자회사 베스트투어 · 대표 이승묵 · 사업자 130-86-77328 · 본사 고양시 일산동구 동국로 99-19 · 지사 마포구 월드컵북로 23길 18 · 대표 1566-6188 · 직통 010-2048-8585 · 팩스 0303-3443-5252 · KB국민 690101-00-050894</div>
+      <div class="ans">
+        <div class="opts">
+          <label><input type="radio" name="b5" data-k="b5-ok"/> 전부 맞음</label>
+          <label><input type="radio" name="b5" data-k="b5-fix"/> 변경 있음:</label>
+        </div>
+        <textarea data-k="b5-detail" placeholder="바뀐 항목"></textarea>
+      </div>
+    </div>
+  </section>
+
+  <!-- C. 예약 운영 -->
+  <section>
+    <h2>C. 예약 운영 방식 <small>홈페이지가 사장님의 일하는 방식과 맞아야 합니다.</small></h2>
+    <div class="item">
+      <div class="q"><span class="no">C1</span><span class="badge must">필수</span><h3>예약 접수 문자를 받을 번호</h3></div>
+      <div class="ans">
+        <div class="opts">
+          <label><input type="radio" name="c1" data-k="c1-default"/> 010-2048-8585</label>
+          <label><input type="radio" name="c1" data-k="c1-other"/> 다른 번호:</label>
+        </div>
+        <input type="text" data-k="c1-detail" placeholder="010-"/>
+      </div>
+    </div>
+    <div class="item">
+      <div class="q"><span class="no">C2</span><span class="badge must">필수</span><h3>확정 절차 — 확정 버튼을 누르기 전에 고객과 통화하시나요?</h3></div>
+      <p class="why">"확정" 버튼을 누르면 고객에게 확정 문자가 자동 발송됩니다. 사장님의 실제 업무 순서와 맞춰야 합니다.</p>
+      <div class="ans opts">
+        <label><input type="radio" name="c2" data-k="c2-call"/> 통화로 조율 후 확정 버튼</label>
+        <label><input type="radio" name="c2" data-k="c2-direct"/> 조건 맞으면 바로 확정</label>
+      </div>
+    </div>
+    <div class="item">
+      <div class="q"><span class="no">C3</span><span class="badge must">필수</span><h3>선금·계약금을 받나요?</h3></div>
+      <p class="why">받는다면 확정 문자에 "계약금 ○○원 입금 시 확정" 안내를 넣어야 합니다.</p>
+      <div class="ans">
+        <div class="opts">
+          <label><input type="radio" name="c3" data-k="c3-no"/> 안 받음</label>
+          <label><input type="radio" name="c3" data-k="c3-yes"/> 받음:</label>
+        </div>
+        <input type="text" data-k="c3-detail" placeholder="예: 총액의 20% 또는 10만원"/>
+      </div>
+    </div>
+    <div class="item">
+      <div class="q"><span class="no">C4</span><span class="badge must">필수</span><h3>고객 취소 규정</h3></div>
+      <p class="why">통신판매업 사이트에는 취소·환불 규정 표기가 필요합니다.</p>
+      <div class="ans"><textarea data-k="c4" placeholder="예: 3일 전까지 무료 취소, 이후 계약금 환불 불가 / 당일 취소 시 50% ..."></textarea></div>
+    </div>
+    <div class="item">
+      <div class="q"><span class="no">C5</span><span class="badge nice">권장</span><h3>문의 응대 시간</h3></div>
+      <div class="ans"><input type="text" data-k="c5" placeholder="예: 연중무휴 06~22시 / 24시간"/></div>
+    </div>
+  </section>
+
+  <!-- D. 문자·상담 채널 -->
+  <section>
+    <h2>D. 문자·상담 채널 <small>예약 문자 자동 발송과 카카오톡·네이버 상담 버튼을 위해 필요합니다.</small></h2>
+    <div class="item">
+      <div class="q"><span class="no">D1</span><span class="badge must">필수</span><h3>발신번호 등록 서류 — 1566-6188 명의 통신서비스 이용증명원</h3></div>
+      <p class="why">법적으로 이 서류가 있어야 1566-6188 이름으로 문자를 보낼 수 있습니다. 통신사(대표번호 사업자)에서 발급받습니다.</p>
+      <div class="ans opts">
+        <label><input type="checkbox" data-k="d1-ok"/> 발급 가능 — 전달 예정</label>
+        <label><input type="checkbox" data-k="d1-help"/> 발급 방법을 모름 (개발자가 안내)</label>
+      </div>
+    </div>
+    <div class="item">
+      <div class="q"><span class="no">D2</span><span class="badge must">필수</span><h3>사업자등록증 사본</h3></div>
+      <p class="why">카카오 알림톡(카톡으로 예약 안내) 심사에 필요합니다.</p>
+      <div class="ans opts"><label><input type="checkbox" data-k="d2-ok"/> 전달 예정</label></div>
+    </div>
+    <div class="item">
+      <div class="q"><span class="no">D3</span><span class="badge nice">권장</span><h3>카카오톡 채널</h3></div>
+      <div class="ans">
+        <div class="opts">
+          <label><input type="radio" name="d3" data-k="d3-have"/> 이미 있음 → 주소:</label>
+          <label><input type="radio" name="d3" data-k="d3-make"/> 없음 — 개발자가 개설 대행 (사장님 카카오 계정 필요)</label>
+          <label><input type="radio" name="d3" data-k="d3-skip"/> 안 쓸래요 (버튼에 "준비 중" 표시)</label>
+        </div>
+        <input type="text" data-k="d3-url" placeholder="pf.kakao.com/..."/>
+      </div>
+    </div>
+    <div class="item">
+      <div class="q"><span class="no">D4</span><span class="badge nice">권장</span><h3>네이버 톡톡</h3></div>
+      <div class="ans">
+        <div class="opts">
+          <label><input type="radio" name="d4" data-k="d4-have"/> 이미 있음 → 주소:</label>
+          <label><input type="radio" name="d4" data-k="d4-make"/> 없음 — 개설 대행</label>
+          <label><input type="radio" name="d4" data-k="d4-skip"/> 안 쓸래요</label>
+        </div>
+        <input type="text" data-k="d4-url" placeholder="talk.naver.com/..."/>
+      </div>
+    </div>
+    <div class="item">
+      <div class="q"><span class="no">D5</span><span class="badge must">필수</span><h3>자동 발송 문자 문안 승인</h3></div>
+      <div class="preset"><b>접수 시(고객):</b> "[베스트투어] 예약이 접수되었습니다. 접수번호 BT-○○ / 노선·일시·예상가 요약 / 사장님 확정 후 연락드리며, 확정된 예약만 결제 진행됩니다."<br/><b>확정 시(고객):</b> "[베스트투어] 예약이 확정되었습니다. 운행 정보 요약 + 문의 1566-6188"</div>
+      <div class="ans">
+        <div class="opts">
+          <label><input type="radio" name="d5" data-k="d5-ok"/> 좋습니다</label>
+          <label><input type="radio" name="d5" data-k="d5-fix"/> 수정 요청:</label>
+        </div>
+        <textarea data-k="d5-detail" placeholder="바꾸고 싶은 표현"></textarea>
+      </div>
+    </div>
+  </section>
+
+  <!-- E. 사진·콘텐츠 -->
+  <section>
+    <h2>E. 사진·콘텐츠 <small>지금은 기존 사이트에서 가져온 스마트폰 사진 6장뿐입니다.</small></h2>
+    <div class="item">
+      <div class="q"><span class="no">E1</span><span class="badge nice">권장</span><h3>버스 사진 고화질 원본</h3></div>
+      <p class="why">보라색 버스가 최고의 브랜드 자산입니다. 화질 좋은 사진일수록 홈페이지가 살아납니다. 차량 외관·내부(노래방·냉장고 등 옵션) 사진이 특히 좋습니다.</p>
+      <div class="ans opts">
+        <label><input type="checkbox" data-k="e1-have"/> 갖고 있는 사진 전달 예정 (카톡/USB)</label>
+        <label><input type="checkbox" data-k="e1-new"/> 새로 찍는 것 검토</label>
+      </div>
+    </div>
+    <div class="item">
+      <div class="q"><span class="no">E2</span><span class="badge nice">권장</span><h3>실제 고객 후기가 있나요?</h3></div>
+      <p class="why">후기 섹션은 실제 후기가 있어야만 만듭니다 (가짜 후기는 안 넣습니다).</p>
+      <div class="ans">
+        <div class="opts">
+          <label><input type="radio" name="e2" data-k="e2-have"/> 있음 (문자·카톡 캡처 등 전달)</label>
+          <label><input type="radio" name="e2" data-k="e2-no"/> 없음 — 오픈 후 수집</label>
+        </div>
+      </div>
+    </div>
+    <div class="item">
+      <div class="q"><span class="no">E3</span><span class="badge nice">권장</span><h3>첫 이벤트 팝업, 뭘 띄울까요?</h3></div>
+      <p class="why">오픈 시 홈에 띄울 첫 팝업입니다 (관리자 화면에서 사장님이 직접 바꿀 수 있습니다).</p>
+      <div class="ans"><textarea data-k="e3" placeholder="예: 9월 공항 노선 특가 / 신규 오픈 기념 ..."></textarea></div>
+    </div>
+    <div class="item">
+      <div class="q"><span class="no">E4</span><span class="badge must">필수</span><h3>영문 표기 확정</h3></div>
+      <p class="why">영어 페이지에 들어갈 공식 표기입니다.</p>
+      <div class="ans row">
+        <input type="text" data-k="e4-name" placeholder="회사명 영문 (예: Bestour Co.)"/>
+        <input type="text" data-k="e4-rep" placeholder="대표자 영문 (예: Lee Seung-muk)"/>
+      </div>
+      <div class="ans" style="margin-top:8px"><input type="text" data-k="e4-addr" placeholder="본사 주소 영문 (로마자 초안을 개발자가 만들어 확인받는 것도 가능)"/></div>
+    </div>
+    <div class="item">
+      <div class="q"><span class="no">E5</span><span class="badge nice">권장</span><h3>기존 공지사항 중 새 홈페이지로 옮길 글</h3></div>
+      <div class="ans"><textarea data-k="e5" placeholder="예: 없음 — 새 공지로 시작 / ○○ 공지는 유지"></textarea></div>
+    </div>
+  </section>
+
+  <!-- F. 도메인·법률 -->
+  <section>
+    <h2>F. 도메인·법률 <small>홈페이지 주소를 새 사이트로 연결하고, 법적 필수 사항을 갖추기 위해 필요합니다.</small></h2>
+    <div class="item">
+      <div class="q"><span class="no">F1</span><span class="badge must">필수</span><h3>bestour.co.kr 도메인 관리 업체와 계정 접근</h3></div>
+      <p class="why">주소를 새 사이트로 연결하려면 도메인 관리 화면에 들어가야 합니다. 어디서 등록했는지(가비아·카페24·후이즈 등)와 로그인 정보가 필요합니다.</p>
+      <div class="ans row">
+        <input type="text" data-k="f1-where" placeholder="등록 업체 (모르면 '모름')"/>
+        <input type="text" data-k="f1-access" placeholder="계정 접근: 사장님이 직접 / 개발자에게 위임"/>
+      </div>
+    </div>
+    <div class="item">
+      <div class="q"><span class="no">F2</span><span class="badge must">필수</span><h3>기존 홈페이지 업체·호스팅 계약</h3></div>
+      <p class="why">새 사이트 오픈 후 기존 호스팅을 언제 해지할지, 위약금은 없는지 확인이 필요합니다.</p>
+      <div class="ans"><textarea data-k="f2" placeholder="업체명 / 월 비용 / 계약 만료일 / 담당 연락처"></textarea></div>
+    </div>
+    <div class="item">
+      <div class="q"><span class="no">F3</span><span class="badge must">필수</span><h3>bestour.co.kr 주소로 이메일을 쓰시나요?</h3></div>
+      <p class="why">도메인을 옮길 때 이메일 설정을 같이 안 옮기면 회사 메일이 끊깁니다. naver.com 메일만 쓰신다면 해당 없습니다.</p>
+      <div class="ans opts">
+        <label><input type="radio" name="f3" data-k="f3-no"/> 아니요, bestour2013@naver.com만 씀</label>
+        <label><input type="radio" name="f3" data-k="f3-yes"/> 예, @bestour.co.kr 메일 사용 중</label>
+      </div>
+    </div>
+    <div class="item">
+      <div class="q"><span class="no">F4</span><span class="badge must">필수</span><h3>개인정보 보호책임자</h3></div>
+      <p class="why">고객 이름·전화번호를 받는 사이트는 개인정보처리방침에 책임자를 표기해야 합니다 (법적 필수). 보통 대표자가 맡습니다.</p>
+      <div class="ans row">
+        <input type="text" data-k="f4-name" placeholder="책임자 성명 (예: 이승묵)"/>
+        <input type="text" data-k="f4-contact" placeholder="연락처 (예: 1566-6188)"/>
+      </div>
+    </div>
+    <div class="item">
+      <div class="q"><span class="no">F5</span><span class="badge must">필수</span><h3>예약 정보 보관 기간</h3></div>
+      <p class="why">개인정보를 언제까지 보관하고 삭제할지 방침에 적어야 합니다.</p>
+      <div class="ans opts">
+        <label><input type="radio" name="f5" data-k="f5-1y"/> 운행 종료 후 1년 (권장)</label>
+        <label><input type="radio" name="f5" data-k="f5-other"/> 다르게: <input type="text" data-k="f5-detail" style="width:120px;display:inline"/></label>
+      </div>
+    </div>
+  </section>
+
+  <!-- G. 최종 승인 -->
+  <section>
+    <h2>G. 최종 승인 <small>디자인과 문구를 보여드리면서 확인받는 항목입니다.</small></h2>
+    <div class="item">
+      <div class="q"><span class="no">G1</span><span class="badge must">필수</span><h3>디자인 최종안 (시안 7 — 보라색 유지 + 공항 노선 전면)</h3></div>
+      <div class="ans opts">
+        <label><input type="checkbox" data-k="g1-ok"/> 승인</label>
+        <label><input type="checkbox" data-k="g1-fix"/> 수정 요청 (별도 메모)</label>
+      </div>
+    </div>
+    <div class="item">
+      <div class="q"><span class="no">G2</span><span class="badge must">필수</span><h3>"공항 픽업·샌딩 (송영 전문)" 표기</h3></div>
+      <div class="ans opts">
+        <label><input type="checkbox" data-k="g2-ok"/> 승인</label>
+        <label><input type="checkbox" data-k="g2-fix"/> 다른 표현 선호: <input type="text" data-k="g2-detail" style="width:180px;display:inline"/></label>
+      </div>
+    </div>
+    <div class="item">
+      <div class="q"><span class="no">G3</span><span class="badge must">필수</span><h3>실시간 견적현황 공개 방식</h3></div>
+      <p class="why">"한** · 45인승 · 날짜"처럼 이름을 가린 형태로 접수 현황을 홈에 표시합니다 (기존 사이트와 동일 방식). 접수 폼에 표시 고지가 들어갑니다.</p>
+      <div class="ans opts">
+        <label><input type="checkbox" data-k="g3-ok"/> 좋습니다</label>
+        <label><input type="checkbox" data-k="g3-no"/> 표시하지 말아주세요</label>
+      </div>
+    </div>
+    <div class="item">
+      <div class="q"><span class="no">G4</span><span class="badge must">필수</span><h3>관리자 화면 사용자</h3></div>
+      <p class="why">예약 확정·팝업 등록을 누가 하나요? 로그인 계정을 만들 이메일이 필요합니다.</p>
+      <div class="ans row">
+        <input type="text" data-k="g4-who" placeholder="사용자 (예: 사장님 본인 / 직원 ○○)"/>
+        <input type="text" data-k="g4-email" placeholder="로그인용 이메일"/>
+      </div>
+    </div>
+    <div class="item">
+      <div class="q"><span class="no">G5</span><span class="badge nice">권장</span><h3>오픈 목표일</h3></div>
+      <div class="ans"><input type="text" data-k="g5" placeholder="예: 2026년 9월 중"/></div>
+    </div>
+    <div class="item">
+      <div class="q"><span class="no">G6</span><span class="badge nice">권장</span><h3>기타 요청·메모</h3></div>
+      <div class="ans"><textarea data-k="g6" style="min-height:90px" placeholder="미팅 중 나온 이야기"></textarea></div>
+    </div>
+  </section>
+
+  <footer class="doc">베스트투어 홈페이지 리뉴얼 · 사장님 확인 시트 · 입력 내용은 이 기기 브라우저에만 저장됩니다</footer>
+</div>
+
+<script>
+  const KEY = 'bestour-owner-sheet';
+  const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
+  const fields = document.querySelectorAll('[data-k]');
+  fields.forEach(el => {
+    const k = el.dataset.k;
+    if (k in saved) {
+      if (el.type === 'checkbox' || el.type === 'radio') el.checked = saved[k];
+      else el.value = saved[k];
+    }
+    el.addEventListener('input', persist);
+    el.addEventListener('change', persist);
+  });
+  function persist() {
+    const data = {};
+    fields.forEach(el => {
+      data[el.dataset.k] = (el.type === 'checkbox' || el.type === 'radio') ? el.checked : el.value;
+    });
+    localStorage.setItem(KEY, JSON.stringify(data));
+    progress();
+  }
+  function progress() {
+    const items = document.querySelectorAll('.item');
+    let done = 0;
+    items.forEach(it => {
+      const els = it.querySelectorAll('[data-k]');
+      let filled = false;
+      els.forEach(el => {
+        if ((el.type === 'checkbox' || el.type === 'radio') ? el.checked : el.value.trim()) filled = true;
+      });
+      if (filled) done++;
+    });
+    document.getElementById('prog-label').textContent = done + ' / ' + items.length + ' 항목';
+    document.getElementById('prog-fill').style.width = (done / items.length * 100) + '%';
+  }
+  progress();
+</script>
