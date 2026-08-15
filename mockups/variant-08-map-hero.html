@@ -1,0 +1,1700 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>베스트투어 — 시안 8: 지도 히어로</title>
+<meta name="description" content="합자회사 베스트투어 — 전세버스 대절 · 공항 픽업·샌딩(송영 전문). 대표 노선 예시 견적, 전국 16개 시도 운행. 대표전화 1566-6188" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+<style>
+/* ============================================================
+   베스트투어 — 시안 8 : 지도 히어로 (soul.md §11 개정 반영)
+   베이스 = 시안 7(최종 통합안) / 히어로 우측만 교체
+   - 실시간 견적 계산·예약 모달 전면 제거 → 모든 견적 CTA는 wizard.html
+   - 히어로 우측 = 대한민국 인라인 SVG 지도 + 대표 노선 Top 5 예시 견적
+   - 차량 카드는 가격 대신 정원·용도·옵션 중심
+   - 가격 커뮤니케이션 창구는 지도 Top 5 하나뿐
+   ============================================================ */
+
+:root{
+  /* soul.md §7 팔레트 */
+  --deep:#3B1F5C;
+  --violet:#7C3AED;
+  --lav:#F3EFFA;
+  --dark:#1A1523;
+  --neutral:#FAF9FC;
+  --gold:#D4A843;
+
+  /* 동일 색상군 내 보조 톤 */
+  --violet-deep:#5B21B6;
+  --violet-soft:#EDE4FD;
+  --lav-line:#DFD3F2;
+  --lav-line-2:#EBE3F7;
+  --deep-70:rgba(59,31,92,.72);
+  --deep-55:rgba(59,31,92,.56);
+  --deep-40:rgba(59,31,92,.40);
+  --gold-deep:#A87F2C;
+  --white:#fff;
+  --kakao:#FEE500;
+  --kakao-fg:#3C1E1E;
+  --naver:#03C75A;
+
+  /* 8px 배수 스페이싱 */
+  --s1:8px; --s2:16px; --s3:24px; --s4:32px; --s5:40px;
+  --s6:48px; --s7:64px; --s8:80px; --s9:96px;
+
+  /* 라운드 최소화 — 8px 이하 (보수적 톤) */
+  --r:8px; --r-s:6px; --r-xs:4px;
+
+  --maxw:1280px;
+  --ease:cubic-bezier(.25,.7,.35,1);
+  --t:.22s var(--ease);
+  --sh-1:0 1px 2px rgba(59,31,92,.05), 0 6px 18px rgba(59,31,92,.07);
+  --sh-2:0 2px 6px rgba(59,31,92,.08), 0 14px 34px rgba(59,31,92,.12);
+}
+
+*,*::before,*::after{ box-sizing:border-box; }
+html{ -webkit-text-size-adjust:100%; scroll-behavior:smooth; overflow-x:hidden; }
+body{
+  margin:0;
+  font-family:"Pretendard","Pretendard Variable",-apple-system,BlinkMacSystemFont,system-ui,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  background:var(--lav);
+  color:var(--deep);
+  font-size:16px; line-height:1.65; letter-spacing:-.01em;
+  word-break:keep-all;
+  -webkit-font-smoothing:antialiased;
+}
+img{ max-width:100%; display:block; }
+a{ color:inherit; text-decoration:none; }
+button,input,select{ font:inherit; color:inherit; }
+h1,h2,h3,h4,p,ul,ol,figure,dl,dd{ margin:0; }
+ul,ol{ padding:0; list-style:none; }
+:focus-visible{ outline:3px solid var(--violet); outline-offset:2px; border-radius:var(--r-xs); }
+::selection{ background:var(--violet-soft); color:var(--deep); }
+
+.wrap{ width:100%; max-width:var(--maxw); margin-inline:auto; padding-inline:20px; }
+@media(min-width:768px){ .wrap{ padding-inline:32px; } }
+.sr-only{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+
+/* ---------- 공통 타이포 ---------- */
+.eyebrow{
+  display:inline-flex; align-items:center; gap:var(--s1);
+  font-size:12px; font-weight:800; letter-spacing:.12em;
+  color:var(--violet-deep); text-transform:uppercase;
+}
+.eyebrow::before{ content:""; width:20px; height:2px; background:var(--gold); border-radius:2px; }
+.sec-title{ font-size:clamp(24px,3.6vw,38px); font-weight:800; line-height:1.3; letter-spacing:-.03em; margin-top:12px; }
+.sec-title .ac{ color:var(--violet-deep); }
+.sec-desc{ margin-top:14px; font-size:15px; line-height:1.75; color:var(--deep-70); max-width:56ch; }
+.sec-head{ margin-bottom:var(--s5); }
+.sec-head--split{ display:grid; gap:var(--s2); }
+@media(min-width:960px){
+  .sec-head--split{ grid-template-columns:minmax(0,1.1fr) minmax(0,1fr); align-items:end; gap:var(--s6); }
+  .sec-head--split .sec-desc{ margin-top:0; }
+}
+.section{ padding-block:clamp(48px,7vw,var(--s9)); }
+.section--tight{ padding-block:clamp(40px,5vw,var(--s7)); }
+.tone-lav{ background:var(--lav); }
+.tone-white{ background:var(--white); }
+.tone-neutral{ background:var(--neutral); }
+
+/* ---------- 버튼 ---------- */
+.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:var(--s1);
+  min-height:48px; padding:12px var(--s3);
+  border:1.5px solid transparent; border-radius:var(--r-s);
+  font-size:15px; font-weight:700; letter-spacing:-.015em;
+  cursor:pointer; transition:background-color var(--t), border-color var(--t), color var(--t);
+}
+.btn--primary{ background:var(--violet-deep); color:#fff; }
+.btn--primary:hover{ background:#4C1D95; }
+.btn--gold{ background:var(--gold); color:#2E1F05; }
+.btn--gold:hover{ background:#C29A38; }
+.btn--ghost{ background:#fff; color:var(--deep); border-color:var(--lav-line); }
+.btn--ghost:hover{ border-color:var(--violet); color:var(--violet-deep); }
+.btn--block{ width:100%; }
+.btn--lg{ min-height:54px; font-size:16px; }
+.btn--sm{ min-height:40px; padding:8px 16px; font-size:13.5px; }
+
+/* ============================================================
+   HEADER
+   ============================================================ */
+.hdr{
+  position:sticky; top:0; z-index:80;
+  background:var(--white);
+  border-bottom:1px solid var(--lav-line);
+}
+.topbar{
+  background:var(--deep); color:#EDE4FD;
+  font-size:12px; letter-spacing:-.005em;
+}
+.topbar .wrap{ display:flex; align-items:center; justify-content:space-between; gap:var(--s2); min-height:36px; flex-wrap:wrap; }
+.topbar b{ color:#fff; font-weight:700; }
+.topbar .badge-line{ display:none; align-items:center; gap:14px; flex-wrap:wrap; }
+@media(min-width:768px){ .topbar .badge-line{ display:flex; } }
+.topbar .tel-line{ margin-left:auto; }
+.topbar .badge-line span{ display:inline-flex; align-items:center; gap:5px; }
+.topbar .tick-i{ width:12px; height:12px; flex:0 0 auto; stroke:var(--gold); fill:none; stroke-width:2.2; }
+.hdr__in{ display:flex; align-items:center; gap:var(--s2); min-height:66px; }
+@media(min-width:1024px){ .hdr__in{ min-height:76px; gap:var(--s3); } }
+
+.brand{ display:flex; align-items:center; gap:10px; flex:0 0 auto; }
+.brand__mark{ width:36px; height:36px; flex:0 0 auto; border-radius:var(--r-s); background:var(--deep); display:grid; place-items:center; }
+.brand__mark svg{ width:22px; height:22px; }
+.brand__mark svg path{ fill:var(--gold); }
+.brand__mark svg circle{ fill:#fff; }
+.brand__txt{ line-height:1.15; }
+.brand__txt b{ display:block; font-size:19px; font-weight:800; letter-spacing:-.04em; }
+.brand__txt b span{ color:var(--violet-deep); }
+.brand__txt small{ display:block; font-size:10.5px; font-weight:600; color:var(--deep-55); letter-spacing:.02em; }
+
+.gnb{ display:none; }
+@media(min-width:1024px){
+  .gnb{ display:block; margin-inline:auto; }
+  .gnb ul{ display:flex; align-items:center; gap:2px; }
+  .gnb a{
+    display:block; padding:10px 14px; border-radius:var(--r-s);
+    font-size:15px; font-weight:700; color:var(--deep);
+    transition:color var(--t), background-color var(--t);
+  }
+  .gnb a:hover{ color:var(--violet-deep); background:var(--lav); }
+}
+.hdr__right{ display:none; margin-left:auto; align-items:center; gap:var(--s2); }
+@media(min-width:1024px){ .hdr__right{ display:flex; margin-left:0; } }
+.hdr__tel{ text-align:right; line-height:1.2; }
+.hdr__tel b{ display:block; font-size:19px; font-weight:800; letter-spacing:-.03em; color:var(--deep); }
+.hdr__tel small{ display:block; font-size:11px; font-weight:600; color:var(--deep-55); letter-spacing:.02em; }
+
+.burger{
+  margin-left:auto; width:44px; height:44px; display:grid; place-items:center;
+  background:#fff; border:1.5px solid var(--lav-line); border-radius:var(--r-s); cursor:pointer;
+}
+@media(min-width:1024px){ .burger{ display:none; } }
+.burger i{ display:block; width:18px; height:2px; background:var(--deep); border-radius:1px; transition:transform var(--t), opacity var(--t); }
+.burger i + i{ margin-top:5px; }
+.burger[aria-expanded="true"] i:nth-child(1){ transform:translateY(7px) rotate(45deg); }
+.burger[aria-expanded="true"] i:nth-child(2){ opacity:0; }
+.burger[aria-expanded="true"] i:nth-child(3){ transform:translateY(-7px) rotate(-45deg); }
+
+.drawer{ display:grid; grid-template-rows:0fr; overflow:hidden; transition:grid-template-rows .26s var(--ease); border-top:1px solid transparent; background:#fff; }
+.drawer.is-open{ grid-template-rows:1fr; border-top-color:var(--lav-line); }
+.drawer__in{ min-height:0; }
+.drawer nav a{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:14px 4px; font-size:16px; font-weight:700;
+  border-bottom:1px solid var(--lav-line-2);
+}
+.drawer nav a::after{ content:"›"; color:var(--violet); font-size:20px; }
+.drawer .btn{ margin:var(--s3) 0; }
+@media(min-width:1024px){ .drawer{ display:none; } }
+
+/* ============================================================
+   HERO — 5초 자동 캐러셀 + 우측 고정 견적 위젯
+   ============================================================ */
+.hero{ background:var(--lav); padding-block:clamp(24px,3.5vw,var(--s5)) clamp(24px,3vw,var(--s4)); }
+.hero__grid{ display:grid; gap:var(--s3); }
+.hero__grid > *{ min-width:0; }
+@media(min-width:1024px){
+  .hero__grid{ grid-template-columns:minmax(0,1fr) minmax(376px,392px); gap:var(--s4); align-items:start; }
+}
+
+/* --- 캐러셀 --- */
+.car{ position:relative; border-radius:var(--r); overflow:hidden; background:var(--deep); border:1px solid var(--lav-line); }
+.car__stage{ display:grid; }
+.slide{
+  grid-area:1 / 1; position:relative; isolation:isolate;
+  display:flex; flex-direction:column; justify-content:flex-end;
+  min-height:400px; padding:var(--s4) var(--s3) 72px;
+  opacity:0; visibility:hidden; transition:opacity .5s var(--ease), visibility .5s;
+}
+@media(min-width:640px){ .slide{ min-height:440px; padding:var(--s6) var(--s5) var(--s6); } }
+@media(min-width:1024px){ .slide{ min-height:472px; } }
+.slide.is-on{ opacity:1; visibility:visible; }
+.slide__bg{ position:absolute; inset:0; z-index:-2; }
+.slide__bg img{ width:100%; height:100%; object-fit:cover; }
+.slide__bg::after{
+  content:""; position:absolute; inset:0;
+  background:linear-gradient(96deg, rgba(31,16,50,.94) 0%, rgba(45,24,71,.88) 42%, rgba(59,31,92,.62) 78%, rgba(59,31,92,.42) 100%);
+}
+.slide--b .slide__bg::after{
+  background:linear-gradient(96deg, rgba(26,21,35,.93) 0%, rgba(51,28,82,.87) 46%, rgba(76,42,116,.58) 100%);
+}
+.slide--c .slide__bg::after{
+  background:linear-gradient(96deg, rgba(31,16,50,.95) 0%, rgba(59,31,92,.85) 48%, rgba(59,31,92,.5) 100%);
+}
+.slide__tag{
+  display:inline-flex; align-items:center; gap:7px; align-self:flex-start;
+  padding:6px 12px; border-radius:var(--r-xs);
+  background:var(--gold); color:#2E1F05;
+  font-size:12px; font-weight:800; letter-spacing:-.01em;
+}
+.slide__tag--line{ background:transparent; color:#F3EFFA; border:1.5px solid rgba(243,239,250,.5); }
+.slide h1,.slide h2{
+  margin-top:var(--s2); color:#fff;
+  font-size:clamp(25px,4.3vw,42px); font-weight:800; line-height:1.28; letter-spacing:-.035em;
+}
+.slide h1 em,.slide h2 em{ font-style:normal; color:#F0D68C; }
+.slide p{ margin-top:14px; font-size:clamp(14px,1.5vw,16.5px); line-height:1.7; color:#E4DAF4; max-width:44ch; }
+.slide p b{ color:#fff; font-weight:700; }
+.slide__chips{ display:flex; flex-wrap:wrap; gap:6px; margin-top:var(--s3); max-width:60ch; }
+.slide__chips li{
+  font-size:12px; font-weight:600; color:#F3EFFA;
+  border:1px solid rgba(243,239,250,.32); border-radius:var(--r-xs);
+  padding:4px 9px;
+}
+.slide__chips li.on{ background:rgba(212,168,67,.22); border-color:rgba(212,168,67,.7); color:#F7E4AE; font-weight:700; }
+.slide__facts{ display:flex; flex-wrap:wrap; gap:var(--s2) var(--s4); margin-top:var(--s3); }
+.slide__facts div strong{ display:block; font-size:22px; font-weight:800; color:#fff; letter-spacing:-.03em; line-height:1.2; }
+.slide__facts div span{ font-size:12.5px; color:#D7C9EE; }
+
+/* 컨트롤 */
+.car__arrow{
+  position:absolute; top:50%; transform:translateY(-50%); z-index:3;
+  width:44px; height:44px; display:grid; place-items:center;
+  background:rgba(255,255,255,.9); border:1px solid rgba(59,31,92,.14);
+  border-radius:var(--r-s); cursor:pointer; color:var(--deep);
+  transition:background-color var(--t);
+}
+.car__arrow:hover{ background:#fff; }
+.car__arrow svg{ width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; }
+.car__arrow--prev{ left:12px; }
+.car__arrow--next{ right:12px; }
+@media(max-width:639px){ .car__arrow{ width:38px; height:38px; top:auto; bottom:14px; transform:none; } .car__arrow--prev{ left:auto; right:60px; } .car__arrow--next{ right:14px; } }
+.car__dots{
+  position:absolute; left:var(--s3); bottom:18px; z-index:3;
+  display:flex; align-items:center; gap:8px;
+}
+@media(min-width:640px){ .car__dots{ left:var(--s5); bottom:22px; } }
+.car__dots button{
+  width:30px; height:5px; padding:0; border:0; border-radius:2px;
+  background:rgba(255,255,255,.35); cursor:pointer; transition:background-color var(--t);
+}
+.car__dots button[aria-current="true"]{ background:var(--gold); }
+.car__dots button:hover{ background:rgba(255,255,255,.65); }
+.car__dots .cnt{ font-size:11.5px; font-weight:700; color:#E4DAF4; letter-spacing:.08em; margin-left:4px; font-variant-numeric:tabular-nums; }
+
+/* --- 스탯 블록 (시안 1 배치 계승 : 히어로 좌측 하단) --- */
+.hero__stats{
+  display:grid; grid-template-columns:repeat(3,1fr); gap:var(--s2);
+  margin-top:var(--s2); padding:var(--s2);
+  background:#fff; border:1px solid var(--lav-line); border-radius:var(--r);
+}
+@media(min-width:640px){ .hero__stats{ padding:var(--s3); } }
+.hero__stats div strong{
+  display:block; font-size:clamp(22px,3.2vw,30px); font-weight:800;
+  letter-spacing:-.04em; line-height:1.15; font-variant-numeric:tabular-nums;
+}
+.hero__stats div strong i{ font-style:normal; font-size:.6em; color:var(--violet-deep); }
+.hero__stats div span{ display:block; font-size:12px; font-weight:600; color:var(--deep-55); margin-top:4px; }
+@media(min-width:600px){ .hero__stats div span{ font-size:13px; } }
+
+/* --- 대표 노선 지도 패널 (우측 고정) --- */
+.mapq{
+  position:relative; background:#fff;
+  border:1px solid var(--lav-line); border-radius:var(--r);
+  box-shadow:var(--sh-1);
+}
+@media(min-width:1024px){ .mapq{ position:sticky; top:92px; } }
+.mapq__hd{ padding:var(--s3) var(--s3) 14px; border-bottom:1px solid var(--lav-line-2); display:flex; align-items:flex-start; justify-content:space-between; gap:var(--s2); }
+.mapq__hd h2{ font-size:19px; font-weight:800; letter-spacing:-.03em; }
+.mapq__hd p{ margin-top:3px; font-size:12.5px; color:var(--deep-55); }
+.mapq__badge{
+  flex:0 0 auto; display:inline-flex; align-items:center; gap:6px;
+  font-size:11px; font-weight:800; color:var(--violet-deep);
+  background:var(--violet-soft); border-radius:var(--r-xs); padding:5px 9px; white-space:nowrap;
+}
+.live-dot{ width:7px; height:7px; border-radius:50%; background:var(--gold); flex:0 0 auto; animation:blink 2.2s ease-in-out infinite; }
+@keyframes blink{ 0%,100%{ opacity:1 } 50%{ opacity:.35 } }
+
+/* 지도 프레임 */
+.mapq__bd{ padding:var(--s2) var(--s3) var(--s3); }
+.map{
+  position:relative; max-width:364px; margin-inline:auto;
+  background:var(--neutral); border:1px solid var(--lav-line-2); border-radius:var(--r-s);
+}
+.map__svg{ display:block; width:100%; height:auto; }
+
+/* 지도 면 · 섬 */
+.mland__body{ fill:var(--violet-soft); stroke:var(--deep); stroke-width:1.4; stroke-linejoin:round; stroke-linecap:round; }
+.mland__isle{ fill:var(--violet-soft); stroke:var(--deep); stroke-width:1.2; }
+
+/* 노선 곡선 · 핀 */
+.rt__ln{ fill:none; stroke:var(--violet); stroke-width:2.2; stroke-linecap:round; }
+.rt__ln--air{ stroke:var(--gold-deep); stroke-width:3; }
+.rt__halo{ fill:var(--violet); opacity:.16; }
+.rt__dot{ fill:var(--violet-deep); stroke:#fff; stroke-width:2; }
+.rt__pin--air .rt__halo{ fill:var(--gold); opacity:.3; }
+.rt__pin--air .rt__dot{ fill:var(--gold-deep); }
+.mhub__halo{ fill:var(--deep); opacity:.13; }
+.mhub__dot{ fill:var(--deep); stroke:#fff; stroke-width:2.2; }
+.mtx{
+  font-size:11px; font-weight:800; fill:var(--deep); letter-spacing:-.02em;
+  paint-order:stroke; stroke:#fff; stroke-width:3.5; stroke-linejoin:round;
+}
+
+/* 가격 라벨(칩) — 지도 위 절대 배치 */
+.mchip{
+  position:absolute; z-index:2; display:block; text-align:left;
+  padding:5px 8px; background:#fff;
+  border:1.5px solid var(--lav-line); border-radius:var(--r-s);
+  box-shadow:0 2px 8px rgba(59,31,92,.14);
+  cursor:pointer; white-space:nowrap; line-height:1.25;
+  transition:opacity var(--t), border-color var(--t), box-shadow var(--t);
+}
+.mchip:hover{ border-color:var(--violet); }
+.mchip__t{ font-size:11px; font-weight:700; color:var(--deep-70); }
+.mchip__p{ margin-left:5px; font-size:12px; font-weight:800; letter-spacing:-.02em; color:var(--deep); }
+.mchip__b{
+  display:block; margin-bottom:3px; padding:2px 6px; border-radius:3px;
+  background:var(--gold); color:#2E1F05; font-size:9.5px; font-weight:800; letter-spacing:-.01em;
+}
+/* 공항 칩은 3줄(뱃지 / 노선 / 가격) — 폭을 좁게 유지해 지도 경계선을 덮지 않는다 */
+.mchip--air .mchip__t{ display:block; }
+.mchip__p--big{ display:block; margin-left:0; margin-top:1px; font-size:13.5px; letter-spacing:-.03em; }
+.mchip--air{ border-color:var(--gold); background:#FFFCF3; }
+.mchip--air .mchip__p{ color:var(--gold-deep); }
+
+/* 하이라이트 / dim */
+.mapq [data-r]{ transition:opacity var(--t), stroke-width var(--t); }
+.mapq[data-active] [data-r]{ opacity:.16; }
+.mapq[data-active] [data-r].is-on{ opacity:1; }
+.mapq[data-active] .rt__ln.is-on{ stroke-width:3.4; }
+.mapq[data-active] .rt__ln--air.is-on{ stroke-width:4.2; }
+.mapq[data-active] .mchip{ opacity:.34; }
+.mapq[data-active] .mchip.is-on{ opacity:1; border-color:var(--violet); box-shadow:var(--sh-2); }
+.mapq[data-active] .mchip--air.is-on{ border-color:var(--gold-deep); }
+
+/* 모바일 대체 — 노선 카드 리스트 5개 */
+.rlist{ display:none; }
+.rrow{
+  width:100%; display:grid; grid-template-columns:24px minmax(0,1fr) auto;
+  align-items:center; gap:10px; padding:10px 12px;
+  background:#fff; border:1.5px solid var(--lav-line); border-radius:var(--r-s);
+  cursor:pointer; text-align:left;
+  transition:border-color var(--t), opacity var(--t);
+}
+.rrow:hover{ border-color:var(--violet); }
+.rrow__n{ width:24px; height:24px; border-radius:var(--r-xs); background:var(--lav); color:var(--violet-deep); font-size:12px; font-weight:800; display:grid; place-items:center; }
+.rrow__m b{ display:block; font-size:13.5px; font-weight:800; letter-spacing:-.025em; }
+.rrow__m em{ display:block; margin-top:2px; font-style:normal; font-size:11px; font-weight:800; color:var(--gold-deep); }
+.rrow__p{ font-size:14px; font-weight:800; letter-spacing:-.03em; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.rrow--air{ border-color:var(--gold); background:#FFFCF3; }
+.rrow--air .rrow__n{ background:rgba(212,168,67,.24); color:var(--gold-deep); }
+.rrow--air .rrow__p{ color:var(--gold-deep); }
+.mapq[data-active] .rrow{ opacity:.45; }
+.mapq[data-active] .rrow.is-on{ opacity:1; border-color:var(--violet); }
+
+@media(max-width:559px){
+  .mchip{ display:none; }
+  .mtx{ display:none; }
+  .rlist{ display:grid; gap:8px; margin-top:var(--s2); }
+}
+
+/* 고지 · CTA */
+.map__disc{
+  margin-top:var(--s2); padding:10px 12px;
+  background:var(--lav); border:1px solid var(--lav-line); border-radius:var(--r-s);
+  font-size:11.5px; line-height:1.65; color:var(--deep-70); text-align:center;
+}
+.map__disc b{ color:var(--deep); font-weight:800; }
+.mapq__foot{ margin-top:var(--s3); display:grid; gap:10px; }
+.mapq__ask{ font-size:14px; font-weight:700; color:var(--deep-70); text-align:center; }
+.mapq__ask b{ color:var(--violet-deep); font-weight:800; }
+.mapq__note{ font-size:11.5px; line-height:1.6; color:var(--deep-55); text-align:center; }
+.mapq__note b{ color:var(--deep); font-weight:700; }
+
+/* --- 신뢰 신호 스트립 (히어로 인근) --- */
+.trust{ background:#fff; border-top:1px solid var(--lav-line); border-bottom:1px solid var(--lav-line); }
+.trust__grid{ display:grid; grid-template-columns:1fr; gap:0; }
+@media(min-width:640px){ .trust__grid{ grid-template-columns:repeat(2,1fr); } }
+@media(min-width:1024px){ .trust__grid{ grid-template-columns:repeat(4,1fr); } }
+.trust__item{
+  display:flex; align-items:flex-start; gap:12px; padding:18px 0;
+  border-bottom:1px solid var(--lav-line-2);
+}
+.trust__item:last-child{ border-bottom:0; }
+@media(min-width:640px){
+  .trust__grid{ column-gap:var(--s3); }
+  .trust__item{ padding-block:20px; }
+  .trust__item:nth-last-child(-n+2){ border-bottom:0; }
+}
+@media(min-width:1024px){
+  .trust__grid{ column-gap:0; }
+  .trust__item{ border-bottom:0; padding:22px var(--s3) 22px 0; }
+  .trust__item + .trust__item{ padding-left:var(--s3); border-left:1px solid var(--lav-line-2); }
+  .trust__item:last-child{ padding-right:0; }
+}
+.trust__ico{ width:34px; height:34px; flex:0 0 auto; border-radius:var(--r-s); background:var(--lav); display:grid; place-items:center; }
+.trust__ico svg{ width:18px; height:18px; fill:none; stroke:var(--violet-deep); stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; }
+.trust__item b{ display:block; font-size:14.5px; font-weight:800; letter-spacing:-.02em; }
+.trust__item span{ display:block; font-size:12.5px; color:var(--deep-55); margin-top:3px; line-height:1.5; }
+
+/* ============================================================
+   실시간 견적현황
+   ============================================================ */
+.live__top{ display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:var(--s2); margin-bottom:var(--s4); }
+.live__count{
+  display:inline-flex; align-items:center; gap:9px; padding:9px 14px;
+  background:#fff; border:1px solid var(--lav-line); border-radius:var(--r-s);
+  font-size:13px; color:var(--deep-70); white-space:nowrap;
+}
+.live__count b{ color:var(--deep); font-weight:800; }
+.ticker{
+  position:relative; overflow:hidden;
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 5%,#000 95%,transparent);
+  mask-image:linear-gradient(90deg,transparent,#000 5%,#000 95%,transparent);
+}
+.ticker + .ticker{ margin-top:10px; }
+.ticker__track{ display:flex; gap:10px; width:max-content; animation:roll 52s linear infinite; }
+.ticker--rev .ticker__track{ animation-direction:reverse; animation-duration:60s; }
+.ticker:hover .ticker__track{ animation-play-state:paused; }
+@keyframes roll{ from{ transform:translateX(0) } to{ transform:translateX(-50%) } }
+.tick{
+  display:flex; align-items:center; gap:9px; white-space:nowrap;
+  padding:11px 15px; background:#fff;
+  border:1px solid var(--lav-line); border-radius:var(--r-s);
+  font-size:13.5px; color:var(--deep-70);
+}
+.tick b{ color:var(--deep); font-weight:800; }
+.tick .chip{ font-size:11px; font-weight:800; color:var(--violet-deep); background:var(--violet-soft); border-radius:var(--r-xs); padding:2px 7px; }
+.tick .bar{ width:1px; height:11px; background:var(--lav-line); flex:0 0 auto; }
+.tick time{ font-size:12.5px; color:var(--deep-55); font-variant-numeric:tabular-nums; }
+
+/* ============================================================
+   이용 방법 4단계
+   ============================================================ */
+.steps{ display:grid; gap:var(--s2); }
+@media(min-width:640px){ .steps{ grid-template-columns:repeat(2,1fr); gap:var(--s3); } }
+@media(min-width:1024px){ .steps{ grid-template-columns:repeat(4,1fr); } }
+.step{
+  background:#fff; border:1px solid var(--lav-line); border-radius:var(--r);
+  padding:var(--s3); position:relative;
+  transition:border-color var(--t), box-shadow var(--t);
+}
+.step:hover{ border-color:rgba(124,58,237,.42); box-shadow:var(--sh-1); }
+.step__no{
+  display:inline-grid; place-items:center; width:32px; height:32px; border-radius:var(--r-s);
+  background:var(--deep); color:#fff; font-size:13px; font-weight:800; letter-spacing:.02em;
+}
+.step h3{ margin-top:14px; font-size:17px; font-weight:800; letter-spacing:-.025em; }
+.step p{ margin-top:8px; font-size:14px; line-height:1.7; color:var(--deep-70); }
+.steps__note{
+  margin-top:var(--s3); padding:16px 20px; border-radius:var(--r);
+  background:#fff; border:1px solid var(--lav-line);
+  font-size:14px; font-weight:600; color:var(--deep-70); text-align:center; line-height:1.7;
+}
+.steps__note b{ color:var(--violet-deep); font-weight:800; }
+
+/* ============================================================
+   차량 5종
+   ============================================================ */
+.fleet{ display:grid; gap:var(--s2); }
+@media(min-width:560px){ .fleet{ grid-template-columns:repeat(2,1fr); gap:var(--s3); } }
+@media(min-width:1024px){
+  .fleet{ grid-template-columns:repeat(6,1fr); }
+  .fleet > *{ grid-column:span 2; }
+  .fleet > *:nth-child(4){ grid-column:2 / span 2; }
+  .fleet > *:nth-child(5){ grid-column:4 / span 2; }
+}
+.bus{
+  display:flex; flex-direction:column; overflow:hidden;
+  background:#fff; border:1px solid var(--lav-line); border-radius:var(--r);
+  transition:border-color var(--t), box-shadow var(--t);
+}
+.bus:hover{ border-color:rgba(124,58,237,.42); box-shadow:var(--sh-1); }
+.bus__ph{ position:relative; aspect-ratio:16/10; overflow:hidden; background:var(--lav); }
+.bus__ph img{ width:100%; height:100%; object-fit:cover; }
+.bus__seat{
+  position:absolute; left:10px; top:10px; z-index:1;
+  padding:4px 10px; border-radius:var(--r-xs);
+  background:rgba(26,21,35,.78); color:#fff; font-size:11.5px; font-weight:800;
+}
+.bus__body{ padding:var(--s2) var(--s2) var(--s3); display:flex; flex-direction:column; gap:10px; flex:1; }
+.bus__name{ font-size:17px; font-weight:800; letter-spacing:-.03em; }
+.bus__spec{ font-size:13.5px; line-height:1.65; color:var(--deep-70); }
+/* 가격 뱃지 없음 — 정원 · 용도 · 옵션 중심 (가격은 히어로 지도 Top 5가 유일한 창구) */
+.bus__meta{ margin-top:auto; padding-top:12px; border-top:1px solid var(--lav-line-2); display:grid; gap:7px; }
+.bus__meta > div{ display:grid; grid-template-columns:52px minmax(0,1fr); gap:8px; align-items:baseline; }
+.bus__meta dt{ font-size:10.5px; font-weight:800; letter-spacing:.02em; color:var(--violet-deep); }
+.bus__meta dd{ margin:0; font-size:12.5px; line-height:1.55; font-weight:600; color:var(--deep-70); }
+.bus__meta dd b{ color:var(--deep); font-weight:800; }
+.fleet__disc{ margin-top:var(--s3); font-size:12.5px; color:var(--deep-55); text-align:center; line-height:1.7; }
+.fleet__disc b{ color:var(--violet-deep); font-weight:800; }
+
+/* ============================================================
+   강점
+   ============================================================ */
+.perks{ display:grid; gap:var(--s2); }
+@media(min-width:640px){ .perks{ grid-template-columns:repeat(2,1fr); gap:var(--s3); } }
+@media(min-width:1024px){ .perks{ grid-template-columns:repeat(3,1fr); } }
+.perk{ background:#fff; border:1px solid var(--lav-line); border-radius:var(--r); padding:var(--s3); transition:border-color var(--t), box-shadow var(--t); }
+.perk:hover{ border-color:rgba(124,58,237,.42); box-shadow:var(--sh-1); }
+.perk__ico{ width:42px; height:42px; border-radius:var(--r-s); background:var(--lav); display:grid; place-items:center; }
+.perk__ico svg{ width:21px; height:21px; fill:none; stroke:var(--violet-deep); stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.perk h3{ margin-top:var(--s2); font-size:16.5px; font-weight:800; letter-spacing:-.025em; }
+.perk p{ margin-top:8px; font-size:13.5px; line-height:1.7; color:var(--deep-70); }
+.optbar{ margin-top:var(--s3); display:grid; gap:var(--s3); padding:var(--s3); background:#fff; border:1px solid var(--lav-line); border-radius:var(--r); }
+@media(min-width:900px){ .optbar{ grid-template-columns:repeat(2,1fr); gap:var(--s6); padding:var(--s4); } }
+.optbar h4{ font-size:12px; font-weight:800; letter-spacing:.1em; color:var(--violet-deep); margin-bottom:12px; text-transform:uppercase; }
+.chips{ display:flex; flex-wrap:wrap; gap:7px; }
+.chips li{ font-size:12.5px; font-weight:600; color:var(--deep-70); background:var(--lav); border-radius:var(--r-xs); padding:6px 10px; }
+
+/* ============================================================
+   갤러리
+   ============================================================ */
+.gal{ display:grid; gap:10px; grid-template-columns:1fr; }
+.gal figure{ position:relative; margin:0; overflow:hidden; border-radius:var(--r); min-height:190px; background:var(--deep); }
+.gal img{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+.gal figure::after{ content:""; position:absolute; inset:0; background:linear-gradient(180deg, rgba(59,31,92,.05) 40%, rgba(26,21,35,.8) 100%); }
+.gal .is-sepia img{ filter:grayscale(.55) contrast(1.05); }
+.gal figcaption{
+  position:absolute; left:14px; right:14px; bottom:12px; z-index:1;
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  font-size:13.5px; font-weight:700; color:#fff;
+}
+.gal figcaption span{ font-size:11px; font-weight:800; color:#2E1F05; background:var(--gold); border-radius:var(--r-xs); padding:2px 7px; }
+@media(min-width:640px){ .gal{ grid-template-columns:repeat(2,1fr); } }
+@media(min-width:1024px){
+  .gal{ grid-template-columns:repeat(4,1fr); grid-auto-rows:210px; }
+  .gal figure{ min-height:0; }
+  .gal .g-a{ grid-column:span 2; }
+  .gal .g-tall{ grid-column:3; grid-row:1 / span 2; }
+  .gal .g-b{ grid-column:4; }
+  .gal .g-c{ grid-column:1 / span 2; }
+  .gal .g-d{ grid-column:4; }
+}
+
+/* ============================================================
+   공지 + 고객센터
+   ============================================================ */
+.notice-grid{ display:grid; gap:var(--s4); }
+@media(min-width:1024px){ .notice-grid{ grid-template-columns:minmax(0,1.5fr) minmax(0,1fr); gap:var(--s6); align-items:start; } }
+.notices{ background:#fff; border:1px solid var(--lav-line); border-radius:var(--r); overflow:hidden; }
+.notices li + li{ border-top:1px solid var(--lav-line-2); }
+.notices a{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; padding:16px var(--s2); transition:background-color var(--t); }
+.notices a:hover{ background:var(--neutral); }
+.notices .cat{ flex:0 0 auto; font-size:11px; font-weight:800; padding:3px 8px; border-radius:var(--r-xs); background:var(--violet-soft); color:var(--violet-deep); }
+.notices .cat--air{ background:rgba(212,168,67,.22); color:var(--gold-deep); }
+.notices .ttl{ flex:1 1 200px; font-size:14.5px; font-weight:700; letter-spacing:-.02em; line-height:1.5; }
+.notices time{ margin-left:auto; font-size:12.5px; color:var(--deep-55); font-variant-numeric:tabular-nums; }
+
+.cscard{ background:var(--deep); color:#EDE4FD; border-radius:var(--r); padding:var(--s4) var(--s3); }
+.cscard h3{ font-size:19px; font-weight:800; color:#fff; letter-spacing:-.03em; }
+.cscard p{ margin-top:8px; font-size:13.5px; line-height:1.7; color:#CFBFE9; }
+.cslist{ margin-top:var(--s3); display:grid; gap:11px; }
+.cslist div{ display:flex; align-items:baseline; justify-content:space-between; gap:var(--s2); padding-bottom:10px; border-bottom:1px solid rgba(237,228,253,.16); }
+.cslist .k{ font-size:12.5px; color:#BCA9DC; }
+.cslist .v{ font-size:16px; font-weight:800; color:#fff; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
+.cscard .btn{ margin-top:var(--s3); }
+
+/* ============================================================
+   FOOTER
+   ============================================================ */
+.ftr{ background:#fff; border-top:1px solid var(--lav-line); padding-block:var(--s7) var(--s5); }
+.ftr__grid{ display:grid; gap:var(--s5); }
+@media(min-width:900px){ .ftr__grid{ grid-template-columns:minmax(0,1.4fr) repeat(2,minmax(0,1fr)); gap:var(--s6); } }
+.ftr h4{ font-size:12px; font-weight:800; letter-spacing:.1em; color:var(--violet-deep); text-transform:uppercase; margin-bottom:14px; }
+.ftr__tel{ display:block; margin-top:var(--s3); font-size:clamp(28px,4vw,36px); font-weight:800; letter-spacing:-.045em; line-height:1.1; }
+.ftr__sub{ margin-top:10px; font-size:13px; line-height:1.85; color:var(--deep-70); }
+.ftr__sub b{ color:var(--deep); font-weight:700; }
+.ftr__menu{ display:grid; gap:10px; }
+.ftr__menu a{ font-size:14px; color:var(--deep-70); width:fit-content; transition:color var(--t); }
+.ftr__menu a:hover{ color:var(--violet-deep); }
+.ftr__ch{ display:flex; flex-wrap:wrap; gap:8px; margin-top:var(--s2); }
+.ftr__ch a{
+  display:inline-flex; align-items:center; gap:7px; padding:9px 13px;
+  border:1.5px solid var(--lav-line); border-radius:var(--r-s);
+  font-size:13px; font-weight:700; transition:border-color var(--t);
+}
+.ftr__ch a:hover{ border-color:var(--violet); }
+.ftr__ch i{ width:16px; height:16px; border-radius:50%; flex:0 0 auto; display:block; }
+.ftr__ch .i-tel{ background:var(--deep); }
+.ftr__ch .i-kko{ background:var(--kakao); }
+.ftr__ch .i-nav{ background:var(--naver); }
+.ftr__co{ margin-top:var(--s6); padding-top:var(--s3); border-top:1px solid var(--lav-line); font-size:12.5px; line-height:1.9; color:var(--deep-55); }
+.ftr__co b{ color:var(--deep-70); font-weight:700; }
+.ftr__co .row{ display:flex; flex-wrap:wrap; gap:2px 14px; }
+.ftr__legal{ margin-top:var(--s2); font-size:12px; color:var(--deep-40); }
+
+/* ============================================================
+   플로팅 문의 3종
+   ============================================================ */
+.floats{
+  position:fixed; right:14px; z-index:70;
+  bottom:calc(16px + env(safe-area-inset-bottom));
+  display:flex; flex-direction:column; gap:10px; align-items:flex-end;
+}
+@media(min-width:768px){ .floats{ right:22px; bottom:calc(22px + env(safe-area-inset-bottom)); } }
+.fbtn{
+  position:relative; display:flex; align-items:center; gap:10px;
+  width:54px; height:54px; border-radius:50%;
+  justify-content:center;
+  box-shadow:0 4px 14px rgba(26,21,35,.22);
+  transition:transform var(--t);
+}
+.fbtn:hover{ transform:translateY(-2px); }
+.fbtn svg{ width:26px; height:26px; }
+.fbtn--tel{ background:var(--deep); color:#fff; }
+.fbtn--tel svg{ fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.fbtn--kko{ background:var(--kakao); color:var(--kakao-fg); }
+.fbtn--nav{ background:var(--naver); color:#fff; }
+.fbtn__lb{
+  position:absolute; right:64px; top:50%; transform:translateY(-50%);
+  white-space:nowrap; padding:7px 11px; border-radius:var(--r-s);
+  background:var(--dark); color:#fff; font-size:12.5px; font-weight:700;
+  opacity:0; pointer-events:none; transition:opacity var(--t);
+}
+.fbtn:hover .fbtn__lb,.fbtn:focus-visible .fbtn__lb{ opacity:1; }
+@media(max-width:767px){ .fbtn{ width:50px; height:50px; } .fbtn svg{ width:24px; height:24px; } .fbtn__lb{ display:none; } }
+
+/* ============================================================
+   모달 공통
+   ============================================================ */
+.ov{
+  position:fixed; inset:0; z-index:120;
+  display:none; align-items:center; justify-content:center;
+  padding:20px; background:rgba(26,21,35,.62);
+  overflow-y:auto;
+}
+.ov.is-open{ display:flex; }
+.modal{
+  position:relative; width:100%; max-width:400px;
+  background:#fff; border-radius:var(--r); overflow:hidden;
+  box-shadow:0 20px 60px rgba(26,21,35,.35);
+  margin:auto;
+}
+.modal--wide{ max-width:432px; }
+.modal__x{
+  position:absolute; right:10px; top:10px; z-index:3;
+  width:34px; height:34px; display:grid; place-items:center;
+  background:rgba(255,255,255,.92); border:1px solid var(--lav-line);
+  border-radius:var(--r-s); cursor:pointer; color:var(--deep);
+}
+.modal__x svg{ width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; }
+.modal__hd{ padding:var(--s3) var(--s3) var(--s2); border-bottom:1px solid var(--lav-line-2); }
+.modal__hd h2{ font-size:19px; font-weight:800; letter-spacing:-.03em; padding-right:36px; }
+.modal__hd p{ margin-top:6px; font-size:13px; color:var(--deep-55); line-height:1.6; }
+
+/* 팝업(관리자 등록 예시) */
+.pop__label{
+  position:absolute; right:52px; top:14px; z-index:3;
+  font-size:10.5px; font-weight:800; letter-spacing:.02em;
+  color:var(--deep); background:rgba(255,255,255,.92);
+  border:1px solid var(--lav-line); border-radius:var(--r-xs); padding:4px 8px;
+}
+.pop__ph{ position:relative; aspect-ratio:16/9; background:var(--deep); }
+.pop__ph img{ width:100%; height:100%; object-fit:cover; }
+.pop__ph::after{ content:""; position:absolute; inset:0; background:linear-gradient(180deg,rgba(31,16,50,.55),rgba(31,16,50,.15)); }
+.pop__cap{ position:absolute; left:var(--s3); bottom:14px; z-index:1; color:#fff; }
+.pop__cap span{ display:inline-block; padding:4px 9px; border-radius:var(--r-xs); background:var(--gold); color:#2E1F05; font-size:11.5px; font-weight:800; }
+.pop__cap strong{ display:block; margin-top:9px; font-size:23px; font-weight:800; letter-spacing:-.035em; line-height:1.25; }
+.pop__bd{ padding:var(--s3); }
+.pop__bd p{ font-size:14px; line-height:1.75; color:var(--deep-70); }
+.pop__bd p b{ color:var(--violet-deep); font-weight:800; }
+.pop__list{ margin-top:14px; display:grid; gap:7px; }
+.pop__list li{ display:flex; gap:8px; font-size:13.5px; color:var(--deep-70); }
+.pop__list li::before{ content:"·"; color:var(--gold-deep); font-weight:800; }
+.pop__ft{
+  display:flex; align-items:center; justify-content:space-between; gap:var(--s2);
+  padding:12px var(--s3); background:var(--neutral); border-top:1px solid var(--lav-line-2);
+}
+.chk{ display:inline-flex; align-items:center; gap:8px; font-size:13px; color:var(--deep-70); cursor:pointer; }
+.chk input{ width:17px; height:17px; accent-color:var(--violet-deep); cursor:pointer; }
+.pop__ft button.txt{ background:none; border:0; font-size:13.5px; font-weight:700; color:var(--deep); cursor:pointer; padding:6px 4px; }
+.pop__ft button.txt:hover{ color:var(--violet-deep); }
+
+/* ============================================================
+   Reveal / 모션 저감
+   ============================================================ */
+.rv{ opacity:0; transform:translateY(12px); transition:opacity .5s var(--ease), transform .5s var(--ease); }
+.rv.in{ opacity:1; transform:none; }
+@media(prefers-reduced-motion:reduce){
+  html{ scroll-behavior:auto; }
+  .rv{ opacity:1; transform:none; transition:none; }
+  .ticker__track{ animation:none; }
+  .ticker{ overflow-x:auto; -webkit-mask-image:none; mask-image:none; }
+  .live-dot{ animation:none; }
+  .slide{ transition:none; }
+  *{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- ================= 상단 신뢰 바 (스크롤 시 사라짐 — 헤더는 별도 고정) ================= -->
+<div class="topbar">
+  <div class="wrap">
+    <p class="badge-line">
+      <span><svg class="tick-i" viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12.5 5 5 11-11" stroke-linecap="round" stroke-linejoin="round"/></svg>정식 등록 전세버스 알선업체</span>
+      <span><svg class="tick-i" viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12.5 5 5 11-11" stroke-linecap="round" stroke-linejoin="round"/></svg>전 차량 종합보험 가입</span>
+      <span><svg class="tick-i" viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12.5 5 5 11-11" stroke-linecap="round" stroke-linejoin="round"/></svg>운행 13년 · 사업자 130-86-77328</span>
+    </p>
+    <p class="tel-line">대표전화 <b>1566-6188</b> · 연중무휴 상담</p>
+  </div>
+</div>
+
+<!-- ================= HEADER ================= -->
+<header class="hdr" id="hdr">
+  <div class="wrap hdr__in">
+    <a class="brand" href="#top" aria-label="베스트투어 홈">
+      <span class="brand__mark">
+        <svg viewBox="0 0 40 40" aria-hidden="true">
+          <path d="M20 3c3 0 5.4 3.1 5.4 7s-2.4 7-5.4 7-5.4-3.1-5.4-7S17 3 20 3Z"/>
+          <path d="M35.2 14.4c.9 2.9-1.2 6.3-4.9 7.5s-7.3-.1-8.2-3 1.2-6.3 4.9-7.5 7.3.1 8.2 3Z"/>
+          <path d="M29.4 32.6c-2.4 1.8-6.2.7-8.5-2.5s-2.2-7.1.2-8.9 6.2-.7 8.5 2.5 2.2 7.1-.2 8.9Z"/>
+          <path d="M10.6 32.6c-2.4-1.8-2.5-5.7-.2-8.9s6.1-4.3 8.5-2.5 2.5 5.7.2 8.9-6.1 4.3-8.5 2.5Z"/>
+          <path d="M4.8 14.4c.9-2.9 4.5-4.2 8.2-3s5.8 4.6 4.9 7.5-4.5 4.2-8.2 3-5.8-4.6-4.9-7.5Z"/>
+          <circle cx="20" cy="21" r="3.1"/>
+        </svg>
+      </span>
+      <span class="brand__txt">
+        <b>베스트<span>투어</span></b>
+        <small>전세버스 대절 · 공항 픽업·샌딩</small>
+      </span>
+    </a>
+
+    <nav class="gnb" aria-label="주요 메뉴">
+      <ul>
+        <li><a href="#company">회사소개</a></li>
+        <li><a href="#fleet">차량소개</a></li>
+        <li><a href="wizard.html">견적요청</a></li>
+        <li><a href="#gallery">갤러리</a></li>
+        <li><a href="#notice">고객센터</a></li>
+        <li><a href="#" data-check>예약확인</a></li>
+      </ul>
+    </nav>
+
+    <div class="hdr__right">
+      <a class="hdr__tel" href="tel:1566-6188">
+        <b>1566-6188</b>
+        <small>대표전화 · 연중무휴</small>
+      </a>
+      <a class="btn btn--primary btn--sm" href="wizard.html">1분 견적 신청</a>
+    </div>
+
+    <button class="burger" id="burger" type="button" aria-label="메뉴 열기" aria-expanded="false" aria-controls="drawer">
+      <i></i><i></i><i></i>
+    </button>
+  </div>
+
+  <div class="drawer" id="drawer">
+    <div class="drawer__in">
+      <div class="wrap">
+        <nav aria-label="모바일 메뉴">
+          <a href="#company">회사소개</a>
+          <a href="#fleet">차량소개</a>
+          <a href="wizard.html">견적요청</a>
+          <a href="#gallery">갤러리</a>
+          <a href="#notice">고객센터</a>
+          <a href="#" data-check>예약확인</a>
+        </nav>
+        <a class="btn btn--primary btn--block" href="tel:1566-6188">대표전화 1566-6188</a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+
+<!-- ================= HERO ================= -->
+<section class="hero" aria-label="베스트투어 소개 및 대표 노선 예시 견적">
+  <div class="wrap hero__grid">
+
+    <!-- 좌: 5초 자동 캐러셀 -->
+    <div>
+      <div class="car" id="car" aria-roledescription="캐러셀" aria-label="베스트투어 주요 안내">
+        <div class="car__stage">
+
+          <!-- 슬라이드 1 : 인천공항 -->
+          <article class="slide slide--a is-on" id="sl-1" role="group" aria-roledescription="슬라이드" aria-label="1 / 3 인천공항 픽업·샌딩">
+            <div class="slide__bg" aria-hidden="true"><img src="assets/bus-05.jpg" alt="" /></div>
+            <p class="slide__tag">공항 픽업·샌딩 (송영 전문)</p>
+            <h1>인천공항 갈 때, 올 때 —<br /><em>공항 노선, 자신 있게</em><br />저렴합니다</h1>
+            <p>외국인 관광 전문 13년, 공항 노선을 매일 운행합니다. 노선 운영 노하우로 <b>공항 출발·도착 일정은 특히 합리적인 가격</b>으로 모십니다.</p>
+            <ul class="slide__chips">
+              <li class="on">인천공항 픽업</li>
+              <li class="on">인천공항 샌딩</li>
+              <li>새벽·심야 배차</li>
+              <li>수하물 적재 여유</li>
+              <li>인솔자 동승 가능</li>
+            </ul>
+          </article>
+
+          <!-- 슬라이드 2 : 전국 16개 시도 -->
+          <article class="slide slide--b" id="sl-2" role="group" aria-roledescription="슬라이드" aria-label="2 / 3 전국 16개 시도 운행" aria-hidden="true">
+            <div class="slide__bg" aria-hidden="true"><img src="assets/bus-01.jpg" alt="" /></div>
+            <p class="slide__tag slide__tag--line">전국 운행 · 왕복 / 편도 / 편도·편도</p>
+            <h2>전국 <em>어디서나</em> 갑니다</h2>
+            <p>서울에서 제주까지 <b>16개 시도 전 지역</b> 배차합니다. 워크샵·현장학습·종교단체·관혼상제까지 일정에 맞춰 운행 구분을 고르실 수 있습니다.</p>
+            <ul class="slide__chips">
+              <li>서울</li><li>부산</li><li>대구</li><li>인천</li><li>광주</li><li>대전</li><li>울산</li><li>경기</li>
+              <li>강원</li><li>충북</li><li>충남</li><li>전북</li><li>전남</li><li>경북</li><li>경남</li><li>제주</li>
+            </ul>
+          </article>
+
+          <!-- 슬라이드 3 : 외국인 투어 전문 · 신뢰 -->
+          <article class="slide slide--c" id="sl-3" role="group" aria-roledescription="슬라이드" aria-label="3 / 3 외국인 투어 전문과 신뢰" aria-hidden="true">
+            <div class="slide__bg" aria-hidden="true"><img src="assets/bus-03.jpg" alt="" /></div>
+            <p class="slide__tag slide__tag--line">외국인 의전·관광 전문</p>
+            <h2>외국인 투어로 다져온<br /><em>13년</em>의 운행 기준</h2>
+            <p>까다로운 외국인 관광 일정을 오래 맡아온 회사입니다. <b>정식 등록 알선업체</b>로 전 차량 종합보험에 가입되어 있으며, 배차는 대표가 직접 확인합니다.</p>
+            <div class="slide__facts">
+              <div><strong>13년</strong><span>전세버스 운행 경력</span></div>
+              <div><strong>전 차량</strong><span>종합보험 가입</span></div>
+              <div><strong>130-86-77328</strong><span>사업자등록번호</span></div>
+            </div>
+          </article>
+
+        </div>
+
+        <button class="car__arrow car__arrow--prev" type="button" id="car-prev" aria-label="이전 슬라이드">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg>
+        </button>
+        <button class="car__arrow car__arrow--next" type="button" id="car-next" aria-label="다음 슬라이드">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
+        </button>
+
+        <div class="car__dots" id="car-dots" aria-label="슬라이드 선택">
+          <button type="button" aria-current="true" aria-controls="sl-1" aria-label="1번 슬라이드 보기 — 인천공항 픽업·샌딩"></button>
+          <button type="button" aria-current="false" aria-controls="sl-2" aria-label="2번 슬라이드 보기 — 전국 16개 시도 운행"></button>
+          <button type="button" aria-current="false" aria-controls="sl-3" aria-label="3번 슬라이드 보기 — 외국인 투어 전문과 신뢰"></button>
+          <span class="cnt"><b id="car-now">1</b> / 3</span>
+        </div>
+      </div>
+
+      <!-- 스탯 블록 (시안 1 배치 계승) -->
+      <div class="hero__stats">
+        <div><strong>13<i>년</i></strong><span>전세버스 운행 경력</span></div>
+        <div><strong>4,800<i>+</i></strong><span>누적 견적 건수</span></div>
+        <div><strong>16<i>개 시도</i></strong><span>전국 운행 지역</span></div>
+      </div>
+    </div>
+
+    <!-- 우: 대한민국 지도 + 대표 노선 Top 5 (캐러셀과 독립 / 실시간 계산 없음) -->
+    <aside class="mapq" id="routes" aria-labelledby="routes-h">
+      <div class="mapq__hd">
+        <div>
+          <h2 id="routes-h">대표 노선 예시 견적</h2>
+          <p>많이 찾으시는 노선 Top 5</p>
+        </div>
+        <span class="mapq__badge">45인승 · 당일왕복</span>
+      </div>
+
+      <div class="mapq__bd">
+        <figure class="map" id="map">
+          <svg class="map__svg" viewBox="0 0 364 448" role="img" aria-labelledby="map-t map-d" focusable="false">
+            <title id="map-t">대한민국 대표 노선 지도</title>
+            <desc id="map-d">인천공항에서 서울로, 그리고 서울에서 부산·강원·대전·전주로 이어지는 대표 노선 5개를 표시한 대한민국 지도입니다.</desc>
+
+            <!-- 남한 외곽선(단순화) + 제주 · 영종도 -->
+            <g class="mland" aria-hidden="true">
+              <path class="mland__body" d="M104.6 82.3 L150.3 45.5 L196 44 L257 23.4 L272.2 52.8 L299 86 L318 111.8 L334.7 142 L333.2 178.1 L334.7 212.7 L329.4 251.9 L314.1 281.4 L279.8 299.8 L226.5 303.5 L203.6 310.9 L173.1 322 L119.8 340.4 L100.8 303.5 L104.6 266.5 L119.8 240.7 L123.6 214.9 L108.4 189.1 L93.1 159.6 L123.6 144.9 L116 108.1 Z" />
+              <ellipse class="mland__isle" cx="114.5" cy="406.7" rx="17" ry="8" />
+              <ellipse class="mland__isle" cx="102" cy="110" rx="10" ry="5.5" />
+            </g>
+
+            <!-- 노선 곡선 (quadratic) -->
+            <g class="mlines">
+              <path class="rt__ln rt__ln--air" data-r="1" d="M104 110 Q124 80 149 99" />
+              <path class="rt__ln" data-r="2" d="M149 99 Q316 136 306 274" />
+              <path class="rt__ln" data-r="3" d="M149 99 Q216 58 286 90" />
+              <path class="rt__ln" data-r="4" d="M149 99 Q140 154 179 189" />
+              <path class="rt__ln" data-r="5" d="M149 99 Q98 168 162 228" />
+            </g>
+
+            <!-- 노선 핀 -->
+            <g class="mpins">
+              <g class="rt__pin rt__pin--air" data-r="1">
+                <circle class="rt__halo" cx="104" cy="110" r="11" />
+                <circle class="rt__dot" cx="104" cy="110" r="5.5" />
+              </g>
+              <g class="rt__pin" data-r="2">
+                <circle class="rt__halo" cx="306" cy="274" r="10" />
+                <circle class="rt__dot" cx="306" cy="274" r="5" />
+              </g>
+              <g class="rt__pin" data-r="3">
+                <circle class="rt__halo" cx="286" cy="90" r="10" />
+                <circle class="rt__dot" cx="286" cy="90" r="5" />
+              </g>
+              <g class="rt__pin" data-r="4">
+                <circle class="rt__halo" cx="179" cy="189" r="10" />
+                <circle class="rt__dot" cx="179" cy="189" r="5" />
+              </g>
+              <g class="rt__pin" data-r="5">
+                <circle class="rt__halo" cx="162" cy="228" r="10" />
+                <circle class="rt__dot" cx="162" cy="228" r="5" />
+              </g>
+            </g>
+
+            <!-- 허브(서울) -->
+            <g class="mhub">
+              <circle class="mhub__halo" cx="149" cy="99" r="13" />
+              <circle class="mhub__dot" cx="149" cy="99" r="6.5" />
+              <text class="mtx" x="149" y="82" text-anchor="middle">서울</text>
+            </g>
+          </svg>
+
+          <!-- 가격 라벨 — 지도 위 (560px 미만에서는 아래 노선 카드로 대체) -->
+          <button class="mchip mchip--air" type="button" data-r="1" style="left:1.1%; top:1.3%">
+            <span class="mchip__b">✈ 공항 픽업·샌딩</span>
+            <span class="mchip__t">인천공항 → 서울</span>
+            <span class="mchip__p mchip__p--big">35만원~</span>
+          </button>
+          <button class="mchip" type="button" data-r="3" style="right:1.1%; top:22.3%">
+            <span class="mchip__t">강원</span><span class="mchip__p">70만원~</span>
+          </button>
+          <button class="mchip" type="button" data-r="4" style="left:51.1%; top:44%">
+            <span class="mchip__t">대전</span><span class="mchip__p">60만원~</span>
+          </button>
+          <button class="mchip" type="button" data-r="5" style="left:46.7%; top:53%">
+            <span class="mchip__t">전주</span><span class="mchip__p">80만원~</span>
+          </button>
+          <button class="mchip" type="button" data-r="2" style="right:1.1%; top:68.3%">
+            <span class="mchip__t">부산</span><span class="mchip__p">120만원~</span>
+          </button>
+        </figure>
+
+        <!-- 모바일 대체 표기 — 노선 카드 리스트 5개 -->
+        <ul class="rlist" id="rlist" aria-label="대표 노선 Top 5">
+          <li>
+            <button class="rrow rrow--air" type="button" data-r="1">
+              <span class="rrow__n">1</span>
+              <span class="rrow__m"><b>인천공항 → 서울</b><em>✈ 공항 픽업·샌딩</em></span>
+              <span class="rrow__p">35만원~</span>
+            </button>
+          </li>
+          <li>
+            <button class="rrow" type="button" data-r="2">
+              <span class="rrow__n">2</span>
+              <span class="rrow__m"><b>서울 → 부산</b></span>
+              <span class="rrow__p">120만원~</span>
+            </button>
+          </li>
+          <li>
+            <button class="rrow" type="button" data-r="3">
+              <span class="rrow__n">3</span>
+              <span class="rrow__m"><b>서울 → 강원</b></span>
+              <span class="rrow__p">70만원~</span>
+            </button>
+          </li>
+          <li>
+            <button class="rrow" type="button" data-r="4">
+              <span class="rrow__n">4</span>
+              <span class="rrow__m"><b>서울 → 대전</b></span>
+              <span class="rrow__p">60만원~</span>
+            </button>
+          </li>
+          <li>
+            <button class="rrow" type="button" data-r="5">
+              <span class="rrow__n">5</span>
+              <span class="rrow__m"><b>서울 → 전주</b></span>
+              <span class="rrow__p">80만원~</span>
+            </button>
+          </li>
+        </ul>
+
+        <p class="map__disc"><b>대표 노선 예시 견적</b> · 45인승 당일왕복 기준 · 실제 견적은 상담 후 확정</p>
+
+        <div class="mapq__foot">
+          <p class="mapq__ask">우리 일정은 <b>얼마쯤</b> 될까요?</p>
+          <a class="btn btn--gold btn--block btn--lg" href="wizard.html">1분 견적 신청 <span aria-hidden="true">→</span></a>
+          <p class="mapq__note">
+            온라인 결제는 없습니다 — <b>사장님 확정 후 연락</b>드리며,<br />
+            확정된 예약만 결제 진행됩니다.
+          </p>
+        </div>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ================= 신뢰 신호 스트립 ================= -->
+<section class="trust" aria-label="회사 신뢰 정보">
+  <div class="wrap">
+    <div class="trust__grid">
+      <div class="trust__item">
+        <span class="trust__ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4.8 6.2v5.5c0 4.4 3 7.7 7.2 8.8 4.2-1.1 7.2-4.4 7.2-8.8V6.2z"/><path d="m9 12 2.2 2.2L15.4 10"/></svg></span>
+        <div>
+          <b>정식 등록 알선업체</b>
+          <span>통신판매업 제 2020-고양일산동-1211호</span>
+        </div>
+      </div>
+      <div class="trust__item">
+        <span class="trust__ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 18v-6.5A2.5 2.5 0 0 1 7.5 9H10l1-4.5h3l1 4.5h1.5A2.5 2.5 0 0 1 19 11.5V18"/><path d="M4 18h16M8 18v2M16 18v2"/></svg></span>
+        <div>
+          <b>전 차량 종합보험 가입</b>
+          <span>보험 내용은 차량소개 페이지에 공개합니다</span>
+        </div>
+      </div>
+      <div class="trust__item">
+        <span class="trust__ico"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5.2l3.4 2"/></svg></span>
+        <div>
+          <b>13년 운행 · 4,800건 견적</b>
+          <span>2013년부터 이어온 단체 운송 실적</span>
+        </div>
+      </div>
+      <div class="trust__item">
+        <span class="trust__ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.5h14v17H5z"/><path d="M9 8.5h6M9 12.5h6M9 16.5h3"/></svg></span>
+        <div>
+          <b>사업자등록번호 130-86-77328</b>
+          <span>합자회사 베스트투어 · 대표 이승묵</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 01 실시간 견적현황 ================= -->
+<section class="section section--tight tone-lav" aria-labelledby="live-h">
+  <div class="wrap">
+    <div class="live__top rv">
+      <div>
+        <p class="eyebrow">01 — 실시간 견적현황</p>
+        <h2 class="sec-title" id="live-h">방금 <span class="ac">견적 받은</span> 분들</h2>
+      </div>
+      <p class="live__count"><span class="live-dot" aria-hidden="true"></span> 오늘 접수 <b>17</b>건 · 이번 주 <b>103</b>건</p>
+    </div>
+  </div>
+
+  <div class="ticker rv" aria-label="최근 견적 접수 내역 1">
+    <div class="ticker__track" id="track-1"></div>
+  </div>
+  <div class="ticker ticker--rev rv" aria-label="최근 견적 접수 내역 2">
+    <div class="ticker__track" id="track-2"></div>
+  </div>
+</section>
+
+<!-- ================= 02 이용 방법 4단계 ================= -->
+<section class="section tone-white" aria-labelledby="how-h">
+  <div class="wrap">
+    <div class="sec-head sec-head--split rv">
+      <div>
+        <p class="eyebrow">02 — 이용 방법</p>
+        <h2 class="sec-title" id="how-h">신청부터 결제까지, 단 <span class="ac">네 단계</span></h2>
+      </div>
+      <p class="sec-desc">복잡한 절차는 저희가 대신합니다. 고객님은 차량과 일정만 고르시면 됩니다. 온라인 결제는 없습니다.</p>
+    </div>
+
+    <ol class="steps">
+      <li class="step rv">
+        <span class="step__no">01</span>
+        <h3>견적 신청</h3>
+        <p>차량 종류, 출발지·경유지·도착지, 날짜와 시간, 대수·인원을 남겨주시면 접수됩니다. 온라인에서 가격을 계산하지 않습니다.</p>
+      </li>
+      <li class="step rv">
+        <span class="step__no">02</span>
+        <h3>사장님 확정</h3>
+        <p>대표가 직접 배차 가능 여부를 확인하고 예약을 확정합니다. 자동 배정이 아닙니다.</p>
+      </li>
+      <li class="step rv">
+        <span class="step__no">03</span>
+        <h3>알림 · 연락</h3>
+        <p>예약 내역을 문자(가능 시 카카오 알림톡)로 보내드리고, 선택하신 방법으로 확정 안내를 드립니다.</p>
+      </li>
+      <li class="step rv">
+        <span class="step__no">04</span>
+        <h3>결제</h3>
+        <p>확정된 예약만 결제가 진행됩니다. 현금·카드·세금계산서 발행 중 선택하실 수 있습니다.</p>
+      </li>
+    </ol>
+
+    <p class="steps__note rv">사장님 확정 후 연락드리며, <b>확정된 예약만</b> 결제 진행됩니다.</p>
+  </div>
+</section>
+
+<!-- ================= 03 차량 5종 ================= -->
+<section class="section tone-lav" id="fleet" aria-labelledby="fleet-h">
+  <div class="wrap">
+    <div class="sec-head sec-head--split rv">
+      <div>
+        <p class="eyebrow">03 — 차량소개</p>
+        <h2 class="sec-title" id="fleet-h">보라색버스 <span class="ac">5종</span>, 인원에 맞춰 고르세요</h2>
+      </div>
+      <p class="sec-desc"><b>정원 · 추천 용도 · 차내 옵션</b>을 기준으로 고르시면 됩니다. 예시 금액은 상단 <b>대표 노선 Top 5</b>를 참고해 주시고, 실제 견적은 상담 후 확정됩니다.</p>
+    </div>
+
+    <div class="fleet">
+      <article class="bus rv">
+        <div class="bus__ph">
+          <span class="bus__seat">45인승</span>
+          <img src="assets/bus-01.jpg" alt="45인승 관광버스 — 베스트투어 보라색 대형 버스" loading="lazy" />
+        </div>
+        <div class="bus__body">
+          <h3 class="bus__name">45인승 관광버스</h3>
+          <p class="bus__spec">단체 워크샵·현장학습·종교단체 이동에 가장 많이 찾는 대형 차량. DVD·노래방 시스템 완비.</p>
+          <dl class="bus__meta">
+            <div><dt>정원</dt><dd>최대 <b>45명</b></dd></div>
+            <div><dt>용도</dt><dd>워크샵 · 현장학습 · 종교단체</dd></div>
+            <div><dt>옵션</dt><dd>DVD · 노래방 · 냉장고 · 정수기</dd></div>
+          </dl>
+          <a class="btn btn--ghost btn--block btn--sm" href="wizard.html">이 차량으로 견적</a>
+        </div>
+      </article>
+
+      <article class="bus rv">
+        <div class="bus__ph">
+          <span class="bus__seat">35인승</span>
+          <img src="assets/bus-04.jpg" alt="35인승 관광버스 — 베스트투어 보라색 버스 측면" loading="lazy" />
+        </div>
+        <div class="bus__body">
+          <h3 class="bus__name">35인승 관광버스</h3>
+          <p class="bus__spec">중형 단체에 알맞은 크기. 친목회·가족여행·통근 운행까지 폭넓게 운용합니다.</p>
+          <dl class="bus__meta">
+            <div><dt>정원</dt><dd>최대 <b>35명</b></dd></div>
+            <div><dt>용도</dt><dd>친목회 · 가족여행 · 통근 운행</dd></div>
+            <div><dt>옵션</dt><dd>DVD · 노래방 · 냉장고</dd></div>
+          </dl>
+          <a class="btn btn--ghost btn--block btn--sm" href="wizard.html">이 차량으로 견적</a>
+        </div>
+      </article>
+
+      <article class="bus rv">
+        <div class="bus__ph">
+          <span class="bus__seat">28인승</span>
+          <img src="assets/bus-03.jpg" alt="28인승 우등리무진 — 야간 대기 중인 베스트투어 차량" loading="lazy" />
+        </div>
+        <div class="bus__body">
+          <h3 class="bus__name">28인승 우등리무진</h3>
+          <p class="bus__spec">넓은 좌석 간격의 우등 시트. 외국인 의전·관광, 관혼상제 등 격이 필요한 일정에 추천합니다.</p>
+          <dl class="bus__meta">
+            <div><dt>정원</dt><dd>최대 <b>28명</b></dd></div>
+            <div><dt>용도</dt><dd>외국인 의전·관광 · 관혼상제</dd></div>
+            <div><dt>옵션</dt><dd>우등 시트 · DVD · 냉장고</dd></div>
+          </dl>
+          <a class="btn btn--ghost btn--block btn--sm" href="wizard.html">이 차량으로 견적</a>
+        </div>
+      </article>
+
+      <article class="bus rv">
+        <div class="bus__ph">
+          <span class="bus__seat">25인승</span>
+          <img src="assets/bus-02.jpg" alt="25인승 관광버스 — 차고지에 정차한 베스트투어 보라색 버스" loading="lazy" />
+        </div>
+        <div class="bus__body">
+          <h3 class="bus__name">25인승 관광버스</h3>
+          <p class="bus__spec">소규모 단체의 합리적인 선택. 대학MT·워크샵 등 20명 안팎 일정에 적합합니다.</p>
+          <dl class="bus__meta">
+            <div><dt>정원</dt><dd>최대 <b>25명</b></dd></div>
+            <div><dt>용도</dt><dd>대학MT · 소규모 워크샵</dd></div>
+            <div><dt>옵션</dt><dd>DVD · 노래방 · 정수기</dd></div>
+          </dl>
+          <a class="btn btn--ghost btn--block btn--sm" href="wizard.html">이 차량으로 견적</a>
+        </div>
+      </article>
+
+      <article class="bus rv">
+        <div class="bus__ph">
+          <span class="bus__seat">16인승</span>
+          <img src="assets/bus-05.jpg" alt="16인승 관광버스 — 도심 야간 대기 중인 보라색 소형 버스" loading="lazy" />
+        </div>
+        <div class="bus__body">
+          <h3 class="bus__name">16인승 관광버스</h3>
+          <p class="bus__spec">공항 픽업·샌딩과 소규모 이동에 최적. 골목길 진입이 편해 도심 일정에 강합니다.</p>
+          <dl class="bus__meta">
+            <div><dt>정원</dt><dd>최대 <b>16명</b></dd></div>
+            <div><dt>용도</dt><dd>공항 픽업·샌딩 · 도심 이동</dd></div>
+            <div><dt>옵션</dt><dd>수하물 공간 · 냉장고</dd></div>
+          </dl>
+          <a class="btn btn--ghost btn--block btn--sm" href="wizard.html">이 차량으로 견적</a>
+        </div>
+      </article>
+    </div>
+
+    <p class="fleet__disc rv">차종별 정원·옵션은 배차 차량에 따라 일부 다를 수 있습니다. 주차료와 VAT 10% 포함 여부는 견적서에 별도 표기됩니다. <b>실제 견적은 상담 후 확정</b>됩니다.</p>
+  </div>
+</section>
+
+<!-- ================= 04 강점 ================= -->
+<section class="section tone-white" id="company" aria-labelledby="perk-h">
+  <div class="wrap">
+    <div class="sec-head sec-head--split rv">
+      <div>
+        <p class="eyebrow">04 — 베스트투어 강점</p>
+        <h2 class="sec-title" id="perk-h">타는 순간부터 <span class="ac">다릅니다</span></h2>
+      </div>
+      <p class="sec-desc">13년간 보라색버스를 운행하며 쌓은 기준. 차량 안의 편의부터 계약 조건의 투명함까지 챙깁니다.</p>
+    </div>
+
+    <div class="perks">
+      <div class="perk rv">
+        <span class="perk__ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12.5 21 5l-4.4 8.2L21 19l-8.6-3.1-3.3 3.6-.4-4.6z"/></svg></span>
+        <h3>공항 픽업·샌딩 (송영 전문)</h3>
+        <p>인천공항 노선은 외국인 투어 운행과 묶어 배차하므로 더 저렴하게 모실 수 있습니다. 새벽·심야 배차도 가능합니다.</p>
+      </div>
+      <div class="perk rv">
+        <span class="perk__ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4.5" width="19" height="13"/><path d="M8 21h8M12 17.5V21"/><path d="m10.5 9 4 2.3-4 2.3z"/></svg></span>
+        <h3>DVD · 노래방 시스템</h3>
+        <p>전 차량 영상·음향 장비 완비. 이동 시간이 곧 단체 일정의 일부가 됩니다.</p>
+      </div>
+      <div class="perk rv">
+        <span class="perk__ico"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="2.5" width="14" height="19"/><path d="M5 10h14M9 6h1M9 14h1"/></svg></span>
+        <h3>냉장고 · 정수기</h3>
+        <p>장거리 운행에도 시원한 음료와 물을 상시 이용하실 수 있습니다.</p>
+      </div>
+      <div class="perk rv">
+        <span class="perk__ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8 4.5 6v6.2c0 4.6 3.1 7.9 7.5 9 4.4-1.1 7.5-4.4 7.5-9V6z"/><path d="m9 12 2.2 2.2L15.5 10"/></svg></span>
+        <h3>전 차량 종합보험</h3>
+        <p>보험 내용을 차량소개 페이지에 그대로 공개합니다. 확인하고 타십시오.</p>
+      </div>
+      <div class="perk rv">
+        <span class="perk__ico"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9S14.5 18.4 12 21c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3"/></svg></span>
+        <h3>전국 16개 시도 운행</h3>
+        <p>서울부터 제주까지. 왕복 · 편도 · 편도·편도 중 운행 구분을 고르실 수 있습니다.</p>
+      </div>
+      <div class="perk rv">
+        <span class="perk__ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.5h14v17l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M9 8.5h6M9 12.5h6M9 16h3"/></svg></span>
+        <h3>투명한 차량운임료</h3>
+        <p>주차료 포함 여부, VAT 10% 포함 여부까지 견적서에 명시합니다. 나중에 붙는 금액이 없습니다.</p>
+      </div>
+    </div>
+
+    <div class="optbar rv">
+      <div>
+        <h4>견적확인방법</h4>
+        <ul class="chips"><li>핸드폰</li><li>전화</li><li>팩스</li><li>이메일</li><li>답변메일받기</li></ul>
+      </div>
+      <div>
+        <h4>계산방법 · 여행구분</h4>
+        <ul class="chips"><li>현금</li><li>카드</li><li>세금계산서 발행</li><li>가족여행</li><li>관혼상제</li><li>워크샵</li><li>친목회</li><li>종교단체</li><li>공항픽업</li><li>대학MT</li><li>현장학습</li><li>외국인 의전·관광</li></ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 05 갤러리 ================= -->
+<section class="section tone-lav" id="gallery" aria-labelledby="gal-h">
+  <div class="wrap">
+    <div class="sec-head sec-head--split rv">
+      <div>
+        <p class="eyebrow">05 — 갤러리</p>
+        <h2 class="sec-title" id="gal-h">보라색버스가 다녀온 <span class="ac">자리들</span></h2>
+      </div>
+      <p class="sec-desc">전국 어디든 갑니다. 갤러리 게시판에서 더 많은 운행 사진을 보실 수 있습니다.</p>
+    </div>
+
+    <div class="gal">
+      <figure class="g-a rv">
+        <img src="assets/bus-01.jpg" alt="대학 캠퍼스 본관 앞에 정차한 45인승 보라색 관광버스" loading="lazy" />
+        <figcaption><span>대학 행사</span> 캠퍼스 단체 운행</figcaption>
+      </figure>
+      <figure class="g-tall rv">
+        <img src="assets/bus-05.jpg" alt="도심 야경 속 대기 중인 16인승 보라색 버스" loading="lazy" />
+        <figcaption><span>공항 픽업·샌딩</span> 도심 야간 배차</figcaption>
+      </figure>
+      <figure class="g-b rv">
+        <img src="assets/bus-03.jpg" alt="야간 터미널에 나란히 정차한 베스트투어 버스 3대" loading="lazy" />
+        <figcaption><span>단체 배차</span> 3대 동시 운행</figcaption>
+      </figure>
+      <figure class="g-c is-sepia rv">
+        <img src="assets/bus-06.jpg" alt="산사 앞마당에 정차한 보라색 관광버스" loading="lazy" />
+        <figcaption><span>종교단체</span> 사찰 순례 일정</figcaption>
+      </figure>
+      <figure class="g-d rv">
+        <img src="assets/bus-02.jpg" alt="차고지에 정렬된 베스트투어 보라색 버스 차량들" loading="lazy" />
+        <figcaption><span>차고지</span> 출발 전 점검</figcaption>
+      </figure>
+    </div>
+
+    <div style="text-align:center; margin-top:28px" class="rv">
+      <a class="btn btn--ghost" href="#gallery">갤러리 전체 보기</a>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 06 공지 + 고객센터 ================= -->
+<section class="section tone-white" id="notice" aria-labelledby="notice-h">
+  <div class="wrap notice-grid">
+    <div>
+      <div class="sec-head rv" style="margin-bottom:24px">
+        <p class="eyebrow">06 — 공지사항</p>
+        <h2 class="sec-title" id="notice-h">고객센터 <span class="ac">소식</span></h2>
+      </div>
+      <ul class="notices rv">
+        <li><a href="#notice"><span class="cat cat--air">공항</span><span class="ttl">8월 인천공항 픽업·샌딩 특가 진행 — 공항 노선 전문, 합리적 견적</span><time datetime="2026-08-05">2026-08-05</time></a></li>
+        <li><a href="#notice"><span class="cat">공지</span><span class="ttl">2026 하계 성수기 45인승 배차 마감 임박 — 8월 주말 예약 서둘러 주세요</span><time datetime="2026-08-01">2026-08-01</time></a></li>
+        <li><a href="#notice"><span class="cat">안내</span><span class="ttl">예약 확정 절차 안내 — 접수 후 문자 발송, 사장님 확정 후 연락드립니다</span><time datetime="2026-07-15">2026-07-15</time></a></li>
+        <li><a href="#notice"><span class="cat">공지</span><span class="ttl">전 차량 종합보험 갱신 완료 — 차량소개 페이지에서 보험내용 확인</span><time datetime="2026-06-20">2026-06-20</time></a></li>
+        <li><a href="#notice"><span class="cat">안내</span><span class="ttl">차량운임료 안내 — 주차료 및 VAT 10% 포함 여부는 견적서에 별도 표기됩니다</span><time datetime="2026-05-08">2026-05-08</time></a></li>
+      </ul>
+    </div>
+
+    <aside class="cscard rv">
+      <h3>고객센터</h3>
+      <p>견적·예약확인·이용안내 문의는 언제든 연락 주십시오. 전화·카카오톡 채널·네이버 톡톡 모두 열려 있습니다.</p>
+      <div class="cslist">
+        <div><span class="k">대표전화</span><a class="v" href="tel:1566-6188">1566-6188</a></div>
+        <div><span class="k">직통</span><a class="v" href="tel:010-2048-8585">010-2048-8585</a></div>
+        <div><span class="k">팩스</span><span class="v">0303-3443-5252</span></div>
+        <div><span class="k">이메일</span><a class="v" href="mailto:bestour2013@naver.com" style="font-size:14px">bestour2013@naver.com</a></div>
+      </div>
+      <a class="btn btn--gold btn--block" href="#" data-check>예약확인 바로가기</a>
+    </aside>
+  </div>
+</section>
+
+</main>
+
+<!-- ================= FOOTER ================= -->
+<footer class="ftr">
+  <div class="wrap">
+    <div class="ftr__grid">
+      <div>
+        <a class="brand" href="#top" aria-label="베스트투어 홈">
+          <span class="brand__mark">
+            <svg viewBox="0 0 40 40" aria-hidden="true">
+              <path d="M20 3c3 0 5.4 3.1 5.4 7s-2.4 7-5.4 7-5.4-3.1-5.4-7S17 3 20 3Z"/>
+              <path d="M35.2 14.4c.9 2.9-1.2 6.3-4.9 7.5s-7.3-.1-8.2-3 1.2-6.3 4.9-7.5 7.3.1 8.2 3Z"/>
+              <path d="M29.4 32.6c-2.4 1.8-6.2.7-8.5-2.5s-2.2-7.1.2-8.9 6.2-.7 8.5 2.5 2.2 7.1-.2 8.9Z"/>
+              <path d="M10.6 32.6c-2.4-1.8-2.5-5.7-.2-8.9s6.1-4.3 8.5-2.5 2.5 5.7.2 8.9-6.1 4.3-8.5 2.5Z"/>
+              <path d="M4.8 14.4c.9-2.9 4.5-4.2 8.2-3s5.8 4.6 4.9 7.5-4.5 4.2-8.2 3-5.8-4.6-4.9-7.5Z"/>
+              <circle cx="20" cy="21" r="3.1"/>
+            </svg>
+          </span>
+          <span class="brand__txt"><b>베스트<span>투어</span></b><small>합자회사 베스트투어</small></span>
+        </a>
+        <a class="ftr__tel" href="tel:1566-6188">1566-6188</a>
+        <p class="ftr__sub">
+          직통 <b>010-2048-8585</b> · 팩스 0303-3443-5252<br />
+          <b>bestour2013@naver.com</b><br />
+          KB국민은행 690101-00-050894
+        </p>
+        <div class="ftr__ch">
+          <a href="tel:1566-6188"><i class="i-tel" aria-hidden="true"></i>전화 상담</a>
+          <a href="#" aria-label="카카오톡 채널 상담 (링크 준비 중)"><i class="i-kko" aria-hidden="true"></i>카카오톡 채널</a>
+          <a href="#" aria-label="네이버 톡톡 상담 (링크 준비 중)"><i class="i-nav" aria-hidden="true"></i>네이버 톡톡</a>
+        </div>
+      </div>
+
+      <div>
+        <h4>메뉴</h4>
+        <div class="ftr__menu">
+          <a href="#company">회사소개 · 인사말</a>
+          <a href="#company">찾아오시는 길</a>
+          <a href="#fleet">차량소개 · 보험내용</a>
+          <a href="#fleet">차량운임료</a>
+          <a href="wizard.html">견적요청</a>
+          <a href="#" data-check>예약확인</a>
+        </div>
+      </div>
+
+      <div>
+        <h4>고객센터</h4>
+        <div class="ftr__menu">
+          <a href="#notice">공지사항</a>
+          <a href="#notice">이용안내</a>
+          <a href="#gallery">갤러리</a>
+          <a href="#" aria-label="네이버 블로그 (링크 준비 중)">네이버 블로그</a>
+        </div>
+        <h4 style="margin-top:32px">사무소</h4>
+        <p class="ftr__sub" style="margin-top:0">
+          <b>본사</b> 경기도 고양시 일산동구 동국로 99-19<br />
+          <b>지사</b> 서울시 마포구 월드컵북로 23길 18
+        </p>
+      </div>
+    </div>
+
+    <div class="ftr__co">
+      <div class="row">
+        <span><b>합자회사 베스트투어</b></span>
+        <span>대표 <b>이승묵</b></span>
+        <span>사업자등록번호 130-86-77328</span>
+        <span>통신판매업신고 제 2020-고양일산동-1211호</span>
+      </div>
+      <div class="row">
+        <span>본사 경기도 고양시 일산동구 동국로 99-19</span>
+        <span>지사 서울시 마포구 월드컵북로 23길 18</span>
+        <span>대표전화 1566-6188</span>
+        <span>직통 010-2048-8585</span>
+        <span>팩스 0303-3443-5252</span>
+        <span>bestour2013@naver.com</span>
+        <span>KB국민은행 690101-00-050894</span>
+      </div>
+      <p class="ftr__legal">© 2026 합자회사 베스트투어. All rights reserved. — 본 페이지는 클라이언트 컨펌용 UIUX 시안(시안 8 지도 히어로)입니다.</p>
+    </div>
+  </div>
+</footer>
+
+<!-- ================= 플로팅 문의 3종 ================= -->
+<div class="floats" aria-label="문의 채널">
+  <a class="fbtn fbtn--tel" href="tel:1566-6188" aria-label="대표전화 1566-6188 걸기">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h3l1.5 4-2 1.4a12.5 12.5 0 0 0 6.1 6.1l1.4-2 4 1.5v3a2 2 0 0 1-2.2 2A17.5 17.5 0 0 1 4.5 5.7a2 2 0 0 1 2-2.2Z"/></svg>
+    <span class="fbtn__lb">전화 상담 1566-6188</span>
+  </a>
+  <a class="fbtn fbtn--kko" href="#" aria-label="카카오톡 채널 상담 (링크 준비 중)">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 3.6c-4.7 0-8.5 3-8.5 6.7 0 2.4 1.6 4.5 4 5.7l-.9 3.4c-.1.4.3.7.6.5l4-2.6c.3 0 .6.1.8.1 4.7 0 8.5-3 8.5-6.7S16.7 3.6 12 3.6Z"/></svg>
+    <span class="fbtn__lb">카카오톡 채널 상담</span>
+  </a>
+  <a class="fbtn fbtn--nav" href="#" aria-label="네이버 톡톡 상담 (링크 준비 중)">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 3.8c-4.6 0-8.3 2.9-8.3 6.6 0 2.3 1.5 4.4 3.7 5.6v3.5c0 .4.5.7.8.4l3.3-2.4h.5c4.6 0 8.3-2.9 8.3-6.6S16.6 3.8 12 3.8Z"/><path fill="#03C75A" d="M9.3 8h1.5l1.9 2.9V8h1.5v5.4h-1.5l-1.9-2.9v2.9H9.3z"/></svg>
+    <span class="fbtn__lb">네이버 톡톡 상담</span>
+  </a>
+</div>
+
+<!-- ================= 이벤트 팝업 (관리자 등록 예시) ================= -->
+<div class="ov" id="pop-ov" role="dialog" aria-modal="true" aria-labelledby="pop-title">
+  <div class="modal modal--wide">
+    <span class="pop__label">관리자 등록 팝업 예시</span>
+    <button class="modal__x" type="button" id="pop-x" aria-label="팝업 닫기">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+    </button>
+
+    <div class="pop__ph">
+      <img src="assets/bus-02.jpg" alt="공항 픽업·샌딩 운행에 투입되는 베스트투어 보라색 버스" />
+      <div class="pop__cap">
+        <span>8월 한정 이벤트</span>
+        <strong id="pop-title">8월 공항 픽업 특가</strong>
+      </div>
+    </div>
+
+    <div class="pop__bd">
+      <p>공항 노선을 매일 운행하는 베스트투어의 8월 특가. <b>공항 픽업·샌딩 (송영 전문)</b> 노선을 특가 견적으로 만나보세요.</p>
+      <ul class="pop__list">
+        <li>대상 : 인천공항 출발 또는 도착 일정 전 차종</li>
+        <li>기간 : 2026-08-01 ~ 2026-08-31 접수분</li>
+        <li>새벽·심야 배차 가능 · 수하물 적재 여유</li>
+        <li>표시 금액은 대표 노선 예시 견적이며 실제 견적은 상담 후 확정됩니다</li>
+      </ul>
+    </div>
+
+    <div class="pop__ft">
+      <label class="chk"><input type="checkbox" id="pop-hide" /> 오늘 하루 보지 않기</label>
+      <button class="txt" type="button" id="pop-close">닫기</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var $ = function(id){ return document.getElementById(id); };
+
+  /* ---------- 모바일 드로어 ---------- */
+  var burger = $('burger'), drawer = $('drawer');
+  burger.addEventListener('click', function(){
+    var open = drawer.classList.toggle('is-open');
+    burger.setAttribute('aria-expanded', open ? 'true' : 'false');
+    burger.setAttribute('aria-label', open ? '메뉴 닫기' : '메뉴 열기');
+  });
+  drawer.addEventListener('click', function(e){
+    if (e.target.closest('a')) {
+      drawer.classList.remove('is-open');
+      burger.setAttribute('aria-expanded','false');
+    }
+  });
+
+  /* ---------- 예약확인 등 미구현 링크 ---------- */
+  document.addEventListener('click', function(e){
+    var el = e.target.closest('[data-check]');
+    if (el) { e.preventDefault(); alert('예약확인 페이지는 시안 확정 후 제작됩니다.'); }
+  });
+
+  /* ============================================================
+     히어로 캐러셀 — 5초 자동 전환
+     ============================================================ */
+  var car = $('car');
+  var slides = car.querySelectorAll('.slide');
+  var dots = $('car-dots').querySelectorAll('button');
+  var nowEl = $('car-now');
+  var idx = 0, timer = null, paused = false;
+  var DUR = 5000;
+
+  function go(n){
+    idx = (n + slides.length) % slides.length;
+    for (var i = 0; i < slides.length; i++) {
+      var on = (i === idx);
+      slides[i].classList.toggle('is-on', on);
+      slides[i].setAttribute('aria-hidden', on ? 'false' : 'true');
+      dots[i].setAttribute('aria-current', on ? 'true' : 'false');
+    }
+    nowEl.textContent = String(idx + 1);
+  }
+  function start(){
+    if (reduce || paused) return;
+    stop();
+    timer = window.setInterval(function(){ go(idx + 1); }, DUR);
+  }
+  function stop(){ if (timer) { window.clearInterval(timer); timer = null; } }
+  function jump(n){ go(n); stop(); start(); }
+
+  $('car-prev').addEventListener('click', function(){ jump(idx - 1); });
+  $('car-next').addEventListener('click', function(){ jump(idx + 1); });
+  for (var d = 0; d < dots.length; d++) {
+    (function(i){ dots[i].addEventListener('click', function(){ jump(i); }); })(d);
+  }
+  /* hover / 포커스 일시정지 */
+  car.addEventListener('mouseenter', function(){ paused = true; stop(); });
+  car.addEventListener('mouseleave', function(){ paused = false; start(); });
+  car.addEventListener('focusin',   function(){ paused = true; stop(); });
+  car.addEventListener('focusout',  function(){ paused = false; start(); });
+  /* 탭이 안 보이면 정지 */
+  document.addEventListener('visibilitychange', function(){
+    if (document.hidden) stop(); else start();
+  });
+  /* 좌우 방향키 */
+  car.addEventListener('keydown', function(e){
+    if (e.key === 'ArrowLeft')  { jump(idx - 1); }
+    if (e.key === 'ArrowRight') { jump(idx + 1); }
+  });
+  go(0);
+  start();
+
+  /* ============================================================
+     대표 노선 지도 — 노선 하이라이트 (soul.md §11)
+     실시간 가격 계산은 없습니다. 지도는 "예시 견적"만 보여줍니다.
+     칩(데스크톱) · 카드(모바일) · SVG 선/핀이 같은 data-r 값을 공유합니다.
+     ============================================================ */
+  var mapq = $('routes');
+  if (mapq) {
+    var marks = mapq.querySelectorAll('[data-r]');
+    var lockId = null;
+
+    function paint(id){
+      if (id) mapq.setAttribute('data-active', id);
+      else mapq.removeAttribute('data-active');
+      for (var i = 0; i < marks.length; i++) {
+        marks[i].classList.toggle('is-on', !!id && marks[i].getAttribute('data-r') === id);
+      }
+    }
+    function enter(id){ paint(id); }
+    function leave(){ paint(lockId); }
+
+    for (var m = 0; m < marks.length; m++) {
+      (function(el){
+        var id = el.getAttribute('data-r');
+        el.addEventListener('mouseenter', function(){ enter(id); });
+        el.addEventListener('mouseleave', leave);
+        if (el.tagName && el.tagName.toLowerCase() === 'button') {
+          el.addEventListener('focus', function(){ enter(id); });
+          el.addEventListener('blur', leave);
+          el.addEventListener('click', function(){
+            lockId = (lockId === id) ? null : id;
+            paint(lockId || id);
+          });
+        }
+      })(marks[m]);
+    }
+  }
+
+  /* 차량 카드의 "이 차량으로 견적" 버튼과 모든 견적 CTA는 wizard.html 로 이동합니다. */
+
+  /* ============================================================
+     실시간 견적현황 티커 (soul.md §8 — 12건)
+     ============================================================ */
+  var feed = [
+    ['한**','45인승 관광버스','2026-08-06'],
+    ['김**','28인승 우등리무진','2026-03-15'],
+    ['이**','35인승 관광버스','2026-04-22'],
+    ['박**','16인승 관광버스','2026-05-03'],
+    ['최**','25인승 관광버스','2026-03-28'],
+    ['정**','45인승 관광버스','2026-06-11'],
+    ['강**','28인승 우등리무진','2026-07-19'],
+    ['조**','35인승 관광버스','2026-04-09'],
+    ['윤**','16인승 관광버스','2026-08-02'],
+    ['임**','25인승 관광버스','2026-05-27'],
+    ['한**','45인승 관광버스','2026-06-30'],
+    ['오**','28인승 우등리무진','2026-07-05']
+  ];
+  function tick(r){
+    var el = document.createElement('div');
+    el.className = 'tick';
+    el.innerHTML = '<span class="chip">견적완료</span><b>' + r[0] + '</b>' +
+                   '<i class="bar"></i><span>' + r[1] + '</span>' +
+                   '<i class="bar"></i><time datetime="' + r[2] + '">' + r[2] + '</time>';
+    return el;
+  }
+  function fill(id, rows){
+    var t = $(id);
+    for (var p = 0; p < 2; p++) { for (var i = 0; i < rows.length; i++) t.appendChild(tick(rows[i])); }
+  }
+  fill('track-1', feed.slice(0, 6));
+  fill('track-2', feed.slice(6));
+
+  /* ============================================================
+     모달 공통 — 열기/닫기 + ESC + 배경 클릭
+     ============================================================ */
+  /* 열린 순서를 스택으로 보관 — 겹쳐 열려도 ESC는 항상 "맨 위" 오버레이를 닫는다 */
+  var ovStack = [];
+  function openOv(ov, focusEl){
+    if (ovStack.indexOf(ov) === -1) {
+      ov._lastFocus = document.activeElement;
+      ovStack.push(ov);
+    }
+    ov.classList.add('is-open');
+    document.body.style.overflow = 'hidden';
+    if (focusEl) window.setTimeout(function(){ focusEl.focus(); }, 40);
+  }
+  function closeOv(ov){
+    ov.classList.remove('is-open');
+    var i = ovStack.indexOf(ov);
+    if (i > -1) ovStack.splice(i, 1);
+    if (!ovStack.length) document.body.style.overflow = '';
+    /* 아래에 다른 오버레이가 남아 있으면 포커스를 뺏지 않는다 */
+    if (!ovStack.length && ov._lastFocus && ov._lastFocus.focus) ov._lastFocus.focus();
+    ov._lastFocus = null;
+  }
+  function topOv(){
+    for (var i = ovStack.length - 1; i >= 0; i--) {
+      if (ovStack[i].classList.contains('is-open')) return ovStack[i];
+    }
+    var open = document.querySelectorAll('.ov.is-open');   /* 스택이 비어도 DOM 마지막을 사용 */
+    return open.length ? open[open.length - 1] : null;
+  }
+  document.addEventListener('keydown', function(e){
+    if (e.key !== 'Escape') return;
+    var open = topOv();
+    if (open) closeOv(open);
+  });
+  var ovs = document.querySelectorAll('.ov');
+  for (var o = 0; o < ovs.length; o++) {
+    (function(ov){
+      ov.addEventListener('mousedown', function(e){ if (e.target === ov) closeOv(ov); });
+    })(ovs[o]);
+  }
+
+  /* ============================================================
+     이벤트 팝업 (관리자 등록 예시) — 오늘 하루 보지 않기
+     ============================================================ */
+  var POP_KEY = 'bestour-popup-hide';
+  var popOv = $('pop-ov'), popHide = $('pop-hide');
+  function today(){
+    var d = new Date();
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+  function store(k, v){ try { window.localStorage.setItem(k, v); } catch (err) {} }
+  function read(k){ try { return window.localStorage.getItem(k); } catch (err) { return null; } }
+
+  function closePopup(){
+    if (popHide.checked) store(POP_KEY, today());
+    closeOv(popOv);
+  }
+  $('pop-x').addEventListener('click', closePopup);
+  $('pop-close').addEventListener('click', closePopup);
+  popOv.addEventListener('mousedown', function(e){ if (e.target === popOv) closePopup(); });
+
+  if (read(POP_KEY) !== today()) {
+    window.setTimeout(function(){ openOv(popOv, $('pop-close')); }, 700);
+  }
+
+  /* ============================================================
+     스크롤 리빌 (절제된 페이드)
+     ============================================================ */
+  var rvs = document.querySelectorAll('.rv');
+  if (!reduce && 'IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function(list){
+      list.forEach(function(en){
+        if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+      });
+    }, { rootMargin:'0px 0px -6% 0px', threshold:0.06 });
+    for (var r = 0; r < rvs.length; r++) {
+      rvs[r].style.transitionDelay = (Math.min(r % 4, 3) * 50) + 'ms';
+      io.observe(rvs[r]);
+    }
+  } else {
+    for (var q = 0; q < rvs.length; q++) rvs[q].classList.add('in');
+  }
+})();
+</script>
+</body>
+</html>
