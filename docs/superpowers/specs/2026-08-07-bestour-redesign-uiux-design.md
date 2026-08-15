@@ -129,3 +129,11 @@
 - 알림: Solapi(구 CoolSMS) 계열로 SMS + 알림톡 통합
 - 호스팅: Vercel 등 + 기존 도메인(bestour.co.kr) 연결, 기존 갤러리/공지 데이터 이관
 - 사장님에게 받을 것: 요금표(공항 노선 특가 포함), 창업연도·실적 수치, 사업자등록증(알림톡 심사), 발신번호 인증, 카카오 채널/톡톡 개설, 이벤트 팝업 소재, 도메인 관리 계정
+
+## 11. 2026-08-15 구현 확정 사항 (UIUX 컨펌 완료 후)
+
+- UIUX 목업(시안 7 + 위저드 + admin) 사용자 컨펌 완료. mockups 브랜치 main 머지, 구현은 feature/implementation 브랜치.
+- **스택 확정**: Next.js(App Router, TypeScript) + Supabase(Postgres·Auth·Storage) + Vercel. 스타일은 목업 CSS를 CSS 변수 토큰 + CSS Modules로 이식(Tailwind 미사용 — 컨펌된 픽셀 보존 우선).
+- **다국어**: 1차 범위에 **영문 포함**. 헤더의 KO/EN 토글 버튼으로 전환(next-intl, 한국어 기본 경로, 영어 /en). BM 비노출 카피 규칙은 영문에도 동일 적용.
+- **결제 미포함** 유지(§3). 알림은 Solapi — 알림톡 템플릿 승인 전까지 SMS(LMS)로 시작, 승인 후 알림톡 우선·SMS 폴백.
+- 마스터 플랜: docs/superpowers/plans/2026-08-15-bestour-implementation-master.md (Phase A~E 분해)
