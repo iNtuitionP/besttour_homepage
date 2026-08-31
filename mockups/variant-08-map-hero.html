@@ -407,6 +407,9 @@ ul,ol{ padding:0; list-style:none; }
 
 /* 노선 카드 리스트 */
 .rcards{ display:grid; gap:10px; }
+/* 데스크톱: 우하단 플로팅 문의 버튼(.floats, right:22px, width:54px)과
+   가격 라벨이 겹치지 않도록 리스트 우측에 여유 폭 확보 */
+@media(min-width:768px){ .rcards{ padding-right:64px; } }
 .rcard{
   width:100%; display:grid; grid-template-columns:30px minmax(0,1fr) auto;
   align-items:center; gap:12px; padding:13px 15px;
@@ -1147,7 +1150,7 @@ ul,ol{ padding:0; list-style:none; }
       </div>
     </div>
 
-    <p class="routes__disc rv"><b>대표 노선 예시 견적</b> · 45인승 당일왕복 기준 · 실제 견적은 상담 후 확정됩니다</p>
+    <p class="routes__disc rv"><b>대표 노선 예시 견적</b> · 45인승 당일왕복 기준 · 실제 견적은 상담 후 확정</p>
   </div>
 </section>
 
@@ -1253,7 +1256,7 @@ ul,ol{ padding:0; list-style:none; }
         <p class="eyebrow">04 — 차량소개</p>
         <h2 class="sec-title" id="fleet-h">보라색버스 <span class="ac">5종</span>, 인원에 맞춰 고르세요</h2>
       </div>
-      <p class="sec-desc"><b>정원 · 추천 용도 · 차내 옵션</b>을 기준으로 고르시면 됩니다. 예시 금액은 위 <b>대표 노선</b> 섹션을 참고해 주시고, 실제 견적은 상담 후 확정됩니다.</p>
+      <p class="sec-desc"><b>정원 · 추천 용도 · 차내 옵션</b>을 기준으로 고르시면 됩니다. 예시 금액은 위 <b>대표 노선</b> 섹션을 참고해 주시고, 실제 견적은 상담 후 확정.</p>
     </div>
 
     <div class="fleet">
@@ -1595,7 +1598,7 @@ ul,ol{ padding:0; list-style:none; }
         <li>대상 : 인천공항 출발 또는 도착 일정 전 차종</li>
         <li>기간 : 2026-08-01 ~ 2026-08-31 접수분</li>
         <li>새벽·심야 배차 가능 · 수하물 적재 여유</li>
-        <li>표시 금액은 대표 노선 예시 견적이며 실제 견적은 상담 후 확정됩니다</li>
+        <li>표시 금액은 대표 노선 예시 견적이며 실제 견적은 상담 후 확정</li>
       </ul>
     </div>
 
