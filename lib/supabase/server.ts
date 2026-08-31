@@ -5,15 +5,11 @@
  * 절대 노출되어서는 안 된다. 이 모듈을 클라이언트 컴포넌트에서 import하지
  * 말 것.
  *
- * 원래는 파일 최상단에 `import 'server-only'`를 두어 클라이언트 번들에
- * 실수로 포함될 경우 빌드 타임에 에러가 나도록 강제해야 하지만, 현재
- * `server-only` 패키지가 설치되어 있지 않다(package.json 미포함). 이
- * 태스크(A2) 범위에서는 "산출물 외 파일 수정 금지" 규칙에 따라 임의로
- * 의존성을 추가하지 않았다. `server-only` 패키지 설치가 결정되면 아래
- * import를 추가할 것:
- *
- *   import "server-only";
+ * `server-only` 패키지(A5)를 설치해 이를 기계적으로 강제한다 — 이 모듈이
+ * 클라이언트 컴포넌트 번들에 실수로 포함되면 빌드 타임에 에러가 난다.
  */
+import "server-only";
+
 import { createClient } from "@supabase/supabase-js";
 
 /**

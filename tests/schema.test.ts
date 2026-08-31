@@ -116,6 +116,29 @@ const hasServiceRole = Boolean(
   process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.NEXT_PUBLIC_SUPABASE_URL,
 );
 
+/**
+ * CI 전용 가드: REQUIRE_DB_TESTS=1인데 접속 정보가 없으면 DB 스모크를
+ * 조용히 skip하는 대신 명시적으로 실패시킨다. CI(db-test job)는 이 값을
+ * 항상 1로 설정한다 — `supabase start` + `supabase status -o env` 로 env를
+ * 주입하는 과정이 어딘가에서 깨지면 스모크가 skip되어 CI가 그냥 통과해
+ * 버리는 사고를 막기 위함이다. 로컬 개발자 실행(`npm test`)에서는
+ * REQUIRE_DB_TESTS가 없으므로 기존처럼 조용히 skip된다.
+ */
+const requireDbTests = process.env.REQUIRE_DB_TESTS === "1";
+
+if (requireDbTests && !hasServiceRole) {
+  describe("DB smoke — REQUIRE_DB_TESTS guard", () => {
+    test("REQUIRE_DB_TESTS=1인데 SUPABASE_SERVICE_ROLE_KEY/NEXT_PUBLIC_SUPABASE_URL이 없음", () => {
+      throw new Error(
+        "REQUIRE_DB_TESTS=1이 설정되었지만 SUPABASE_SERVICE_ROLE_KEY 또는 " +
+          "NEXT_PUBLIC_SUPABASE_URL이 비어 있습니다. DB 스모크가 조용히 skip되는 " +
+          "것을 막기 위한 가드입니다 — CI라면 db-test job의 `supabase status -o env` " +
+          "env 주입 단계가 깨졌을 가능성이 높습니다.",
+      );
+    });
+  });
+}
+
 describe.skipIf(!hasServiceRole)("DB smoke (requires SUPABASE_SERVICE_ROLE_KEY)", () => {
   const restRoot = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1`;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY as string;
