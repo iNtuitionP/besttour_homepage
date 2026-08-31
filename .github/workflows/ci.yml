@@ -1,0 +1,51 @@
+# CI 워크플로.
+#
+# 참고: Supabase 스택 잡(supabase start 기반 DB/RLS 테스트)은 아직 추가하지
+# 않았다. 스키마 작업 태스크에서 별도 잡으로 추가할 예정이다 (플레이스홀더
+# 스텝은 두지 않는다 — 이 주석이 자리를 대신한다).
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: Test / Lint / Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: |
+          if node -e "process.exit((require('./package.json').scripts || {}).lint ? 0 : 1)"; then
+            npm run lint
+          else
+            echo "lint script not found in package.json — skipping"
+          fi
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  pricing-regression-gate:
+    name: Pricing Regression Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for forbidden pricing symbols
+        run: bash scripts/check-no-pricing.sh
