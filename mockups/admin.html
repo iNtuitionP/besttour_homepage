@@ -200,6 +200,7 @@ button{ cursor:pointer; border:none; background:none; }
   gap:6px;
   flex:1;
   min-width:0;
+  flex-wrap:nowrap;
 }
 .tab-btn{
   padding:11px 18px;
@@ -207,6 +208,8 @@ button{ cursor:pointer; border:none; background:none; }
   font-size:16px;
   font-weight:700;
   color:var(--text-sub);
+  white-space:nowrap;
+  flex-shrink:0;
   transition:background .15s var(--ease), color .15s var(--ease);
 }
 .tab-btn:hover{ background:var(--lavender); color:var(--text); }
@@ -571,6 +574,155 @@ tbody tr:last-child td{ border-bottom:none; }
 }
 .btn-stop:hover{ background:#FBE7E7; }
 
+/* =============== 공지 / 갤러리 / 대표 노선 관리 탭 (공통) =============== */
+.section-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:wrap;
+  gap:12px;
+  margin-bottom:20px;
+}
+.section-head .page-title{ margin-bottom:0; }
+
+.btn-add{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:12px 20px;
+  border-radius:var(--r-md);
+  background:var(--deep);
+  color:#fff;
+  font-size:15px;
+  font-weight:800;
+  flex-shrink:0;
+}
+.btn-add:hover{ background:#2E1749; }
+
+.form-field select,
+.form-field input[type=number]{
+  width:100%;
+  padding:12px 14px;
+  border:1.5px solid var(--line-str);
+  border-radius:var(--r-md);
+  font-size:16px;
+  background:#fff;
+}
+.form-field select:focus,
+.form-field input[type=number]:focus{ border-color:var(--violet); }
+
+.field-row{ display:flex; gap:12px; }
+.field-row .form-field{ flex:1; min-width:0; }
+
+.form-actions{ display:flex; gap:10px; margin-top:6px; }
+.form-actions .btn{ padding:13px 22px; font-size:15px; }
+.form-actions .logout-btn{ padding:13px 22px; font-size:15px; }
+
+/* 토글 스위치 (노출여부) */
+.toggle-switch{ position:relative; display:inline-block; width:44px; height:26px; flex-shrink:0; vertical-align:middle; }
+.toggle-switch input{ position:absolute; inset:0; opacity:0; margin:0; width:100%; height:100%; cursor:pointer; }
+.toggle-switch .slider{
+  position:absolute; inset:0;
+  background:var(--line-str);
+  border-radius:999px;
+  transition:background .15s var(--ease);
+  pointer-events:none;
+}
+.toggle-switch .slider::before{
+  content:"";
+  position:absolute;
+  width:20px; height:20px;
+  left:3px; top:3px;
+  background:#fff;
+  border-radius:50%;
+  box-shadow:0 1px 3px rgba(0,0,0,.25);
+  transition:transform .15s var(--ease);
+}
+.toggle-switch input:checked + .slider{ background:var(--violet); }
+.toggle-switch input:checked + .slider::before{ transform:translateX(18px); }
+
+.badge-muted{ background:var(--state-done-bg); color:var(--state-done-fg); }
+
+.banner-warn{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  background:var(--state-confirm-bg);
+  color:var(--state-confirm-fg);
+  border:1.5px solid #EBD9A6;
+  border-radius:var(--r-md);
+  padding:14px 16px;
+  font-size:14px;
+  font-weight:700;
+  margin-top:10px;
+}
+
+.route-caption-line{
+  margin-top:12px;
+  margin-bottom:4px;
+  font-size:14px;
+  font-weight:700;
+  color:var(--text-sub);
+}
+
+.order-btns{ display:flex; flex-direction:column; gap:2px; }
+.order-btn{
+  width:26px; height:22px;
+  border-radius:4px;
+  font-size:11px;
+  font-weight:800;
+  color:var(--text-sub);
+  border:1px solid var(--line-str);
+  background:#fff;
+  line-height:1;
+  display:flex; align-items:center; justify-content:center;
+}
+.order-btn:hover{ background:var(--lavender); }
+.order-btn:disabled{ opacity:.35; cursor:default; }
+.order-btn:disabled:hover{ background:#fff; }
+
+.chk-lg{ width:20px; height:20px; accent-color:var(--violet); cursor:pointer; }
+
+.price-input{
+  width:130px;
+  padding:8px 10px;
+  border:1.5px solid var(--line-str);
+  border-radius:6px;
+  font-size:14px;
+  background:#fff;
+}
+.price-input:focus{ border-color:var(--violet); }
+
+/* =============== 갤러리 관리 탭 =============== */
+.gallery-grid{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:16px;
+}
+.gallery-item{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:10px;
+  overflow:hidden;
+  box-shadow:var(--shadow-card);
+}
+.gallery-item .thumb{ width:100%; aspect-ratio:4/3; object-fit:cover; }
+.gallery-item .g-body{ padding:12px 14px; display:flex; flex-direction:column; gap:10px; }
+.gallery-item .g-cap-input{
+  width:100%;
+  padding:9px 11px;
+  border:1.5px solid var(--line-str);
+  border-radius:6px;
+  font-size:14px;
+}
+.gallery-item .g-cap-input:focus{ border-color:var(--violet); }
+.gallery-item .g-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
+
 /* =============== 토스트 =============== */
 #toast{
   position:fixed;
@@ -611,8 +763,10 @@ tbody tr:last-child td{ border-bottom:none; }
 @media (max-width: 860px){
   .summary-grid{ grid-template-columns:repeat(2,1fr); }
   .popup-grid{ grid-template-columns:1fr; }
-  .tabs{ order:3; flex:1 1 100%; width:100%; }
+  .tabs{ order:3; flex:1 1 100%; width:100%; overflow-x:auto; }
   .topbar-inner{ justify-content:space-between; }
+  .field-row{ flex-direction:column; gap:0; }
+  .gallery-grid{ grid-template-columns:repeat(2,1fr); }
 }
 @media (max-width: 480px){
   .summary-grid{ grid-template-columns:1fr; }
@@ -621,6 +775,9 @@ tbody tr:last-child td{ border-bottom:none; }
   .page-title{ font-size:20px; }
   .detail-panel{ width:100%; padding:18px; }
   .img-pick-grid{ grid-template-columns:repeat(2,1fr); }
+  .gallery-grid{ grid-template-columns:1fr; }
+  .section-head{ flex-direction:column; align-items:stretch; }
+  .btn-add{ width:100%; justify-content:center; }
 }
 </style>
 </head>
@@ -658,6 +815,9 @@ tbody tr:last-child td{ border-bottom:none; }
       <nav class="tabs">
         <button class="tab-btn active" data-tab="dashboard" onclick="switchTab('dashboard')">예약 현황</button>
         <button class="tab-btn" data-tab="popup" onclick="switchTab('popup')">팝업 관리</button>
+        <button class="tab-btn" data-tab="notice" onclick="switchTab('notice')">공지 관리</button>
+        <button class="tab-btn" data-tab="gallery" onclick="switchTab('gallery')">갤러리 관리</button>
+        <button class="tab-btn" data-tab="routes" onclick="switchTab('routes')">대표 노선 관리</button>
       </nav>
       <button class="logout-btn" onclick="logout()">로그아웃</button>
     </div>
@@ -754,6 +914,112 @@ tbody tr:last-child td{ border-bottom:none; }
       </div>
     </section>
 
+    <!-- ============ 공지 관리 탭 ============ -->
+    <section id="tab-notice" class="hidden">
+      <div class="section-head">
+        <h1 class="page-title">공지 관리</h1>
+        <button type="button" class="btn-add" onclick="toggleNoticeForm()">+ 새 공지</button>
+      </div>
+
+      <div class="panel-card hidden" id="noticeFormCard" style="margin-bottom:20px;">
+        <h3 id="noticeFormTitle">새 공지 등록</h3>
+        <form id="noticeForm">
+          <div class="form-field">
+            <label for="nTitle">제목</label>
+            <input type="text" id="nTitle" placeholder="예: 추석 연휴 운행 안내" />
+          </div>
+          <div class="form-field">
+            <label for="nCategory">분류</label>
+            <select id="nCategory">
+              <option value="안내">안내</option>
+              <option value="공지">공지</option>
+              <option value="이벤트">이벤트</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="nContent">내용</label>
+            <textarea id="nContent" placeholder="공지 내용을 입력하세요."></textarea>
+          </div>
+          <div class="form-field">
+            <label>노출 여부</label>
+            <label class="toggle-switch">
+              <input type="checkbox" id="nVisible" checked />
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">등록</button>
+            <button type="button" class="logout-btn" onclick="toggleNoticeForm()">취소</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>제목</th><th>분류</th><th>게시일</th><th>노출여부</th><th>관리</th></tr>
+          </thead>
+          <tbody id="noticeTbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============ 갤러리 관리 탭 ============ -->
+    <section id="tab-gallery" class="hidden">
+      <div class="section-head">
+        <h1 class="page-title">갤러리 관리</h1>
+        <button type="button" class="btn-add" onclick="toggleUploadNotice()">+ 사진 추가</button>
+      </div>
+
+      <div class="notice-line hidden" id="uploadNoticeCard" style="margin-bottom:20px;">업로드는 실제 구현에서 연결됩니다. (이 데모 화면에서는 실제 파일 업로드가 동작하지 않습니다)</div>
+
+      <div class="gallery-grid" id="galleryGrid"></div>
+    </section>
+
+    <!-- ============ 대표 노선 관리 탭 ============ -->
+    <section id="tab-routes" class="hidden">
+      <h1 class="page-title">대표 노선 관리</h1>
+
+      <div class="notice-line">여기서 수정하면 홈페이지 지도에 바로 반영됩니다. 가격을 비워두면 노선과 핀만 표시되고 금액은 나오지 않습니다.</div>
+      <div class="banner-warn hidden" id="routeCountBanner"></div>
+      <div class="route-caption-line">대표 노선 예시 견적 · 45인승 당일왕복 기준 · 실제 견적은 상담 후 확정</div>
+
+      <button type="button" class="btn-add" onclick="toggleRouteForm()">+ 노선 추가</button>
+
+      <div class="panel-card hidden" id="routeFormCard" style="margin:16px 0 20px;">
+        <h3>새 노선 추가</h3>
+        <form id="routeForm">
+          <div class="field-row">
+            <div class="form-field">
+              <label for="rFrom">출발지</label>
+              <select id="rFrom"></select>
+            </div>
+            <div class="form-field">
+              <label for="rTo">도착지</label>
+              <select id="rTo"></select>
+            </div>
+          </div>
+          <div class="form-field">
+            <label for="rPrice">가격 (원, 선택)</label>
+            <input type="number" id="rPrice" min="0" step="10000" placeholder="예: 500000 — 비워두면 가격 숨김" />
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">추가</button>
+            <button type="button" class="logout-btn" onclick="toggleRouteForm()">취소</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="table-wrap" style="margin-top:16px;">
+        <table>
+          <thead>
+            <tr><th>순서</th><th>출발지</th><th>도착지</th><th>가격 (얼마부터)</th><th>강조</th><th>노출</th><th>관리</th></tr>
+          </thead>
+          <tbody id="routeTbody"></tbody>
+        </table>
+      </div>
+    </section>
+
   </main>
 </div>
 
@@ -818,6 +1084,9 @@ document.getElementById('loginForm').addEventListener('submit', function(e){
   document.getElementById('appShell').classList.remove('hidden');
   renderBookings();
   renderImgPicker();
+  renderNotices();
+  renderGallery();
+  renderRoutes();
 });
 
 function logout(){
@@ -836,6 +1105,9 @@ function switchTab(tab){
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.getElementById('tab-dashboard').classList.toggle('hidden', tab !== 'dashboard');
   document.getElementById('tab-popup').classList.toggle('hidden', tab !== 'popup');
+  document.getElementById('tab-notice').classList.toggle('hidden', tab !== 'notice');
+  document.getElementById('tab-gallery').classList.toggle('hidden', tab !== 'gallery');
+  document.getElementById('tab-routes').classList.toggle('hidden', tab !== 'routes');
 }
 
 /* ============================================================
@@ -1014,6 +1286,288 @@ function escapeHtml(str){
   div.textContent = str;
   return div.innerHTML;
 }
+
+/* ============================================================
+   공지 관리
+   ============================================================ */
+let notices = [
+  { id:1, title:'코로나19 방역안내', category:'안내', content:'코로나19 관련 방역 수칙 안내입니다.', date:'2022-02-14', visible:true },
+  { id:2, title:'홈페이지 견적요청 안내', category:'공지', content:'홈페이지를 통한 견적 요청 방법을 안내드립니다.', date:'2026-03-10', visible:true },
+  { id:3, title:'추석 연휴 운행 안내', category:'안내', content:'추석 연휴 기간 운행 일정을 안내드립니다.', date:'2026-08-20', visible:true }
+];
+let noticeIdSeq = notices.length;
+let editingNoticeId = null;
+
+function renderNotices(){
+  const tbody = document.getElementById('noticeTbody');
+  tbody.innerHTML = notices.map(n => `
+    <tr>
+      <td class="td-strong">${escapeHtml(n.title)}</td>
+      <td>${escapeHtml(n.category)}</td>
+      <td class="td-nowrap">${n.date}</td>
+      <td>
+        <label class="toggle-switch">
+          <input type="checkbox" ${n.visible ? 'checked' : ''} onchange="toggleNoticeVisible(${n.id})" />
+          <span class="slider"></span>
+        </label>
+      </td>
+      <td>
+        <div class="row-actions">
+          <button class="act-btn act-confirm" onclick="editNotice(${n.id})">수정</button>
+          <button class="act-btn act-cancel" onclick="deleteNotice(${n.id})">삭제</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function toggleNoticeForm(){
+  const card = document.getElementById('noticeFormCard');
+  const willShow = card.classList.contains('hidden');
+  card.classList.toggle('hidden');
+  if(willShow){
+    editingNoticeId = null;
+    document.getElementById('noticeFormTitle').textContent = '새 공지 등록';
+    document.getElementById('noticeForm').reset();
+    document.getElementById('nVisible').checked = true;
+  }
+}
+
+function editNotice(id){
+  const n = notices.find(x => x.id === id);
+  if(!n) return;
+  editingNoticeId = id;
+  document.getElementById('noticeFormTitle').textContent = '공지 수정';
+  document.getElementById('nTitle').value = n.title;
+  document.getElementById('nCategory').value = n.category;
+  document.getElementById('nContent').value = n.content || '';
+  document.getElementById('nVisible').checked = n.visible;
+  document.getElementById('noticeFormCard').classList.remove('hidden');
+}
+
+function deleteNotice(id){
+  if(!confirm('이 공지를 삭제하시겠습니까?')) return;
+  notices = notices.filter(x => x.id !== id);
+  renderNotices();
+  showToast('공지를 삭제했습니다.');
+}
+
+function toggleNoticeVisible(id){
+  const n = notices.find(x => x.id === id);
+  if(!n) return;
+  n.visible = !n.visible;
+  showToast(n.visible ? '공지를 노출했습니다.' : '공지를 숨겼습니다.');
+}
+
+document.getElementById('noticeForm').addEventListener('submit', function(e){
+  e.preventDefault();
+  const title = document.getElementById('nTitle').value.trim();
+  const category = document.getElementById('nCategory').value;
+  const content = document.getElementById('nContent').value.trim();
+  const visible = document.getElementById('nVisible').checked;
+  if(!title){
+    showToast('제목을 입력해 주세요.');
+    return;
+  }
+  if(editingNoticeId){
+    const n = notices.find(x => x.id === editingNoticeId);
+    if(n){ n.title = title; n.category = category; n.content = content; n.visible = visible; }
+    showToast('공지를 수정했습니다.');
+  } else {
+    noticeIdSeq += 1;
+    notices.unshift({ id: noticeIdSeq, title, category, content, date: new Date().toISOString().slice(0,10), visible });
+    showToast('새 공지를 등록했습니다.');
+  }
+  renderNotices();
+  toggleNoticeForm();
+});
+
+/* ============================================================
+   갤러리 관리
+   ============================================================ */
+let galleryItems = BUS_IMAGES.map((src, i) => ({ id: i + 1, src, caption:'', visible:true }));
+
+function renderGallery(){
+  const grid = document.getElementById('galleryGrid');
+  grid.innerHTML = galleryItems.map((g, idx) => `
+    <div class="gallery-item">
+      <img class="thumb" src="${g.src}" alt="갤러리 사진 ${idx + 1}" />
+      <div class="g-body">
+        <input type="text" class="g-cap-input" value="${escapeHtml(g.caption)}" placeholder="캡션을 입력하세요" oninput="setGalleryCaption(${g.id}, this.value)" />
+        <div class="g-row">
+          <div class="order-btns">
+            <button type="button" class="order-btn" ${idx === 0 ? 'disabled' : ''} onclick="moveGallery(${g.id}, -1)">▲</button>
+            <button type="button" class="order-btn" ${idx === galleryItems.length - 1 ? 'disabled' : ''} onclick="moveGallery(${g.id}, 1)">▼</button>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" ${g.visible ? 'checked' : ''} onchange="toggleGalleryVisible(${g.id})" />
+            <span class="slider"></span>
+          </label>
+          <button type="button" class="act-btn act-cancel" onclick="deleteGallery(${g.id})">삭제</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function setGalleryCaption(id, value){
+  const g = galleryItems.find(x => x.id === id);
+  if(g) g.caption = value;
+}
+
+function moveGallery(id, dir){
+  const idx = galleryItems.findIndex(x => x.id === id);
+  const swapIdx = idx + dir;
+  if(idx < 0 || swapIdx < 0 || swapIdx >= galleryItems.length) return;
+  [galleryItems[idx], galleryItems[swapIdx]] = [galleryItems[swapIdx], galleryItems[idx]];
+  renderGallery();
+}
+
+function toggleGalleryVisible(id){
+  const g = galleryItems.find(x => x.id === id);
+  if(!g) return;
+  g.visible = !g.visible;
+  showToast(g.visible ? '사진을 노출했습니다.' : '사진을 숨겼습니다.');
+}
+
+function deleteGallery(id){
+  if(!confirm('이 사진을 삭제하시겠습니까?')) return;
+  galleryItems = galleryItems.filter(x => x.id !== id);
+  renderGallery();
+  showToast('사진을 삭제했습니다.');
+}
+
+function toggleUploadNotice(){
+  document.getElementById('uploadNoticeCard').classList.toggle('hidden');
+}
+
+/* ============================================================
+   대표 노선 관리
+   ============================================================ */
+const REGIONS = ['서울','부산','인천','대구','광주','대전','울산','경기','강원','충남','충북','경북','경남','전남','전북','제주'];
+const AIRPORT_REGION = '인천공항';
+
+function regionOptionsHtml(){
+  return `<optgroup label="공항"><option value="${AIRPORT_REGION}">${AIRPORT_REGION}</option></optgroup>` +
+    '<optgroup label="시/도">' + REGIONS.map(r => `<option value="${r}">${r}</option>`).join('') + '</optgroup>';
+}
+document.getElementById('rFrom').innerHTML = regionOptionsHtml();
+document.getElementById('rTo').innerHTML = regionOptionsHtml();
+
+let routes = [
+  { id:1, from:AIRPORT_REGION, to:'서울', price:'', highlight:true,  visible:true },
+  { id:2, from:'서울', to:'부산', price:'', highlight:false, visible:true },
+  { id:3, from:'서울', to:'강원', price:'', highlight:false, visible:true },
+  { id:4, from:'서울', to:'대전', price:'', highlight:false, visible:true },
+  { id:5, from:'서울', to:'전주', price:'', highlight:false, visible:true }
+];
+let routeIdSeq = routes.length;
+
+function formatWon(v){
+  const digits = String(v).replace(/[^0-9]/g,'');
+  if(!digits) return '';
+  return Number(digits).toLocaleString('ko-KR');
+}
+
+function renderRoutes(){
+  const tbody = document.getElementById('routeTbody');
+  tbody.innerHTML = routes.map((r, idx) => {
+    const priceBadge = r.price
+      ? `<span class="price">${formatWon(r.price)}원부터</span>`
+      : `<span class="badge badge-muted">가격 숨김 — 노선만 표시</span>`;
+    return `<tr>
+      <td>
+        <div class="order-btns">
+          <button type="button" class="order-btn" ${idx === 0 ? 'disabled' : ''} onclick="moveRoute(${r.id}, -1)">▲</button>
+          <button type="button" class="order-btn" ${idx === routes.length - 1 ? 'disabled' : ''} onclick="moveRoute(${r.id}, 1)">▼</button>
+        </div>
+      </td>
+      <td class="td-strong">${escapeHtml(r.from)}</td>
+      <td class="td-strong">${escapeHtml(r.to)}</td>
+      <td>
+        <input type="number" class="price-input" min="0" step="10000" placeholder="비워두면 숨김" value="${r.price}" onchange="setRoutePrice(${r.id}, this.value)" />
+        <div style="margin-top:6px;">${priceBadge}</div>
+      </td>
+      <td style="text-align:center;">
+        <input type="checkbox" class="chk-lg" ${r.highlight ? 'checked' : ''} onchange="toggleRouteHighlight(${r.id})" />
+      </td>
+      <td>
+        <label class="toggle-switch">
+          <input type="checkbox" ${r.visible ? 'checked' : ''} onchange="toggleRouteVisible(${r.id})" />
+          <span class="slider"></span>
+        </label>
+      </td>
+      <td>
+        <button type="button" class="act-btn act-cancel" onclick="deleteRoute(${r.id})">삭제</button>
+      </td>
+    </tr>`;
+  }).join('');
+  updateRouteBanner();
+}
+
+function updateRouteBanner(){
+  const banner = document.getElementById('routeCountBanner');
+  const n = routes.length;
+  if(n < 3 || n >= 8){
+    banner.textContent = `지도에는 3~7개 노선이 가장 보기 좋습니다 (현재 ${n}개)`;
+    banner.classList.remove('hidden');
+  } else {
+    banner.classList.add('hidden');
+  }
+}
+
+function setRoutePrice(id, value){
+  const r = routes.find(x => x.id === id);
+  if(!r) return;
+  r.price = value.replace(/[^0-9]/g,'');
+  renderRoutes();
+}
+
+function toggleRouteHighlight(id){
+  const r = routes.find(x => x.id === id);
+  if(!r) return;
+  r.highlight = !r.highlight;
+  showToast(r.highlight ? '강조 노선으로 설정했습니다.' : '강조를 해제했습니다.');
+}
+
+function toggleRouteVisible(id){
+  const r = routes.find(x => x.id === id);
+  if(!r) return;
+  r.visible = !r.visible;
+  showToast(r.visible ? '노선을 노출했습니다.' : '노선을 숨겼습니다.');
+}
+
+function moveRoute(id, dir){
+  const idx = routes.findIndex(x => x.id === id);
+  const swapIdx = idx + dir;
+  if(idx < 0 || swapIdx < 0 || swapIdx >= routes.length) return;
+  [routes[idx], routes[swapIdx]] = [routes[swapIdx], routes[idx]];
+  renderRoutes();
+}
+
+function deleteRoute(id){
+  if(!confirm('이 노선을 삭제하시겠습니까?')) return;
+  routes = routes.filter(x => x.id !== id);
+  renderRoutes();
+  showToast('노선을 삭제했습니다.');
+}
+
+function toggleRouteForm(){
+  document.getElementById('routeFormCard').classList.toggle('hidden');
+}
+
+document.getElementById('routeForm').addEventListener('submit', function(e){
+  e.preventDefault();
+  const from = document.getElementById('rFrom').value;
+  const to = document.getElementById('rTo').value;
+  const priceRaw = document.getElementById('rPrice').value;
+  routeIdSeq += 1;
+  routes.push({ id: routeIdSeq, from, to, price: priceRaw ? priceRaw.replace(/[^0-9]/g,'') : '', highlight:false, visible:true });
+  renderRoutes();
+  document.getElementById('routeForm').reset();
+  toggleRouteForm();
+  showToast('새 노선을 추가했습니다.');
+});
 
 /* ============================================================
    토스트
