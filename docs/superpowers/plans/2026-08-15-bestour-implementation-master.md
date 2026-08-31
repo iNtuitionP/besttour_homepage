@@ -79,7 +79,7 @@ reservations는 v2 스키마에서 가격 3필드만 뺀 형태(public_code·ema
 - `ReservationInput`: v2에서 그대로, 단 서버가 가격을 계산·저장하지 않음. `createReservation` 반환: `{ ok: true; publicCode: string }` (estPrice 없음).
 - `ReservationPublic`: estPrice·priceState 필드 제거.
 - `lib/pricing.ts`·estimate 계약 **폐기** — v2의 A3 태스크와 관련 테스트 전부 삭제 대상.
-- 신규: `getShowcaseRoutes(): Promise<ShowcaseRoute[]>` (공개 읽기, 60초 캐시), `updateShowcaseRoute(id, { priceFrom, active })` (admin action, 5행 고정 편집 — 행 추가/삭제 UI는 만들지 않음: 사장님 운영 부담 최소화 원칙).
+- 신규: `getShowcaseRoutes(): Promise<ShowcaseRoute[]>` (공개 읽기, 60초 캐시, `order by sort`), `upsertShowcaseRoute(input)` / `deleteShowcaseRoute(id)` / `reorderShowcaseRoutes(ids)` (admin actions). **행 수 가변**(2026-08-31 사용자 확정): 사장님이 대표 노선을 추가·삭제·순서변경·가격수정 모두 가능. 지도 렌더는 N개를 받아 처리하되 UI 권장 범위는 3~7개(그 밖이면 admin에서 경고만, 차단하지 않음).
 - 상태 머신·재발송·notify 계약은 v2 그대로.
 
 ## 3. 환경 변수
@@ -105,7 +105,7 @@ v2 §4에서 `PRICE_DISPLAY_MODE` 제거. 나머지 동일 (Supabase 3종, Upsta
 | **A. 기반** | 스캐폴드(v2 A1 방식: _scaffold 우회+next@15 고정+intl matcher 제외) + 스키마 v3 + codes/kst/mask(TDD, v2 테스트에서 pricing 제외 전부) + createReservation/lookup Server Actions(허니팟→Turnstile→RL→zod→KST→insert→after 발송 no-op, **가격 없음**) + live-feed(+시드 sample 라벨) + showcase_routes 읽기 + Vercel/CI | 프리뷰 URL 실접수→DB 행+public_code, vitest 전 경로(역순 날짜·zod 상한·RL·봇·허니팟·발송 격리 포함) 통과, CI green(skip 아님) |
 | **B. 공개 사이트** | v8.1 이식(KrMap 컴포넌트: kr-map.svg+핀·곡선·라벨·polyfill 없음, showcase 데이터 연동+고지 문구+라벨 숨김 폴백), wizard-b 이식(6단계·다중 경유지·전화 검증·완료 verbatim), 서브페이지 5종, KO/EN(next-intl), 팝업 노출, 피드, 문의 3종, Turnstile 위젯, next/image, Pretendard 서브셋 | 목업 대조 스크린샷 동일, EN 전환, Lighthouse 모바일 90+, /qa 통과 |
 | **C. 알림** | notify.ts(Solapi·전화 정규화), created/confirmed 발송(문자 본문 = wizard-b 완료 화면 미리보기 문구·경로 포함·**가격 없음**), 중복 발송 가드, admin 재발송, mock 3경로 테스트 | 실기기 수신, 실패 로그·재발송 동작 |
-| **D. admin** | @supabase/ssr 세션+0002 정책, 예약 현황(상태 머신), 팝업/공지/갤러리 CRUD, **Top-5 가격 편집**(5행 고정: 가격 입력·라벨 숨김 토글만) | 사장님 E2E(로그인→확정→문자→팝업→홈 노출→Top-5 가격 수정→홈 반영), 비관리자 차단 |
+| **D. admin** | @supabase/ssr 세션+0002 정책, 예약 현황(상태 머신), 팝업/공지/갤러리 CRUD, **대표 노선 관리**(추가·삭제·순서·가격 편집 — 행 수 가변). ※ admin.html 목업에는 예약현황·팝업 2화면만 있으므로 공지·갤러리·노선 관리 화면은 같은 디자인 토큰으로 신규 제작 | 사장님 E2E(로그인→확정→문자→팝업→홈 노출→Top-5 가격 수정→홈 반영), 비관리자 차단 |
 | **E. 이관·런치** | 콘텐츠 이관, 개인정보처리방침, SEO/hreflang/OG/sitemap, 도메인 전환(MX 백업·TTL·롤백), **런치 게이트: Top-5 실값 입력 또는 라벨 숨김 확정**, 구 게시판 중단 안내, Vercel Analytics | bestour.co.kr 서비스 개시 체크리스트 전항 통과 |
 
 의존: 0 → (A 병렬 가능) → B, C는 A 후 B와 병렬, D는 A·C 후, E는 전부 후. 최종 브랜치 리뷰(+codex)는 E 직전.
@@ -159,7 +159,7 @@ v2 §4에서 `PRICE_DISPLAY_MODE` 제거. 나머지 동일 (Supabase 3종, Upsta
 1. **게이트 정책 단일화**: 임시 가격 노출만 금지. 실값 없으면 전 라벨 숨김 상태로 정식 오픈 가능 (§4 반영됨)
 2. **시드는 NULL**: 프로덕션 시드에 가짜 가격 금지, 테스트 픽스처에만 (§1 반영됨)
 3. **라벨 숨김 ≠ active**: 라벨 숨김 = `price_from IS NULL`. `active=false`는 노선 자체 비표시(별개). `updateShowcaseRoute`는 `{ priceFrom: number|null }`만으로 라벨을 제어
-4. **5행 고정 강제**: unique(origin,destination) + 고정 시드, `getShowcaseRoutes()`는 `order by sort limit 5` 명시 (§1 반영됨)
+4. ~~5행 고정 강제~~ → **행 수 가변으로 정정(2026-08-31)**: unique(origin,destination) 유지, `getShowcaseRoutes()`는 `order by sort`(limit 없음). admin에 추가/삭제/순서변경 UI 제공. DB 스키마는 이미 가변을 지원하므로 마이그레이션 변경 불필요
 5. **업그레이드 마이그레이션 불요 확인**: v2는 미구현(DB 미생성) — 0001을 처음부터 v3 스키마로 작성. route_prices·가격 컬럼은 애초에 만들지 않음
 6. **의존 수정**: D의 수용 기준(홈 반영 확인)은 B 이후. B의 /qa는 SMS 제외 버전으로 먼저, C 완료 후 full E2E 재실행. 최종 브랜치 리뷰는 E의 코드·설정 작업 완료 후 · 도메인 컷오버 전
 7. **Phase 0 게이트와 A 병렬의 경계**: 컨펌 전 착수 허용은 **스캐폴드·CI·인프라 태스크만**. 스키마·ReservationInput·문자 문안 등 계약 태스크는 사장님 컨펌 후 (위저드 필드 피드백이 계약을 바꿀 수 있음)
