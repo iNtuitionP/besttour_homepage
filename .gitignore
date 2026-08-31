@@ -47,3 +47,6 @@ next-env.d.ts
 
 # 훅 테스트 부산물
 /tmp-hook-probe*
+
+# Supabase CLI 로컬 상태
+supabase/.temp/
