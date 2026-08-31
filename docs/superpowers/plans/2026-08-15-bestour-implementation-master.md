@@ -67,8 +67,9 @@ create table showcase_routes (              -- 홈 지도 Top-5 예시 견적 (a
 );
 alter table showcase_routes enable row level security;
 create policy showcase_read on showcase_routes for select using (active);
--- 시드: 임시 5행 (ICN→SEL 350000 highlight, SEL→BSN 1200000, SEL→GW 700000, SEL→DJN 600000, SEL→JB 800000)
--- ※ 임시값 — 사장님 실값 수령 전 프로덕션에서는 price_from을 null로 두는 것이 런치 게이트
+-- 프로덕션 시드: 5행 모두 price_from = NULL (임시 가격을 시드하지 않는다 — 가짜값은 테스트 픽스처에만)
+-- (ICN→SEL highlight sort1, SEL→BSN sort2, SEL→GW sort3, SEL→DJN sort4, SEL→JB sort5)
+-- 제약: unique(origin_code, destination_code) + origin/destination은 lib/codes.ts REGIONS 값만(CHECK IN) + 행 수는 5행 고정 시드(추가/삭제 UI 없음)
 ```
 
 reservations는 v2 스키마에서 가격 3필드만 뺀 형태(public_code·email·waypoint_codes·nights·CHECK 제약·보존 1년 전부 유지). notifications_log·popups·notices·gallery·0002 단일 관리자 정책 변경 없음.
@@ -89,7 +90,7 @@ v2 §4에서 `PRICE_DISPLAY_MODE` 제거. 나머지 동일 (Supabase 3종, Upsta
 
 | 데이터 | 막히는 것 | 없을 때 |
 |---|---|---|
-| **Top-5 대표 노선 실제 가격** | E 정식 오픈 (런치 게이트) | price_from=null → 라벨 숨김, 노선만 표시 |
+| **Top-5 대표 노선 실제 가격** | 가격 라벨 표시 (게이트 정책: **임시값 노출만 금지** — 실값 입력 시 라벨 표시, 미수령 시 전 라벨 숨김 상태로 오픈 가능) | price_from=null → 라벨 숨김, 노선·핀은 표시 |
 | 창업연도·실적 수치 | B 홈 카피 | 임시값 + 내부 표시 |
 | 발신번호 서류 / 사업자등록증·카카오 채널 | C | SMS 스텁 / SMS만 |
 | 카카오·톡톡 URL | B | "준비 중" 안내 |
@@ -153,6 +154,29 @@ v2 §4에서 `PRICE_DISPLAY_MODE` 제거. 나머지 동일 (Supabase 3종, Upsta
 | Codex Review | outside voice | Independent 2nd opinion | 2 | v2: 15건 수용 / v3 델타: 본 커밋 후 1회 실행 예정 | §12 승격 델타 스코프 |
 | CEO/Design/DX | — | — | 0 | — | 목업 단계 시각 QA로 갈음 |
 
-- **VERDICT:** v3 개정 완료 — Codex 델타 검토 1회 후 Phase 0 착수 가능
+## 7. Codex 델타 검토 반영 (v3.1 — 13건 전부 수용, 아래가 본문과 충돌 시 아래가 우선)
+
+1. **게이트 정책 단일화**: 임시 가격 노출만 금지. 실값 없으면 전 라벨 숨김 상태로 정식 오픈 가능 (§4 반영됨)
+2. **시드는 NULL**: 프로덕션 시드에 가짜 가격 금지, 테스트 픽스처에만 (§1 반영됨)
+3. **라벨 숨김 ≠ active**: 라벨 숨김 = `price_from IS NULL`. `active=false`는 노선 자체 비표시(별개). `updateShowcaseRoute`는 `{ priceFrom: number|null }`만으로 라벨을 제어
+4. **5행 고정 강제**: unique(origin,destination) + 고정 시드, `getShowcaseRoutes()`는 `order by sort limit 5` 명시 (§1 반영됨)
+5. **업그레이드 마이그레이션 불요 확인**: v2는 미구현(DB 미생성) — 0001을 처음부터 v3 스키마로 작성. route_prices·가격 컬럼은 애초에 만들지 않음
+6. **의존 수정**: D의 수용 기준(홈 반영 확인)은 B 이후. B의 /qa는 SMS 제외 버전으로 먼저, C 완료 후 full E2E 재실행. 최종 브랜치 리뷰는 E의 코드·설정 작업 완료 후 · 도메인 컷오버 전
+7. **Phase 0 게이트와 A 병렬의 경계**: 컨펌 전 착수 허용은 **스캐폴드·CI·인프라 태스크만**. 스키마·ReservationInput·문자 문안 등 계약 태스크는 사장님 컨펌 후 (위저드 필드 피드백이 계약을 바꿀 수 있음)
+8. **캐시 무효화**: `updateShowcaseRoute` 성공 시 `revalidateTag('showcase')` — admin 수정이 홈에 즉시 반영되는 것이 수용 기준
+9. **DB 장애 폴백 구체화**: 코드 소유 정적 카탈로그(5노선: code·한/영 라벨·지도 좌표·곡선 경로·highlight, 가격 null) 상수로 보유 — 폴백에서도 핀·곡선 렌더 유지
+10. **canonical 정합**: showcase 컬럼은 REGIONS 코드만 허용(CHECK), 표시 라벨은 messages/{ko,en}.json에서
+11. **가격 제거 회귀 게이트**: CI에 금지 심볼 grep 게이트 추가 — `estimate\(|price_state|est_price|route_prices|PRICE_DISPLAY_MODE|배율` 검출 시 실패 (테스트 픽스처 제외 경로 규칙 포함)
+12. **showcase 테스트 케이스 명시**: 0/5행 미만/중복 키 거부, 전부 null·혼합 null 렌더, 조회 실패 폴백, 비인가 편집 거부, 음수·0 가격 거부, revalidate 동작
+13. **Phase 0 승인의 감사 가능성**: 컨펌 요청 시 아티팩트 버전 라벨+커밋 해시를 레저에 기록. 승인 후 기준 목업 재발행 시 재컨펌 필요
+
+## GSTACK REVIEW REPORT (v3.1)
+
+| Review | Runs | Status | Findings |
+|--------|------|--------|----------|
+| Eng Review (v2 승계) | 1 | CLEAR | 9건 반영 유지 |
+| Codex outside voice | 3 | ISSUES_FOLDED | v2 15건 + v3 델타 13건 전부 수용 (§7) |
+
+- **VERDICT:** v3.1 — ENG+CODEX 반영 완료, Phase 0 착수 가능
 
 NO UNRESOLVED DECISIONS
