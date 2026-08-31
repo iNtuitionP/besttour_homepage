@@ -13,6 +13,7 @@ npm run dev            # 로컬 개발 서버 (next dev --turbopack)
 npm test               # vitest run — 단위/통합 테스트
 npm run build          # 프로덕션 빌드 (next build --turbopack)
 npm run check:pricing  # 가격 코드 회귀 게이트 — 금지 심볼 grep, 검출 시 CI 실패
+bash scripts/check-temp-values.sh  # 임시값([TEMP] 마커) 전수 조회 — Phase 게이트에서 실행
 ```
 
 ## 3. 절대 규칙 (Global Constraints — 위반 시 리뷰 반려)
@@ -38,7 +39,22 @@ npm run check:pricing  # 가격 코드 회귀 게이트 — 금지 심볼 grep, 
 - **디자인/카피 원본**: `mockups/soul.md` (§10.2 BM 비노출, §11 지도+무가격 확정 기준)
 - **SDD 레저**(태스크 진행 기록): `.superpowers/sdd/2026-08-15-bestour-implementation-master/progress.md`
 
-## 6. 테스트 정책
+## 6. AI 하네스 (자동 게이트 — `.claude/settings.json`)
+
+문서 규칙에만 기대지 않고 기계적으로 강제되는 층입니다. 훅 스크립트는 `.claude/hooks/`.
+
+| 훅 | 동작 | 막는 사고 |
+|---|---|---|
+| SessionStart | `git fetch` 후 origin이 앞서면 경고 + 미커밋 변경 + 레저 최근 줄을 컨텍스트에 주입 | 다른 세션 작업을 모른 채 진행 |
+| PreToolUse (Write\|Edit) | 아카이브 목업(variant-07-final·wizard·variant-01~06) 편집 **차단** | 폐기된 방향 부활, 아카이브 이식 |
+| PreToolUse (Bash) | `cd`/`pushd`가 섞인 복합 명령 안의 `git push` **차단** (단독 실행 또는 `git -C` 요구) | 엉뚱한 원격으로 push |
+| PostToolUse (Write\|Edit) | app/lib/actions/components/tests 편집 직후 `check-no-pricing.sh` 자동 실행, 위반 시 즉시 통보 | 가격 계산 코드 부활 (CI보다 왼쪽에서 차단) |
+
+**창작 금지 규약(L5)**: 확인되지 않은 값(사장님 미수령 데이터 등)에는 반드시 `[TEMP]` 마커를 주석으로 남긴다. Phase 게이트에서 `bash scripts/check-temp-values.sh`로 전수 확인하고, 정식 오픈 전 실값 교체 또는 명시적 유지 결정을 기록한다. 마커 없는 값 창작은 금지.
+
+**서브에이전트 규칙**: 구현자는 커밋·푸시하지 않는다(컨트롤러 담당). 브리프 파일로 요구사항을 받고, 보고서 파일로 결과를 남긴다. UI 태스크는 리뷰어가 browse로 실측한다.
+
+## 7. 테스트 정책
 
 - **TDD** 원칙 — 테스트 먼저 작성 후 구현.
 - DB가 필요한 테스트를 CI에서 skip하지 말 것 — 로컬 `supabase start` 스택으로 실행 예정(env 없다고 전부 skip 금지).
