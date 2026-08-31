@@ -129,3 +129,20 @@
 - 알림: Solapi(구 CoolSMS) 계열로 SMS + 알림톡 통합
 - 호스팅: Vercel 등 + 기존 도메인(bestour.co.kr) 연결, 기존 갤러리/공지 데이터 이관
 - 사장님에게 받을 것: 요금표(공항 노선 특가 포함), 창업연도·실적 수치, 사업자등록증(알림톡 심사), 발신번호 인증, 카카오 채널/톡톡 개설, 이벤트 팝업 소재, 도메인 관리 계정
+
+## 11. 2026-08-15 구현 확정 사항 (UIUX 컨펌 완료 후)
+
+- UIUX 목업(시안 7 + 위저드 + admin) 사용자 컨펌 완료. mockups 브랜치 main 머지, 구현은 feature/implementation 브랜치.
+- **스택 확정**: Next.js(App Router, TypeScript) + Supabase(Postgres·Auth·Storage) + Vercel. 스타일은 목업 CSS를 CSS 변수 토큰 + CSS Modules로 이식(Tailwind 미사용 — 컨펌된 픽셀 보존 우선).
+- **다국어**: 1차 범위에 **영문 포함**. 헤더의 KO/EN 토글 버튼으로 전환(next-intl, 한국어 기본 경로, 영어 /en). BM 비노출 카피 규칙은 영문에도 동일 적용.
+- **결제 미포함** 유지(§3). 알림은 Solapi — 알림톡 템플릿 승인 전까지 SMS(LMS)로 시작, 승인 후 알림톡 우선·SMS 폴백.
+- 마스터 플랜: docs/superpowers/plans/2026-08-15-bestour-implementation-master.md (Phase A~E 분해)
+
+## 12. 2026-08-31 방향 승격 — 무가격 + 지도 히어로 (이 섹션이 §3·§10·§11의 실시간 가격 항목을 대체)
+
+- **실시간 견적 계산 전면 제거 확정** (soul §11 승격). 근거: 노선×차량 요금 셀 관리가 사장님에게 불가능한 운영 부담.
+- 최종안 = **variant-08-map-hero.html(v8.1)**: v7 히어로(무가격) + 대한민국 시도 지도(KOSTAT GeoJSON 투영 SVG) 풀폭 섹션 + 대표 노선 Top-5 예시 견적(핀·곡선·가격 라벨, 인천공항→서울 골드 강조).
+- 정식 위저드 = **wizard-b.html**: 가격 단계 없는 6단계(차량→여행정보→일정→인원→연락처→완료). 이름+전화 필수, 완료 문구 verbatim 유지.
+- variant-07-final·wizard.html은 참고 아카이브로 강등.
+- Top-5 예시 가격은 임시값 — **실값 수령이 런치 게이트**, 미수령 시 가격 라벨 숨김 폴백. 고지 문구 필수: "대표 노선 예시 견적 · 45인승 당일왕복 기준 · 실제 견적은 상담 후 확정".
+- 구현 영향: estimate 가격 엔진·route_prices·PRICE_DISPLAY_MODE 폐기, showcase_routes(Top-5, admin 편집) 신설 — 마스터 플랜 v3 참조.

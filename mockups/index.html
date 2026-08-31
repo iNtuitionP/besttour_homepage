@@ -59,6 +59,18 @@
     padding: 32px 20px 80px;
   }
 
+  .direction-note {
+    margin: 0 0 20px;
+    padding: 10px 16px;
+    background: #FBEFD2;
+    border: 1px solid var(--gold);
+    border-radius: 10px;
+    color: #6B4E14;
+    font-size: 13.5px;
+    font-weight: 600;
+    text-align: center;
+  }
+
   .toolbar {
     display: flex;
     justify-content: space-between;
@@ -300,17 +312,28 @@
 </header>
 
 <main>
+  <p class="direction-note">2026-08-31 방향 확정 — 실시간 가격 계산 제거, 지도 기반 대표 노선 예시로 전환</p>
+
   <div class="toolbar">
     <span class="hint"><span class="pin-icon-sample">★</span> 핀을 클릭하면 해당 시안이 목록 상단에 고정됩니다 (골드 테두리로 표시).</span>
     <button id="reset-pins" type="button">핀 전체 초기화</button>
   </div>
 
   <div class="grid" id="final-grid">
-    <!-- 최종안 + 연결 화면 cards injected by JS -->
+    <!-- 확정 기준안 cards injected by JS -->
   </div>
 
   <h2 class="group-label">
-    참고 아카이브 — 방향 확정 전 탐색 시안
+    참고 아카이브 — 이전 기준 (v7 계열)
+    <small>방향 확정 전 기준안이었던 시안입니다. 현재는 참고용으로만 보관합니다.</small>
+  </h2>
+
+  <div class="grid" id="legacy-grid">
+    <!-- 이전 기준(v7 계열) cards injected by JS -->
+  </div>
+
+  <h2 class="group-label">
+    탐색 아카이브 — 방향 확정 전 시안
     <small>아래 시안 1~6은 방향을 정하기 위해 탐색했던 초기 시안입니다.</small>
   </h2>
 
@@ -329,22 +352,37 @@
 
   var finals = [
     {
-      id: 'variant-07-final',
-      file: 'variant-07-final.html',
-      name: '★ 최종안 (시안 7)',
-      mood: '확정 방향 — 딥퍼플 프리미엄 + 골드 액센트 통합안, 히어로 견적 위젯 · 공항 픽업·샌딩 (송영 전문) 라인'
+      id: 'variant-08-map-hero',
+      file: 'variant-08-map-hero.html',
+      name: '★ 최종안 (v8.1)',
+      mood: '확정 방향 — 지도 히어로 · Top-5 노선 예시 · 무가격, 실시간 가격 계산 제거'
     },
     {
-      id: 'wizard',
-      file: 'wizard.html',
+      id: 'wizard-b',
+      file: 'wizard-b.html',
       name: '견적 위저드',
-      mood: '단계별 견적 요청 플로우 — 차량 · 일정 · 노선 선택, 실시간 예상가 산출'
+      mood: '6단계 무가격 접수 — 차량 · 일정 · 노선 선택 후 견적 문의 접수, 실시간 예상가 없음'
     },
     {
       id: 'admin',
       file: 'admin.html',
       name: '관리자 페이지',
       mood: '예약 · 견적 접수 관리 화면 — 접수 목록, 상태 관리, 상세 확인'
+    }
+  ];
+
+  var legacy = [
+    {
+      id: 'variant-07-final',
+      file: 'variant-07-final.html',
+      name: '이전 기준안 (시안 7)',
+      mood: '이전 확정 방향 — 딥퍼플 프리미엄 + 골드 액센트 통합안, 히어로 견적 위젯 · 공항 픽업·샌딩 (송영 전문) 라인'
+    },
+    {
+      id: 'wizard',
+      file: 'wizard.html',
+      name: '이전 견적 위저드',
+      mood: '단계별 견적 요청 플로우 — 차량 · 일정 · 노선 선택, 실시간 예상가 산출 (구 방향)'
     }
   ];
 
@@ -409,8 +447,9 @@
   var pins = loadPins();
 
   var finalGrid = document.getElementById('final-grid');
+  var legacyGrid = document.getElementById('legacy-grid');
   var grid = document.getElementById('mockup-grid');
-  var grids = [finalGrid, grid];
+  var grids = [finalGrid, legacyGrid, grid];
 
   function buildCard(variant, index, total, hostGrid) {
     var card = document.createElement('article');
@@ -497,6 +536,10 @@
 
   finals.forEach(function (variant, index) {
     finalGrid.appendChild(buildCard(variant, index, finals.length, finalGrid));
+  });
+
+  legacy.forEach(function (variant, index) {
+    legacyGrid.appendChild(buildCard(variant, index, legacy.length, legacyGrid));
   });
 
   variants.forEach(function (variant, index) {

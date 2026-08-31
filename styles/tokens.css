@@ -1,0 +1,41 @@
+/*
+ * 디자인 토큰 — mockups/variant-08-map-hero.html :root 블록에서 추출 (Phase A 태스크 요구사항 6)
+ * 기준 목업(v8.1) 원본 값 그대로. 픽셀/카피 변경 금지 — Global Constraints 참조.
+ * 실제 픽셀 이식은 Phase B.
+ */
+:root {
+  /* soul.md §7 팔레트 */
+  --deep: #3B1F5C;
+  --violet: #7C3AED;
+  --lav: #F3EFFA;
+  --dark: #1A1523;
+  --neutral: #FAF9FC;
+  --gold: #D4A843;
+
+  /* 동일 색상군 내 보조 톤 */
+  --violet-deep: #5B21B6;
+  --violet-soft: #EDE4FD;
+  --lav-line: #DFD3F2;
+  --lav-line-2: #EBE3F7;
+  --deep-70: rgba(59, 31, 92, .72);
+  --deep-55: rgba(59, 31, 92, .56);
+  --deep-40: rgba(59, 31, 92, .40);
+  --gold-deep: #A87F2C;
+  --white: #fff;
+  --kakao: #FEE500;
+  --kakao-fg: #3C1E1E;
+  --naver: #03C75A;
+
+  /* 8px 배수 스페이싱 */
+  --s1: 8px; --s2: 16px; --s3: 24px; --s4: 32px; --s5: 40px;
+  --s6: 48px; --s7: 64px; --s8: 80px; --s9: 96px;
+
+  /* 라운드 최소화 — 8px 이하 (보수적 톤) */
+  --r: 8px; --r-s: 6px; --r-xs: 4px;
+
+  --maxw: 1280px;
+  --ease: cubic-bezier(.25, .7, .35, 1);
+  --t: .22s var(--ease);
+  --sh-1: 0 1px 2px rgba(59, 31, 92, .05), 0 6px 18px rgba(59, 31, 92, .07);
+  --sh-2: 0 2px 6px rgba(59, 31, 92, .08), 0 14px 34px rgba(59, 31, 92, .12);
+}
