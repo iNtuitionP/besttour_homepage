@@ -47,6 +47,13 @@
   .bar button{border:none;background:var(--deep2);color:#fff;border-radius:7px;padding:8px 15px;
     font-size:13px;cursor:pointer;font-weight:700;font-family:inherit}
   .bar button:hover{background:var(--violet)}
+  .bar button.ghost{background:transparent;color:var(--deep2);border:1.5px solid var(--line)}
+  .bar button.ghost:hover{background:var(--lav);border-color:var(--vio-soft)}
+  .save-note{margin:0 0 20px;font-size:12.5px;color:var(--sub);line-height:1.5}
+  .save-note b{color:var(--deep2)}
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--deep2);
+    color:#fff;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:600;z-index:99;
+    box-shadow:0 6px 20px rgba(46,24,72,.28);max-width:90vw;text-align:center}
   .legend{display:flex;gap:10px 16px;margin:0 0 28px;font-size:12.5px;color:var(--sub);
     align-items:center;flex-wrap:wrap}
   .pill{font-size:11px;font-weight:800;border-radius:99px;padding:3px 10px;letter-spacing:.3px;white-space:nowrap}
@@ -146,8 +153,12 @@
     <span class="must-count" id="must-label">오픈 필수 0 / 6</span>
     <b id="prog-label">0 / 0</b>
     <div class="track"><div class="fill" id="prog-fill"></div></div>
-    <button onclick="window.print()">🖨 인쇄</button>
+    <button id="btn-save" title="채운 내용을 파일로 내려받습니다">💾 답변 저장</button>
+    <button id="btn-load" class="ghost" title="저장해둔 답변 파일을 다시 불러옵니다">📂 불러오기</button>
+    <button onclick="window.print()" class="ghost">🖨 인쇄</button>
+    <input type="file" id="file-input" accept=".txt,.json" hidden>
   </div>
+  <p class="save-note">입력하신 내용은 이 브라우저에 자동 저장됩니다. <b>다른 컴퓨터에서 이어서 하시거나 담당자에게 보내시려면 [답변 저장]</b>을 눌러 파일로 받으세요.</p>
 
   <div class="legend">
     <span class="pill must">오픈 필수</span><span>없으면 홈페이지를 열 수 없습니다</span>
@@ -622,6 +633,110 @@
   }
 
   progress();
+
+  /* ---------- 답변 저장 / 불러오기 ---------- */
+  var MARK='--- 데이터 (이 아래는 고치지 마세요) ---';
+
+  function toast(msg){
+    var d=document.createElement('div');
+    d.className='toast'; d.textContent=msg;
+    document.body.appendChild(d);
+    setTimeout(function(){ d.remove(); },3200);
+  }
+
+  function answerOf(el){
+    if(el.type==='checkbox') return el.checked?'예':'';
+    if(el.type==='radio'){
+      if(!el.checked) return '';
+      var lb=el.closest('label');
+      var b=lb&&lb.querySelector('.t b');
+      return (b?b.textContent:(lb?lb.textContent:'선택')).replace(/\s+/g,' ').trim();
+    }
+    return String(el.value||'').trim();
+  }
+
+  function buildText(){
+    var out=[];
+    out.push('베스트투어 홈페이지 — 사장님 확인 시트 답변');
+    var d=document.querySelector('[data-k="meta-date"]'), w=document.querySelector('[data-k="meta-who"]');
+    if(d&&d.value) out.push('작성일: '+d.value);
+    if(w&&w.value) out.push('참석: '+w.value);
+    out.push('진행: '+document.getElementById('must-label').textContent+
+             ' / 전체 '+document.getElementById('prog-label').textContent);
+    out.push('');
+
+    [].forEach.call(document.querySelectorAll('section'),function(sec){
+      var h=sec.querySelector('.sec-head h2');
+      var letter=sec.querySelector('.sec-head .letter');
+      var rows=[];
+      [].forEach.call(sec.querySelectorAll('.item'),function(it){
+        var no=it.querySelector('.no'), q=it.querySelector('h3');
+        var vals=[];
+        [].forEach.call(it.querySelectorAll('[data-k]'),function(el){
+          var a=answerOf(el);
+          if(a) vals.push(a);
+        });
+        rows.push('  '+(no?no.textContent:'-')+' '+(q?q.textContent.trim():'')+
+                  '\n      → '+(vals.length?vals.join(' / '):'(미기입)'));
+      });
+      if(rows.length){
+        out.push('['+(letter?letter.textContent.trim():'')+'] '+(h?h.textContent.trim():''));
+        out.push(rows.join('\n'));
+        out.push('');
+      }
+    });
+
+    var data={};
+    [].forEach.call(fields,function(el){
+      data[el.dataset.k]=(el.type==='checkbox'||el.type==='radio')?el.checked:el.value;
+    });
+    out.push(MARK);
+    out.push(JSON.stringify(data));
+    return out.join('\n');
+  }
+
+  document.getElementById('btn-save').addEventListener('click',function(){
+    try{
+      var blob=new Blob([buildText()],{type:'text/plain;charset=utf-8'});
+      var url=URL.createObjectURL(blob);
+      var a=document.createElement('a');
+      var dt=document.querySelector('[data-k="meta-date"]');
+      a.href=url;
+      a.download='베스트투어_확인시트_답변'+((dt&&dt.value)?('_'+dt.value.replace(/[^0-9]/g,'')):'')+'.txt';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); },1000);
+      toast('답변 파일을 저장했습니다. 담당자에게 보내주세요.');
+    }catch(e){ toast('저장에 실패했습니다: '+e.message); }
+  });
+
+  var fileInput=document.getElementById('file-input');
+  document.getElementById('btn-load').addEventListener('click',function(){ fileInput.click(); });
+
+  fileInput.addEventListener('change',function(){
+    var f=fileInput.files&&fileInput.files[0];
+    if(!f) return;
+    var rd=new FileReader();
+    rd.onload=function(){
+      try{
+        var txt=String(rd.result||'');
+        var i=txt.indexOf(MARK);
+        var json=(i>=0)?txt.slice(i+MARK.length):txt;
+        var data=JSON.parse(json.trim());
+        var n=0;
+        fields.forEach(function(el){
+          var k=el.dataset.k;
+          if(!(k in data)) return;
+          if(el.type==='checkbox'||el.type==='radio') el.checked=!!data[k];
+          else el.value=data[k];
+          n++;
+        });
+        onChange();
+        toast('답변 '+n+'개를 불러왔습니다.');
+      }catch(e){ toast('불러오기 실패 — 저장했던 답변 파일이 맞는지 확인해 주세요.'); }
+      fileInput.value='';
+    };
+    rd.readAsText(f,'utf-8');
+  });
 })();
 </script>
 </body>
