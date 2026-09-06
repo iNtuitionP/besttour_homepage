@@ -662,6 +662,20 @@ ul,ol{ padding:0; list-style:none; }
 .ftr__co .row{ display:flex; flex-wrap:wrap; gap:2px 14px; }
 .ftr__legal{ margin-top:var(--s2); font-size:12px; color:var(--deep-40); }
 
+/* 사업자 정보 병기 — 운영 주체(베스트투어) / 관계사(베스트모빌리티) */
+.ftr__tag{
+  display:inline-flex; align-items:center; height:19px; padding:0 8px;
+  border-radius:var(--r-xs); font-size:11px; font-weight:700; letter-spacing:.02em;
+  background:var(--violet-soft); color:var(--violet-deep);
+}
+.ftr__tag--rel{ background:transparent; color:var(--deep-40); border:1px solid var(--lav-line); font-weight:600; }
+.ftr__co .row--rel{
+  margin-top:10px; padding-top:10px; border-top:1px dashed var(--lav-line);
+  color:var(--deep-40);
+}
+.ftr__co .row--rel b{ color:var(--deep-55); }
+.ftr__note{ margin-top:10px; font-size:12.5px; color:var(--deep-55); }
+
 /* ============================================================
    플로팅 문의 3종
    ============================================================ */
@@ -1541,12 +1555,14 @@ ul,ol{ padding:0; list-style:none; }
 
     <div class="ftr__co">
       <div class="row">
+        <span class="ftr__tag">운영사</span>
         <span><b>합자회사 베스트투어</b></span>
         <span>대표 <b>이승묵</b></span>
         <span>사업자등록번호 130-86-77328</span>
         <span>통신판매업신고 제 2020-고양일산동-1211호</span>
       </div>
       <div class="row">
+        <!-- 확인필요: 사업자등록증(2021-12-14 발급)에는 '동국로 107(식사동)'. 기존 홈페이지 표기는 '동국로 99-19' -->
         <span>본사 경기도 고양시 일산동구 동국로 99-19</span>
         <span>지사 서울시 마포구 월드컵북로 23길 18</span>
         <span>대표전화 1566-6188</span>
@@ -1555,6 +1571,20 @@ ul,ol{ padding:0; list-style:none; }
         <span>bestour2013@naver.com</span>
         <span>KB국민은행 690101-00-050894</span>
       </div>
+      <div class="row">
+        <span>개인정보 보호책임자 <b>조선영</b></span>
+        <span>010-2047-8585</span>
+      </div>
+
+      <div class="row row--rel">
+        <span class="ftr__tag ftr__tag--rel">관계사</span>
+        <span><b>(주)베스트모빌리티</b></span>
+        <span>대표 <b>이승묵</b></span>
+        <span>사업자등록번호 342-88-03855</span>
+        <span>경기도 용인시 기흥구 용구대로 2439, 4층 2호 201호(마북동)</span>
+      </div>
+
+      <p class="ftr__note">계약 · 결제 · 개인정보 처리의 주체는 <b>합자회사 베스트투어</b>입니다.</p>
       <p class="ftr__legal">© 2026 합자회사 베스트투어. All rights reserved. — 본 페이지는 클라이언트 컨펌용 UIUX 시안(시안 8 지도 히어로)입니다.</p>
     </div>
   </div>

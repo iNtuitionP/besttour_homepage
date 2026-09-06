@@ -50,3 +50,8 @@ next-env.d.ts
 
 # Supabase CLI 로컬 상태
 supabase/.temp/
+
+# 클라이언트 기밀 — 이 저장소는 public 이므로 절대 커밋하지 않는다
+# (사업자등록증 스캔, 사장님이 작성한 확인 시트 답변, 관리자 계정 정보 등)
+docs/private/
+*.stackdump
