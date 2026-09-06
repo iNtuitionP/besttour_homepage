@@ -1,3 +1,6 @@
+> ⚠️ **이 플랜은 2026-09-06 자로 `docs/superpowers/plans/2026-09-06-bestour-implementation-v4.md` 로 대체되었다.**
+> 충돌하는 서술은 v4 가 우선한다. 이 문서는 배경 참고용으로만 남긴다.
+
 # 베스트투어 실구현 마스터 플랜 (v3 — 2026-08-31 무가격+지도 방향 승격 반영)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

@@ -42,7 +42,8 @@ bash scripts/check-temp-values.sh  # 임시값([TEMP] 마커) 전수 조회 — 
 ## 5. 문서 지도
 
 - **스펙 §12 최우선**: `docs/superpowers/specs/2026-08-07-bestour-redesign-uiux-design.md` (§10·§11은 §12와 충돌하지 않는 범위에서만 유효)
-- **플랜 v3.1**: `docs/superpowers/plans/2026-08-15-bestour-implementation-master.md` — Global Constraints·실행 하네스·Phase 분해·계약
+- **플랜 v4 (최우선)**: `docs/superpowers/plans/2026-09-06-bestour-implementation-v4.md` — ADR 10건·Phase P0~P7·계약·오픈 게이트. v3.1을 대체한다.
+- 구 플랜 v3.1: `docs/superpowers/plans/2026-08-15-bestour-implementation-master.md` (참고용, v4와 충돌 시 v4 우선)
 - **디자인/카피 원본**: `mockups/soul.md` (§10.2 BM 비노출, §11 지도+무가격 확정 기준)
 - **SDD 레저**(태스크 진행 기록): `.superpowers/sdd/2026-08-15-bestour-implementation-master/progress.md`
 
