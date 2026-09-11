@@ -17,6 +17,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
+import { OVERSEAS_TRANSFERS } from "@/lib/legal/disclosures";
 
 import * as ledger from "@/lib/legal/disclosures";
 import {
@@ -333,5 +334,85 @@ describe("9. 게이트와 원장이 실제로 맞물린다", { timeout: GATE_TIM
     expect(r.out, r.out).toContain(`대상 = ${LEDGER_REL}`);
     expect(r.out, r.out).toContain("OK");
     expect(r.status, r.out).toBe(0);
+  });
+});
+
+// =============================================================================
+// 국외이전 필수 항목 완결성 (2026-09-11 독립 리뷰 F1·F2 재발 방지)
+//
+// 왜 이 테스트가 필요한가: 화면(LegalTable)은 빈 값 행을 숨긴다. 그 자체는 옳다 —
+// 열 단위로 지우면 수탁자가 목록에서 사라져 PIPA §26② 공개 의무를 깬다. 그런데 그 결과
+// **법정 필수 항목이 빈 채로 숨겨져도 아무도 모른다.** 실제로 Supabase 의 country 가 "" 인
+// 상태로 게이트 4종·테스트 515건을 전부 통과했고, "빈 <td> 0" 단언은 green 이었다.
+//
+// 이 사이트는 별도 동의가 아니라 §28조의8①3호가목(계약 이행 위탁 + 처리방침 공개)을 근거로
+// 국외이전을 한다. 그 근거는 제2항 **각 호를 전부** 공개해야 성립한다. 하나라도 비면 근거가 없다.
+// =============================================================================
+describe("OVERSEAS_TRANSFERS — PIPA §28조의8② 각 호 완결성", () => {
+  /** 제2항 각 호 → 원장 필드. 하나라도 비면 적법 근거가 사라진다. */
+  const STATUTORY: ReadonlyArray<{ ho: string; fields: readonly string[] }> = [
+    { ho: "1호 이전되는 개인정보 항목", fields: ["items"] },
+    { ho: "2호 이전되는 국가·시기·방법", fields: ["country", "timingMethod"] },
+    { ho: "3호 이전받는 자의 명칭·연락처", fields: ["recipient", "contact"] },
+    { ho: "4호 이용목적·보유이용기간", fields: ["purpose", "retention"] },
+    { ho: "5호 거부 방법·절차·효과", fields: ["refusal"] },
+  ];
+
+  /**
+   * 아직 채울 수 없는 칸. **오픈 전 반드시 0 이 되어야 한다**(플랜 §8 오픈 게이트).
+   * 여기 없는 공란은 실패한다. 여기 있는 칸이 채워져도 실패한다 — 목록이 줄어들도록 강제하는 래칫이다.
+   */
+  const PENDING: ReadonlyArray<{ recipient: string; field: string; why: string }> = [
+    { recipient: "Upstash Inc.", field: "contact", why: "계정 미발급(P0-1). 개인정보 연락처를 지어내지 않는다" },
+    { recipient: "Upstash Inc.", field: "country", why: "계정 미발급(P0-1). 리전이 정해지지 않았다" },
+  ];
+
+  const allFields = STATUTORY.flatMap((s) => s.fields);
+  const pendingKey = (r: string, f: string) => `${r}|${f}`;
+  const pendingSet = new Set(PENDING.map((p) => pendingKey(p.recipient, p.field)));
+
+  test("모든 레코드가 5개 호에 해당하는 필드를 전부 갖는다(키 존재)", () => {
+    for (const t of OVERSEAS_TRANSFERS) {
+      for (const f of allFields) {
+        expect(Object.keys(t), `${t.recipient} 에 ${f} 키가 없다`).toContain(f);
+      }
+    }
+  });
+
+  test("PENDING 에 없는 공란이 하나도 없다", () => {
+    const blanks: string[] = [];
+    for (const t of OVERSEAS_TRANSFERS) {
+      for (const f of allFields) {
+        const v = (t as unknown as Record<string, string>)[f];
+        if (!v || v.trim() === "") {
+          if (!pendingSet.has(pendingKey(t.recipient, f))) blanks.push(`${t.recipient}.${f}`);
+        }
+      }
+    }
+    expect(
+      blanks,
+      "국외이전 필수 항목이 비었다 — 화면은 이 행을 숨기므로 눈으로는 안 보인다.\n" +
+        "값을 채우거나, 아직 못 채우면 PENDING 에 사유와 함께 등록하고 오픈 게이트로 올려라:\n" +
+        blanks.join("\n"),
+    ).toEqual([]);
+  });
+
+  test("PENDING 항목이 채워졌으면 목록에서 빼라(래칫)", () => {
+    const stale: string[] = [];
+    for (const p of PENDING) {
+      const rec = OVERSEAS_TRANSFERS.find((t) => t.recipient === p.recipient);
+      if (!rec) { stale.push(`${p.recipient} 레코드가 없다 — PENDING 에서 제거하라`); continue; }
+      const v = (rec as unknown as Record<string, string>)[p.field];
+      if (v && v.trim() !== "") stale.push(`${p.recipient}.${p.field} 이 채워졌다 — PENDING 에서 제거하라`);
+    }
+    expect(stale).toEqual([]);
+  });
+
+  test("국내 처리자를 국외이전 목록에 넣지 않는다", () => {
+    const domestic = OVERSEAS_TRANSFERS.filter((t) => /대한민국|한국|Korea/i.test(t.country));
+    expect(
+      domestic.map((t) => t.recipient),
+      "국내 리전 처리자는 국외이전이 아니다. PROCESSORS 에만 둬라(2026-09-11 Supabase 사례)",
+    ).toEqual([]);
   });
 });

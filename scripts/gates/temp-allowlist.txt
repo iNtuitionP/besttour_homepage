@@ -60,20 +60,10 @@ lib/legal/disclosures.ts:\[TEMP\] PRIVACY_NOTICE\.retentionDays:
 # 해제 조건: solapi.com 하단 사업자정보의 상호를 확인해 교체(또는 확정)하고 마커와 이 항목을 지운다.
 lib/legal/disclosures.ts:\[TEMP\] PROCESSORS\.Solapi\.name:
 
-# [등록 2026-09-11 · P1-1] Supabase 처리 위치(리전) — 값 "".
-# 사유: 프로젝트 리전을 아직 확인하지 않았다. 국가명을 지어내지 않는다.
-# 해제 조건: Supabase 대시보드에서 프로젝트 리전을 확인해 국가명을 넣고 마커와 이 항목을 지운다.
-lib/legal/disclosures.ts:\[TEMP\] PROCESSORS\.Supabase\.location:
-
 # [등록 2026-09-11 · P1-1] Upstash 처리 위치(리전) — 값 "".
 # 사유: Redis 리전을 아직 확인하지 않았다.
 # 해제 조건: Upstash 콘솔에서 리전을 확인해 국가명을 넣고 마커와 이 항목을 지운다.
 lib/legal/disclosures.ts:\[TEMP\] PROCESSORS\.Upstash\.location:
-
-# [등록 2026-09-11 · P1-1] Supabase 국외 이전 국가 — 값 "".
-# 사유: PROCESSORS.Supabase.location 과 같은 미확인(프로젝트 리전).
-# 해제 조건: 위 항목과 함께 해소한다.
-lib/legal/disclosures.ts:\[TEMP\] OVERSEAS_TRANSFERS\.Supabase\.country:
 
 # [등록 2026-09-11 · P1-1] Upstash 국외 이전 연락처 — 값 "".
 # 사유: 개인정보 담당 연락처(이메일)를 확인하지 못했다. 브리프 지시대로 지어내지 않는다.

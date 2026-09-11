@@ -105,13 +105,18 @@ export const PRIVACY_NOTICE = {
 export const PROCESSORS = [
   { name: "주식회사 누리고(Solapi)", task: "문자·알림톡 발송", location: "대한민국" }, // [TEMP] PROCESSORS.Solapi.name: 법인명 — solapi.com 사업자정보에서 확인 후 교체
   { name: "Vercel Inc.", task: "웹 호스팅·서버 운영", location: "미국" },
-  { name: "Supabase Inc.", task: "데이터베이스·인증·파일 저장", location: "" }, // [TEMP] PROCESSORS.Supabase.location: 프로젝트 리전 확인 전
+  // 리전 실측: supabase/.temp/pooler-url = aws-0-ap-northeast-2 → 서울. 국내 저장이므로 국외이전 목록에 두지 않는다.
+  { name: "Supabase Inc.", task: "데이터베이스·인증·파일 저장", location: "대한민국(서울 리전)" },
   { name: "Upstash Inc.", task: "접수 폭주 방지(요청 제한)", location: "" }, // [TEMP] PROCESSORS.Upstash.location: 리전 확인 전
   { name: "Cloudflare Inc.", task: "봇 차단(Turnstile)·DNS", location: "미국" },
 ] as const;
 export const PROCESSORS_SOURCE = "플랜 ADR-10 / 결정 메모 1-C" as const;
 
-// ── 국외 이전 (PIPA §28조의8② 5항목 + 시행령 §31① "이전의 근거") ────────
+// ── 국외 이전 (PIPA §28조의8② **5개 호 전부** + 시행령 §31① "이전의 근거") ────────
+// 이 사이트는 별도 동의(§28조의8①1호)가 아니라 **계약 이행 위탁 + 처리방침 공개**(§28조의8①3호가목)를
+// 근거로 국외이전을 한다. 그 근거는 제2항 각 호를 **전부** 공개해야만 성립하므로, 아래 5개 필드 중
+// 하나라도 비면 적법 근거가 사라진다 — tests/legal.test.ts 가 공란을 실패로 잡는다.
+//   1호 items · 2호 country+timingMethod · 3호 recipient+contact · 4호 purpose+retention · 5호 refusal
 export const OVERSEAS_TRANSFERS = [
   {
     recipient: "Vercel Inc.",
@@ -122,16 +127,8 @@ export const OVERSEAS_TRANSFERS = [
     purpose: "웹 호스팅",
     retention: "위탁 계약 종료 시까지",
     legalBasis: "정보주체와의 계약 이행을 위한 처리위탁",
-  },
-  {
-    recipient: "Supabase Inc.",
-    contact: "privacy@supabase.io",
-    country: "", // [TEMP] OVERSEAS_TRANSFERS.Supabase.country: 프로젝트 리전 확인 전
-    timingMethod: "서비스 이용 시 네트워크를 통한 상시 전송",
-    items: "이름·휴대폰 번호·운행 정보",
-    purpose: "데이터 저장·인증",
-    retention: "위탁 계약 종료 시까지",
-    legalBasis: "정보주체와의 계약 이행을 위한 처리위탁",
+    refusal:
+      "국외 이전을 거부하시려면 견적 신청을 하지 않으시면 됩니다. 본 서비스는 해외에 서버를 둔 클라우드 인프라를 이용하므로, 이전을 거부하시는 경우 온라인 견적 신청·예약 접수 이용이 제한됩니다. 전화(1566-6188)로는 이전 없이 상담하실 수 있습니다.",
   },
   {
     recipient: "Upstash Inc.",
@@ -142,6 +139,8 @@ export const OVERSEAS_TRANSFERS = [
     purpose: "요청 제한",
     retention: "위탁 계약 종료 시까지",
     legalBasis: "정보주체와의 계약 이행을 위한 처리위탁",
+    refusal:
+      "국외 이전을 거부하시려면 견적 신청을 하지 않으시면 됩니다. 본 서비스는 해외에 서버를 둔 클라우드 인프라를 이용하므로, 이전을 거부하시는 경우 온라인 견적 신청·예약 접수 이용이 제한됩니다. 전화(1566-6188)로는 이전 없이 상담하실 수 있습니다.",
   },
   {
     recipient: "Cloudflare Inc.",
@@ -152,6 +151,8 @@ export const OVERSEAS_TRANSFERS = [
     purpose: "봇 차단",
     retention: "위탁 계약 종료 시까지",
     legalBasis: "정보주체와의 계약 이행을 위한 처리위탁",
+    refusal:
+      "국외 이전을 거부하시려면 견적 신청을 하지 않으시면 됩니다. 본 서비스는 해외에 서버를 둔 클라우드 인프라를 이용하므로, 이전을 거부하시는 경우 온라인 견적 신청·예약 접수 이용이 제한됩니다. 전화(1566-6188)로는 이전 없이 상담하실 수 있습니다.",
   },
 ] as const;
 export const OVERSEAS_TRANSFERS_SOURCE = "결정 메모 1-C / PIPA §28조의8" as const;
@@ -210,6 +211,7 @@ export const LEGAL_LABELS = {
     purpose: "이용 목적",
     retention: "보유·이용 기간",
     legalBasis: "이전의 근거",
+    refusal: "이전 거부 방법·절차·효과",
   },
   cancellation: { when: "취소 시점", label: "환불" },
   officer: { name: "성명", phone: "연락처" },
