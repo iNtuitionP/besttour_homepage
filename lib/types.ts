@@ -6,7 +6,7 @@
  * canonical code(enum)로만 받는다 — 번역 문자열은 허용하지 않는다.
  */
 import { z } from "zod";
-import { PURPOSES, REGIONS } from "./codes";
+import { PURPOSES, REGIONS, type PlaceKind } from "./codes";
 
 const PHONE_KR_PATTERN = /^01[016789]-?\d{3,4}-?\d{4}$/;
 const PHONE_INTL_PATTERN = /^\+[1-9]\d{6,14}$/;
@@ -53,7 +53,80 @@ export interface ShowcaseRoute {
   destinationCode: string;
   priceFrom: number | null;
   highlight: boolean;
+  /** 0001: `sort int` — NOT NULL 이 아니다. 정렬은 DB 가 하고(null 은 뒤) 여기서는 값만 나른다. */
+  sort: number | null;
+}
+
+// =============================================================================
+// 읽기 쿼리 계층(lib/queries/*) 반환 타입 — DB 행을 camelCase 로 옮긴 뷰. 컬럼을 버리지 않는다.
+// =============================================================================
+
+/**
+ * places 행(0002). lib/codes.ts 의 `Place`(TS 카탈로그 상수 `PLACES` 용)와 이름·모양이 비슷하지만
+ * 이쪽은 DB 에서 읽은 행이다 — 지도 좌표(svg_x/svg_y)·active 가 더 있고, code/regionCode 는
+ * DB 가 제약 없는 text 라 리터럴 유니온이 아니다. kind 만 CHECK 제약이 있어 유니온을 유지한다.
+ */
+export interface Place {
+  code: string;
+  nameKo: string;
+  nameEn: string;
+  kind: PlaceKind;
+  /** 시도 단위 집계용 — lib/codes.ts REGIONS 코드(DB 제약 없음). */
+  regionCode: string;
+  lat: number;
+  lng: number;
+  /** mockups/assets/kr-map.svg viewBox 0 0 524 560 좌표. */
+  svgX: number;
+  svgY: number;
   sort: number;
+  active: boolean;
+}
+
+/** showcase 조인용 place 부분집합 — 지도 핀·라벨을 그리는 데 필요한 것만. */
+export type PlacePin = Pick<Place, "code" | "nameKo" | "nameEn" | "kind" | "svgX" | "svgY">;
+
+/** showcase_routes ⋈ places. 컴포넌트가 코드→이름 매핑을 다시 하지 않도록 양 끝 place 를 붙인다. */
+export interface ShowcaseRouteView extends ShowcaseRoute {
+  active: boolean;
+  origin: PlacePin;
+  destination: PlacePin;
+}
+
+/** vehicles 행(0001). 가격 컬럼 없음. */
+export interface Vehicle {
+  id: number;
+  slug: string;
+  nameKo: string;
+  nameEn: string;
+  capacity: number;
+  sort: number;
+  active: boolean;
+}
+
+/** notices 행(0001). */
+export interface Notice {
+  id: number;
+  title: string;
+  body: string;
+  category: string;
+  /** date 컬럼 → "YYYY-MM-DD". */
+  publishedAt: string;
+  active: boolean;
+}
+
+/** popups 행(0001). 노출 기간은 KST 달력 날짜로 해석한다(lib/queries/popups.ts). */
+export interface Popup {
+  id: number;
+  title: string;
+  body: string;
+  imagePath: string | null;
+  /** date 컬럼 → "YYYY-MM-DD". */
+  startsAt: string;
+  /** date 컬럼 → "YYYY-MM-DD" (포함). */
+  endsAt: string;
+  active: boolean;
+  /** timestamptz → ISO 8601 문자열. */
+  createdAt: string;
 }
 
 /** 방문자에게 공개되는 예약 상태 조회용 타입. 가격 필드 없음. */

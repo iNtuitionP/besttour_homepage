@@ -144,7 +144,7 @@ SDD 루프(브리프→구현→리뷰→픽스)를 감안한 추정이다. 사�
 | P1-1 | **법정 원장 모듈** — 사업자정보, verbatim 2문구, 견적 산정 기준, 대금 지급, 취소·환불 4단계, 개인정보 4대 고지, 위탁사 목록, 국외이전 5항목 | `lib/legal/disclosures.ts` | P0-5 | 테스트 선작성 → **함수 export 0개** 단언, verbatim 2문구 **바이트 일치**, 금지어(`면허`) 0건 | 컨트롤러가 문안을 확정해 브리프에 전문으로 싣는다 — 서브에이전트에게 맡기면 창작한다 |
 | P1-2 | **0002 — 도시 노선** `places` 테이블(코드·한글명·영문명·lat/lng·svg_x/svg_y) + `showcase_routes`를 FK로 전환 + 16행 시드 | `supabase/migrations/0002_places.sql` `lib/codes.ts` | P1-1 | 테스트 선작성 → **스펙 §13.2의 16쌍·가격·highlight를 픽스처로 박고 전량 비교**(행 수만 세지 않는다), 기존 5행 마이그레이션 경로 검증 | **원격은 라이브 DB다.** CHECK→FK 교체는 롤백 스크립트를 함께 만든다 |
 | P1-3 | **0003 — 동의 기록** `privacy_consent_at`(NOT NULL), `privacy_policy_version`, `marketing_consent_at`, `retention_until` | `supabase/migrations/0003_consent.sql` `lib/types.ts` | P1-2 | 테스트 선작성 → **동의 없는 insert가 DB 레벨에서 실패**함을 실증(코드 경로 차단이 아니라 제약으로) | nullable로 두면 검증 자체가 불가능해진다 |
-| P1-4 | **0004 — 통지 아웃박스** status에 `pending` 추가, `attempts`·`last_error`, 부분 유니크 인덱스 | `supabase/migrations/0004_outbox.sql` | P1-3 | 테스트 선작성 → 중복 sent 차단 + 실패건 재발송 허용을 동시에 실증 | 현 CHECK 2값으로는 아웃박스가 불가능 |
+| P1-4 | **0004 — 통지 아웃박스** status에 `pending` 추가, `attempts`·`last_error`, 부분 유니크 인덱스 | `supabase/migrations/0005_outbox.sql` | P1-3 | 테스트 선작성 → 중복 sent 차단 + 실패건 재발송 허용을 동시에 실증 | 현 CHECK 2값으로는 아웃박스가 불가능 |
 | P1-5 | **파기 배치** — `retention_until` 도래 행 삭제. **dry-run 기본값**, 확정건은 전자상거래법 보존기간으로 별도 계산 | `lib/retention/purge.ts` `app/api/cron/purge/route.ts` | P1-3 | 테스트 선작성 → **고정 시각 주입**으로 KST/UTC 경계, 확정 5년/미확정 1년 분기, 삭제 상한 검증 | 게시한 보유기간을 이행할 수단이 없으면 그 고지가 오픈 첫날부터 허위 표시 |
 | P1-6 | **법정 페이지 3종** `/privacy`(필수 7항목: 처리목적·항목·보유기간·위탁·국외이전·권리행사 방법·파기 절차·안전성 확보조치·자동수집장치·권익침해 구제·변경 고지, **접수현황 마스킹 공개 고지 포함**), `/terms`(계약 성립 시기·청약철회·면책·준거법·관할·분쟁조정), `/guide` | `app/[locale]/(legal)/**` | P1-1, P0-0 | 테스트 선작성 → 조문↔문구↔화면위치 **매핑표**로 검증, browse 실측, **컨트롤러 사람 리뷰 서명** | grep으로 "섹션 존재"만 보면 법적 충분성을 전혀 보증하지 않는다 |
 
@@ -206,7 +206,7 @@ SDD 루프(브리프→구현→리뷰→픽스)를 감안한 추정이다. 사�
 | ID | 태스크 | 파일 | 의존 | 검증 | 리스크 |
 |---|---|---|---|---|---|
 | P5-1 | **인증 게이트** — Supabase Auth 이메일(`bestm@bestour.co.kr`), `requireAdmin()`, middleware에서 admin 경로 **포함**으로 전환 | `middleware.ts` `lib/auth/requireAdmin.ts` | P0-0 | 테스트 선작성 → 비로그인 `/admin/*` 전 경로 302, 세션 만료 처리. **인간 액션 체크리스트**(계정 생성·SMTP·비밀번호 정책)를 브리프에 첨부 | 현재 middleware가 admin을 **제외**하고 있다 — 지금 상태로는 무인증 |
-| P5-2 | **`is_admin()` RLS** + 테이블별 admin 정책 + `createServiceClient()` 호출 0건 grep 게이트 | `supabase/migrations/0005_admin_rls.sql` `scripts/check-admin-no-service-role.sh` | P5-1 | 테스트 선작성 → 비관리자 세션의 쓰기가 **RLS에서** 거부됨을 실증(코드 경로가 아니라) | service role 위에 서면 RLS는 장식이 된다 |
+| P5-2 | **`is_admin()` RLS** + 테이블별 admin 정책 + `createServiceClient()` 호출 0건 grep 게이트 | `supabase/migrations/0006_admin_rls.sql` `scripts/check-admin-no-service-role.sh` | P5-1 | 테스트 선작성 → 비관리자 세션의 쓰기가 **RLS에서** 거부됨을 실증(코드 경로가 아니라) | service role 위에 서면 RLS는 장식이 된다 |
 | P5-3 | 예약 현황 탭 + 확정 처리 | `app/admin/reservations/**` `actions/admin/reservation.ts` | P5-2, P4-1 | 테스트 선작성 → 역방향 상태전이 거부, **동시 클릭 경합 테스트**, 감사 로그 기록, browse 실측 | 경합 미검증 시 이중 확정 |
 | P5-4 | 팝업 관리 | `app/admin/popups/**` `actions/admin/popup.ts` | P5-2 | 테스트 선작성 + browse 실측 + 실패 경로 | 액션 파일을 탭별로 분리 — 한 파일에 몰면 SDD 직렬 병합 충돌 |
 | P5-5 | 공지 관리 | `app/admin/notices/**` `actions/admin/notice.ts` | P5-2 | 상동 | 상동 |
@@ -221,7 +221,7 @@ SDD 루프(브리프→구현→리뷰→픽스)를 감안한 추정이다. 사�
 
 | ID | 태스크 | 파일 | 의존 | 검증 |
 |---|---|---|---|---|
-| P6-1 | 갤러리 아키텍처 확정(컨트롤러) → `0006_gallery_albums.sql`(앨범·width/height/bytes/original_path) | `supabase/migrations/0006_*.sql` | P1-2 | 테스트 선작성 |
+| P6-1 | 갤러리 아키텍처 확정(컨트롤러) → `0007_gallery_albums.sql`(앨범·width/height/bytes/original_path) | `supabase/migrations/0007_*.sql` | P1-2 | 테스트 선작성 |
 | P6-2 | 갤러리 업로드 — **브라우저 → signed URL 직업로드**, 서버는 변환만. HEIC 정책 확정 | `lib/storage/*.ts` `app/admin/gallery/**` | P6-1, P5-2 | 테스트 선작성 → 20MB 파일 경로 실증, browse 실측 |
 | P6-3 | **기존 메뉴 10개 전수 매핑** — "삭제 금지, 재배치만" 규칙의 실체. 아래 표대로 라우트 또는 외부 링크를 만든다 | `app/[locale]/(site)/**` `lib/legacy-menu-map.ts` | P2-3 | 테스트 선작성 → **매핑표 10건이 전부 200 또는 외부 URL**임을 단언, sitemap 대조, browse 실측 |
 | P6-3a | **예약확인** 페이지 — `public_code` + 휴대폰 뒷4자리로 본인 예약 상태 조회(마스킹 표시). 열거 방지 RL | `app/[locale]/(site)/reservation/check/**` `lib/queries/reservation-check.ts` | P3-2, P3-1 | 테스트 선작성 → 불일치 시 동일 응답(존재 여부 비노출), RL 429, browse 실측 + 실패 경로 | 기존 메뉴인데 계획에 없었다 |
@@ -285,9 +285,10 @@ SDD 루프(브리프→구현→리뷰→픽스)를 감안한 추정이다. 사�
 | `0001_init.sql` | **적용 완료**(원격 동기화). 수정 금지 |
 | `0002_places.sql` | 도시 카탈로그 + `showcase_routes` FK 전환 + 16행 시드 + 롤백 스크립트 |
 | `0003_consent.sql` | `privacy_consent_at`(NOT NULL) · `privacy_policy_version` · `marketing_consent_at` · `retention_until` |
-| `0004_outbox.sql` | `status`에 `pending` · `attempts` · `last_error` · 부분 유니크 인덱스 |
-| `0005_admin_rls.sql` | `is_admin()` + 테이블별 admin 정책 |
-| `0006_gallery_albums.sql` | 앨범 + `width`/`height`/`bytes`/`original_path` |
+| `0004_kst_dates.sql` | **(2026-09-11 추가, P2-1 발견)** 0001의 `current_date`(세션 TZ=UTC) → `(now() at time zone 'Asia/Seoul')::date`. 팝업 RLS가 KST 00:00~08:59에 당일 시작 팝업을 가리던 버그 + `notices.published_at` default 동일 원인 |
+| `0005_outbox.sql` | `status`에 `pending` · `attempts` · `last_error` · 부분 유니크 인덱스 |
+| `0006_admin_rls.sql` | `is_admin()` + 테이블별 admin 정책 |
+| `0007_gallery_albums.sql` | 앨범 + `width`/`height`/`bytes`/`original_path` |
 
 ---
 

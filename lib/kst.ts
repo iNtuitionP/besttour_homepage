@@ -90,3 +90,17 @@ export function nightsBetween(departLocal: string, returnLocal: string): number 
 
   return returnKstDayIndex - departKstDayIndex;
 }
+
+/**
+ * UTC 인스턴트를 KST 달력 날짜 문자열("YYYY-MM-DD")로 변환한다.
+ *
+ * 팝업 노출 기간처럼 "오늘"을 KST 벽시계로 판정할 때 쓴다. `new Date()` 를 그대로
+ * `toISOString().slice(0, 10)` 하면 KST 00:00~08:59 사이에는 전날 날짜가 나온다.
+ * 서버 프로세스의 TZ 설정과 무관하게 고정 +09:00 으로 계산한다(로컬 시간 getter 미사용).
+ * 유효하지 않은 Date 는 toISOString 이 RangeError 를 던진다.
+ */
+export function toKstDateString(instant: Date): string {
+  const shifted = new Date(instant.getTime() + KST_OFFSET_HOURS * 60 * 60 * 1000);
+  // toISOString 은 항상 UTC 기준 → 9시간 민 인스턴트의 UTC 날짜 = 원 인스턴트의 KST 날짜.
+  return shifted.toISOString().slice(0, 10);
+}
