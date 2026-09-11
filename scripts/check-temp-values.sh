@@ -7,7 +7,7 @@ set -uo pipefail
 cd "${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo .)}" || exit 0
 
 PATHS=""
-for p in app lib actions components tests supabase messages middleware.ts CLAUDE.md; do
+for p in app lib i18n styles actions components tests supabase messages middleware.ts CLAUDE.md; do
   [ -e "$p" ] && PATHS="$PATHS $p"
 done
 [ -z "$PATHS" ] && { echo "check-temp-values: 검사 대상 경로 없음"; exit 0; }

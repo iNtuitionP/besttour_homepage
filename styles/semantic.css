@@ -1,0 +1,84 @@
+/*
+ * 의미(semantic) 토큰 — 역할 이름으로 원시 토큰을 참조한다.
+ *
+ * ✅ 컴포넌트는 **이 파일의 토큰만** 쓴다. `--brand-700` 을 컴포넌트에서 직접 쓰지 말고
+ *    `--action-primary-bg` 를 쓴다. 브랜드 색이 바뀌면 고치는 곳은 여기 한 곳이다.
+ *
+ * 모든 선언은 `var(--원시토큰)` 형태여야 한다 — 리터럴 하드코딩은 tests/tokens.test.ts 가 막는다.
+ *
+ * 대비 규칙 (WCAG 2.x, tests/tokens.test.ts 에서 상대휘도 공식으로 실제 계산해 단언한다):
+ *   본문 텍스트 ≥ 4.5:1 · UI 요소(보더·포커스) ≥ 3:1 · 장식은 대비 요구 없음
+ *
+ * 🔴 --gray(#7B7A7A) 와 --gold(#C8A359) 는 어떤 텍스트 역할에도 배선하지 않는다.
+ *    각각 4.28:1 · 2.38:1 로 AA 미달이다. 보조 텍스트는 --gray-text(5.31:1) 를 쓴다.
+ */
+:root {
+  /* ── 배경 ────────────────────────────────────────────────────────── */
+  --bg-page: var(--brand-50);       /* 페이지 바탕 */
+  --bg-surface: var(--white);       /* 카드·패널·모달 */
+  --bg-subtle: var(--brand-100);    /* 강조 없는 구역 배경(섹션 밴드·비활성 칩) */
+  --bg-inverse: var(--brand-950);   /* 대면적 어두운 면(푸터·히어로 오버레이) */
+  --bg-inverse-raised: var(--brand-800); /* 어두운 면 위 한 단계 올라온 레이어 */
+
+  /* ── 텍스트 (밝은 면) ────────────────────────────────────────────── */
+  --text-primary: var(--brand-950);   /* 본문·제목            vs --bg-page 17.28:1 */
+  --text-secondary: var(--gray-text); /* 보조·메타·푸터       vs --bg-page  5.04:1 */
+  --text-muted: var(--gray-text);     /* 캡션·플레이스홀더    vs --bg-page  5.04:1
+                                         (--gray 로 낮추고 싶은 유혹을 막기 위해 별칭으로 고정) */
+  --text-link: var(--brand-700);      /* 링크                 vs --bg-page  9.35:1 */
+  --text-brand: var(--brand-700);     /* 브랜드 강조 텍스트   vs --bg-page  9.35:1 */
+
+  /* ── 텍스트 (어두운 면) ──────────────────────────────────────────── */
+  --text-on-inverse: var(--white);              /* vs --bg-inverse 18.20:1 */
+  --text-secondary-on-inverse: var(--brand-300); /* vs --bg-inverse  8.11:1 */
+
+  /* ── 보더 ────────────────────────────────────────────────────────── */
+  --border-subtle: var(--gray);          /* 기능적 경계(입력창·카드 테두리). ≥3:1 필요 → 4.06:1 */
+  --border-decorative: var(--brand-200); /* 장식 구분선·헤어라인. 정보를 담지 않으므로 대비 요구 없음 */
+  --border-strong: var(--brand-700);     /* 선택·활성 상태 테두리 */
+  --border-on-inverse: var(--brand-800); /* 어두운 면 위 구분선 */
+
+  /* ── 액션 (기본 버튼) ────────────────────────────────────────────── */
+  --action-primary-bg: var(--brand-700);       /* 흰 글자 위에서 9.85:1 */
+  --action-primary-fg: var(--white);
+  --action-primary-bg-hover: var(--brand-800);
+  --action-primary-bg-active: var(--brand-900);
+
+  /* ── 액션 (보조 버튼 — 밝은 면) ──────────────────────────────────── */
+  --action-secondary-bg: var(--white);
+  --action-secondary-fg: var(--brand-700);
+  --action-secondary-border: var(--brand-700);
+  --action-secondary-bg-hover: var(--brand-100);
+
+  /* ── 비활성 ──────────────────────────────────────────────────────── */
+  --action-disabled-bg: var(--brand-100);
+  --action-disabled-fg: var(--gray-text); /* 비활성이라도 읽혀야 한다 — --gray 를 쓰지 않는다 */
+  --action-disabled-border: var(--gray);
+
+  /* ── 아이콘 ──────────────────────────────────────────────────────── */
+  --icon-default: var(--gray);      /* 라벨이 따라붙는 장식 아이콘 (POINT 의 정당한 용도) */
+  --icon-brand: var(--brand-700);
+  --icon-on-inverse: var(--white);
+
+  /* ── 장식 액센트 (골드) ──────────────────────────────────────────── */
+  --accent-decorative: var(--gold);            /* 밝은 면 위 장식선·심볼. 텍스트 금지 */
+  --accent-decorative-strong: var(--gold-deep); /* 밝은 면에서 골드를 또렷이 써야 할 때 */
+  --accent-on-inverse: var(--gold);            /* 어두운 면 위 골드 강조 — 7.66:1 로 충분 */
+
+  /* ── 포커스 ──────────────────────────────────────────────────────── */
+  --focus-ring: var(--brand-700); /* vs --bg-page 9.35:1 (≥3:1 요구) */
+
+  /* ── 외부 채널 버튼 ──────────────────────────────────────────────── */
+  --channel-kakao-bg: var(--kakao);
+  --channel-kakao-fg: var(--kakao-fg);
+  --channel-naver-bg: var(--naver);
+  --channel-naver-fg: var(--white);
+
+  /* ── 오버레이·그림자 ─────────────────────────────────────────────── */
+  --overlay-strong: var(--brand-a72);
+  --overlay-medium: var(--brand-a56);
+  --overlay-soft: var(--brand-a40);
+  --overlay-faint: var(--brand-a12);
+  --shadow-1: var(--sh-1);
+  --shadow-2: var(--sh-2);
+}
