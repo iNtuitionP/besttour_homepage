@@ -89,7 +89,10 @@ export const PRIVACY_NOTICE = {
   purpose: "전세버스 견적 상담 및 예약 접수·확정",
   items: ["이름", "휴대폰 번호", "운행 희망 일시", "출발지·도착지·경유지", "탑승 인원"],
   itemsLine: "이름, 휴대폰 번호, 운행 희망 일시, 출발지·도착지·경유지, 탑승 인원",
-  retention: "접수일로부터 1년", // [TEMP] PRIVACY_NOTICE.retention: 확인시트 F3 미회신 — 1년 가정. 전자상거래법 보존 의무(계약 기록 5년)는 확정건에 별도 적용
+  // 이 문구는 lib/retention/purge.ts 의 실제 파기 동작과 일치해야 한다. 배치는 확정 이력이 있는 예약을
+  // created_at + CONFIRMED_KEEP_YEARS(5년) 까지 보관하므로, 그 예외가 문구에도 있어야 고지가 참이 된다.
+  retention:
+    "접수일로부터 1년. 다만 「전자상거래 등에서의 소비자보호에 관한 법률」에 따라 계약 또는 청약철회 등에 관한 기록과 대금결제 및 재화 등의 공급에 관한 기록은 5년간 보관합니다.", // [TEMP] PRIVACY_NOTICE.retention: 확인시트 F3 미회신 — "1년" 부분이 가정값. 법정 보존 5년 예외는 확정 사실(전자상거래법 §6③·시행령 §6①2·3호)
   retentionDays: 365, // [TEMP] PRIVACY_NOTICE.retentionDays: 위 retention 문안의 숫자값(같은 가정) — lib/reservations/consent.ts 가 retention_until 계산에 읽는다. 문안과 함께 바꾼다
   refusal: "동의를 거부하실 수 있으며, 거부 시 견적 상담과 예약 접수가 제한됩니다.",
   consentLabel: "위 내용을 확인했으며 개인정보 수집·이용에 동의합니다. (필수)",
@@ -182,3 +185,161 @@ export const LEGAL_LINKS = {
   ftcBizInfo: "https://www.ftc.go.kr/bizCommPop.do?wrkr_no=1308677328",
   source: "시행규칙 §7②",
 } as const;
+
+// ── 법정 페이지 메타 (P1-6) ───────────────────────────────────────────────
+export const LEGAL_PAGES = {
+  privacy: { title: "개인정보 처리방침", effectiveDate: "2026-09-11" }, // [TEMP] LEGAL_PAGES.privacy.effectiveDate: 오픈일로 교체
+  terms: { title: "이용약관", effectiveDate: "2026-09-11" }, // [TEMP] LEGAL_PAGES.terms.effectiveDate: 오픈일로 교체(위와 동일)
+  guide: { title: "이용안내" },
+  source: "플랜 P1-6",
+} as const;
+
+// ── 법정 페이지 보조 라벨 — 표 머리·연락처·조 번호 (페이지는 리터럴 대신 이것을 렌더) ──
+export const LEGAL_LABELS = {
+  effectiveDate: "시행일",
+  home: "홈으로",
+  legalNav: "법정 고지",
+  articleNo: { prefix: "제", suffix: "조" },
+  processor: { name: "수탁자", task: "위탁 업무", location: "처리 국가" },
+  overseas: {
+    recipient: "이전받는 자",
+    contact: "연락처",
+    country: "이전되는 국가",
+    timingMethod: "이전 일시·방법",
+    items: "이전 항목",
+    purpose: "이용 목적",
+    retention: "보유·이용 기간",
+    legalBasis: "이전의 근거",
+  },
+  cancellation: { when: "취소 시점", label: "환불" },
+  officer: { name: "성명", phone: "연락처" },
+  contact: { tel: "대표전화", mobile: "휴대전화", fax: "팩스", email: "이메일", address: "주소" },
+  source: "플랜 P1-6",
+} as const;
+
+// ── 이용약관 — 전자상거래법 §10①5호 필수 표시 (연결화면 허용, 생략 불가) ──
+export const TERMS = {
+  articles: [
+    {
+      no: 1,
+      title: "목적",
+      body: "이 약관은 합자회사 베스트투어(이하 \"회사\")가 운영하는 인터넷 사이트(bestour.co.kr)에서 제공하는 전세버스 견적 상담 및 예약 접수 서비스(이하 \"서비스\")의 이용 조건과 절차, 회사와 이용자의 권리·의무 및 책임 사항을 규정함을 목적으로 합니다.",
+    },
+    {
+      no: 2,
+      title: "정의",
+      body: "\"이용자\"란 사이트에 접속하여 이 약관에 따라 서비스를 이용하는 자를 말합니다. \"견적 신청\"이란 이용자가 운행 조건을 제출하여 회사에 견적 상담을 요청하는 행위를 말합니다. \"예약 확정\"이란 회사가 이용자와 상담을 거쳐 운행 조건과 대금에 합의하고 그 사실을 이용자에게 통지한 때를 말합니다.",
+    },
+    {
+      no: 3,
+      title: "약관의 효력 및 변경",
+      body: "이 약관은 사이트에 게시함으로써 효력이 발생합니다. 회사는 관련 법령을 위배하지 않는 범위에서 이 약관을 변경할 수 있으며, 변경 시 적용일자 및 변경 사유를 명시하여 적용일자 7일 전부터 사이트에 공지합니다. 이용자에게 불리한 변경은 30일 전부터 공지합니다.",
+    },
+    {
+      no: 4,
+      title: "서비스의 내용",
+      body: "회사는 이용자의 견적 신청을 접수하고, 상담을 거쳐 전세버스 운행 조건과 대금을 안내하며, 예약 확정 후 운행을 제공하거나 등록된 전세버스 운송사업자를 통하여 제공합니다. 사이트에 표시된 가격은 대표 노선의 예시이며 실제 견적은 상담 후 확정됩니다.",
+    },
+    {
+      no: 5,
+      title: "계약의 성립",
+      body: "견적 신청은 계약의 청약이 아닌 상담 요청이며, 회사가 상담을 거쳐 예약을 확정하고 이용자에게 통지한 때에 계약이 성립합니다. 회사는 예약 확정 전까지 차량 수급 등의 사유로 접수를 거절할 수 있으며 이 경우 이용자에게 그 사실을 통지합니다.",
+    },
+    {
+      no: 6,
+      title: "대금 및 계약금",
+      body: "사이트에서는 온라인 결제를 제공하지 않습니다. 예약 확정 시 계약금 10만원을 지급하며, 잔금의 금액·지급 방법·지급 시기는 예약 확정 시 회사가 안내합니다.", // [TEMP] TERMS.articles.six.body: 잔금 시기·지급수단 사장님 확정 후 교체 (PAYMENT.balanceTiming 과 함께)
+    },
+    {
+      no: 7,
+      title: "취소 및 환불",
+      body: "예약 확정 후 이용자의 사정으로 취소하는 경우 이용안내에 게시된 취소·환불 규정에 따릅니다. 회사의 사정으로 운행이 불가능한 경우 회사는 지급받은 계약금 전액을 환불하며, 이용자에게 발생한 통상의 손해를 배상합니다.",
+    },
+    {
+      no: 8,
+      title: "청약철회",
+      body: "전세버스 운행은 특정 일시에 제공되는 용역으로서 「전자상거래 등에서의 소비자보호에 관한 법률」 제17조 제2항에 따라 청약철회가 제한될 수 있으며, 그 경우 제7조의 취소·환불 규정이 적용됩니다. 회사는 이 사실을 견적 신청 화면과 예약 확정 통지에 고지합니다.",
+    },
+    {
+      no: 9,
+      title: "회사의 의무",
+      body: "회사는 관련 법령과 이 약관이 정하는 바에 따라 지속적이고 안정적으로 서비스를 제공하기 위하여 노력하며, 이용자의 개인정보를 개인정보 처리방침에 따라 보호합니다.",
+    },
+    {
+      no: 10,
+      title: "이용자의 의무",
+      body: "이용자는 견적 신청 시 정확한 정보를 제공하여야 하며, 타인의 정보를 도용하거나 허위 신청을 하여서는 안 됩니다. 허위 신청으로 회사에 손해가 발생한 경우 이용자는 그 손해를 배상할 책임이 있습니다.",
+    },
+    {
+      no: 11,
+      title: "책임의 제한",
+      body: "회사는 천재지변, 도로 통제, 불가항력 등 회사의 귀책사유 없는 사유로 서비스를 제공할 수 없는 경우 그에 대한 책임을 지지 않습니다. 회사는 이용자의 귀책사유로 인한 서비스 이용 장애에 대하여 책임을 지지 않습니다.",
+    },
+    {
+      no: 12,
+      title: "분쟁의 해결",
+      body: "회사와 이용자 간에 발생한 분쟁은 상호 협의하여 해결하며, 협의가 이루어지지 않는 경우 이용자는 한국소비자원 또는 전자거래분쟁조정위원회에 조정을 신청할 수 있습니다. 소송이 제기되는 경우 「민사소송법」에 따른 관할법원을 전속관할로 하며, 대한민국 법을 준거법으로 합니다.",
+    },
+  ],
+  source: "전자상거래법 §10①5호·§13②5호·§17 / 플랜 P1-6 / 컨트롤러 확정 2026-09-11",
+} as const;
+
+// ── 처리방침 필수 기재 (PIPA §30① + 시행령 §31) — 절 순서와 각 절의 출처 상수 ──
+//    from: 이미 원장에 있는 상수를 그대로 가리킨다(복제하지 않는다). body: 이 절에서만 쓰는 문안.
+export const PRIVACY_POLICY_SECTIONS = [
+  { key: "purpose", title: "개인정보의 처리 목적", from: PRIVACY_NOTICE.purpose },
+  { key: "items", title: "처리하는 개인정보의 항목", from: PRIVACY_NOTICE.items },
+  { key: "retention", title: "개인정보의 처리 및 보유 기간", from: PRIVACY_NOTICE.retention },
+  { key: "processors", title: "개인정보 처리업무의 위탁", from: PROCESSORS },
+  { key: "overseas", title: "개인정보의 국외 이전", from: OVERSEAS_TRANSFERS },
+  {
+    key: "rights",
+    title: "정보주체의 권리·의무 및 행사 방법",
+    body: "정보주체는 회사에 대하여 언제든지 개인정보 열람·정정·삭제·처리정지를 요구할 수 있습니다. 권리 행사는 개인정보 보호책임자에게 서면, 전화 또는 이메일로 하실 수 있으며 회사는 지체 없이 조치합니다.",
+  },
+  {
+    key: "destruction",
+    title: "개인정보의 파기 절차 및 방법",
+    body: "회사는 보유 기간이 경과하거나 처리 목적이 달성된 개인정보를 지체 없이 파기합니다. 전자적 파일은 복구할 수 없는 방법으로 영구 삭제하며, 종이 문서는 분쇄 또는 소각합니다.",
+  },
+  {
+    key: "safety",
+    title: "개인정보의 안전성 확보 조치",
+    body: "회사는 개인정보의 안전성 확보를 위하여 접근 권한 관리, 암호화 통신(HTTPS), 접속 기록 보관, 처리 시스템의 접근 통제 등의 조치를 취하고 있습니다.",
+  },
+  {
+    key: "cookies",
+    title: "자동 수집 장치의 설치·운영 및 거부",
+    body: "사이트는 팝업 \"오늘 하루 보지 않기\" 등 이용 편의를 위해 브라우저 저장소(localStorage)를 사용합니다. 이는 개인을 식별하지 않으며, 브라우저 설정에서 저장소를 삭제하거나 차단할 수 있습니다.",
+  },
+  { key: "publicFeed", title: "접수 현황 공개 안내", from: PRIVACY_NOTICE.publicFeedNotice },
+  { key: "officer", title: "개인정보 보호책임자", from: COMPANY.privacyOfficer },
+  {
+    key: "remedy",
+    title: "권익침해 구제 방법",
+    body: "정보주체는 개인정보 침해에 대한 신고나 상담을 개인정보분쟁조정위원회(1833-6972), 개인정보침해신고센터(118), 대검찰청(1301), 경찰청(182)에 문의하실 수 있습니다.",
+  },
+  {
+    key: "changes",
+    title: "처리방침의 변경",
+    body: "이 처리방침은 시행일로부터 적용되며, 법령·정책 또는 서비스 변경에 따라 내용이 추가·삭제·수정될 경우 변경 사항의 시행 7일 전부터 사이트에 공지합니다.",
+  },
+] as const;
+export const PRIVACY_POLICY_SECTIONS_SOURCE = "PIPA §30① / 시행령 §31 / 결정 메모 1-C / 비평 §1-4" as const;
+
+// ── 이용안내 (기존 메뉴 "이용안내" 계승 + 전자상거래법 §13② 거래조건 표시) ──
+export const GUIDE_SECTIONS = [
+  {
+    key: "flow",
+    title: "이용 절차",
+    steps: ["견적 신청 (사이트 또는 전화)", "상담 (운행 조건·대금 안내)", "예약 확정 (계약금 10만원)", "운행 당일"],
+  },
+  { key: "quoteBasis", title: "견적 산정 기준", from: QUOTE_BASIS },
+  { key: "payment", title: "대금 지급", from: PAYMENT },
+  { key: "cancel", title: "취소·환불 규정", from: CANCELLATION },
+  { key: "insurance", title: "차량 보험", from: INSURANCE },
+  { key: "dispute", title: "문의 및 분쟁 처리", from: DISPUTE },
+  { key: "minors", title: "만 14세 미만 이용 제한", from: MINORS },
+  { key: "contact", title: "연락처", from: COMPANY, fields: ["tel", "mobile", "fax", "email", "address"] },
+] as const;
+export const GUIDE_SECTIONS_SOURCE = "플랜 P6-3 매핑표 / 전자상거래법 §13②" as const;

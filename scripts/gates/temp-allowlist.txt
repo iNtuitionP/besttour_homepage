@@ -89,3 +89,20 @@ lib/legal/disclosures.ts:\[TEMP\] OVERSEAS_TRANSFERS\.Upstash\.country:
 # 사유: 결정 메모 1-C 의 잠정 문안. 사장님이 지킬 수 있는 기한인지 확인 전이다.
 # 해제 조건: 사장님이 처리 기한을 확답하면 문안을 맞추고 마커와 이 항목을 지운다.
 lib/legal/disclosures.ts:\[TEMP\] DISPUTE\.handling:
+
+# ── P1-6 법정 페이지 3종 — 원장 lib/legal/disclosures.ts 에 추가된 마커 ──────────────────────────
+# [등록 2026-09-11 · P1-6] 개인정보 처리방침 시행일 "2026-09-11".
+# 사유: 정식 오픈일이 아직 없다. 브리프 지시로 작성일을 임시 시행일로 둔다.
+# 해제 조건: 오픈일이 정해지면 값을 교체하고 마커와 이 항목을 지운다.
+lib/legal/disclosures.ts:\[TEMP\] LEGAL_PAGES\.privacy\.effectiveDate:
+
+# [등록 2026-09-11 · P1-6] 이용약관 시행일 "2026-09-11".
+# 사유: 위와 동일 — 오픈일 미정.
+# 해제 조건: 위 항목과 함께 해소한다.
+lib/legal/disclosures.ts:\[TEMP\] LEGAL_PAGES\.terms\.effectiveDate:
+
+# [등록 2026-09-11 · P1-6] 이용약관 제6조(대금 및 계약금) 잔금 문안 "예약 확정 시 회사가 안내".
+# 사유: PAYMENT.balanceTiming 과 같은 미확정(확인시트 C3 — 잔금 시기·지급수단 미회신). 조문 키에 숫자를 쓰지 않는
+#       tests/legal.test.ts 마커 규약([A-Za-z]+) 때문에 article6 대신 articles.six 로 적었다.
+# 해제 조건: PAYMENT.balanceTiming 과 함께 — 사장님 회신으로 잔금 시기·수단이 정해지면 조문을 교체하고 마커와 이 항목을 지운다.
+lib/legal/disclosures.ts:\[TEMP\] TERMS\.articles\.six\.body:
