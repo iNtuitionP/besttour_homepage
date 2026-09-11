@@ -347,6 +347,9 @@ components/**           props 경계. 법정 한글 리터럴 금지
 - [ ] 무인증 `/admin/*` 접근 0 · admin 경로 service role 0건
 - [ ] 방어 4종 실키 스모크 통과
 - [ ] 파기 배치 dry-run 경계 테스트 통과
+- [ ] **크론 실운영 전환** — `vercel.json` 의 path 를 `/api/cron/purge?dry=0` 으로 변경.
+      P1-5 는 안전을 위해 dry-run 으로 배포된다(쿼리 없으면 보고만). 이걸 안 바꾸면 파기가 영원히 실행되지 않고,
+      게시한 보유기간을 이행하지 못해 고지가 허위가 된다. `CRON_SECRET` 을 Vercel 환경변수에 넣는 것도 함께.
 - [ ] 법정 3페이지 사람 리뷰 서명
 - [ ] Lighthouse 모바일 90+ (프로토콜 고정 측정)
 - [ ] **기존 메뉴 10개 전부 매핑됨** (`lib/legacy-menu-map.ts` 테스트 green)
