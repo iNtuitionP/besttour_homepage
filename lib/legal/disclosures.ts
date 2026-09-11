@@ -214,6 +214,21 @@ export const LEGAL_LABELS = {
   cancellation: { when: "취소 시점", label: "환불" },
   officer: { name: "성명", phone: "연락처" },
   contact: { tel: "대표전화", mobile: "휴대전화", fax: "팩스", email: "이메일", address: "주소" },
+  // 푸터 사업자 정보 줄의 라벨 (P2-3). 공개 셸은 한글 리터럴을 쓰지 않고 여기서만 가져간다.
+  // 관계사 배지 라벨은 RELATED_COMPANY.role 이 이미 갖고 있으므로 중복해서 두지 않는다.
+  footer: {
+    companyInfo: "사업자 정보",
+    operator: "운영사",
+    representative: "대표",
+    bizRegNo: "사업자등록번호",
+    mailOrder: "통신판매업신고",
+    headOffice: "본사",
+    branch: "지사",
+    bankAccount: "계좌",
+    privacyOfficer: "개인정보 보호책임자",
+    hosting: "호스팅",
+    ftcBizInfo: "사업자정보 확인",
+  },
   source: "플랜 P1-6",
 } as const;
 

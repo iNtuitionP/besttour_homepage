@@ -106,3 +106,11 @@ lib/legal/disclosures.ts:\[TEMP\] LEGAL_PAGES\.terms\.effectiveDate:
 #       tests/legal.test.ts 마커 규약([A-Za-z]+) 때문에 article6 대신 articles.six 로 적었다.
 # 해제 조건: PAYMENT.balanceTiming 과 함께 — 사장님 회신으로 잔금 시기·수단이 정해지면 조문을 교체하고 마커와 이 항목을 지운다.
 lib/legal/disclosures.ts:\[TEMP\] TERMS\.articles\.six\.body:
+
+# ── P2-3 공개 셸 ───────────────────────────────────────────────────────────────
+# [등록 2026-09-11 · P2-3] 네이버 블로그 주소 — env NEXT_PUBLIC_NAVER_BLOG_URL, 현재 값 없음.
+# 사유: 옛 사이트 메뉴 "네이버 블로그"의 실제 URL 을 사장님께 아직 받지 못했다(옛 사이트 링크도 깨져 있다).
+#       주소를 지어내지 않는다. env 가 비어 있으면 메뉴 항목 자체를 렌더하지 않으므로 죽은 링크는 배포되지 않는다.
+# 해제 조건: 사장님에게 블로그 주소를 받으면 env 를 채우고 LEGACY_MENU 의 blog.ready 를 true 로 올린 뒤
+#           마커와 이 항목을 지운다.
+lib/legacy-menu-map.ts:\[TEMP\] LEGACY_MENU\.blog\.href:

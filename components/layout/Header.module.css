@@ -1,0 +1,256 @@
+/*
+ * 공개 헤더 — CSS Modules.
+ * 색·간격·라운드·고도는 styles/semantic.css 의 역할 토큰만 쓴다(HEX·rgba·원시 토큰 금지).
+ * px 리터럴은 "치수"(로고·버튼·아이콘 크기)와 타이포·선 두께에만 남는다 — 간격에는 한 건도 없다.
+ * tests/layout.test.ts §4 가 components/**\/*.module.css 전체에 이 규약을 강제한다.
+ *
+ * 데스크톱 메뉴 분기점이 1280px 인 이유: 옛 메뉴 10개를 한 항목도 지우지 않고 한 줄에 놓으면
+ * 라벨 길이 합이 1024px 폭에 들어가지 않는다("차량소개 · 보험내용" 처럼 긴 항목이 있다).
+ * 줄이는 대신(=삭제 금지 위반) 분기점을 올리고 그 아래는 햄버거 패널로 보낸다.
+ */
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 80;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-decorative);
+}
+
+/* ── 본문 바로가기 (키보드 사용자) ─────────────────────────────────────── */
+.skip {
+  position: absolute;
+  z-index: 1;
+  top: var(--space-stack-xs);
+  left: var(--space-page-x);
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  background: var(--action-primary-bg);
+  color: var(--action-primary-fg);
+  border-radius: var(--radius-control);
+  font-size: 14px;
+  font-weight: 700;
+}
+.skip:focus-visible {
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* ── 바 ────────────────────────────────────────────────────────────────── */
+.inner {
+  width: 100%;
+  max-width: var(--layout-maxw);
+  margin: 0 auto;
+  padding: 0 var(--space-page-x);
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-sm);
+  min-height: 60px;
+}
+@media (min-width: 1280px) {
+  .inner {
+    gap: var(--space-inline-md);
+    min-height: 76px;
+  }
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.brand:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-control);
+}
+
+.logo {
+  display: block;
+  width: 132px;
+  height: 26px;
+  object-fit: contain;
+}
+@media (min-width: 768px) {
+  .logo {
+    width: 165px;
+    height: 32px;
+  }
+}
+
+/* ── 데스크톱 메뉴 ─────────────────────────────────────────────────────── */
+.nav {
+  display: none;
+}
+@media (min-width: 1280px) {
+  .nav {
+    display: block;
+    min-width: 0;
+  }
+}
+
+.navList {
+  display: flex;
+  align-items: center;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.navLink,
+.navDisabled {
+  display: block;
+  padding: var(--space-stack-xs) var(--space-inline-xs);
+  border-radius: var(--radius-control);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.navLink {
+  color: var(--text-primary);
+  transition: color var(--motion-base), background-color var(--motion-base);
+}
+.navLink:hover {
+  color: var(--text-brand);
+  background: var(--bg-subtle);
+}
+.navLink:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.navLinkCurrent {
+  color: var(--text-brand);
+  background: var(--bg-subtle);
+}
+
+/* 아직 없는 페이지 — 링크가 아니라 비활성 텍스트. 메뉴에서 지우지는 않는다. */
+.navDisabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+/* ── 대표전화 ──────────────────────────────────────────────────────────── */
+.tel {
+  margin-left: auto;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+.tel:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}
+@media (min-width: 768px) {
+  .tel {
+    font-size: 20px;
+  }
+}
+
+/* ── 햄버거 ────────────────────────────────────────────────────────────── */
+.burger {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border-decorative);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.burger:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+@media (min-width: 1280px) {
+  .burger {
+    display: none;
+  }
+}
+
+.burgerIcon {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* ── 모바일 패널 ───────────────────────────────────────────────────────── */
+.panel {
+  border-top: 1px solid var(--border-decorative);
+  background: var(--bg-surface);
+  padding: var(--space-stack-xs) var(--space-page-x) var(--space-stack-md);
+  max-height: calc(100vh - 60px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.panel[hidden] {
+  display: none;
+}
+@media (min-width: 1280px) {
+  .panel {
+    display: none;
+  }
+}
+
+.panelList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.panelLink,
+.panelDisabled {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-inline-sm);
+  padding: var(--space-stack-sm) 0;
+  border-bottom: 1px solid var(--border-decorative);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  word-break: keep-all;
+}
+
+.panelLink {
+  color: var(--text-primary);
+}
+.panelLink::after {
+  content: "›";
+  color: var(--text-brand);
+  font-size: 20px;
+  line-height: 1;
+}
+.panelLink:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.panelLinkCurrent {
+  color: var(--text-brand);
+}
+
+.panelDisabled {
+  color: var(--text-muted);
+  cursor: default;
+}

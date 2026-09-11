@@ -1,0 +1,238 @@
+/*
+ * 공개 푸터 — CSS Modules.
+ * 색·간격·라운드는 styles/semantic.css 의 역할 토큰만 (HEX·rgba·원시 토큰 금지, tests/layout.test.ts §4).
+ * 간격에 px 리터럴 0건 — 남은 px 는 로고 치수·글자 크기·선 두께뿐이다.
+ *
+ * 대비 메모: 비활성 메뉴(.menuDisabled)와 링크(.menuLink)는 같은 --gray-text 계열이라 색만으로는
+ * 구분되지 않는다. 그래서 링크는 --text-primary(진한 글자) + 밑줄 호버, 비활성은 --text-secondary 로
+ * 한 단계 흐리게 두어 "누를 수 있음/없음"이 색 하나에만 의존하지 않게 했다.
+ */
+
+.footer {
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border-decorative);
+  padding-top: var(--space-section);
+  /* 플로팅 문의 버튼이 마지막 줄을 덮지 않도록 아래를 넉넉히 + 노치 보정 */
+  padding-bottom: calc(var(--space-section) + env(safe-area-inset-bottom));
+}
+
+.inner {
+  width: 100%;
+  max-width: var(--layout-maxw);
+  margin: 0 auto;
+  padding: 0 var(--space-page-x);
+}
+
+/* ── 상단: 브랜드 + 메뉴 2열 ───────────────────────────────────────────── */
+.top {
+  display: grid;
+  gap: var(--space-stack-lg);
+}
+.top > * {
+  min-width: 0;
+}
+@media (min-width: 900px) {
+  .top {
+    grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr));
+    gap: var(--space-inline-lg);
+  }
+}
+
+.brandCol {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-stack-sm);
+}
+
+.logo {
+  display: block;
+  width: 165px;
+  height: 32px;
+  object-fit: contain;
+}
+
+.tel {
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+.tel:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}
+
+.menuCol {
+  min-width: 0;
+}
+
+.colTitle {
+  margin: 0 0 var(--space-stack-sm);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: var(--text-brand);
+}
+
+.menuList {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-stack-xs);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.menuLink,
+.menuDisabled {
+  font-size: 14px;
+  line-height: 1.6;
+  word-break: keep-all;
+}
+
+.menuLink {
+  color: var(--text-primary);
+  transition: color var(--motion-base);
+}
+.menuLink:hover {
+  color: var(--text-brand);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.menuLink:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}
+
+.menuDisabled {
+  color: var(--text-secondary);
+  cursor: default;
+}
+
+/* ── 사업자 정보 ───────────────────────────────────────────────────────── */
+.legal {
+  margin-top: var(--space-stack-xl);
+  padding-top: var(--space-stack-md);
+  border-top: 1px solid var(--border-decorative);
+  font-size: 12.5px;
+  line-height: 1.9;
+  color: var(--text-secondary);
+}
+
+.badgeRow {
+  margin: 0;
+}
+
+.badge,
+.badgeRelated {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-inline-xs);
+  border-radius: var(--radius-chip);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.8;
+}
+
+.badge {
+  background: var(--bg-subtle);
+  color: var(--text-brand);
+}
+
+.badgeRelated {
+  border: 1px solid var(--border-decorative);
+  color: var(--text-secondary);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-inline-sm);
+  margin: 0;
+}
+
+.fact {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-inline-xs);
+  word-break: keep-all;
+}
+
+.factLabel {
+  color: var(--text-muted);
+}
+
+.factStrong {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.factLink {
+  color: var(--text-link);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.factLink:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}
+
+/* 운영사와 관계사를 눈으로 가르는 점선 — 계약 주체가 누구인지 오해하지 않도록 */
+.related {
+  margin-top: var(--space-stack-xs);
+  padding-top: var(--space-stack-xs);
+  border-top: 1px dashed var(--border-decorative);
+}
+
+.note {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: var(--text-secondary);
+  word-break: keep-all;
+}
+
+/* ── 법정 링크 ─────────────────────────────────────────────────────────── */
+.legalNav {
+  margin-top: var(--space-stack-md);
+  padding-top: var(--space-stack-sm);
+  border-top: 1px solid var(--border-decorative);
+}
+
+.legalLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-stack-xs) var(--space-inline-sm);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+}
+
+.legalLink {
+  color: var(--text-link);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.legalLink:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-inline-sm);
+  margin: var(--space-stack-sm) 0 0;
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--text-muted);
+}

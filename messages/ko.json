@@ -1,5 +1,18 @@
 {
   "common": {
     "siteName": "베스트투어"
+  },
+  "layout": {
+    "skipToContent": "본문 바로가기",
+    "primaryNav": "주요 메뉴",
+    "mobileNav": "모바일 메뉴",
+    "footerNav": "푸터 메뉴",
+    "menuOpen": "메뉴 열기",
+    "menuClose": "메뉴 닫기",
+    "menuHeading": "메뉴",
+    "supportHeading": "고객센터",
+    "contactChannels": "문의 채널",
+    "kakaoChannel": "카카오톡 채널 상담",
+    "naverChannel": "네이버 톡톡 상담"
   }
 }

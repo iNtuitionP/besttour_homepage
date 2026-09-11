@@ -1,7 +1,12 @@
 /*
- * KrMap — CSS Modules. 색은 styles/semantic.css 의 역할 토큰만 쓴다 (HEX·rgba·--brand-N 금지, tests/krmap.test.ts).
- * 간격·반지름은 8px 배수 리터럴 — semantic.css 에는 간격 역할 토큰이 없고, 원시 토큰(--s2 등) 직접 참조는 규약 위반이라서다.
+ * KrMap — CSS Modules. 색·간격·라운드는 styles/semantic.css 의 역할 토큰만 쓴다
+ * (HEX·rgba·--brand-N·원시 토큰 금지 — tests/krmap.test.ts · tests/layout.test.ts §4).
  * 수치는 목업 variant-08 §대표 노선(.krmap/.rcard/.routes__disc)에서 읽어 옮겼다.
+ *
+ * P2-3 에서 8px 배수 리터럴을 역할 토큰으로 바꿨다(값은 그대로 — 시각 회귀 없음).
+ * 남은 px(2·6·10·12·14·20)는 8px 스케일 밖의 목업 실측 수치다. 토큰으로 반올림하면 카드가
+ * 조여지거나 벌어져 시각 회귀가 나므로 그대로 두고, tests/layout.test.ts 의 PX_ALLOW 에
+ * 파일·선언·사유를 적어 두었다. 새 화면에서 이 값을 흉내 내지 말 것 — 역할 토큰을 쓴다.
  */
 
 /* ── 레이아웃 ─────────────────────────────────────────────────────────── */
@@ -12,7 +17,7 @@
 
 .grid {
   display: grid;
-  gap: 32px;
+  gap: var(--space-stack-lg);
 }
 .grid > * {
   min-width: 0;
@@ -21,13 +26,13 @@
 @media (min-width: 960px) {
   .grid {
     grid-template-columns: minmax(0, 55fr) minmax(0, 45fr);
-    gap: 48px;
+    gap: var(--space-stack-xl);
     align-items: start;
   }
   /* 카드 16장이 지도보다 길다 — 스크롤하는 동안 지도를 붙잡아 둔다 */
   .mapFrame {
     position: sticky;
-    top: 16px;
+    top: var(--space-stack-sm);
   }
 }
 
@@ -37,10 +42,10 @@
   margin: 0 auto;
   width: 100%;
   max-width: 488px;
-  padding: 16px;
+  padding: var(--space-stack-sm);
   background: var(--bg-page);
   border: 1px solid var(--border-decorative);
-  border-radius: 8px;
+  border-radius: var(--radius-surface);
 }
 
 .stage {
@@ -144,7 +149,7 @@
   padding: 12px 14px;
   background: var(--bg-surface);
   border: 1.5px solid var(--border-decorative);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   color: var(--text-primary);
 }
 .cardAccent {
@@ -154,7 +159,7 @@
 .cardIndex {
   width: 30px;
   height: 30px;
-  border-radius: 4px;
+  border-radius: var(--radius-chip);
   display: grid;
   place-items: center;
   font-size: 13px;
@@ -215,11 +220,11 @@
   width: 100%;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--space-inline-xs);
   min-height: 48px;
   padding: 12px 24px;
   border: 1.5px solid var(--action-secondary-border);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: var(--action-secondary-bg);
   color: var(--action-secondary-fg);
   font-size: 15px;
@@ -240,7 +245,7 @@
   margin: 0;
   padding: 20px 16px;
   border: 1.5px dashed var(--border-subtle);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   font-size: 14px;
   line-height: 1.6;
   text-align: center;
@@ -249,11 +254,11 @@
 
 /* ── 고지 (verbatim) ──────────────────────────────────────────────────── */
 .notice {
-  margin: 32px 0 0;
+  margin: var(--space-stack-lg) 0 0;
   padding: 12px 16px;
   background: var(--bg-subtle);
   border: 1px solid var(--border-decorative);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   font-size: 12.5px;
   line-height: 1.7;
   text-align: center;
