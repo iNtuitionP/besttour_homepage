@@ -114,14 +114,17 @@ jobs:
         run: |
           # `supabase status -o env` 출력은 Go의 `%q` 스타일로 각 줄이
           # KEY="value" 형태다(값은 큰따옴표로 감싸짐). --override-name으로
-          # 우리가 원하는 변수명을 직접 지정해두고(api.url, auth.service_role_key
-          # 는 CLI가 인식하는 고정 필드 키), 그중 두 줄만 골라 따옴표를 벗겨
-          # $GITHUB_ENV에 적재한다. 나머지(DB_URL, ANON_KEY 등)는 무시한다.
+          # 우리가 원하는 변수명을 직접 지정해두고(api.url, auth.service_role_key, auth.anon_key
+          # 는 CLI가 인식하는 고정 필드 키), 그중 세 줄만 골라 따옴표를 벗겨
+          # $GITHUB_ENV에 적재한다. 나머지(DB_URL 등)는 무시한다.
+          # anon_key 는 P2-1 읽기 계층(lib/queries, anon+RLS)의 DB 테스트가 요구한다 —
+          # 빠지면 tests/queries.test.ts 의 REQUIRE_DB_TESTS 가드가 의도대로 실패한다(run 34564058402).
           supabase status -o env \
             --override-name api.url=NEXT_PUBLIC_SUPABASE_URL \
             --override-name auth.service_role_key=SUPABASE_SERVICE_ROLE_KEY \
+            --override-name auth.anon_key=NEXT_PUBLIC_SUPABASE_ANON_KEY \
             > /tmp/supabase-status.env
-          grep -E '^(NEXT_PUBLIC_SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY)=' /tmp/supabase-status.env \
+          grep -E '^(NEXT_PUBLIC_SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY|NEXT_PUBLIC_SUPABASE_ANON_KEY)=' /tmp/supabase-status.env \
             | sed -E 's/^([A-Za-z_]+)="(.*)"$/\1=\2/' \
             >> "$GITHUB_ENV"
           rm -f /tmp/supabase-status.env
