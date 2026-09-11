@@ -187,3 +187,38 @@ export interface ReservationPublic {
   destinationCode: string;
   departAt: string;
 }
+
+// =============================================================================
+// 통지 아웃박스 (0005_outbox.sql · lib/notify/outbox.ts · ADR-7). 이 블록은 P1-4 가 파일 끝에 덧붙였다.
+// =============================================================================
+
+/** notifications_log.event (0001 CHECK). */
+export type NotifyEvent = "created" | "confirmed";
+/** notifications_log.channel (0005 CHECK — email 은 사장님 번호 미설정 시 폴백 메일). */
+export type NotifyChannel = "sms" | "alimtalk" | "email";
+/** notifications_log.status (0005 CHECK). pending = 아직 보낼 것(백오프 대기 포함) · sent · failed = 종착. */
+export type OutboxStatus = "pending" | "sent" | "failed";
+
+/**
+ * enqueue 에 넘기는 새 아웃박스 행. `to` 는 DB 의 to_phone 컬럼에 저장된다(email 채널이면 메일 주소).
+ * `template` 은 문안이 아니라 템플릿 키(예: 'created.owner.sms') — 문안은 P4-3 이 키로 찾는다.
+ */
+export interface NewOutboxRow {
+  reservation_id: string;
+  event: NotifyEvent;
+  channel: NotifyChannel;
+  to: string;
+  template: string;
+}
+
+/** claim 이 돌려주는 아웃박스 행 — 발송기(P4)가 보고 mark 로 되돌린다. timestamptz 는 ISO 문자열. */
+export interface OutboxRow extends NewOutboxRow {
+  id: number;
+  status: OutboxStatus;
+  /** claim 된 횟수(= 발송 시도 횟수). */
+  attempts: number;
+  last_error: string | null;
+  /** 이 시각 이후에만 claim 대상. 실패 시 백오프, claim 시 lease. */
+  next_attempt_at: string;
+  updated_at: string;
+}
