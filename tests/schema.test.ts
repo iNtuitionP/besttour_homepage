@@ -1,31 +1,7 @@
-import { readFileSync, existsSync } from "node:fs";
-import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { isAirport, PURPOSES, REGIONS } from "@/lib/codes";
 import { ReservationInput } from "@/lib/types";
-
-/**
- * vitest(node 환경)는 .env.local을 자동으로 process.env에 로드하지 않는다.
- * dotenv 등 새 의존성을 추가하지 않고, 이 테스트 파일 안에서만 최소한의
- * 파서로 필요한 값을 읽어들인다(이미 설정된 process.env 값은 덮어쓰지 않음).
- */
-function loadDotEnvLocal() {
-  const envPath = path.resolve(import.meta.dirname, "..", ".env.local");
-  if (!existsSync(envPath)) return;
-
-  const contents = readFileSync(envPath, "utf-8");
-  for (const rawLine of contents.split("\n")) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith("#")) continue;
-    const eq = line.indexOf("=");
-    if (eq === -1) continue;
-    const key = line.slice(0, eq).trim();
-    const value = line.slice(eq + 1).trim();
-    if (key && process.env[key] === undefined) {
-      process.env[key] = value;
-    }
-  }
-}
+import { loadDotEnvLocal } from "./helpers/load-env-local";
 
 loadDotEnvLocal();
 
@@ -154,13 +130,7 @@ describe.skipIf(!hasServiceRole)("DB smoke (requires SUPABASE_SERVICE_ROLE_KEY)"
     expect(rows).toHaveLength(5);
   });
 
-  test("showcase_routes has 5 seeded rows with price_from all NULL", async () => {
-    const res = await fetch(`${restRoot}/showcase_routes?select=price_from`, { headers });
-    expect(res.ok).toBe(true);
-    const rows = (await res.json()) as { price_from: number | null }[];
-    expect(rows).toHaveLength(5);
-    for (const row of rows) {
-      expect(row.price_from).toBeNull();
-    }
-  });
+  // showcase_routes 스모크는 0002(places FK + 16행 시드) 이후 상태를 단언하는
+  // tests/places.test.ts 로 이관했다. 0001 시점의 "5행·price_from 전부 NULL" 단언은
+  // 0002 적용과 동시에 거짓이 되므로 여기 두지 않는다.
 });

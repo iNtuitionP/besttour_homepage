@@ -51,6 +51,38 @@ jobs:
       - name: Check for forbidden pricing symbols
         run: bash scripts/check-no-pricing.sh
 
+  # P0-5 게이트 3종 — pricing-regression-gate 와 같은 형식, 서로 독립(needs 없음).
+  # 원칙: 대상 파일이 없으면 exit 0, 생기는 순간부터 검사한다.
+  legal-disclosures:
+    name: Legal Disclosures Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check legal ledger (verbatim phrases, no function exports) and forbidden words
+        run: bash scripts/check-legal-disclosures.sh
+
+  mockup-drift:
+    name: Mockup Drift Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check mockup hashes against baseline and brand asset parity
+        run: bash scripts/check-mockup-drift.sh
+
+  temp-values:
+    name: Temp Values Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for unallowlisted temporary-value markers
+        run: bash scripts/check-temp-values.sh
+
   db-test:
     name: DB Smoke (local Supabase stack)
     runs-on: ubuntu-latest

@@ -28,8 +28,13 @@
  *
  * 나머지 11개 지역은 위 계수로 계산한 값을 소수점 1자리로 반올림해
  * 하드코딩했다(런타임에 적합 계산을 돌리지 않는다).
+ *
+ * ## P1-2 (2026-09-11) — 도시 카탈로그 좌표
+ * 위 REGION_POINTS 값은 그대로 두고(42개 테스트가 묶여 있다), 파일 끝에 위경도 → SVG
+ * 아핀 투영 `projectLatLng` 과 PLACES 17개의 좌표 `PLACE_POINTS` 를 추가했다.
+ * 적합 계수·잔차는 그 섹션 주석과 P1-2 report 참고.
  */
-import type { RegionCode } from "./codes";
+import type { PlaceCode, RegionCode } from "./codes";
 
 export interface MapPoint {
   x: number;
@@ -175,3 +180,80 @@ export function routeGeometry(routes: RouteInput[]): RouteGeometry {
 
   return { pins, paths };
 }
+
+// =============================================================================
+// P1-2 — 위경도 → SVG 아핀 투영 + 도시 카탈로그(PLACES) 좌표
+// =============================================================================
+
+/**
+ * 투영 앵커 7개 (브리프 P1-2 §4). 위치가 점(도시)으로 확정되는 코드만 쓴다 — 도 단위
+ * 코드(GG·CN·JN 등)는 중심점이 모호해 제외. REGION_POINTS 의 SVG 좌표 ↔ PLACES 의
+ * 시청·터미널 위경도를 짝짓는다. GW 는 목업 핀(354.0, 88.8)이 춘천이 아니라 강릉시청
+ * 위경도에 대응한다는 레저 기록(지도 좌표 카탈로그 태스크)에 따라 강릉(GNG)과 짝짓는다.
+ */
+export const PROJECTION_ANCHORS: readonly { region: RegionCode; place: PlaceCode }[] = [
+  { region: "SEL", place: "SEL" },
+  { region: "BSN", place: "BSN" },
+  { region: "DGU", place: "DGU" },
+  { region: "GWJ", place: "GWJ" },
+  { region: "DJN", place: "DJN" },
+  { region: "ICN", place: "ICN" },
+  { region: "GW", place: "GNG" },
+];
+
+/**
+ * 아핀 6계수 — 위 앵커 7점 최소제곱 적합 (2026-09-11, 계산 과정과 잔차 표는 P1-2 report).
+ *
+ *   x = a·lng + b·lat + c
+ *   y = d·lng + e·lat + f
+ *
+ * 앵커 잔차: 최대 0.79px(ICN), 나머지 0.14~0.53px — 전부 게이트(3px) 안.
+ * ICN 만 상대적으로 큰 이유: 목업 핀은 공항 중심(ARP 부근)에 찍혀 있는데 카탈로그의
+ * ICN 위경도는 브리프대로 제1여객터미널 청사(약 1.6km 남동)라서다. ICN 을 빼고 6점으로
+ * 적합하면 최대 잔차 0.08px 로 떨어지지만, 차이가 1px 미만이라 브리프 지정 7앵커를 유지했다.
+ * b·d 가 0 에 가까운 것은 kr-map.svg 가 회전 없는 등장방형 투영이라는 기존 관찰과 일치한다.
+ * tests/places.test.ts 가 같은 입력으로 정규방정식을 다시 풀어 이 계수와 일치함을 단언한다.
+ */
+export const LATLNG_TO_SVG = {
+  a: 83.194915,
+  b: -0.095235,
+  c: -10364.302212,
+  d: 0.178025,
+  e: -103.413011,
+  f: 3969.778203,
+} as const;
+
+/** 위경도 → kr-map.svg 좌표 (viewBox 0 0 524 560). 반올림하지 않는다 — 호출 측이 정한다. */
+export function projectLatLng(lat: number, lng: number): MapPoint {
+  const { a, b, c, d, e, f } = LATLNG_TO_SVG;
+  return { x: a * lng + b * lat + c, y: d * lng + e * lat + f };
+}
+
+/**
+ * PLACES 17개의 SVG 좌표 (DB places.svg_x/svg_y 와 동일 값).
+ * - 재사용 6개(ICN·SEL·BSN·DGU·GWJ·DJN): 기존 REGION_POINTS 값 그대로 — 픽셀 검증된
+ *   값을 재계산으로 덮지 않는다.
+ * - 새 도시 11개: projectLatLng(PLACES.lat, PLACES.lng) 를 소수 1자리로 반올림한 값.
+ *   손으로 찍지 않았다 — tests/places.test.ts 가 함수 출력과 정확히 같음을 단언한다.
+ * - 강릉(GNG)은 GW 핀과 0.14px 차이로 사실상 같은 자리다. 강원 5도시·대전/세종의 겹침
+ *   처리는 UI(P2-2)의 몫이며 여기서는 정확한 좌표만 둔다.
+ */
+export const PLACE_POINTS: Record<PlaceCode, MapPoint> = {
+  ICN: REGION_POINTS.ICN,
+  SEL: REGION_POINTS.SEL,
+  BSN: REGION_POINTS.BSN,
+  DGU: REGION_POINTS.DGU,
+  GWJ: REGION_POINTS.GWJ,
+  DJN: REGION_POINTS.DJN,
+  TYG: { x: 317.4, y: 388.3 },
+  PHG: { x: 393.0, y: 268.0 },
+  JJU: { x: 210.3, y: 287.7 },
+  YSU: { x: 253.2, y: 397.8 },
+  HNM: { x: 164.8, y: 416.9 },
+  SJG: { x: 222.0, y: 219.9 },
+  SCH: { x: 330.3, y: 41.5 },
+  GNG: { x: 353.9, y: 88.7 },
+  TBK: { x: 363.1, y: 149.5 },
+  HCN: { x: 271.8, y: 94.2 },
+  WJU: { x: 274.4, y: 130.9 },
+};
