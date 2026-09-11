@@ -34,6 +34,8 @@ describe("ReservationInput", () => {
     busCount: 1,
     locale: "ko" as const,
     turnstileToken: "test-turnstile-token",
+    // 0003(P1-3): 필수 동의는 literal(true). 동의 필드 자체의 계약은 tests/consent.test.ts 가 단언한다.
+    privacyConsent: true as const,
   };
 
   test("accepts a valid reservation input", () => {

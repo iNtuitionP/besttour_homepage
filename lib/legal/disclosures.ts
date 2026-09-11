@@ -90,6 +90,7 @@ export const PRIVACY_NOTICE = {
   items: ["이름", "휴대폰 번호", "운행 희망 일시", "출발지·도착지·경유지", "탑승 인원"],
   itemsLine: "이름, 휴대폰 번호, 운행 희망 일시, 출발지·도착지·경유지, 탑승 인원",
   retention: "접수일로부터 1년", // [TEMP] PRIVACY_NOTICE.retention: 확인시트 F3 미회신 — 1년 가정. 전자상거래법 보존 의무(계약 기록 5년)는 확정건에 별도 적용
+  retentionDays: 365, // [TEMP] PRIVACY_NOTICE.retentionDays: 위 retention 문안의 숫자값(같은 가정) — lib/reservations/consent.ts 가 retention_until 계산에 읽는다. 문안과 함께 바꾼다
   refusal: "동의를 거부하실 수 있으며, 거부 시 견적 상담과 예약 접수가 제한됩니다.",
   consentLabel: "위 내용을 확인했으며 개인정보 수집·이용에 동의합니다. (필수)",
   marketingConsentLabel: "할인·이벤트 안내 문자 수신에 동의합니다. (선택)",

@@ -38,6 +38,10 @@ export const ReservationInput = z
     // 허니팟: 사람 방문자에게는 보이지 않아야 하는 필드. 값이 채워지면(길이>0)
     // 봇으로 간주해 검증 단계에서 거부한다.
     website: z.string().max(0).optional(),
+    // 동의 (ADR-6 · 0003). 필수 동의는 literal(true) — false·누락·"true" 문자열이면 파싱 자체가 실패한다.
+    // 사전 선택 금지는 UI(P3) 책임. 동의 시각·방침 버전은 서버가 lib/reservations/consent.ts consentFields() 로 찍는다.
+    privacyConsent: z.literal(true),
+    marketingConsent: z.boolean().default(false),
   })
   .refine((data) => data.locale !== "en" || Boolean(data.phone || data.phoneIntl), {
     message: "locale이 'en'이면 phone 또는 phoneIntl 중 하나가 필요합니다.",
@@ -45,6 +49,51 @@ export const ReservationInput = z
   });
 
 export type ReservationInput = z.infer<typeof ReservationInput>;
+
+/**
+ * 0003_consent.sql 의 동의 기록 컬럼 4개 — lib/reservations/consent.ts consentFields() 가 만든다.
+ * timestamptz 값은 ISO 8601 UTC 인스턴트 문자열. DB 에 default 가 없으므로 insert 는 이 4개를 반드시 포함한다.
+ */
+export interface ReservationConsentColumns {
+  /** 필수 동의 시각(서버 수신 인스턴트). */
+  privacy_consent_at: string;
+  /** 동의 당시 방침 버전 (consent.ts PRIVACY_POLICY_VERSION, 'YYYY-MM-DD'). */
+  privacy_policy_version: string;
+  /** 선택 동의(광고성 정보 수신) 시각. null = 미동의. */
+  marketing_consent_at: string | null;
+  /** 파기 예정 시각 = 접수 시각 + 원장 보유기간. P1-5 배치가 읽는다. */
+  retention_until: string;
+}
+
+/**
+ * reservations insert 페이로드 — 서비스 롤 서버 코드(P3 접수 액션) 전용. snake_case = 0001·0003 컬럼명.
+ * DB 가 채우는 id·created_at·status 와 admin 이 채우는 confirmed_at·admin_memo 는 없다.
+ * 운행 일시(depart_at·return_at)는 lib/kst.ts parseKst 로 KST 벽시계를 해석한 인스턴트의 ISO 문자열이다.
+ */
+export interface ReservationInsert extends ReservationConsentColumns {
+  public_code: string;
+  name: string;
+  phone: string;
+  email?: string | null;
+  vehicle_slug: ReservationInput["vehicleSlug"];
+  purpose_code: string;
+  origin_code: string;
+  destination_code: string;
+  waypoint_codes: string[];
+  trip_type: ReservationInput["tripType"];
+  depart_at: string;
+  /** 0001 제약: trip_type = 'round' 일 때만 not null. */
+  return_at: string | null;
+  nights: number;
+  bus_count: number;
+  passengers?: number | null;
+  contact_method?: string | null;
+  payment_method?: string | null;
+  parking_included?: boolean | null;
+  vat_included?: boolean | null;
+  message?: string | null;
+  locale: ReservationInput["locale"];
+}
 
 /** 홈 Top-5 예시 견적(showcase_routes) 표시용 타입. 가격 필드는 정적 표시값(null 가능)뿐. */
 export interface ShowcaseRoute {

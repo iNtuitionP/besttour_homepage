@@ -48,6 +48,13 @@ lib/legal/disclosures.ts:\[TEMP\] CANCELLATION\.basis:
 # 해제 조건: 사장님이 보유기간을 정해 주면 문안을 교체하고 마커와 이 항목을 지운다.
 lib/legal/disclosures.ts:\[TEMP\] PRIVACY_NOTICE\.retention:
 
+# [등록 2026-09-11 · P1-3] 개인정보 보유기간 숫자값 retentionDays = 365.
+# 사유: 바로 위 PRIVACY_NOTICE.retention("접수일로부터 1년")과 같은 가정값(확인시트 F3 미회신)의 숫자 표기.
+#       lib/reservations/consent.ts retentionUntil() 이 retention_until(0003) 계산에 읽는다 — 문자열을 파싱하지 않고
+#       원장에 숫자를 둔다. tests/consent.test.ts 가 문안↔숫자 일치를 단언하므로 한쪽만 바꾸면 테스트가 잡는다.
+# 해제 조건: 위 retention 항목과 함께 — 사장님이 보유기간을 정해 주면 문안·숫자를 같이 교체하고 마커와 이 항목을 지운다.
+lib/legal/disclosures.ts:\[TEMP\] PRIVACY_NOTICE\.retentionDays:
+
 # [등록 2026-09-11 · P1-1] 문자 발송 수탁사 법인명 "주식회사 누리고(Solapi)".
 # 사유: 브리프가 준 값이지만 법인명은 solapi.com 사업자정보로 확인하기 전이다.
 # 해제 조건: solapi.com 하단 사업자정보의 상호를 확인해 교체(또는 확정)하고 마커와 이 항목을 지운다.
