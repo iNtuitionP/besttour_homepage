@@ -1,0 +1,57 @@
+/*
+ * 접수 현황 피드 (목업 variant-08 §02 .tick / .chip / .bar) — 색·간격·라운드는 역할 토큰만(tests/layout.test.ts §4), 간격 px 0건.
+ * 목업의 가로 무한 롤링(.ticker/.ticker__track 의 roll 애니메이션)은 옮기지 않았다: 실데이터는 최대 8건(0건이면 섹션 부재)이라
+ * 트랙을 두 번 복제해도 빈 구간이 생기고, 서버 컴포넌트만으로는 reduced-motion·hover 정지를 실측하기 어렵다(P3-5 보고서 §판단).
+ * 대신 같은 칩을 줄바꿈 목록으로 편다. 카운트 줄(.live__count "오늘 접수 N건")은 실증 불가 수치라 처음부터 없다(CLAUDE.md §3).
+ */
+.feed {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-inline-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tick {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  min-height: 42px;
+  max-width: 100%;
+  padding: 0 var(--space-inline-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-control);
+  font-size: 13.5px;
+  color: var(--text-secondary);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-height: 22px;
+  padding: 0 var(--space-inline-xs);
+  border-radius: var(--radius-chip);
+  background: var(--bg-subtle);
+  color: var(--text-brand);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+.chip[data-status="confirmed"] {
+  background: var(--bg-inverse);
+  color: var(--text-on-inverse);
+}
+.text {
+  min-width: 0;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.notice {
+  margin: var(--space-stack-md) 0 0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}

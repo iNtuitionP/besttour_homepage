@@ -34,8 +34,27 @@ function walk(dir: string): string[] {
 }
 
 const scannedFiles = [...walk(QUERIES_DIR), ANON_CLIENT_FILE];
-const sources = scannedFiles.map((p) => ({ file: path.relative(ROOT, p), text: readFileSync(p, "utf-8") }));
+const toPosix = (p: string) => p.split(path.sep).join("/");
+const sources = scannedFiles.map((p) => ({ file: toPosix(path.relative(ROOT, p)), text: readFileSync(p, "utf-8") }));
 const placeByCode = new Map(PLACES.map((p) => [p.code as string, p]));
+
+/**
+ * 서비스 롤 예외 — 파일별 사유 필수 (P3-5). 여기 없는 파일은 여전히 0건이고, 예외 파일도 서버 액션·Next 캐시·Next import 금지는
+ * 그대로 받는다. 새 예외를 추가하려면 먼저 "anon + RLS 로 정말 불가능한가"를 브리프에 적고 여기 사유를 남긴다.
+ * tests/recent-feed.test.ts §9 가 이 목록이 정확히 1건(recent.ts)이고 사유가 있음을 다시 단언한다.
+ */
+const SERVICE_ROLE_EXCEPTIONS: ReadonlyArray<{ file: string; why: string }> = [
+  {
+    file: "lib/queries/recent.ts",
+    why: "reservations 는 RLS 정책이 없어 anon 이 0행이다(0001). 홈 접수 현황(P3-5·G4)은 서버가 서비스 롤로 화이트리스트 5컬럼(name·vehicle_slug·depart_at·status·created_at)만 읽어 maskName 으로 가린 뒤 RSC 가 60초 태그 캐시로 내린다. 반환 타입에 원문 필드가 없고 tests/recent-feed.test.ts 가 누출 0 을 property test 로 잠근다.",
+  },
+];
+const exceptionFiles = new Set(SERVICE_ROLE_EXCEPTIONS.map((e) => e.file));
+const SERVICE_ROLE_PATTERNS: ReadonlyArray<[label: string, pattern: RegExp]> = [
+  ["서비스 롤 클라이언트 팩토리", /createServiceClient/],
+  ["서비스 롤 심볼", /service_role|SUPABASE_SERVICE_ROLE_KEY/],
+  ["서비스 롤 모듈 import", /supabase\/server['"]/],
+];
 
 // =============================================================================
 // 1. 정적 검사 — 서버 액션 아님, 서비스 롤 없음, 캐시 모름, 가격 연산 없음 (ADR-3, 브리프 원칙 1·2·5)
@@ -50,14 +69,34 @@ describe("lib/queries 정적 검사", () => {
 
   test.each([
     ["서버 액션 지시어", /['"]use server['"]/],
-    ["서비스 롤 클라이언트 팩토리", /createServiceClient/],
-    ["서비스 롤 심볼", /service_role|SUPABASE_SERVICE_ROLE_KEY/],
-    ["서비스 롤 모듈 import", /supabase\/server['"]/],
     ["Next 캐시 API", /next\/cache|unstable_cache|revalidateTag\s*\(|['"]use cache['"]/],
     ["Next 프레임워크 import (순수 함수 유지)", /from\s+['"]next(\/|['"])/],
-  ])("금지 심볼 0건 — %s", (_label, pattern) => {
+  ])("금지 심볼 0건 (예외 없음 — recent.ts 포함) — %s", (_label, pattern) => {
     for (const { file, text } of sources) {
       expect(pattern.test(text), `${file} 에 ${pattern} 검출`).toBe(false);
+    }
+  });
+
+  test.each([...SERVICE_ROLE_PATTERNS])("서비스 롤 0건 (SERVICE_ROLE_EXCEPTIONS 제외) — %s", (_label, pattern) => {
+    for (const { file, text } of sources) {
+      if (exceptionFiles.has(file)) continue;
+      expect(
+        pattern.test(text),
+        `${file} 에 ${pattern} 검출 — 서비스 롤은 SERVICE_ROLE_EXCEPTIONS 에 사유와 함께 등록한 파일만 쓸 수 있다`,
+      ).toBe(false);
+    }
+  });
+
+  test("SERVICE_ROLE_EXCEPTIONS — 실재하는 파일 · 20자 이상의 사유 · 실제로 서비스 롤을 쓴다 (죽은 예외 금지)", () => {
+    expect(SERVICE_ROLE_EXCEPTIONS.map((e) => e.file)).toEqual(["lib/queries/recent.ts"]);
+    for (const e of SERVICE_ROLE_EXCEPTIONS) {
+      const src = sources.find((s) => s.file === e.file);
+      expect(src, `${e.file} 이 없다`).toBeDefined();
+      expect(e.why.trim().length).toBeGreaterThanOrEqual(20);
+      expect(
+        SERVICE_ROLE_PATTERNS.some(([, p]) => p.test(src!.text)),
+        `${e.file} 은 서비스 롤을 쓰지 않는데 예외 목록에 있다`,
+      ).toBe(true);
     }
   });
 
