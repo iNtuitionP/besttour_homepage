@@ -181,6 +181,15 @@ export interface Notice {
   active: boolean;
 }
 
+/** gallery 행(0001). imagePath 는 저장 경로 그대로 — URL 해석은 표시 계층(components/home/image-url.ts) 몫. */
+export interface GalleryItem {
+  id: number;
+  imagePath: string;
+  caption: string | null;
+  sort: number;
+  active: boolean;
+}
+
 /** popups 행(0001). 노출 기간은 KST 달력 날짜로 해석한다(lib/queries/popups.ts). */
 export interface Popup {
   id: number;
@@ -239,4 +248,20 @@ export interface OutboxRow extends NewOutboxRow {
   /** 이 시각 이후에만 claim 대상. 실패 시 백오프, claim 시 lease. */
   next_attempt_at: string;
   updated_at: string;
+}
+
+// =============================================================================
+// 접수 결과 (lib/reservations/create.ts · P3-2 · ADR-4). 이 블록은 P3-2 가 파일 끝에 덧붙였다.
+// =============================================================================
+
+/** createReservation 의 반환. 예약 행이 있어야만 돌아온다(insert 실패는 throw). */
+export interface CreateReservationResult {
+  /** reservations.id (uuid). */
+  reservationId: string;
+  /** 방문자에게 보여 주는 비순차 코드(8자). 예약확인(P6-3a)은 이것 + 휴대폰 뒷4자리로 조회한다. */
+  publicCode: string;
+  /** 통지 아웃박스에 계획한 행이 전부 들어갔는가. false = 예약은 저장됐으나 통지 기록이 없거나 모자란다(구조화 로그 남김). */
+  notifyQueued: boolean;
+  /** 생략·실패 사유(사장님 연락처 없음, enqueue 실패 등). 빈 배열이 정상. 래퍼가 로그로 남긴다. */
+  warnings: string[];
 }
