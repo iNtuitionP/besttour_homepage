@@ -205,6 +205,10 @@ jobs:
           [ "$html" -ge 1 ] && [ "$body" -ge 1 ]
 
       - name: Start production server on :3111
+        env:
+          # P3-4: /quote 의 폼 토큰(타임트랩)은 요청마다 이 시크릿으로 서명된다. 일회용 문자열 — 원격 자격 아님(GitHub 시크릿 참조 0 유지).
+          # 없으면 페이지가 fail-closed("접수 준비 중")로 토큰을 내리지 않아 아래 "요청마다 새 토큰" 단언을 할 수 없다.
+          GUARD_SECRET: ci-only-throwaway-form-token-secret-0123456789abcdef
         run: |
           nohup npm start -- -p 3111 > /tmp/next-start.log 2>&1 &
           echo $! > /tmp/next.pid
@@ -221,6 +225,22 @@ jobs:
           printf '%s\n' "$h" | grep -q '^HTTP/1.1 200' || { echo "/admin is not 200"; exit 1; }
           if printf '%s\n' "$h" | grep -qi 's-maxage=31536000'; then echo "/admin carries s-maxage=31536000"; exit 1; fi
           if printf '%s\n' "$h" | grep -qi '^x-nextjs-prerender'; then echo "/admin is prerendered"; exit 1; fi
+
+      - name: Assert /quote is rendered per request (P3-4 — a baked form token would expire for everyone after 1h)
+        run: |
+          # 빌드 표는 이 라우트를 ●(SSG) 로 찍지만(Turbopack 이 generateStaticParams 하위를 그렇게 표기) 실제 판정은 런타임이다:
+          # prerender 산출물 없음 + no-store + 두 요청의 formToken 이 다르면 동적이다. 같으면 토큰이 HTML 에 구워진 것 — 1시간 뒤 전원 bot.
+          a=$(curl -s -D /tmp/quote.h "http://127.0.0.1:3111/quote?step=6"); b=$(curl -s "http://127.0.0.1:3111/quote?step=6")
+          grep -q '^HTTP/1.1 200' /tmp/quote.h || { echo "/quote is not 200"; cat /tmp/quote.h; exit 1; }
+          grep -qi '^cache-control:.*no-store' /tmp/quote.h || { echo "/quote is cacheable"; cat /tmp/quote.h; exit 1; }
+          ta=$(printf '%s' "$a" | grep -o '<input[^>]*name="formToken"[^>]*>' | grep -o 'value="[^"]*"' | head -1)
+          tb=$(printf '%s' "$b" | grep -o '<input[^>]*name="formToken"[^>]*>' | grep -o 'value="[^"]*"' | head -1)
+          [ -n "$ta" ] || { echo "no formToken hidden input — GUARD_SECRET missing or step 6 not rendered"; exit 1; }
+          [ "$ta" != "$tb" ] || { echo "same formToken on two requests — /quote is prerendered"; exit 1; }
+          printf '%s' "$a" | grep -q 'data-legal="withdrawal-notice"' || { echo "withdrawal notice missing on /quote"; exit 1; }
+          code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:3111/quote/done?code=ABCDEFGH")
+          [ "$code" = "200" ] || { echo "/quote/done -> $code"; exit 1; }
+          echo "/quote: 200, no-store, two requests -> two tokens, withdrawal notice present; /quote/done 200"
 
       - name: Assert 404 responses are full documents (M1)
         run: |

@@ -389,6 +389,20 @@ describe("M9 — ci.yml legal-pages-http 잡", () => {
     expect(job).toMatch(/skipped/);
   });
 
+  // P3-4 (2026-09-13): /quote 의 폼 토큰은 요청마다 새로 서명돼야 한다(FORM_MAX_AGE_MS 1시간). 빌드 표 글리프(●/ƒ)가 아니라
+  // 런타임으로 잠근다 — 두 요청의 formToken 이 다르고 no-store 여야 하며, 토큰을 만들 GUARD_SECRET 은 일회용 문자열로 준다(secrets.* 아님).
+  test("P3-4 — /quote 를 두 번 받아 formToken 이 다름·no-store·청약철회 고지·/quote/done 200 을 단언한다", () => {
+    const iStart = job.search(/npm start|next start/);
+    const iQuote = job.indexOf("/quote?step=6");
+    expect(iQuote).toBeGreaterThan(iStart);
+    expect(job).toMatch(/formToken/);
+    expect(job).toMatch(/no-store/);
+    expect(job).toMatch(/withdrawal-notice/);
+    expect(job).toMatch(/\/quote\/done/);
+    expect(job).toMatch(/GUARD_SECRET:\s*\S+/);
+    expect(job).not.toMatch(/GUARD_SECRET:\s*\$\{\{\s*secrets/);
+  });
+
   // 2026-09-13 개정: P2-4 홈이 ISR 이라 next build 가 빌드 타임에 Supabase 를 읽는다. "env 없음" 은 더 이상 성립하지 않는다.
   // 대신 잠그는 것 — (1) env 는 로컬 스택(supabase start → status)에서만 온다, (2) 원격 자격(secrets.*) 0, (3) 빌드는 export 뒤에,
   // (4) 스택은 always() 로 내린다. 법정 페이지가 DB 를 안 읽는다는 것은 legal-pages.test.ts 의 정적 import 검사가 맡는다.

@@ -60,11 +60,22 @@ function limitersFor(url: string, token: string): RateLimiterSet {
   return set;
 }
 
-export function defaultGuardDeps(): GuardDeps {
+/**
+ * 폼 토큰(타임트랩) 서명용 시크릿만 필요할 때 — 렌더(P3-4 /quote 서버 컴포넌트)가 부른다.
+ * defaultGuardDeps 와 달리 Turnstile·Upstash·허용 호스트 env 를 요구하지 않는다 — 렌더는 토큰만 만들면 되고,
+ * 그 env 들은 제출(서버액션)에서 검사된다. 없거나 짧으면 throw(fail-closed) — 호출자는 잡아서 formToken:null 로 내리고
+ * 제출을 닫는다(페이지가 500 이 되지 않게). defaultGuardDeps 도 같은 검사를 이 함수로 한다(동작 동일).
+ */
+export function guardSecret(): string {
   const secret = process.env.GUARD_SECRET ?? "";
   if (secret.length < GUARD_SECRET_MIN_LENGTH) {
-    throw new Error(`defaultGuardDeps: GUARD_SECRET 이 없거나 ${GUARD_SECRET_MIN_LENGTH}자 미만이다`);
+    throw new Error(`guardSecret: GUARD_SECRET 이 없거나 ${GUARD_SECRET_MIN_LENGTH}자 미만이다`);
   }
+  return secret;
+}
+
+export function defaultGuardDeps(): GuardDeps {
+  const secret = guardSecret();
 
   const turnstileSecret = process.env.TURNSTILE_SECRET_KEY ?? "";
   if (turnstileSecret.length === 0) throw new Error("defaultGuardDeps: TURNSTILE_SECRET_KEY 가 설정되지 않았다");
