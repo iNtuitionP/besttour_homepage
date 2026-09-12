@@ -41,9 +41,9 @@ const placeByCode = new Map(PLACES.map((p) => [p.code as string, p]));
 // 1. 정적 검사 — 서버 액션 아님, 서비스 롤 없음, 캐시 모름, 가격 연산 없음 (ADR-3, 브리프 원칙 1·2·5)
 // =============================================================================
 describe("lib/queries 정적 검사", () => {
-  test("브리프가 요구한 모듈 6개가 있다", () => {
+  test("브리프가 요구한 모듈 6개 + P2-4 gallery.ts 가 있다", () => {
     const names = walk(QUERIES_DIR).map((p) => path.basename(p));
-    for (const f of ["showcase.ts", "places.ts", "vehicles.ts", "notices.ts", "popups.ts", "index.ts"]) {
+    for (const f of ["showcase.ts", "places.ts", "vehicles.ts", "notices.ts", "popups.ts", "gallery.ts", "index.ts"]) {
       expect(names, `${f} 없음`).toContain(f);
     }
   });
@@ -75,8 +75,8 @@ describe("lib/queries 정적 검사", () => {
     }
   });
 
-  test("QUERY_TAGS — 5개 태그, 값 고유", () => {
-    expect(Object.keys(QUERY_TAGS).sort()).toEqual(["notices", "places", "popups", "showcase", "vehicles"]);
+  test("QUERY_TAGS — 6개 태그(P2-4 gallery 추가), 값 고유", () => {
+    expect(Object.keys(QUERY_TAGS).sort()).toEqual(["gallery", "notices", "places", "popups", "showcase", "vehicles"]);
     const values = Object.values(QUERY_TAGS);
     expect(new Set(values).size).toBe(values.length);
     for (const v of values) expect(v).toMatch(/^[a-z]+$/);

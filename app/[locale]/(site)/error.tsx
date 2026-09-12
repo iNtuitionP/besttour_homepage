@@ -14,7 +14,8 @@ import styles from "@/app/errors.module.css";
  * 에러 원문(message·stack)은 화면에 내지 않는다 — 내부 경로·쿼리·env 이름이 섞여 나올 수 있다. Next 가 붙이는 digest 만
  * 참조 번호로 보여 준다(서버 로그와 대조하는 용도, 그 자체로는 아무 정보도 아니다).
  * 문구는 messages/ko.json errors — app/[locale]/layout.tsx 의 NextIntlClientProvider 가 서버 메시지를 그대로 넘겨 주므로
- * 클라이언트에서도 useTranslations 가 된다. 실측 경로: 개발 서버 /dev/krmap?boom=1 (dev/krmap/page.tsx 가 일부러 throw).
+ * 클라이언트에서도 useTranslations 가 된다. 실측 경로: 개발 서버 /?boom=1 (홈 page.tsx 의 개발 전용 분기가 일부러 throw —
+ * 옛 /dev/krmap?boom=1 은 P2-4 에서 dev 라우트와 함께 삭제됐다).
  */
 export default function SiteError({
   error,

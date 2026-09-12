@@ -405,7 +405,8 @@ describe("M9 — ci.yml legal-pages-http 잡", () => {
 // ═════════════════════════════════════════════════════════════════════════
 const BASE = process.env.LEGAL_BASE_URL;
 describe.runIf(Boolean(BASE))("HTTP — production 서버 실측 (LEGAL_BASE_URL)", { timeout: 60_000 }, () => {
-  test.for([["/no-such-page"], ["/fr"], ["/ko-KR/x"]] as const)(
+  // /dev/krmap 은 P2-4 에서 삭제됐다(홈에 KrMap 이 들어감) — 이제 여느 미지 경로와 같은 전역 404 다.
+  test.for([["/no-such-page"], ["/fr"], ["/ko-KR/x"], ["/dev/krmap"]] as const)(
     "%s → 404 + <html lang> + <body> + 홈 링크 (M1)",
     async ([p]) => {
       const res = await fetch(`${BASE}${p}`);
@@ -417,20 +418,6 @@ describe.runIf(Boolean(BASE))("HTTP — production 서버 실측 (LEGAL_BASE_URL
       expect(html).toContain('href="/"');
     },
   );
-
-  test("/dev/krmap → 404 + 완전한 문서 — production notFound() 가 (site)/not-found.tsx 로 간다(본문은 하이드레이션 후, browse 실측) (M1)", async () => {
-    // 페이지 단위 notFound() 의 SSR 한계(실측 — 보고서 §판단 지점): 에러 바운더리는 서버에서 렌더되지 않으므로 Next 는
-    // <html id="__next_error__"> 껍데기(lang 없음·본문 비움)를 404 로 보내고, 클라이언트가 flight 페이로드의 경계로
-    // (site)/not-found.tsx 를 헤더·푸터와 함께 그린다. (site)/layout 에 <Suspense> 를 두면 셸은 SSR 되지만 상태가 200(soft 404)이
-    // 된다 — 실측 후 404 를 택했다. 그래서 서버 HTML 에서 단언하는 것은 상태·문서 껍데기·flight 안의 경계다.
-    const res = await fetch(`${BASE}/dev/krmap`);
-    expect(res.status).toBe(404);
-    const html = await res.text();
-    expect(html).toMatch(/^<!DOCTYPE html>/i);
-    expect(html).toMatch(/<html[\s>]/);
-    expect(html).toMatch(/<body[\s>]/);
-    expect(html).toContain("not-found-site");
-  });
 
   test("/admin → 200 · s-maxage=31536000 없음 · x-nextjs-prerender 없음 (M8)", async () => {
     const res = await fetch(`${BASE}/admin`);

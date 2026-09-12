@@ -1,0 +1,513 @@
+/*
+ * 홈 섹션 3~9 — 신뢰 지표 · 서비스 스트립 · 이용 절차 · 차량 · 회사 소개 · 갤러리 · 공지 (목업 variant-08).
+ * 색·간격·라운드·고도는 역할 토큰만, 간격 px 0건(home.module.css 헤더 참조).
+ */
+
+/* ── 신뢰 지표 (.trust) ───────────────────────────────────────────────── */
+.trust {
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border-decorative);
+  border-bottom: 1px solid var(--border-decorative);
+}
+.trustGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 640px) {
+  .trustGrid {
+    grid-template-columns: repeat(2, 1fr);
+    column-gap: var(--space-inline-md);
+  }
+}
+@media (min-width: 1024px) {
+  .trustGrid {
+    grid-template-columns: repeat(4, 1fr);
+    column-gap: 0;
+  }
+}
+.trustItem {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-inline-sm);
+  padding: var(--space-stack-sm) 0;
+  border-bottom: 1px solid var(--border-decorative);
+}
+.trustItem:last-child {
+  border-bottom: 0;
+}
+@media (min-width: 640px) {
+  .trustItem {
+    padding: var(--space-stack-md) 0;
+  }
+  .trustItem:nth-last-child(-n + 2) {
+    border-bottom: 0;
+  }
+}
+@media (min-width: 1024px) {
+  .trustItem {
+    border-bottom: 0;
+    padding: var(--space-stack-md) var(--space-inline-md) var(--space-stack-md) 0;
+  }
+  .trustItem + .trustItem {
+    padding-left: var(--space-inline-md);
+    border-left: 1px solid var(--border-decorative);
+  }
+  .trustItem:last-child {
+    padding-right: 0;
+  }
+}
+.trustIco {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+}
+.trustIco svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: var(--icon-brand);
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.trustB {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.trustS {
+  display: block;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* ── 서비스 스트립 (.section--tight.tone-lav) ─────────────────────────── */
+.services {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-inline-xs);
+  margin: var(--space-stack-sm) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.serviceItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  min-height: 40px;
+  padding: 0 var(--space-inline-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-control);
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.serviceItem::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-decorative);
+}
+
+/* ── 이용 절차 4단계 (.steps) ─────────────────────────────────────────── */
+.steps {
+  display: grid;
+  gap: var(--space-stack-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+@media (min-width: 640px) {
+  .steps {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-stack-md);
+  }
+}
+@media (min-width: 1024px) {
+  .steps {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+.step {
+  position: relative;
+  padding: var(--space-stack-md);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+  transition:
+    border-color var(--motion-base),
+    box-shadow var(--motion-base);
+}
+.step:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--elevation-raised);
+}
+.stepNo {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-control);
+  background: var(--bg-inverse);
+  color: var(--text-on-inverse);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+.stepTitle {
+  margin: var(--space-stack-sm) 0 0;
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.4;
+  letter-spacing: -0.025em;
+}
+.stepsNotes {
+  display: grid;
+  gap: var(--space-stack-xs);
+  margin: var(--space-stack-md) 0 0;
+  padding: var(--space-stack-sm) var(--space-inline-md);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+  text-align: center;
+}
+.stepsNote {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.7;
+  color: var(--text-brand);
+}
+.stepsMeta {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+
+/* ── 차량 5종 (.fleet/.bus) ──────────────────────────────────────────── */
+.fleet {
+  display: grid;
+  gap: var(--space-stack-sm);
+}
+@media (min-width: 560px) {
+  .fleet {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-stack-md);
+  }
+}
+@media (min-width: 1024px) {
+  .fleet {
+    grid-template-columns: repeat(6, 1fr);
+  }
+  .fleet > * {
+    grid-column: span 2;
+  }
+  .fleet > *:nth-child(4) {
+    grid-column: 2 / span 2;
+  }
+  .fleet > *:nth-child(5) {
+    grid-column: 4 / span 2;
+  }
+}
+.bus {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+  transition:
+    border-color var(--motion-base),
+    box-shadow var(--motion-base);
+}
+.bus:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--elevation-raised);
+}
+.busPh {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  background: var(--bg-subtle);
+}
+.busImg {
+  object-fit: cover;
+}
+.busSeat {
+  position: absolute;
+  left: var(--space-inline-xs);
+  top: var(--space-stack-xs);
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 var(--space-inline-xs);
+  border-radius: var(--radius-chip);
+  background: var(--bg-inverse);
+  color: var(--text-on-inverse);
+  font-size: 11.5px;
+  font-weight: 800;
+}
+.busBody {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-stack-xs);
+  padding: var(--space-stack-sm) var(--space-inline-sm) var(--space-stack-md);
+}
+.busName {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+.busSpec {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--text-secondary);
+}
+.busMeta {
+  display: grid;
+  gap: var(--space-stack-xs);
+  margin: auto 0 0;
+  padding: var(--space-stack-sm) 0 0;
+  border-top: 1px solid var(--border-decorative);
+}
+.busMeta > div {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: var(--space-inline-xs);
+  align-items: baseline;
+}
+.busMeta dt {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--text-brand);
+}
+.busMeta dd {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.busMeta dd b {
+  color: var(--text-primary);
+  font-weight: 800;
+}
+.busCta {
+  margin: var(--space-stack-xs) 0 0;
+}
+.fleetDisc {
+  margin: var(--space-stack-md) 0 0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+/* ── 회사 소개 — 인사말 요약 (#company) ──────────────────────────────── */
+.company {
+  max-width: 72ch;
+}
+.companyTitle {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: clamp(22px, 3vw, 32px);
+  font-weight: 800;
+  line-height: 1.35;
+  letter-spacing: -0.03em;
+}
+.companyBody {
+  margin: var(--space-stack-sm) 0 0;
+  font-size: 15.5px;
+  line-height: 1.85;
+  color: var(--text-secondary);
+}
+.companySign {
+  margin: var(--space-stack-md) 0 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.companySign b {
+  margin-left: var(--space-inline-xs);
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+/* ── 갤러리 (.gal) ───────────────────────────────────────────────────── */
+.gal {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-stack-xs);
+}
+@media (min-width: 640px) {
+  .gal {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (min-width: 1024px) {
+  .gal {
+    grid-template-columns: repeat(4, 1fr);
+    grid-auto-rows: 210px;
+  }
+  .galWide {
+    grid-column: span 2;
+  }
+}
+.galItem,
+.galWide {
+  position: relative;
+  margin: 0;
+  min-height: 190px;
+  overflow: hidden;
+  border-radius: var(--radius-surface);
+  background: var(--bg-inverse);
+}
+@media (min-width: 1024px) {
+  .galItem,
+  .galWide {
+    min-height: 0;
+  }
+}
+.galImg {
+  object-fit: cover;
+}
+.galItem::after,
+.galWide::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 40%, var(--overlay-strong) 100%);
+}
+.galCap {
+  position: absolute;
+  left: var(--space-inline-sm);
+  right: var(--space-inline-sm);
+  bottom: var(--space-stack-sm);
+  z-index: 1;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-on-inverse);
+}
+.galMore {
+  margin: var(--space-stack-lg) 0 0;
+  text-align: center;
+}
+
+/* ── 공지 + 고객센터 (.notice-grid/.notices/.cscard) ──────────────────── */
+.noticeGrid {
+  display: grid;
+  gap: var(--space-stack-lg);
+}
+.noticeGrid > * {
+  min-width: 0;
+}
+@media (min-width: 1024px) {
+  .noticeGrid {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    gap: var(--space-stack-xl);
+    align-items: start;
+  }
+}
+.notices {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+}
+.noticeItem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-inline-sm);
+  padding: var(--space-stack-sm) var(--space-inline-sm);
+}
+.noticeItem + .noticeItem {
+  border-top: 1px solid var(--border-decorative);
+}
+.noticeCat {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-height: 22px;
+  padding: 0 var(--space-inline-xs);
+  border-radius: var(--radius-chip);
+  background: var(--bg-subtle);
+  color: var(--text-brand);
+  font-size: 11px;
+  font-weight: 800;
+}
+.noticeTitle {
+  flex: 1 1 200px;
+  font-size: 14.5px;
+  font-weight: 700;
+  line-height: 1.5;
+  letter-spacing: -0.02em;
+}
+.noticeDate {
+  margin-left: auto;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.cscard {
+  padding: var(--space-stack-lg) var(--space-inline-md);
+  border-radius: var(--radius-surface);
+  background: var(--bg-inverse);
+  color: var(--text-secondary-on-inverse);
+}
+.csTitle {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--text-on-inverse);
+}
+.csList {
+  display: grid;
+  gap: var(--space-stack-xs);
+  margin: var(--space-stack-md) 0 0;
+}
+.csList > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-inline-sm);
+  padding: 0 0 var(--space-stack-xs);
+  border-bottom: 1px solid var(--border-on-inverse);
+}
+.csList dt {
+  font-size: 12.5px;
+}
+.csList dd {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text-on-inverse);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.csList a {
+  color: inherit;
+}
+.csList a:focus-visible {
+  outline: 3px solid var(--accent-on-inverse);
+  outline-offset: 2px;
+}

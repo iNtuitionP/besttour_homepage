@@ -1,0 +1,402 @@
+/*
+ * 히어로 — 5초 캐러셀 + 견적 위젯 (목업 variant-08 §HERO .hero/.car/.slide/.quote).
+ * 색·간격·라운드·고도는 역할 토큰만, 간격 px 0건(home.module.css 헤더 참조).
+ * 어두운 사진 위 글자는 *-on-inverse 토큰, 강조는 --accent-on-inverse(어두운 면 위 골드 7.66:1).
+ */
+
+.hero {
+  background: var(--bg-subtle);
+  padding: var(--space-stack-md) 0 var(--space-stack-lg);
+}
+
+.grid {
+  display: grid;
+  gap: var(--space-stack-md);
+}
+.grid > * {
+  min-width: 0;
+}
+@media (min-width: 1024px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr) minmax(376px, 392px);
+    gap: var(--space-stack-lg);
+    align-items: start;
+  }
+}
+
+/* ── 캐러셀 ───────────────────────────────────────────────────────────── */
+.car {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+  background: var(--bg-inverse);
+  color: var(--text-on-inverse);
+}
+.car:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.stage {
+  display: grid;
+}
+
+.slide {
+  grid-area: 1 / 1;
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 400px;
+  padding: var(--space-stack-lg) var(--space-inline-md) var(--space-section);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.5s var(--motion-ease),
+    visibility 0.5s;
+}
+@media (min-width: 640px) {
+  .slide {
+    min-height: 440px;
+    padding: var(--space-stack-xl) var(--space-inline-lg) var(--space-section);
+  }
+}
+@media (min-width: 1024px) {
+  .slide {
+    min-height: 472px;
+  }
+}
+.slideOn {
+  opacity: 1;
+  visibility: visible;
+}
+@media (prefers-reduced-motion: reduce) {
+  .slide {
+    transition: none;
+  }
+}
+
+.bg {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+}
+.bgImg {
+  object-fit: cover;
+}
+.bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(96deg, var(--bg-inverse) 0%, var(--overlay-strong) 55%, var(--overlay-soft) 100%);
+}
+
+.tag,
+.tagLine {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  margin: 0;
+  min-height: 28px;
+  padding: 0 var(--space-inline-sm);
+  border-radius: var(--radius-chip);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.tag {
+  background: var(--accent-on-inverse);
+  color: var(--text-primary);
+}
+.tagLine {
+  border: 1.5px solid var(--text-secondary-on-inverse);
+  color: var(--text-on-inverse);
+}
+
+.heading {
+  margin: var(--space-stack-sm) 0 0;
+  color: var(--text-on-inverse);
+  font-size: clamp(25px, 4.3vw, 42px);
+  font-weight: 800;
+  line-height: 1.28;
+  letter-spacing: -0.035em;
+  white-space: pre-line;
+}
+.heading em {
+  font-style: normal;
+  color: var(--accent-on-inverse);
+}
+
+.body {
+  margin: var(--space-stack-sm) 0 0;
+  max-width: 44ch;
+  font-size: clamp(14px, 1.5vw, 16.5px);
+  line-height: 1.7;
+  color: var(--text-secondary-on-inverse);
+}
+.body b {
+  color: var(--text-on-inverse);
+  font-weight: 700;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-inline-xs);
+  margin: var(--space-stack-md) 0 0;
+  padding: 0;
+  max-width: 60ch;
+  list-style: none;
+}
+.chip,
+.chipOn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 var(--space-inline-xs);
+  border: 1px solid var(--text-secondary-on-inverse);
+  border-radius: var(--radius-chip);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-on-inverse);
+}
+.chipOn {
+  border-color: var(--accent-on-inverse);
+  font-weight: 700;
+}
+
+/* 컨트롤 */
+.arrow {
+  position: absolute;
+  top: 50%;
+  z-index: 3;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  cursor: pointer;
+  opacity: 0.9;
+  transition: opacity var(--motion-base);
+}
+.arrow:hover {
+  opacity: 1;
+}
+.arrow:focus-visible {
+  outline: 3px solid var(--accent-on-inverse);
+  outline-offset: 2px;
+}
+.arrow svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.arrowPrev {
+  left: var(--space-inline-sm);
+}
+.arrowNext {
+  right: var(--space-inline-sm);
+}
+@media (max-width: 639px) {
+  .arrow {
+    top: auto;
+    bottom: var(--space-stack-sm);
+    transform: none;
+    width: 38px;
+    height: 38px;
+  }
+  .arrowPrev {
+    left: auto;
+    right: var(--space-section);
+  }
+  .arrowNext {
+    right: var(--space-inline-sm);
+  }
+}
+
+.dots {
+  position: absolute;
+  left: var(--space-inline-md);
+  bottom: var(--space-stack-sm);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+}
+@media (min-width: 640px) {
+  .dots {
+    left: var(--space-inline-lg);
+    bottom: var(--space-stack-md);
+  }
+}
+.dot {
+  width: 30px;
+  height: 5px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-chip);
+  background: var(--text-secondary-on-inverse);
+  opacity: 0.55;
+  cursor: pointer;
+  transition:
+    opacity var(--motion-base),
+    background-color var(--motion-base);
+}
+.dot:hover {
+  opacity: 0.9;
+}
+.dot[aria-current="true"] {
+  background: var(--accent-on-inverse);
+  opacity: 1;
+}
+.dot:focus-visible {
+  outline: 3px solid var(--accent-on-inverse);
+  outline-offset: 2px;
+}
+.cnt {
+  margin-left: var(--space-inline-xs);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary-on-inverse);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 견적 위젯 (접수 없음 — /quote 프리필 링크까지) ──────────────────── */
+.quote {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--elevation-raised);
+}
+
+.quoteHd {
+  padding: var(--space-stack-md) var(--space-inline-md) var(--space-stack-sm);
+  border-bottom: 1px solid var(--border-decorative);
+}
+.quoteTitle {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+.quoteSub {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.quoteForm {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-stack-sm);
+  padding: var(--space-stack-md) var(--space-inline-md) var(--space-stack-sm);
+}
+.field {
+  display: grid;
+  gap: var(--space-stack-xs);
+  min-width: 0;
+}
+.fieldLabel {
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+}
+.ctrl {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: var(--bg-page);
+  border: 1.5px solid var(--border-decorative);
+  border-radius: var(--radius-control);
+  transition: border-color var(--motion-base);
+}
+.ctrl:hover {
+  border-color: var(--border-subtle);
+}
+.ctrl:focus-within {
+  border-color: var(--border-strong);
+}
+.ctrl select,
+.ctrl input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 var(--space-inline-md) 0 var(--space-inline-sm);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 700;
+  outline: none;
+}
+.ctrl input {
+  padding-right: var(--space-inline-sm);
+}
+.ctrlSelect::after {
+  content: "";
+  position: absolute;
+  right: var(--space-inline-sm);
+  width: 7px;
+  height: 7px;
+  pointer-events: none;
+  border-right: 2px solid var(--icon-default);
+  border-bottom: 2px solid var(--icon-default);
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.quoteAir {
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  margin: 0 var(--space-inline-md);
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+  color: var(--text-brand);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.55;
+}
+.quoteAir svg {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.quoteFoot {
+  display: grid;
+  gap: var(--space-stack-xs);
+  padding: var(--space-stack-sm) var(--space-inline-md) var(--space-stack-md);
+}
+.quoteNote {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  text-align: center;
+  color: var(--text-secondary);
+}

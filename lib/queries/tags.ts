@@ -10,6 +10,7 @@ export const QUERY_TAGS = {
   vehicles: "vehicles",
   notices: "notices",
   popups: "popups",
+  gallery: "gallery",
 } as const;
 
 export type QueryTag = (typeof QUERY_TAGS)[keyof typeof QUERY_TAGS];

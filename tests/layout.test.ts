@@ -277,9 +277,13 @@ describe("3. components/layout/** — 한글 리터럴 0건 + 원장 import", ()
         expect(code.includes(w), `${file} 에 실증 불가 문구`).toBe(false);
       }
     }
-    // i18n 카탈로그도 같은 규칙 — 셸 네임스페이스에 슬쩍 들어오지 못하게 한다
-    const ko = read("messages/ko.json");
-    for (const w of UNPROVEN) expect(ko.includes(w), "messages/ko.json 에 실증 불가 문구").toBe(false);
+    // i18n 카탈로그도 같은 규칙 — 셸 네임스페이스(common·layout·errors)에 슬쩍 들어오지 못하게 한다.
+    // home.* 는 tests/home.test.ts 가 따로 잠근다(플랜 §7 C4 "24시간 접수" 폴백 표현은 홈 신뢰 지표에만 허용 — P2-4).
+    const ko = JSON.parse(read("messages/ko.json")) as Record<string, unknown>;
+    for (const ns of ["common", "layout", "errors"]) {
+      const text = JSON.stringify(ko[ns] ?? {});
+      for (const w of UNPROVEN) expect(text.includes(w), `messages/ko.json ${ns} 에 실증 불가 문구`).toBe(false);
+    }
   });
 
   test("헤더에 관계사 로고(best mobility)를 넣지 않는다 (스펙 §13.1)", () => {

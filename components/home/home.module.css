@@ -1,0 +1,150 @@
+/*
+ * 홈 공통 — 래퍼·섹션 밴드·섹션 헤드·버튼 (목업 variant-08 .wrap/.section/.sec-head/.btn).
+ * 색·간격·라운드·고도는 styles/semantic.css 의 역할 토큰만 쓴다(HEX·rgba·원시 토큰 금지, tests/layout.test.ts §4).
+ * 간격에는 px 리터럴 0건 — 목업의 8px 스케일 밖 수치(10·12·14·20px)는 가장 가까운 역할 토큰으로 맞췄다
+ * (P2-3 셸과 같은 규약, PX_ALLOW 추가 없음). px 는 치수(아이콘·최소 높이)·타이포·선 두께에만 남는다.
+ */
+
+.main {
+  background: var(--bg-page);
+  color: var(--text-primary);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.wrap {
+  width: 100%;
+  max-width: var(--layout-maxw);
+  margin: 0 auto;
+  padding: 0 var(--space-page-x);
+}
+
+/* ── 섹션 밴드 ────────────────────────────────────────────────────────── */
+.section {
+  padding: var(--space-section) 0;
+}
+.sectionTight {
+  padding: var(--space-stack-lg) 0;
+}
+.toneWhite {
+  background: var(--bg-surface);
+}
+.toneLav {
+  background: var(--bg-subtle);
+}
+
+/* ── 섹션 헤드 (eyebrow + 제목 [+ 설명]) ─────────────────────────────── */
+.head {
+  display: grid;
+  gap: var(--space-stack-sm);
+  margin: 0 0 var(--space-stack-xl);
+}
+.head > * {
+  min-width: 0;
+}
+@media (min-width: 960px) {
+  .headSplit {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    align-items: end;
+    gap: var(--space-stack-xl);
+  }
+  .headSplit .desc {
+    margin-top: 0;
+  }
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  margin: 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-brand);
+}
+.eyebrow::before {
+  content: "";
+  width: 20px;
+  height: 2px;
+  background: var(--accent-decorative);
+}
+
+.title {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: clamp(24px, 3.6vw, 38px);
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: -0.03em;
+}
+.ac {
+  color: var(--text-brand);
+}
+
+.desc {
+  margin: var(--space-stack-sm) 0 0;
+  max-width: 56ch;
+  font-size: 15px;
+  line-height: 1.75;
+  color: var(--text-secondary);
+}
+.desc b {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+/* ── 버튼 ──────────────────────────────────────────────────────────────── */
+.btnGhost,
+.btnGold {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-inline-xs);
+  min-height: 48px;
+  padding: var(--space-stack-xs) var(--space-inline-md);
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-control);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--motion-base),
+    border-color var(--motion-base),
+    color var(--motion-base);
+}
+.btnGhost {
+  background: var(--action-secondary-bg);
+  color: var(--action-secondary-fg);
+  border-color: var(--action-secondary-border);
+}
+.btnGhost:hover {
+  background: var(--action-secondary-bg-hover);
+}
+/* 골드는 배경으로만 — 글자는 진한 색(골드 텍스트 금지, semantic.css 헤더) */
+.btnGold {
+  background: var(--accent-decorative);
+  color: var(--text-primary);
+}
+.btnGold:hover {
+  background: var(--accent-decorative-strong);
+  color: var(--text-on-inverse);
+}
+.btnGhost:focus-visible,
+.btnGold:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.btnBlock {
+  width: 100%;
+}
+.btnLg {
+  min-height: 54px;
+  font-size: 16px;
+}
+.btnSm {
+  min-height: 40px;
+  font-size: 13.5px;
+}

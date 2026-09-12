@@ -30,7 +30,6 @@ import { KR_MAP_LAND_PATH } from "@/components/KrMap/kr-map-path";
 const ROOT = path.resolve(import.meta.dirname, "..");
 const KRMAP_DIR = path.join(ROOT, "components", "KrMap");
 const CSS_MODULE = path.join(KRMAP_DIR, "KrMap.module.css");
-const DEV_PAGE = path.join(ROOT, "app", "[locale]", "(site)", "dev", "krmap", "page.tsx");
 
 // ── 소스 로딩 ────────────────────────────────────────────────────────────
 function walk(dir: string): string[] {
@@ -385,36 +384,5 @@ describe("components/KrMap — 서버 컴포넌트 · 링크 · verbatim", () =>
     expect(/role="img"/.test(mapSvg)).toBe(true);
     expect(/aria-labelledby=/.test(mapSvg)).toBe(true);
     expect((mapSvg.match(/aria-hidden(="true"|=\{true\}|\b)/g) ?? []).length).toBeGreaterThanOrEqual(2);
-  });
-});
-
-// =============================================================================
-// 5. 개발 전용 라우트 — production 이면 notFound, ?empty=1 분기, 삭제 예정 주석
-// =============================================================================
-describe("app/[locale]/(site)/dev/krmap/page.tsx", () => {
-  const src = readFileSync(DEV_PAGE, "utf8");
-
-  test("NODE_ENV === 'production' 가드 + notFound()", () => {
-    expect(/process\.env\.NODE_ENV\s*===\s*["']production["']/.test(src)).toBe(true);
-    expect(/import\s*\{[^}]*\bnotFound\b[^}]*\}\s*from\s*["']next\/navigation["']/.test(src)).toBe(true);
-    expect(/notFound\(\)/.test(src)).toBe(true);
-    // 가드가 데이터 조회보다 앞에 있어야 한다
-    expect(src.indexOf("notFound()")).toBeLessThan(src.indexOf("getShowcaseRoutes("));
-  });
-
-  test("getShowcaseRoutes 로 받아 <KrMap routes=…/> 에 내린다", () => {
-    expect(/getShowcaseRoutes\(/.test(src)).toBe(true);
-    expect(/<KrMap\s+routes=/.test(src)).toBe(true);
-  });
-
-  test("?empty=1 이면 빈 배열을 넘기는 분기가 있다 (실패 경로 실측용)", () => {
-    expect(/empty/.test(src)).toBe(true);
-    expect(/\[\]/.test(src)).toBe(true);
-  });
-
-  test("P2-4 가 홈에 KrMap 을 넣으면 삭제한다는 주석이 상단에 있다", () => {
-    const head = src.slice(0, 600);
-    expect(/P2-4/.test(head)).toBe(true);
-    expect(/삭제/.test(head)).toBe(true);
   });
 });
