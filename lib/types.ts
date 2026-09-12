@@ -7,6 +7,7 @@
  */
 import { z } from "zod";
 import { LOCATION_CODES, PURPOSES, type LocationCode, type PlaceKind } from "./codes";
+import { parseKst } from "./kst";
 
 /** 국내 휴대전화(01x, 하이픈 선택). lib/reservations/phone.ts contactPhone() 이 +82 E.164 로 정규화한다. */
 export const PHONE_KR_PATTERN = /^01[016789]-?\d{3,4}-?\d{4}$/;
@@ -63,7 +64,59 @@ export const ReservationInput = z
         path: ["phone"],
       });
     }
+
+    // P3-3-FIX M1: 운행 일시 규칙 3개를 zod 단계로 올린다. 전에는 lib/reservations/create.ts scheduleColumns 의 throw 만 잡아
+    // 사용자에게 `server`(일시적 오류 문구)가 나가고 시도마다 error 스택 로그가 남았다 — 사람이 흔히 내는 입력(왕복인데 귀가 비움, 귀가 ≤ 출발)이다.
+    // 여기서 잡으면 `validation` + fieldErrors.returnAtLocal 로 내려간다. create.ts 의 throw 는 방어선으로 그대로 둔다(0001·0006 CHECK 와 같은 결과).
+    // message 의 토큰(returnAtLocal · 출발 · round_trip_return_ck)은 tests/reservation-create.test.ts 가 재검증 throw 를 정규식으로 잠근 것과
+    // 맞춘 것이다 — createReservation 은 step 0 에서 safeParse 를 다시 돌리고 issue 문자열을 담아 throw 하므로, message 를 바꾸면 그쪽이 깨진다.
+    // 규칙 0 (컨트롤러 결정 2026-09-13): 형식(regex)은 통과했지만 달력에 없는 일시(2026-02-30T08:00 · …T24:00 · 비윤년 02-29)는 그 필드에 issue.
+    // 전에는 이 값이 zod 를 지나 create.ts:113 의 parseKst 에서 throw → `server`. regex 가 이미 실패한 값에는 두 번째 issue 를 내지 않는다.
+    // `<input type="datetime-local">` 은 이런 값을 만들지 않으므로 사람 경로가 아니라 조작 요청이 대상이다 — 그래도 500·server 가 아니라 validation.
+    const departAt = kstInstant(data.departAtLocal);
+    if (departAt.state === "not-a-date") {
+      ctx.addIssue({ code: "custom", message: "존재하지 않는 일시입니다 — 달력에 없는 날짜이거나 시·분 범위 밖 (departAtLocal)", path: ["departAtLocal"] });
+    }
+    const returnAt = data.returnAtLocal === undefined ? undefined : kstInstant(data.returnAtLocal);
+    if (returnAt?.state === "not-a-date") {
+      ctx.addIssue({ code: "custom", message: "존재하지 않는 일시입니다 — 달력에 없는 날짜이거나 시·분 범위 밖 (returnAtLocal)", path: ["returnAtLocal"] });
+    }
+
+    if (data.tripType === "round" && data.returnAtLocal === undefined) {
+      ctx.addIssue({ code: "custom", message: "round trip requires returnAtLocal", path: ["returnAtLocal"] });
+    }
+    if (data.tripType === "oneway" && data.returnAtLocal !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "oneway 에는 returnAtLocal 을 보낼 수 없습니다 (0006 reservations_round_trip_return_ck — oneway 의 return_at 은 null)",
+        path: ["returnAtLocal"],
+      });
+    }
+    // 규칙 2: 문자열 비교가 아니라 parseKst 인스턴트 비교. 둘 중 하나라도 인스턴트가 없으면(regex 실패 또는 규칙 0) 건너뛴다 —
+    // 그 필드에는 이미 issue 가 있으므로 이중 issue 를 만들지 않는다.
+    if (departAt.state === "ok" && returnAt?.state === "ok" && returnAt.ms <= departAt.ms) {
+      ctx.addIssue({
+        code: "custom",
+        message: "귀가 일시는 출발 일시 이후여야 합니다 (0001 return_at > depart_at)",
+        path: ["returnAtLocal"],
+      });
+    }
   });
+
+/**
+ * KST 벽시계 문자열 → 인스턴트(ms) 3상태.
+ *   ok          — 형식·달력 모두 유효
+ *   bad-format  — regex 불일치. zod 의 regex 가 이미 issue 를 냈으므로 superRefine 은 아무것도 더하지 않는다
+ *   not-a-date  — regex 는 통과했으나 parseKst 가 거부(달력에 없는 날짜, 시 > 23, 분 > 59). superRefine 규칙 0 이 issue 를 낸다
+ */
+function kstInstant(local: string): { state: "ok"; ms: number } | { state: "bad-format" } | { state: "not-a-date" } {
+  if (!KST_LOCAL_PATTERN.test(local)) return { state: "bad-format" };
+  try {
+    return { state: "ok", ms: parseKst(local).getTime() };
+  } catch {
+    return { state: "not-a-date" };
+  }
+}
 
 export type ReservationInput = z.infer<typeof ReservationInput>;
 

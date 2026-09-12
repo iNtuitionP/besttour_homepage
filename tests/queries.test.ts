@@ -75,8 +75,8 @@ describe("lib/queries 정적 검사", () => {
     }
   });
 
-  test("QUERY_TAGS — 6개 태그(P2-4 gallery 추가), 값 고유", () => {
-    expect(Object.keys(QUERY_TAGS).sort()).toEqual(["gallery", "notices", "places", "popups", "showcase", "vehicles"]);
+  test("QUERY_TAGS — 7개 태그(P2-4 gallery · P3-3 recent 추가), 값 고유", () => {
+    expect(Object.keys(QUERY_TAGS).sort()).toEqual(["gallery", "notices", "places", "popups", "recent", "showcase", "vehicles"]);
     const values = Object.values(QUERY_TAGS);
     expect(new Set(values).size).toBe(values.length);
     for (const v of values) expect(v).toMatch(/^[a-z]+$/);

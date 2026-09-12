@@ -11,6 +11,8 @@ export const QUERY_TAGS = {
   notices: "notices",
   popups: "popups",
   gallery: "gallery",
+  /** 홈 "접수 현황" 피드(P3-5). 접수 서버액션(actions/reservation.ts, P3-3)이 성공 뒤 runAfter 로 무효화한다. */
+  recent: "recent",
 } as const;
 
 export type QueryTag = (typeof QUERY_TAGS)[keyof typeof QUERY_TAGS];
