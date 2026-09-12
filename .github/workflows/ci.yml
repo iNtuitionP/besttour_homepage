@@ -137,3 +137,75 @@ jobs:
       - name: Stop local Supabase stack
         if: always()
         run: supabase stop
+
+  # REVIEW-FIX M9 (2026-09-12) — 법정 3페이지 HTTP 검증 + M1(404 문서) + M8(/admin 캐시) 런타임 단언.
+  # tests/legal-pages.test.ts §5(7건)와 tests/review-fix.test.ts 의 HTTP 블록은 LEGAL_BASE_URL 이 있을 때만 돈다.
+  # 그 서버를 띄우는 잡이 이것뿐이다 — 이 잡이 없으면 그 테스트들은 CI 에서 영원히 skip 이다(리뷰 M9).
+  # Supabase 접속 env 를 일부러 주지 않는다: 빌드·법정 페이지·404·/admin 은 DB 를 읽지 않아야 한다. 읽으면 여기서 깨진다(그게 버그다).
+  legal-pages-http:
+    name: Legal Pages HTTP (build → start → fetch)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (Supabase env 없음 — 빌드가 DB 를 읽으면 여기서 실패한다)
+        run: npm run build
+
+      - name: Assert _not-found.html is a full document (M1)
+        run: |
+          f=.next/server/app/_not-found.html
+          test -f "$f" || { echo "missing $f"; exit 1; }
+          html=$(grep -c '<html' "$f"); body=$(grep -c '<body' "$f")
+          echo "<html: $html / <body: $body"
+          [ "$html" -ge 1 ] && [ "$body" -ge 1 ]
+
+      - name: Start production server on :3111
+        run: |
+          nohup npm start -- -p 3111 > /tmp/next-start.log 2>&1 &
+          echo $! > /tmp/next.pid
+          for i in $(seq 1 60); do
+            if curl -sf -o /dev/null http://127.0.0.1:3111/; then echo "up after ${i}s"; exit 0; fi
+            sleep 1
+          done
+          echo "server did not come up in 60s"; cat /tmp/next-start.log; exit 1
+
+      - name: Assert /admin is not CDN-cacheable (M8)
+        run: |
+          h=$(curl -sD- -o /dev/null http://127.0.0.1:3111/admin)
+          printf '%s\n' "$h"
+          printf '%s\n' "$h" | grep -q '^HTTP/1.1 200' || { echo "/admin is not 200"; exit 1; }
+          if printf '%s\n' "$h" | grep -qi 's-maxage=31536000'; then echo "/admin carries s-maxage=31536000"; exit 1; fi
+          if printf '%s\n' "$h" | grep -qi '^x-nextjs-prerender'; then echo "/admin is prerendered"; exit 1; fi
+
+      - name: Assert 404 responses are full documents (M1)
+        run: |
+          for p in /no-such-page /fr /ko-KR/x; do
+            code=$(curl -s -o /tmp/body.html -w '%{http_code}' "http://127.0.0.1:3111$p")
+            [ "$code" = "404" ] || { echo "$p -> $code (expected 404)"; exit 1; }
+            grep -q '<html[^>]* lang=' /tmp/body.html || { echo "$p: no <html lang>"; head -c 300 /tmp/body.html; exit 1; }
+            grep -q '<body' /tmp/body.html || { echo "$p: no <body>"; exit 1; }
+            echo "$p -> 404 with <html lang> + <body>"
+          done
+
+      - name: Legal pages + review-fix HTTP tests (skip 0)
+        env:
+          LEGAL_BASE_URL: http://127.0.0.1:3111
+        run: |
+          npx vitest run tests/legal-pages.test.ts tests/review-fix.test.ts 2>&1 | tee /tmp/vitest.log
+          if grep -qE '[0-9]+ skipped' /tmp/vitest.log; then echo "skipped tests present — the LEGAL_BASE_URL gate did not open"; exit 1; fi
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f /tmp/next.pid ]; then kill "$(cat /tmp/next.pid)" 2>/dev/null || true; fi
+          pkill -f "next start" 2>/dev/null || true

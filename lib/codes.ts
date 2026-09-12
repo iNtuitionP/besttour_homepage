@@ -159,3 +159,72 @@ export const SHOWCASE_ROUTE_SEED: readonly ShowcaseRouteSeed[] = [
   { originCode: "SEL", destinationCode: "HCN", priceFrom: 700000, highlight: false, sort: 15 },
   { originCode: "SEL", destinationCode: "WJU", priceFrom: 700000, highlight: false, sort: 16 },
 ];
+
+// =============================================================================
+// LOCATION_CODES — 접수 폼이 받는 장소 코드 = PlaceCode ∪ RegionCode (REVIEW-FIX M5, 2026-09-12)
+// =============================================================================
+
+/**
+ * 시도 라벨(표시용). 출처: 기준 목업 mockups/wizard-b.html 의 SIDO 배열(16개 시도) + ICN=인천공항(PLACES.nameKo 와 동일).
+ * 화면 표시에만 쓴다 — DB 에는 언제나 코드를 저장한다(파일 상단 규칙).
+ */
+export const REGION_LABELS_KO: Readonly<Record<RegionCode, string>> = {
+  ICN: "인천공항",
+  SEL: "서울",
+  BSN: "부산",
+  INC: "인천",
+  DGU: "대구",
+  GWJ: "광주",
+  DJN: "대전",
+  ULS: "울산",
+  GG: "경기",
+  GW: "강원",
+  CN: "충남",
+  CB: "충북",
+  GB: "경북",
+  GN: "경남",
+  JN: "전남",
+  JB: "전북",
+  JJ: "제주",
+};
+
+/** 접수 폼이 받는 장소 코드 — 도시(PlaceCode) 또는 시도(RegionCode). */
+export type LocationCode = PlaceCode | RegionCode;
+
+const PLACE_BY_CODE: ReadonlyMap<string, Place> = new Map(PLACES.map((p) => [p.code, p]));
+
+/**
+ * ReservationInput.originCode / destinationCode / waypointCodes 가 받는 코드 집합(28개).
+ *
+ * 도시가 카탈로그(PLACES)에 있으면 도시 코드(정밀), 없는 지역은 시도 코드(전국 커버) — 둘 다 받는다. 그래야 "전국 어디서나"와
+ * 홈 대표 노선 카드 → 견적 폼 프리필(서울→통영 등, 시도 코드로는 표현 불가)이 둘 다 성립한다.
+ * 순서: PLACES(sort 순) 17개 먼저, 그 다음 REGIONS 중 PLACES 에 없는 11개(스펙 순서). 양쪽에 있는 6개
+ * (ICN SEL BSN DGU GWJ DJN)는 같은 문자열이라 한 번만 들어간다.
+ * DB reservations.origin_code 등은 CHECK 없는 text(리뷰 M5 실측) — 마이그레이션 없이 zod 와 이 헬퍼만 넓혔다.
+ */
+export const LOCATION_CODES: readonly LocationCode[] = [
+  ...[...PLACES].sort((a, b) => a.sort - b.sort).map((p) => p.code),
+  ...REGIONS.filter((r) => !PLACE_BY_CODE.has(r)),
+];
+
+const LOCATION_CODE_SET: ReadonlySet<string> = new Set(LOCATION_CODES);
+
+/** 입력 문자열이 LOCATION_CODES 에 있는지 — 대소문자·공백을 관대하게 보지 않는다(코드는 canonical 그대로). */
+export function isLocationCode(x: string): x is LocationCode {
+  return LOCATION_CODE_SET.has(x);
+}
+
+/**
+ * 시도 단위 집계용 — 도시면 PLACES.regionCode, 시도면 자기 자신.
+ * ICN 은 양쪽에 있는데 카탈로그가 우선이라 INC(인천)로 간다. 공항 여부는 코드 자체(=== "ICN")로 판별할 것.
+ */
+export function locationRegion(code: LocationCode): RegionCode {
+  const place = PLACE_BY_CODE.get(code);
+  return place ? place.regionCode : (code as RegionCode);
+}
+
+/** 표시용 한글 라벨 — 도시면 nameKo, 시도면 REGION_LABELS_KO. 표시 전용, DB 저장 금지. */
+export function locationLabelKo(code: LocationCode): string {
+  const place = PLACE_BY_CODE.get(code);
+  return place ? place.nameKo : REGION_LABELS_KO[code as RegionCode];
+}

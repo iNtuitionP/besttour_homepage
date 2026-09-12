@@ -446,15 +446,15 @@ components/**           props 경계. 법정 한글 리터럴 금지
 
 | # | 결함 | 검증 | 조치 |
 |---|---|---|---|
-| M1 | 전역 `app/not-found.tsx` 부재 → 404 응답이 `<html>` 없는 깨진 문서. 루트 레이아웃이 `children` 만 반환하는 구조의 부작용. **P7-1 이전 옛 사이트 URL 전체가 여기로 떨어진다** | `ls app/not-found.tsx` → 없음 | 전역 404 신설 |
-| M4 | `.env.example` 에 `SMS_SENDER=15666188` · `OWNER_PHONE=01020488585` 실값 커밋. 사장님 C1 은 "번호 미정"인데 이 기본값이 §7 의 "미설정 시 발송 스킵" 폴백을 죽인다 | `.env.example:17-18` | 공란화 + 주석. `.env.example` 을 게이트 검사 대상에 추가 |
-| M5 | `ReservationInput.originCode/destinationCode` 가 아직 `z.enum(REGIONS)`(시도 17)인데 0002 로 노선은 `PLACES`(도시)로 갔다 → **홈이 "서울→통영"을 보여주는데 견적 폼에서 통영을 못 고르고, 카드 CTA 프리필이 16개 중 11개에서 불가능** | `lib/types.ts:23-25` 실측 | **설계 결정**: 접수 코드 집합을 `PlaceCode ∪ RegionCode` 로 확장(도시 우선, 그 외 지역은 시도). P3-4 선행 |
-| M6 | `phone` 에 `.optional()` 이 없어 `phoneIntl` 대체 검증이 죽은 코드. `tests/schema.test.ts:80` 이 `phoneIntl` 을 넣지 않아 **필드 레벨 실패로 green** → 외국인(E4) 접수 불가 | `lib/types.ts:18` 실측 | 국내/해외 전화 분기 재설계 + 테스트 정정 |
-| M8 | `/admin` 이 `s-maxage=31536000` 로 정적 프리렌더. 지금은 빈 스텁이라 노출 0 이나, **P5-1 이 인증을 RSC 에만 넣으면 관리자 화면이 CDN 캐시로 나간다** | 응답 헤더 실측 | `app/admin/layout.tsx` 에 `dynamic = "force-dynamic"` + 회귀 테스트 |
-| M9 | `tests/legal-pages.test.ts` 의 HTTP 7건이 `LEGAL_BASE_URL` 을 요구하는데 CI 에 그 변수도 dev 서버도 없다 → **법정 3페이지의 200·조항 수·빈 셀 검증이 CI 에서 한 번도 안 돈다** | `ci.yml` 대조 | CI 잡에 dev 서버 + 변수 추가 |
+| M1 | 전역 `app/not-found.tsx` 부재 → 404 응답이 `<html>` 없는 깨진 문서. 루트 레이아웃이 `children` 만 반환하는 구조의 부작용. **P7-1 이전 옛 사이트 URL 전체가 여기로 떨어진다** | `ls app/not-found.tsx` → 없음 | ✅ 2026-09-13 — `app/not-found.tsx`(자체 html) + `(site)/not-found.tsx` + `error.tsx`. `_not-found.html` `<html` 0→1 |
+| M4 | `.env.example` 에 `SMS_SENDER=15666188` · `OWNER_PHONE=01020488585` 실값 커밋. 사장님 C1 은 "번호 미정"인데 이 기본값이 §7 의 "미설정 시 발송 스킵" 폴백을 죽인다 | `.env.example:17-18` | ✅ 2026-09-11 — 공란화 |
+| M5 | `ReservationInput.originCode/destinationCode` 가 아직 `z.enum(REGIONS)`(시도 17)인데 0002 로 노선은 `PLACES`(도시)로 갔다 → **홈이 "서울→통영"을 보여주는데 견적 폼에서 통영을 못 고르고, 카드 CTA 프리필이 16개 중 11개에서 불가능** | `lib/types.ts:23-25` 실측 | ✅ 2026-09-13 — `LOCATION_CODES` 28개(PlaceCode ∪ RegionCode). 16쌍 전부 통과. 마이그레이션 불필요 |
+| M6 | `phone` 에 `.optional()` 이 없어 `phoneIntl` 대체 검증이 죽은 코드. `tests/schema.test.ts:80` 이 `phoneIntl` 을 넣지 않아 **필드 레벨 실패로 green** → 외국인(E4) 접수 불가 | `lib/types.ts:18` 실측 | ✅ 2026-09-13 — `phone` XOR `phoneIntl` + `contactPhone()` E.164. 잘못된 green 테스트 정정 |
+| M8 | `/admin` 이 `s-maxage=31536000` 로 정적 프리렌더. 지금은 빈 스텁이라 노출 0 이나, **P5-1 이 인증을 RSC 에만 넣으면 관리자 화면이 CDN 캐시로 나간다** | 응답 헤더 실측 | ✅ 2026-09-13 — `force-dynamic`. `○ /admin` → `ƒ /admin`, `no-store` |
+| M9 | `tests/legal-pages.test.ts` 의 HTTP 7건이 `LEGAL_BASE_URL` 을 요구하는데 CI 에 그 변수도 dev 서버도 없다 → **법정 3페이지의 200·조항 수·빈 셀 검증이 CI 에서 한 번도 안 돈다** | `ci.yml` 대조 | ✅ 2026-09-13 — CI `legal-pages-http` 잡. skipped 검출 시 실패. 로컬 재현 158/158 |
 | M3 | 아웃박스 "영구 pending" — `0005:101` 의 `attempts < 5` 때문에 5회 claim 후 mark 없이 죽은 행은 claim 대상에서 빠지고 아무도 `failed` 로 바꾸지 않는다. ADR-7 이 막으려던 "통지가 조용히 사라진다"가 형태만 바꿔 살아 있다 | SQL 실측 | lease 만료 행 회수(reaper) — P4-2 선행 |
 | M2 | 취소·환불에 **계약 체결일 기준이 없고**, 약관 8조가 약속한 "견적 화면·확정 통지의 청약철회 고지"가 아직 없어 §17② 제한 요건이 불성립 | 약관 8조 vs 미구현 화면 | P3-4·P4-3 브리프에 고지 의무 반영. 기준일은 **사장님 확인 항목**(환불 기준액과 함께) |
-| M10 | P1-6 의 컨트롤러 사람 리뷰 서명표 5행이 전부 공란인데 완료 처리됐다. **이 서명이 없었기 때문에 F1·F2·M2 가 통과했다** | 보고서 실측 | 서명 절차를 실제로 수행(보류·반려 판정 포함). 재발 방지를 CLAUDE.md §6 에 명시 |
+| M10 | P1-6 의 컨트롤러 사람 리뷰 서명표 5행이 전부 공란인데 완료 처리됐다. **이 서명이 없었기 때문에 F1·F2·M2 가 통과했다** | 보고서 실측 | ✅ 2026-09-11 — 반려 서명 + CLAUDE.md 규칙 |
 
 ### 리뷰 자체에 대한 판정
 

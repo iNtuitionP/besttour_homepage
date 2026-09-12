@@ -6,23 +6,34 @@
  * canonical code(enum)로만 받는다 — 번역 문자열은 허용하지 않는다.
  */
 import { z } from "zod";
-import { PURPOSES, REGIONS, type PlaceKind } from "./codes";
+import { LOCATION_CODES, PURPOSES, type LocationCode, type PlaceKind } from "./codes";
 
-const PHONE_KR_PATTERN = /^01[016789]-?\d{3,4}-?\d{4}$/;
-const PHONE_INTL_PATTERN = /^\+[1-9]\d{6,14}$/;
+/** 국내 휴대전화(01x, 하이픈 선택). lib/reservations/phone.ts contactPhone() 이 +82 E.164 로 정규화한다. */
+export const PHONE_KR_PATTERN = /^01[016789]-?\d{3,4}-?\d{4}$/;
+/** 국제 E.164(+국가번호, 7~15자리). 해외 번호 전용 — 로케일과 무관하게 받는다(M6). */
+export const PHONE_INTL_PATTERN = /^\+[1-9]\d{6,14}$/;
 const KST_LOCAL_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+
+/**
+ * 장소 코드 = LOCATION_CODES(도시 PlaceCode ∪ 시도 RegionCode, 28개 — REVIEW-FIX M5).
+ * 시도 17개만 받던 옛 enum 은 홈 대표 노선 16개 중 11개(통영·포항·전주·여수·해남·세종·속초·강릉·태백·홍천·원주)를
+ * 접수에서 거부했다. zod 만 넓혔다 — DB 컬럼은 CHECK 없는 text 라 마이그레이션이 없다.
+ */
+const LocationCodeEnum = z.enum(LOCATION_CODES as [LocationCode, ...LocationCode[]]);
 
 export const ReservationInput = z
   .object({
     name: z.string().min(1).max(30),
-    phone: z.string().regex(PHONE_KR_PATTERN),
+    // 연락처는 phone(국내) XOR phoneIntl(해외 E.164) — 정확히 하나(아래 superRefine). 로케일로 강제하지 않는다:
+    // 한국 SIM 을 쓰는 외국인은 phone, 해외 번호는 phoneIntl. 빈 문자열은 "없음"이 아니라 형식 위반이다(폼은 빈 칸을 빼서 보낸다).
+    phone: z.string().regex(PHONE_KR_PATTERN).optional(),
     phoneIntl: z.string().regex(PHONE_INTL_PATTERN).optional(),
     email: z.string().email().optional(),
     vehicleSlug: z.enum(["bus45", "bus35", "limo28", "bus25", "bus16"]),
     purposeCode: z.enum(PURPOSES),
-    originCode: z.enum(REGIONS),
-    destinationCode: z.enum(REGIONS),
-    waypointCodes: z.array(z.enum(REGIONS)).max(5).default([]),
+    originCode: LocationCodeEnum,
+    destinationCode: LocationCodeEnum,
+    waypointCodes: z.array(LocationCodeEnum).max(5).default([]),
     tripType: z.enum(["round", "oneway", "oneway_oneway"]),
     departAtLocal: z.string().regex(KST_LOCAL_PATTERN),
     returnAtLocal: z.string().regex(KST_LOCAL_PATTERN).optional(),
@@ -43,9 +54,15 @@ export const ReservationInput = z
     privacyConsent: z.literal(true),
     marketingConsent: z.boolean().default(false),
   })
-  .refine((data) => data.locale !== "en" || Boolean(data.phone || data.phoneIntl), {
-    message: "locale이 'en'이면 phone 또는 phoneIntl 중 하나가 필요합니다.",
-    path: ["phoneIntl"],
+  .superRefine((data, ctx) => {
+    // REVIEW-FIX M6: 예전 refine(locale 이 en 일 때만 phone||phoneIntl)은 phone 이 필수라 절대 거짓이 될 수 없었다(죽은 코드).
+    if (Boolean(data.phone) === Boolean(data.phoneIntl)) {
+      ctx.addIssue({
+        code: "custom",
+        message: "phone(국내 휴대전화) 또는 phoneIntl(국제 E.164) 중 정확히 하나가 필요합니다.",
+        path: ["phone"],
+      });
+    }
   });
 
 export type ReservationInput = z.infer<typeof ReservationInput>;
@@ -73,6 +90,7 @@ export interface ReservationConsentColumns {
 export interface ReservationInsert extends ReservationConsentColumns {
   public_code: string;
   name: string;
+  /** 정규화된 연락처 하나 — lib/reservations/phone.ts contactPhone(input).e164 (국내 010… 도 +82 E.164 로). */
   phone: string;
   email?: string | null;
   vehicle_slug: ReservationInput["vehicleSlug"];

@@ -77,12 +77,40 @@ describe("ReservationInput", () => {
     expect(result.success).toBe(false);
   });
 
-  test("requires phone or phoneIntl when locale is 'en'", () => {
-    const result = ReservationInput.safeParse({
-      ...validInput,
-      locale: "en",
-      phone: undefined,
-    });
+  // REVIEW-FIX M6 (2026-09-12): 예전 테스트 "requires phone or phoneIntl when locale is 'en'" 은 phoneIntl 을 넣지 않아
+  // phone 필드의 required 위반으로 실패했고, 그래서 green 이었다 — refine 이 죽은 코드라는 사실을 드러내지 못했다.
+  // 지금 계약: phone XOR phoneIntl, 로케일 무관. 상세 케이스 표는 tests/review-fix.test.ts.
+  test("accepts phoneIntl alone (no phone) — regardless of locale", () => {
+    for (const locale of ["en", "ko"] as const) {
+      const result = ReservationInput.safeParse({
+        ...validInput,
+        locale,
+        phone: undefined,
+        phoneIntl: "+821012345678",
+      });
+      expect(result.success, locale).toBe(true);
+    }
+  });
+
+  test("rejects when neither phone nor phoneIntl is given", () => {
+    const result = ReservationInput.safeParse({ ...validInput, phone: undefined });
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error.issues[0].path).toEqual(["phone"]);
+  });
+
+  test("rejects when both phone and phoneIntl are given", () => {
+    const result = ReservationInput.safeParse({ ...validInput, phoneIntl: "+821012345678" });
+    expect(result.success).toBe(false);
+  });
+
+  // REVIEW-FIX M5 (2026-09-12): 장소 코드는 LOCATION_CODES(도시 ∪ 시도). 도시 코드로도 접수된다.
+  test("accepts a city code (TYG) as destination — showcase route prefill reaches intake", () => {
+    const result = ReservationInput.safeParse({ ...validInput, destinationCode: "TYG" });
+    expect(result.success).toBe(true);
+  });
+
+  test("rejects an unknown location code (XXX)", () => {
+    const result = ReservationInput.safeParse({ ...validInput, originCode: "XXX" });
     expect(result.success).toBe(false);
   });
 });
