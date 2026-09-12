@@ -206,7 +206,7 @@ SDD 루프(브리프→구현→리뷰→픽스)를 감안한 추정이다. 사�
 | ID | 태스크 | 파일 | 의존 | 검증 | 리스크 |
 |---|---|---|---|---|---|
 | P5-1 | **인증 게이트** — Supabase Auth 이메일(`bestm@bestour.co.kr`), `requireAdmin()`, middleware에서 admin 경로 **포함**으로 전환 | `middleware.ts` `lib/auth/requireAdmin.ts` | P0-0 | 테스트 선작성 → 비로그인 `/admin/*` 전 경로 302, 세션 만료 처리. **인간 액션 체크리스트**(계정 생성·SMTP·비밀번호 정책)를 브리프에 첨부 | 현재 middleware가 admin을 **제외**하고 있다 — 지금 상태로는 무인증 |
-| P5-2 | **`is_admin()` RLS** + 테이블별 admin 정책 + `createServiceClient()` 호출 0건 grep 게이트 | `supabase/migrations/0007_admin_rls.sql` `scripts/check-admin-no-service-role.sh` | P5-1 | 테스트 선작성 → 비관리자 세션의 쓰기가 **RLS에서** 거부됨을 실증(코드 경로가 아니라) | service role 위에 서면 RLS는 장식이 된다 |
+| P5-2 | **`is_admin()` RLS** + 테이블별 admin 정책 + `createServiceClient()` 호출 0건 grep 게이트 | `supabase/migrations/0009_admin_rls.sql`(0007 은 P4-1 회수기가 선점) `scripts/check-admin-no-service-role.sh` | P5-1 | 테스트 선작성 → 비관리자 세션의 쓰기가 **RLS에서** 거부됨을 실증(코드 경로가 아니라) | service role 위에 서면 RLS는 장식이 된다 |
 | P5-3 | 예약 현황 탭 + 확정 처리 | `app/admin/reservations/**` `actions/admin/reservation.ts` | P5-2, P4-1 | 테스트 선작성 → 역방향 상태전이 거부, **동시 클릭 경합 테스트**, 감사 로그 기록, browse 실측 | 경합 미검증 시 이중 확정 |
 | P5-4 | 팝업 관리 | `app/admin/popups/**` `actions/admin/popup.ts` | P5-2 | 테스트 선작성 + browse 실측 + 실패 경로 | 액션 파일을 탭별로 분리 — 한 파일에 몰면 SDD 직렬 병합 충돌 |
 | P5-5 | 공지 관리 | `app/admin/notices/**` `actions/admin/notice.ts` | P5-2 | 상동 | 상동 |
@@ -288,8 +288,9 @@ SDD 루프(브리프→구현→리뷰→픽스)를 감안한 추정이다. 사�
 | `0004_kst_dates.sql` | **(2026-09-11 추가, P2-1 발견)** 0001의 `current_date`(세션 TZ=UTC) → `(now() at time zone 'Asia/Seoul')::date`. 팝업 RLS가 KST 00:00~08:59에 당일 시작 팝업을 가리던 버그 + `notices.published_at` default 동일 원인 |
 | `0005_outbox.sql` | `status`에 `pending` · `attempts` · `last_error` · 부분 유니크 인덱스 |
 | `0006_trip_return_check.sql` | **(2026-09-13 추가, P3-2 발견)** 편도·편도(`oneway_oneway`)에 `return_at` 허용. 0001 CHECK 는 왕복에만 허용해 목업이 받는 귀가 일시를 저장할 수 없었다. 롤백은 좁히므로 해당 행 존재 시 가드가 중단 |
-| `0007_admin_rls.sql` | `is_admin()` + 테이블별 admin 정책 |
+| `0007_outbox_reaper.sql` | **(2026-09-13 P4-1, 번호 선점)** `reap_stale_notifications()` — 5회 claim 뒤 lease 만료된 pending → failed(리뷰 M3). security definer, anon/authenticated execute 회수 |
 | `0008_gallery_albums.sql` | 앨범 + `width`/`height`/`bytes`/`original_path` |
+| `0009_admin_rls.sql` | `is_admin()` + 테이블별 admin 정책 (구 0007 — P4-1 이 먼저 번호를 썼다) |
 
 ---
 
