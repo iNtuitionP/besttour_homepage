@@ -389,10 +389,38 @@ describe("M9 — ci.yml legal-pages-http 잡", () => {
     expect(job).toMatch(/skipped/);
   });
 
-  test("Supabase 접속 env 를 주지 않는다 — 빌드·법정 페이지·404·/admin 이 DB 를 읽으면 이 잡이 깨진다(그게 버그다)", () => {
+  // 2026-09-13 개정: P2-4 홈이 ISR 이라 next build 가 빌드 타임에 Supabase 를 읽는다. "env 없음" 은 더 이상 성립하지 않는다.
+  // 대신 잠그는 것 — (1) env 는 로컬 스택(supabase start → status)에서만 온다, (2) 원격 자격(secrets.*) 0, (3) 빌드는 export 뒤에,
+  // (4) 스택은 always() 로 내린다. 법정 페이지가 DB 를 안 읽는다는 것은 legal-pages.test.ts 의 정적 import 검사가 맡는다.
+  test("Supabase env 는 로컬 스택에서만 온다 — supabase start → db reset → status export → build 순서", () => {
+    const iStack = job.indexOf("supabase start");
+    const iReset = job.indexOf("supabase db reset");
+    const iExport = job.indexOf("supabase status");
+    const iBuild = job.indexOf("npm run build");
+    expect(iStack).toBeGreaterThan(0);
+    expect(iReset).toBeGreaterThan(iStack);
+    expect(iExport).toBeGreaterThan(iReset);
+    expect(iBuild).toBeGreaterThan(iExport);
+    expect(job).toMatch(/--override-name api\.url=NEXT_PUBLIC_SUPABASE_URL/);
+    expect(job).toMatch(/--override-name auth\.anon_key=NEXT_PUBLIC_SUPABASE_ANON_KEY/);
+    expect(job).toMatch(/GITHUB_ENV/);
+  });
+
+  test("원격 프로젝트 자격은 이 잡에 없다 — secrets.* 0, env: 블록에 Supabase 키 리터럴 0", () => {
+    expect(job).not.toMatch(/secrets\./);
     expect(job).not.toMatch(/NEXT_PUBLIC_SUPABASE_URL\s*:/);
+    expect(job).not.toMatch(/NEXT_PUBLIC_SUPABASE_ANON_KEY\s*:/);
     expect(job).not.toMatch(/SUPABASE_SERVICE_ROLE_KEY\s*:/);
-    expect(job).not.toMatch(/supabase start/);
+  });
+
+  test("로컬 스택도 always() 로 내린다", () => {
+    const iStop = job.indexOf("supabase stop");
+    expect(iStop).toBeGreaterThan(0);
+    const before = job.slice(0, iStop);
+    const lastAlways = before.lastIndexOf("if: always()");
+    expect(lastAlways).toBeGreaterThan(0);
+    // 마지막 always() 와 supabase stop 사이에 다른 step 이 끼어 있지 않다
+    expect(before.slice(lastAlways)).not.toMatch(/- name:/);
   });
 
   test("서버는 always() 로 정리한다", () => {

@@ -41,8 +41,13 @@ jobs:
           GUARD_LIVE_TESTS: "1"
         run: npm test
 
-      - name: Build
-        run: npm run build
+      - name: Type check (next typegen → tsc --noEmit)
+        # 빌드 대신 타입 게이트만. P2-4 부터 홈이 ISR 이라 `next build` 가 빌드 타임에 Supabase 를 읽는다 —
+        # env 없는 이 잡에서 빌드하면 깨진다. 실제 빌드는 legal-pages-http 잡이 로컬 Supabase 스택 위에서 한다.
+        # next-env.d.ts 는 gitignore 라 체크아웃에 없다 — `next typegen`(15.5+, 앱 코드 실행 없음)이 그것과 .next/types 를 만든다.
+        run: |
+          npx next typegen
+          npx tsc --noEmit
 
   pricing-regression-gate:
     name: Pricing Regression Gate
@@ -144,7 +149,9 @@ jobs:
   # REVIEW-FIX M9 (2026-09-12) — 법정 3페이지 HTTP 검증 + M1(404 문서) + M8(/admin 캐시) 런타임 단언.
   # tests/legal-pages.test.ts §5(7건)와 tests/review-fix.test.ts 의 HTTP 블록은 LEGAL_BASE_URL 이 있을 때만 돈다.
   # 그 서버를 띄우는 잡이 이것뿐이다 — 이 잡이 없으면 그 테스트들은 CI 에서 영원히 skip 이다(리뷰 M9).
-  # Supabase 접속 env 를 일부러 주지 않는다: 빌드·법정 페이지·404·/admin 은 DB 를 읽지 않아야 한다. 읽으면 여기서 깨진다(그게 버그다).
+  # (2026-09-13 개정) P2-4 부터 홈이 ISR(revalidate=600) 이라 `next build` 가 빌드 타임에 Supabase 를 읽는다. 그래서 이 잡도 db-test 처럼
+  # 로컬 Supabase 스택을 띄우고 그 URL/키를 env 로 준다. 원격 프로젝트 자격은 여기 오지 않는다(secrets.* 0건) — 빌드가 실DB 를 건드릴 길이 없다.
+  # 법정 3페이지·404·/admin 이 DB 를 읽지 않는다는 단언은 env 부재가 아니라 tests/legal-pages.test.ts 의 정적 import 검사 + HTTP 블록이 맡는다.
   legal-pages-http:
     name: Legal Pages HTTP (build → start → fetch)
     runs-on: ubuntu-latest
@@ -161,7 +168,32 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build (Supabase env 없음 — 빌드가 DB 를 읽으면 여기서 실패한다)
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start local Supabase stack
+        run: supabase start
+
+      - name: Apply migrations (db reset)
+        run: supabase db reset
+
+      - name: Export local stack URL/key to GITHUB_ENV
+        run: |
+          # db-test 잡과 같은 방식(포맷 설명은 그쪽 주석). 빌드(ISR 프리렌더)와 뒤의 프로덕션 서버 둘 다 이 env 를 본다.
+          # 로컬 스택의 일회용 키다 — 원격 프로젝트 키가 아니므로 secrets 를 쓰지 않는다.
+          supabase status -o env \
+            --override-name api.url=NEXT_PUBLIC_SUPABASE_URL \
+            --override-name auth.service_role_key=SUPABASE_SERVICE_ROLE_KEY \
+            --override-name auth.anon_key=NEXT_PUBLIC_SUPABASE_ANON_KEY \
+            > /tmp/supabase-status.env
+          grep -E '^(NEXT_PUBLIC_SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY|NEXT_PUBLIC_SUPABASE_ANON_KEY)=' /tmp/supabase-status.env \
+            | sed -E 's/^([A-Za-z_]+)="(.*)"$/\1=\2/' \
+            >> "$GITHUB_ENV"
+          rm -f /tmp/supabase-status.env
+
+      - name: Build (로컬 Supabase 스택 env — 홈 ISR 프리렌더가 여기서 DB 를 읽는다)
         run: npm run build
 
       - name: Assert _not-found.html is a full document (M1)
@@ -212,3 +244,7 @@ jobs:
         run: |
           if [ -f /tmp/next.pid ]; then kill "$(cat /tmp/next.pid)" 2>/dev/null || true; fi
           pkill -f "next start" 2>/dev/null || true
+
+      - name: Stop local Supabase stack
+        if: always()
+        run: supabase stop
