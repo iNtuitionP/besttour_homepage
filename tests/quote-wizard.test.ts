@@ -808,10 +808,9 @@ describe("8. 정적 검사", () => {
     expect(src).not.toMatch(/PREVIEW_RECENT_ROWS|name:\s*["']|phone:\s*["']/);
   });
 
-  test("ko.json — quote 네임스페이스가 마지막 키로 추가됐고 기존 최상위 키 순서는 그대로", () => {
+  test("ko.json — quote 네임스페이스가 기존 5개 뒤에 추가됐고 기존 최상위 키 순서는 그대로 (뒤에 붙는 네임스페이스는 각 태스크가 잠근다 — P6-3a reservationCheck)", () => {
     const keys = Object.keys(ko);
-    expect(keys[keys.length - 1]).toBe("quote");
-    expect(keys.slice(0, -1)).toEqual(["common", "layout", "errors", "home", "reservation"]);
+    expect(keys.slice(0, 6)).toEqual(["common", "layout", "errors", "home", "reservation", "quote"]);
   });
 
   test("legacy-menu — 견적요청 ready:true (라우트 파일과 함께)", () => {

@@ -26,6 +26,13 @@ export const GUARD_SECRET_MIN_LENGTH = 32;
 /** Cloudflare 문서의 테스트용 secret 3종(항상 통과·항상 실패·token already spent). */
 const DUMMY_TURNSTILE_SECRET = /^[123]x0{31}AA$/;
 
+/**
+ * rate limit 카운터의 이름공간 (P6-3a). reserve = 접수(P3-3 runGuards) · check = 예약확인(lib/reservation-check/guards.ts).
+ * Redis 키 prefix 가 갈리므로 예약확인 시도가 접수 한도를 먹지 않고, 접수가 예약확인 한도를 먹지 않는다. 한도 수치(RATE_LIMITS)는 같다.
+ */
+export type RateLimitScope = "reserve" | "check";
+
+const redisCache = new Map<string, Redis>();
 const limiterCache = new Map<string, RateLimiterSet>();
 
 function parseAllowedHosts(raw: string | undefined): string[] {
@@ -35,29 +42,52 @@ function parseAllowedHosts(raw: string | undefined): string[] {
     .filter((h) => h.length > 0);
 }
 
-function makeLimiter(redis: Redis, bucket: IpBucket, window: RateWindow): Ratelimit {
+/** Redis 키 prefix — `guard:<scope>:<bucket>:<window>`. 접수는 P3-1 이래 `guard:reserve:*` 그대로다(카운터가 옮겨가지 않는다). */
+export function rateLimitPrefix(scope: RateLimitScope, bucket: IpBucket, window: RateWindow): string {
+  return `guard:${scope}:${bucket}:${window}`;
+}
+
+function makeLimiter(redis: Redis, scope: RateLimitScope, bucket: IpBucket, window: RateWindow): Ratelimit {
   const cfg = RATE_LIMITS[bucket][window];
   return new Ratelimit({
     redis,
     limiter: Ratelimit.slidingWindow(cfg.max, cfg.window),
-    prefix: `guard:reserve:${bucket}:${window}`,
+    prefix: rateLimitPrefix(scope, bucket, window),
     analytics: false,
     // Upstash 자체 timeout 은 fail-open(reason:"timeout" 으로 success:true) — checkRateLimit 이 그 reason 을 infra 로 뒤집는다.
     timeout: RATE_LIMIT_TIMEOUT_MS,
   });
 }
 
-function limitersFor(url: string, token: string): RateLimiterSet {
-  const cacheKey = `${url}\n${token}`;
-  const hit = limiterCache.get(cacheKey);
+function redisFor(url: string, token: string): Redis {
+  const key = `${url}\n${token}`;
+  const hit = redisCache.get(key);
   if (hit) return hit;
   const redis = new Redis({ url, token });
+  redisCache.set(key, redis);
+  return redis;
+}
+
+/** 접속정보 × scope 별로 Ratelimit 4개(known/unknown × short/long)를 만들고 모듈 스코프에 캐시한다. Redis 클라이언트는 접속정보별 하나를 공유한다. */
+export function limitersFor(url: string, token: string, scope: RateLimitScope): RateLimiterSet {
+  const cacheKey = `${scope}\n${url}\n${token}`;
+  const hit = limiterCache.get(cacheKey);
+  if (hit) return hit;
+  const redis = redisFor(url, token);
   const set: RateLimiterSet = {
-    known: { short: makeLimiter(redis, "known", "short"), long: makeLimiter(redis, "known", "long") },
-    unknown: { short: makeLimiter(redis, "unknown", "short"), long: makeLimiter(redis, "unknown", "long") },
+    known: { short: makeLimiter(redis, scope, "known", "short"), long: makeLimiter(redis, scope, "known", "long") },
+    unknown: { short: makeLimiter(redis, scope, "unknown", "short"), long: makeLimiter(redis, scope, "unknown", "long") },
   };
   limiterCache.set(cacheKey, set);
   return set;
+}
+
+function upstashEnv(caller: string): { url: string; token: string } {
+  const url = process.env.UPSTASH_REDIS_REST_URL ?? "";
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN ?? "";
+  if (url.length === 0) throw new Error(`${caller}: UPSTASH_REDIS_REST_URL 이 설정되지 않았다`);
+  if (token.length === 0) throw new Error(`${caller}: UPSTASH_REDIS_REST_TOKEN 이 설정되지 않았다`);
+  return { url, token };
 }
 
 /**
@@ -86,10 +116,7 @@ export function defaultGuardDeps(): GuardDeps {
   const allowedHosts = parseAllowedHosts(process.env.GUARD_ALLOWED_HOSTS);
   if (allowedHosts.length === 0) throw new Error("defaultGuardDeps: GUARD_ALLOWED_HOSTS 가 비어 있다 (쉼표 구분 호스트 목록)");
 
-  const url = process.env.UPSTASH_REDIS_REST_URL ?? "";
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN ?? "";
-  if (url.length === 0) throw new Error("defaultGuardDeps: UPSTASH_REDIS_REST_URL 이 설정되지 않았다");
-  if (token.length === 0) throw new Error("defaultGuardDeps: UPSTASH_REDIS_REST_TOKEN 이 설정되지 않았다");
+  const { url, token } = upstashEnv("defaultGuardDeps");
 
   return {
     now: () => new Date(),
@@ -102,7 +129,28 @@ export function defaultGuardDeps(): GuardDeps {
       timeoutMs: TURNSTILE_TIMEOUT_MS,
     },
     rateLimit: {
-      limiters: limitersFor(url, token),
+      limiters: limitersFor(url, token, "reserve"),
+      timeoutMs: RATE_LIMIT_TIMEOUT_MS,
+    },
+  };
+}
+
+/** 예약확인 조각 가드(lib/reservation-check/guards.ts runCheckGuards)가 받는 deps — Turnstile·타임트랩이 없다. */
+export type CheckGuardDeps = Pick<GuardDeps, "now" | "secret" | "rateLimit">;
+
+/**
+ * 예약확인(P6-3a) 전용 deps — GUARD_SECRET + Upstash 2종만 요구한다. Turnstile secret·허용 호스트는 읽지 않는다(예약확인은 Turnstile 을 쓰지 않는다 — 컨트롤러 결정).
+ * GUARD_SECRET 이 필요한 이유: rate limit 키는 sha256(secret + IP) 다(ipKey.ts) — secret 없는 해시는 IPv4 전 공간을 역산할 수 있어 hashIpKey 가 throw 한다.
+ * 빠진 설정은 throw(fail-closed) — 호출자(actions/reservation-check.ts)는 infra 로 다룬다. limiter prefix 는 `guard:check:*` 로 접수(`guard:reserve:*`)와 분리된다.
+ */
+export function checkGuardDeps(): CheckGuardDeps {
+  const secret = guardSecret();
+  const { url, token } = upstashEnv("checkGuardDeps");
+  return {
+    now: () => new Date(),
+    secret,
+    rateLimit: {
+      limiters: limitersFor(url, token, "check"),
       timeoutMs: RATE_LIMIT_TIMEOUT_MS,
     },
   };

@@ -52,7 +52,7 @@ export const LEGACY_MENU: readonly MenuItem[] = [
   { key: "fleet", labelKo: "차량소개 · 보험내용", href: "/fleet", ready: false, group: "fleet" },
   { key: "fares", labelKo: "차량운임료", href: "/fares", ready: false, group: "fleet" },
   { key: "quote", labelKo: "견적요청", href: "/quote", ready: true, group: "quote" },
-  { key: "reservationCheck", labelKo: "예약확인", href: "/reservation/check", ready: false, group: "quote" },
+  { key: "reservationCheck", labelKo: "예약확인", href: "/reservation/check", ready: true, group: "quote" },
   { key: "notices", labelKo: "공지사항", href: "/notices", ready: false, group: "support" },
   { key: "guide", labelKo: "이용안내", href: "/guide", ready: true, group: "support" },
   { key: "gallery", labelKo: "갤러리", href: "/gallery", ready: false, group: "support" },
