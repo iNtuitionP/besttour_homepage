@@ -136,7 +136,8 @@
 | **N5** DB 전제 테스트 (`a001ead`) | REQUIRE_DB_TESTS=1 인데 키 없으면 skip 아닌 실패 | 원격 URL 강제로 실패 재현 |
 | **P3-5** 접수 현황 피드 (`27cd195`) | 서비스 롤 단독 예외, select 5컬럼, 항목 4키, 60초 태그 캐시, property 100케이스 | **독립 리뷰 F0·M1**(고지 3항목 vs 화면 4항목) → 원장 문구 개정 + parity 테스트 → 승인. "1234" = React dev 타이밍 토큰 |
 | **P3-4** 견적 위저드 `/quote` | 6단계(wizard-b 해시 고정), 동의 기본 해제, 청약철회 고지, `force-dynamic` + `guardSecret()`, `useActionState` 래퍼, ko.json quote.* 159키, 60건 테스트 | **독립 리뷰 F0·M1**(취소환불 `[TEMP]` 표식 없음 → 오픈 게이트 문구로 처리) → 승인. CI 가 `/quote` 두 요청 토큰 상이·no-store 를 런타임 단언 |
-| **원격 DB** | 0001~0006 적용 (각각 CI 실증 → dry-run → push → 카탈로그 검증) | RLS 정책 표 직접 조회 |
+| **P4-1** 아웃박스 발송기 + M3 회수기 (`2257505`) | sender 포트(미구성·메모리), worker(미구성이면 claim 0·dry-run 부작용 0·`sentUnmarked`), `0007_outbox_reaper.sql`(security definer·execute 회수), `/api/cron/notify`(CRON_SECRET·기본 dry·5분) | **독립 리뷰 F0·M1**(미커버 분기 → 테스트 4건) → 승인. 0007 원격 적용 + 카탈로그 확인 |
+| **원격 DB** | 0001~0007 적용 (각각 CI 실증 → dry-run → push → 카탈로그 검증) | RLS 정책 표·함수 권한 직접 조회 |
 
 **수치 (09-13 저녁 갱신)**: 저장소 커밋 96 · 테스트 30파일 1220 passed / 46 skipped(로컬 스택·LEGAL_BASE_URL 전용, CI 에서 실행) · tsc 0 · lint 0 errors · 게이트 4종 OK · CI 최근 **7/7**(run 34711278489, P3-5) · 독립 리뷰 4회(P1-6·P3-3·P3-5·P3-4) 치명 0 / 조건부 4 → 전부 조치·승인.
 
@@ -193,7 +194,7 @@
 | ~~1~~ | ~~**P3-4** 위저드 6단계~~ | ✅ 09-13 — 독립 리뷰·서명 완료. **접수 흐름 end-to-end 완성**(홈 → 위저드 → 서버액션 → DB → 아웃박스). 남은 것은 문자 발송(P4)뿐 | — |
 | **1** | **P6-3** 서브페이지 | about·fleet·fares(무가격)·notices·gallery + 매핑표 ready 플래그 | P2-3 ✅ — P6-3a 와 병렬 가능(파일 겹침 없음, dev 서버는 직렬) |
 | **2** | **P6-3a** 예약확인 | public_code + 휴대폰 뒷4자리 조회(서비스 롤 + 마스킹, N-2 주의: 원문을 서버 컴포넌트 props 로 넘기지 않음) | P3-2 ✅ |
-| 3 | **P4-1** 아웃박스 워커 + M3 회수기 | stuck-pending 회수, 발송 어댑터는 키 수령 후 | P3-3 ✅ |
+| ~~3~~ | ~~**P4-1** 아웃박스 워커 + M3 회수기~~ | ✅ 09-13 `2257505` — 발송 어댑터(P4-2)는 Solapi 키 수령 후 `selectSender()` 첫 줄에 분기 | — |
 | 4 | **P5-1~** 관리자 | 인증(메일함 필요) → 접수 목록·상태 변경(`revalidate(recent)` 호출) | 사장님 메일함 |
 
 ### 사장님 계정·서류 필요
@@ -239,7 +240,7 @@
 - [ ] CI 7잡 green(09-13 현재 7/7) · `check-temp-values` 잔여 항목 승인 · 무인증 `/admin` 0 · admin service role 0건
 - [ ] **취소·환불 `[TEMP]` 가 화면(위저드 6단계 고지·이용안내)에 나가는 상태로는 오픈 금지** — 사장님 답변 1·2(환불 기준액·취소 기준일) 수령 → 원장 `CANCELLATION` 실값 교체 → 법정 문안 독립 재리뷰 (P3-4 리뷰 M-1 결정, 2026-09-13)
 - [ ] Vercel 빌드 env 에 `NEXT_PUBLIC_TURNSTILE_SITE_KEY`·`GUARD_SECRET`·Turnstile/Upstash 서버 키 전부 — 사이트키는 **빌드 타임 인라인**이라 빠지면 운영 `/quote` 가 "접수 준비 중"
-- [ ] 방어 4종 **실키** 스모크 · 파기 배치 경계 테스트 · **크론 `?dry=0` 전환**
+- [ ] 방어 4종 **실키** 스모크 · 파기 배치 경계 테스트 · **크론 `?dry=0` 전환 2건**(`/api/cron/purge` 파기 시작 · `/api/cron/notify` 발송+회수 시작 — 후자는 P4-2 Solapi 어댑터 + 발신번호 등록 뒤) · `NOTIFY_SENDER` 는 운영·프리뷰 모두 비움 · `CRON_SECRET` 설정
 - [ ] 법정 3페이지 **재서명** · 기존 메뉴 10개 매핑 green · 플로팅 3종 실링크
 - [ ] **국외이전 PENDING 0건** (현재 Upstash 2) · Lighthouse 모바일 90+
 

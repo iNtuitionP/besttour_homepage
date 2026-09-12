@@ -354,6 +354,7 @@ components/**           props 경계. 법정 한글 리터럴 금지
 - [ ] **크론 실운영 전환** — `vercel.json` 의 path 를 `/api/cron/purge?dry=0` 으로 변경.
       P1-5 는 안전을 위해 dry-run 으로 배포된다(쿼리 없으면 보고만). 이걸 안 바꾸면 파기가 영원히 실행되지 않고,
       게시한 보유기간을 이행하지 못해 고지가 허위가 된다. `CRON_SECRET` 을 Vercel 환경변수에 넣는 것도 함께.
+- [ ] **통지 크론 실운영 전환** — `vercel.json` 의 `/api/cron/notify` 를 `?dry=0` 으로(P4-1, 2026-09-13). 이것이 "발송 + M3 회수 시작"이다. 선행: P4-2 Solapi 어댑터 + 발신번호 등록 + `NOTIFY_SENDER` 가 운영·프리뷰에서 비어 있음 확인. 그 전엔 dry 로 두는 것이 정답(미구성 sender 는 claim 을 하지 않아 attempts 를 태우지 않는다)
 - [ ] 법정 3페이지 사람 리뷰 서명
 - [ ] Lighthouse 모바일 90+ (프로토콜 고정 측정)
 - [ ] **기존 메뉴 10개 전부 매핑됨** (`lib/legacy-menu-map.ts` 테스트 green)
