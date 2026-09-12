@@ -7,14 +7,15 @@
  * 구조
  *   - 순수 함수: planNotifications(무엇을 보낼지) · retryPlanAfterFailure / nextAttemptDecision(언제 다시 보낼지).
  *     DB·시계 없음, 시각은 인자로 받는다.
- *   - 얇은 DB 어댑터: enqueue · claimPending · markSent · markFailed. 원자성이 필요한 것(잠금·attempts 증가·유니크 흡수)은
- *     전부 0005 의 SQL 함수에 있고, 여기서는 RPC 로 부르고 행을 변환만 한다.
+ *   - 얇은 DB 어댑터: enqueue · claimPending · markSent · markFailed · reapStale. 원자성이 필요한 것(잠금·attempts 증가·유니크 흡수)은
+ *     전부 0005·0007 의 SQL 함수에 있고, 여기서는 RPC 로 부르고 행을 변환만 한다.
  *
- * 상태 전이 (0005_outbox.sql 헤더와 1:1)
+ * 상태 전이 (0005_outbox.sql 헤더와 1:1, reapStale 은 0007)
  *   enqueue      : (없음) → pending
  *   claimPending : pending → pending (attempts+1, next_attempt_at = now + CLAIM_LEASE_MS)   ← for update skip locked
  *   markSent     : pending → sent   (같은 키에 이미 sent 가 있으면 → failed/duplicate_sent, false 반환)
  *   markFailed   : pending → pending (next_attempt_at = now + 백오프)  |  attempts >= MAX_ATTEMPTS → failed (종착)
+ *   reapStale    : pending(attempts >= MAX_ATTEMPTS, lease 만료) → failed/lease_expired_after_max_attempts  (리뷰 M3 — 5회째 claim 뒤 죽은 행)
  *
  * 중복 방지 3층
  *   1) enqueue 가 같은 (reservation_id, event, channel, template) 에 pending/sent 가 있으면 넣지 않는다 (사전 확인, 경합에는 약함).
@@ -268,4 +269,15 @@ export async function markFailed(row: Pick<OutboxRow, "id" | "attempts">, error:
     p_retry_after_ms: plan.giveUp ? 0 : plan.retryAfterMs,
   });
   if (rpcError) fail("markFailed", rpcError);
+}
+
+/**
+ * 회수기(0007 reap_stale_notifications · 리뷰 M3). 5회째 claim 뒤 mark 없이 죽어 attempts >= MAX_ATTEMPTS 인 채 lease 가 만료된
+ * pending 행을 failed/lease_expired_after_max_attempts 로 바꾸고 그 행들을 돌려준다. 발송기가 매 실행 시작 시(dry-run 제외) 부른다 —
+ * sender 구성 여부와 무관하게(회수는 발송이 아니다). 대상이 없으면 []. 오류는 throw — 회수 실패가 조용히 넘어가면 M3 가 다시 생긴다.
+ */
+export async function reapStale(client: SupabaseClient): Promise<OutboxRow[]> {
+  const { data, error } = await client.rpc("reap_stale_notifications");
+  if (error) fail("reapStale", error);
+  return ((data ?? []) as DbRow[]).map(toOutboxRow);
 }
