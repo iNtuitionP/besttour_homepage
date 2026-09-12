@@ -285,20 +285,47 @@ describe("KST/일정 — 0001 제약을 insert 전에 막는다", () => {
     expect(inserts()).toHaveLength(0);
   });
 
-  test("편도(oneway / oneway_oneway) 에 returnAtLocal 이 오면 throw — 스키마가 못 담는 값을 조용히 버리지 않는다", async () => {
+  test("단순 편도(oneway) 에 returnAtLocal 이 오면 throw — 0006 후에도 oneway 는 return_at 금지", async () => {
     const { db, inserts } = fakeDb();
     const { deps } = makeDeps(db);
     await expect(createReservation(validInput({ tripType: "oneway" }), deps)).rejects.toThrow(/round_trip_return_ck/);
-    await expect(createReservation(validInput({ tripType: "oneway_oneway" }), deps)).rejects.toThrow(/round_trip_return_ck/);
     expect(inserts()).toHaveLength(0);
   });
 
-  test("oneway_oneway 에 returnAtLocal 이 없으면 정상 접수 (return_at null, nights 0)", async () => {
+  test("편도·편도(oneway_oneway) 에 returnAtLocal 이 오면 저장한다 — 0006 이 허용, nights 는 두 운행 사이 KST 일수", async () => {
+    // 목업 wizard-b 가 받는 귀가 일시. 0001 CHECK 는 왕복에만 허용해 P3-2 가 throw 했으나, 사장님 견적에 두 번째
+    // 운행일이 필수라 0006 으로 CHECK 를 넓혔다(컨트롤러 결정 2026-09-13).
+    const { db, inserts } = fakeDb();
+    const { deps } = makeDeps(db);
+    await createReservation(
+      validInput({ tripType: "oneway_oneway", departAtLocal: "2026-09-13T08:00", returnAtLocal: "2026-09-15T18:00" }),
+      deps,
+    );
+    const row = inserts()[0];
+    expect(row.trip_type).toBe("oneway_oneway");
+    expect(row.return_at).toBe(new Date("2026-09-15T09:00:00.000Z").toISOString()); // 18:00 KST = 09:00Z
+    expect(row.nights).toBe(2);
+  });
+
+  test("oneway_oneway 의 귀가 일시가 출발 이후가 아니면 throw (0001 return_at > depart_at)", async () => {
+    const { db, inserts } = fakeDb();
+    const { deps } = makeDeps(db);
+    await expect(
+      createReservation(
+        validInput({ tripType: "oneway_oneway", departAtLocal: "2026-09-13T08:00", returnAtLocal: "2026-09-13T08:00" }),
+        deps,
+      ),
+    ).rejects.toThrow(/출발/);
+    expect(inserts()).toHaveLength(0);
+  });
+
+  test("oneway_oneway 에 returnAtLocal 이 없으면 정상 접수 (return_at null, nights 0) — 0006 은 허용이지 강제가 아니다", async () => {
     const { db, inserts } = fakeDb();
     const { deps } = makeDeps(db);
     await createReservation(validInput({ tripType: "oneway_oneway", returnAtLocal: undefined }), deps);
     expect(inserts()[0].trip_type).toBe("oneway_oneway");
     expect(inserts()[0].return_at).toBeNull();
+    expect(inserts()[0].nights).toBe(0);
   });
 });
 

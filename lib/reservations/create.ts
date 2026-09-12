@@ -129,12 +129,26 @@ function scheduleColumns(data: ReservationInput): Pick<ReservationInsert, "depar
     };
   }
 
+  if (data.tripType === "oneway_oneway" && data.returnAtLocal !== undefined) {
+    // 편도·편도 — 두 번째 운행(귀가) 일시. 0006_trip_return_check 가 이 조합의 return_at 을 허용한다.
+    // 사장님이 견적을 내려면 두 번째 운행일이 필요하므로 저장한다. nights 는 두 운행 사이의 KST 달력 일수.
+    const returnAt = parseKst(data.returnAtLocal);
+    if (returnAt.getTime() <= departAt.getTime()) {
+      throw callerBug(
+        `귀가 일시(${data.returnAtLocal})가 출발 일시(${data.departAtLocal}) 이후가 아니다 (0001 return_at > depart_at)`,
+      );
+    }
+    return {
+      depart_at: departAt.toISOString(),
+      return_at: returnAt.toISOString(),
+      nights: nightsBetween(data.departAtLocal, data.returnAtLocal),
+    };
+  }
+
   if (data.returnAtLocal !== undefined) {
-    // 목업 wizard-b 의 "편도·편도"(oneway_oneway)는 귀가 일시를 받지만 0001 reservations_round_trip_return_ck 는 return_at 을
-    // round 에만 허용한다. 고객이 적은 값을 조용히 버리지 않는다 — 호출자가 비우거나(P3-4) 스키마를 넓혀야(마이그레이션) 한다.
-    throw new Error(
-      `createReservation: tripType=${data.tripType} 에 returnAtLocal 이 왔다 — 0001 reservations_round_trip_return_ck 가 ` +
-        "return_at 을 round 에만 허용해 저장할 수 없다. 조용히 버리지 않는다: 호출자가 비우거나 스키마를 넓혀야 한다",
+    // 단순 편도(oneway)에 귀가 일시가 온 것은 호출자 버그다. 0006 후에도 oneway 는 return_at 금지.
+    throw callerBug(
+      `tripType=${data.tripType} 에 returnAtLocal 이 왔다 — reservations_round_trip_return_ck(0006) 는 oneway 의 return_at 을 금지한다`,
     );
   }
   return { depart_at: departAt.toISOString(), return_at: null, nights: 0 };
