@@ -36,6 +36,9 @@ jobs:
           fi
 
       - name: Test
+        env:
+          # P3-1: tests/guard.test.ts 의 Cloudflare 공식 테스트 키 실제 siteverify 스모크를 연다(없으면 skip — 오픈까지 실키 경로가 한 번도 안 돈다).
+          GUARD_LIVE_TESTS: "1"
         run: npm test
 
       - name: Build
