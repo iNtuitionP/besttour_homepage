@@ -345,6 +345,8 @@ components/**           props 경계. 법정 한글 리터럴 금지
 *개발 준비 완료 (구현 세션 책임)*
 - [ ] CI 전 잡 green (test · pricing · legal-disclosures · mockup-drift · db-test)
 - [ ] `check-temp-values.sh` exit 0 또는 잔여 항목이 문서로 승인됨
+- [ ] **취소·환불 `[TEMP]`(원장 `CANCELLATION`) 가 화면에 나가는 상태로는 오픈 금지** — 위저드 6단계 청약철회 고지와 이용안내가 이 값을 확정 문구처럼 렌더한다(P3-4 독립 리뷰 M-1, 2026-09-13). 사장님 답변 1·2(환불 기준액·취소 기준일) → 원장 실값 교체 → 법정 문안 독립 재리뷰 순. 화면에 "확정 전" 표식은 두지 않기로 결정(공개 방문자 0·UIUX 소유·이 게이트가 차단)
+- [ ] Vercel **빌드** env 에 `NEXT_PUBLIC_TURNSTILE_SITE_KEY`(빌드 타임 인라인 — 빠지면 운영 `/quote` 가 "접수 준비 중"), 런타임 env 에 `GUARD_SECRET`·`TURNSTILE_SECRET_KEY`·`GUARD_ALLOWED_HOSTS`·Upstash 2종. `/quote` 두 요청 토큰 상이·no-store 는 CI `legal-pages-http` 가 매 푸시 단언
 - [ ] 무인증 `/admin/*` 접근 0 · admin 경로 service role 0건
 - [ ] 방어 4종 실키 스모크 통과
 - [ ] 파기 배치 dry-run 경계 테스트 통과
