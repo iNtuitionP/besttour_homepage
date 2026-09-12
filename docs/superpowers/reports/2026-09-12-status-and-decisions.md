@@ -132,6 +132,9 @@
 | **P3-1** 가드 4종 (`46c8cfa`) | zod → 허니팟 → 타임트랩 → Turnstile → rateLimit, 전부 fail-closed, IP sha256 16자 | Cloudflare 테스트 키 실제 siteverify 를 CI 에서 호출(`GUARD_LIVE_TESTS=1`), Upstash 타임아웃 fail-open 기본값을 뒤집음 |
 | **P2-4** 홈 이식 (`ce2867b`) | 9섹션 + 팝업, 23파일, 목업 `7a65eac2` 고정, ISR 600초 | 3폭 실측 콘솔 0·오버플로 0. **실증불가 수치·BM 문장 전량 제거**(히어로 스탯·"오늘 17건"·"70만 명" 등) |
 | **CI 개정** (`f520650`) | 빌드를 로컬 Supabase 스택 위로(홈 ISR 이 빌드 타임에 DB 읽음), test 잡은 typegen+tsc | run 34706010784 **7/7** |
+| **P3-3** 서버액션 래퍼 (`eed7f49`) | `submitReservation` 75줄·export 1, formData 계약표, submitResult 매핑, `lib/log.ts`, E2E(로컬 스택) | **독립 리뷰 F0·M3** → FIX(zod 일시 규칙 0~3·FormData 방어·siteverify stub) → 승인. CI db-test 에서 E2E 6건 실행 증명(a001ead 전제 테스트) |
+| **N5** DB 전제 테스트 (`a001ead`) | REQUIRE_DB_TESTS=1 인데 키 없으면 skip 아닌 실패 | 원격 URL 강제로 실패 재현 |
+| **P3-5** 접수 현황 피드 (`27cd195`) | 서비스 롤 단독 예외, select 5컬럼, 항목 4키, 60초 태그 캐시, property 100케이스 | **독립 리뷰 F0·M1**(고지 3항목 vs 화면 4항목) → 원장 문구 개정 + parity 테스트 → 승인. "1234" = React dev 타이밍 토큰 |
 | **원격 DB** | 0001~0006 적용 (각각 CI 실증 → dry-run → push → 카탈로그 검증) | RLS 정책 표 직접 조회 |
 
 **수치 (09-13 갱신)**: 저장소 커밋 90 · 추적 코드 ~19,360줄(테스트 9,384) · 테스트 903 passed / 39 skipped(로컬 스택·LEGAL_BASE_URL 전용, CI 에서 실행) · tsc 0 · lint 0 errors · 게이트 4종 OK · CI 최근 **7/7**(run 34706010784).
@@ -184,9 +187,9 @@
 | ~~2~~ | ~~**P2-4** 홈 이식~~ | ✅ 09-13 `ce2867b` (9섹션 한 태스크로) | — |
 | ~~3~~ | ~~**P2-5** 에러 경로~~ | ✅ not-found 는 REVIEW-FIX, error 바운더리는 P2-4(`?boom=1` 훈련 분기) | — |
 | ~~6~~ | ~~**P3-2** 접수 순수함수~~ · ~~**P3-1** 가드~~ | ✅ 09-13 `a917c92`·`46c8cfa` | — |
-| **1** | **P3-3** 서버액션 래퍼 | guards → create 연결, 폼 필드 계약표, IP 비노출 | **진행 중(09-13 구현자 발행)** → 독립 리뷰 → 서명 |
-| 2 | **P3-4** 위저드 6단계 | 다중 경유지·동의 체크·청약철회 고지(M2) | P3-3 |
-| 3 | **P3-5** 접수 현황 마스킹 피드 | 서비스 롤 + 마스킹 + 캐시, property test 로 원문 누출 0 | P3-3(`QUERY_TAGS.recent`) — P3-4 와 병렬 |
+| ~~1~~ | ~~**P3-3** 서버액션 래퍼~~ | ✅ 09-13 `eed7f49` — 독립 리뷰·FIX·서명 완료 | — |
+| ~~3~~ | ~~**P3-5** 접수 현황 마스킹 피드~~ | ✅ 09-13 `27cd195` — 독립 리뷰·원장 개정·서명 완료 | — |
+| **1** | **P3-4** 위저드 6단계 | 다중 경유지·동의 체크·청약철회 고지(M2)·`force-dynamic`·`useActionState` 래퍼 | **진행 중(09-13 구현자 발행)** → 독립 리뷰 → 서명 |
 | 4 | **P6-3** 서브페이지 | about·fleet·fares(무가격)·notices·gallery + 매핑표 ready 플래그 | P2-3 ✅ |
 | 5 | **P6-3a** 예약확인 | public_code + 뒷4자리 | P3-2 ✅ |
 | 6 | **P4-1** 아웃박스 워커 + M3 회수기 | stuck-pending 회수, 발송 어댑터는 키 수령 후 | P3-3 |
