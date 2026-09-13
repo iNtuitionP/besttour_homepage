@@ -391,6 +391,18 @@ describe("M9 — ci.yml legal-pages-http 잡", () => {
 
   // P3-4 (2026-09-13): /quote 의 폼 토큰은 요청마다 새로 서명돼야 한다(FORM_MAX_AGE_MS 1시간). 빌드 표 글리프(●/ƒ)가 아니라
   // 런타임으로 잠근다 — 두 요청의 formToken 이 다르고 no-store 여야 하며, 토큰을 만들 GUARD_SECRET 은 일회용 문자열로 준다(secrets.* 아님).
+  // P6-3 (2026-09-13): 옛 메뉴 매핑의 ready:true 경로 전부 + 예약확인 + 법정 3페이지가 200, 없는 공지 id 는 404.
+  // 그 404 의 문서 껍데기는 일부러 단언하지 않는다 — docs/ops/known-defects.md D1(매칭된 라우트의 notFound() 가 __next_error__ 셸을 탄다).
+  test("P6-3 — 공개 라우트 전수 200 + /notices/<없는 id> 404 를 단언한다", () => {
+    const iStart = job.search(/npm start|next start/);
+    const iRoutes = job.indexOf("/reservation/check");
+    expect(iRoutes).toBeGreaterThan(iStart);
+    for (const p of ["/about", "/fleet", "/fares", "/notices", "/gallery", "/reservation/check", "/guide", "/privacy", "/terms"]) {
+      expect(job, `${p} 가 200 단언 목록에 없다`).toContain(p);
+    }
+    expect(job).toMatch(/\/notices\/does-not-exist/);
+  });
+
   test("P3-4 — /quote 를 두 번 받아 formToken 이 다름·no-store·청약철회 고지·/quote/done 200 을 단언한다", () => {
     const iStart = job.search(/npm start|next start/);
     const iQuote = job.indexOf("/quote?step=6");

@@ -1,0 +1,87 @@
+/**
+ * /fleet — 차량소개 · 보험내용 (P6-3). 서버 컴포넌트, SSG + ISR(revalidate 600).
+ *
+ * 차량 카드는 홈 FleetSection 그대로 — 정원(vehicles.capacity) · 한 줄 카피(home.fleet.lines) · "이 차량으로 견적" CTA
+ * (/quote?vehicle=<slug> 프리필 — 위저드가 받는다: components/quote/prefill.ts PREFILL_PARAMS). 가격 없음.
+ * 옛 사이트 차종 원문(인벤토리 §2 H4, intro3~9)은 옮기지 않는다 — 요금표 위주이고 16인승은 25인승 본문 복붙 오류다.
+ * 보험 문구는 원장 INSURANCE(인벤토리 ★2 "기존 문구 그대로" — tests/pages.test.ts 가 인벤토리 파일을 읽어 대조) —
+ * ko.json 에 복제하지 않는다(원장 단일 출처). 차량 대수·연식 주장 0.
+ * 요청 시점 API(headers·cookies·searchParams) 사용 0 — 정적 렌더.
+ */
+import type { Metadata } from "next";
+import { getTranslations, setRequestLocale } from "next-intl/server";
+
+import { FleetSection } from "@/components/home/FleetSection";
+import { SectionHead } from "@/components/home/SectionHead";
+import { menuLabel } from "@/components/pages/menu-label";
+import { PageHeader } from "@/components/pages/PageHeader";
+import { COMPANY, INSURANCE } from "@/lib/legal/disclosures";
+import { getVehicles } from "@/lib/queries";
+
+import h from "@/components/home/home.module.css";
+import p from "@/components/pages/pages.module.css";
+
+/** ISR 주기(초) — 홈과 동일. admin 이 차량을 바꾸면 이 안에 반영된다. */
+export const revalidate = 600;
+
+type Params = Promise<{ locale: string }>;
+
+export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
+  const { locale } = await params;
+  const t = await getTranslations({ locale, namespace: "pages.fleet.meta" });
+  return {
+    title: t("title", { brand: COMPANY.brandName }),
+    description: t("description"),
+  };
+}
+
+export default async function FleetPage({ params }: { params: Params }) {
+  const { locale } = await params;
+  setRequestLocale(locale);
+
+  const [vehicles, t, tc, tFleet] = await Promise.all([
+    getVehicles(),
+    getTranslations("pages.fleet"),
+    getTranslations("pages.common"),
+    getTranslations("home.fleet"),
+  ]);
+
+  return (
+    <main className={h.main} data-testid="fleet-page">
+      <PageHeader
+        navLabel={tc("breadcrumb")}
+        homeLabel={tc("home")}
+        current={menuLabel("fleet")}
+        eyebrow={tFleet("eyebrow")}
+        title={menuLabel("fleet")}
+      />
+
+      {vehicles.length === 0 ? (
+        // FleetSection 은 0대면 null 을 돌려준다(홈 규약) — 페이지는 비지 않아야 하므로 빈 상태 문구를 따로 둔다.
+        <section className={`${h.section} ${h.toneLav}`} data-section="fleet-empty">
+          <div className={h.wrap}>
+            <p className={p.empty} role="status" data-testid="fleet-empty">
+              {t("empty")}
+            </p>
+          </div>
+        </section>
+      ) : (
+        <FleetSection vehicles={vehicles} />
+      )}
+
+      <section
+        id="insurance"
+        className={`${h.section} ${h.toneWhite}`}
+        aria-labelledby="insurance-h"
+        data-section="insurance"
+      >
+        <div className={h.wrap}>
+          <SectionHead id="insurance-h" eyebrow={t("insurance.eyebrow")} title={INSURANCE.title} split={false} />
+          <div className={`${p.card} ${p.prose}`} data-testid="insurance-body">
+            <p>{INSURANCE.body}</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}

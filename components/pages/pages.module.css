@@ -1,0 +1,158 @@
+/*
+ * 공개 서브페이지 공통 (P6-3) — 브레드크럼·페이지 헤더·빈 상태·문서형 블록·공지 링크.
+ * 새 디자인을 발명하지 않는다: 섹션 밴드·헤드·버튼은 components/home/home.module.css, 카드·목록·칩은 Sections.module.css,
+ * 회사 정보 표는 components/legal/legal.module.css 를 그대로 쓰고, 여기에는 그 셋에 없는 것만 둔다.
+ * 색·간격·라운드·고도는 styles/semantic.css 의 역할 토큰만 — HEX·rgba·원시 토큰·간격 px 리터럴 0건(tests/layout.test.ts §4).
+ * px 는 타이포·선 두께·포커스 링 오프셋에만 남는다.
+ */
+
+/* ── 페이지 헤더 (브레드크럼 + eyebrow + h1) ─────────────────────────── */
+.pageHead {
+  padding: var(--space-stack-lg) 0 var(--space-stack-xl);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-decorative);
+}
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  margin: 0 0 var(--space-stack-md);
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.crumbs li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  min-width: 0;
+}
+.crumbs li + li::before {
+  content: "/";
+  color: var(--icon-default);
+}
+.crumbLink {
+  color: var(--text-link);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.crumbLink:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}
+.crumbCurrent {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* 해시 앵커(#location) 착지점 — 헤더가 sticky 라 그만큼 내려 잡는다 */
+.anchor {
+  scroll-margin-top: calc(var(--space-section) + var(--space-stack-md));
+}
+
+/* ── 빈 상태 (공지 0건 · 갤러리 준비 중 · 차량 0대) ───────────────────── */
+.empty {
+  padding: var(--space-stack-lg) var(--space-inline-md);
+  text-align: center;
+  background: var(--bg-surface);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-surface);
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+.emptyAction {
+  margin: var(--space-stack-md) 0 0;
+}
+
+/* ── 문서형 블록 (보험 문구 · 주소 · 공지 본문) ──────────────────────── */
+.card {
+  padding: var(--space-stack-md) var(--space-inline-md);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+}
+.cardTitle {
+  margin: 0 0 var(--space-stack-xs);
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.prose {
+  max-width: 72ch;
+}
+.prose p {
+  margin: 0;
+  font-size: 15.5px;
+  line-height: 1.85;
+  color: var(--text-primary);
+  white-space: pre-line;
+}
+.prose p + p {
+  margin-top: var(--space-stack-sm);
+}
+.lead {
+  margin: 0 0 var(--space-stack-sm);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+.muted {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-inline-sm);
+  margin: var(--space-stack-md) 0 0;
+}
+
+/* ── 공지 목록 링크 · 상세 머리 ──────────────────────────────────────── */
+.noticeLink {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--border-decorative);
+  text-underline-offset: 3px;
+}
+.noticeLink:hover {
+  color: var(--text-link);
+  text-decoration-color: currentColor;
+}
+.noticeLink:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}
+.articleHead {
+  margin: 0 0 var(--space-stack-md);
+  padding-bottom: var(--space-stack-sm);
+  border-bottom: 1px solid var(--border-decorative);
+}
+.articleMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-inline-sm);
+  margin: 0 0 var(--space-stack-xs);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.articleTitle {
+  margin: 0;
+  font-size: clamp(22px, 3vw, 30px);
+  font-weight: 800;
+  line-height: 1.35;
+  letter-spacing: -0.03em;
+}
+.articleFoot {
+  margin: var(--space-stack-lg) 0 0;
+  padding-top: var(--space-stack-sm);
+  border-top: 1px solid var(--border-decorative);
+}

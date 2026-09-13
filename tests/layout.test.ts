@@ -119,8 +119,21 @@ const EXPECTED_HREF: Record<string, string> = {
   blog: process.env.NEXT_PUBLIC_NAVER_BLOG_URL ?? "",
 };
 
-/** 현재 구현된 라우트는 /guide(P1-6) · /quote(P3-4) · /reservation/check(P6-3a) 다. 페이지가 생기는 태스크가 이 표와 플래그를 함께 올린다. */
-const EXPECTED_READY = new Set(["guide", "quote", "reservationCheck"]);
+/**
+ * 구현된 라우트: /guide(P1-6) · /quote(P3-4) · /reservation/check(P6-3a) · /about·/about#location·/fleet·/fares·/notices·/gallery(P6-3).
+ * 남은 것은 네이버 블로그(외부, URL 미수령)뿐이다. 페이지가 생기는 태스크가 이 표와 플래그를 함께 올린다.
+ */
+const EXPECTED_READY = new Set([
+  "guide",
+  "quote",
+  "reservationCheck",
+  "about",
+  "location",
+  "fleet",
+  "fares",
+  "notices",
+  "gallery",
+]);
 
 describe("1. LEGACY_MENU — 10개, 중복 없음, 옛 메뉴와 1:1", () => {
   test("정확히 10개다", () => {

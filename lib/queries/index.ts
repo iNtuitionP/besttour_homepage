@@ -6,7 +6,7 @@ export { QUERY_TAGS, type QueryTag } from "./tags";
 export { getShowcaseRoutes, mapShowcaseRouteRows, type PlacePinRow, type ShowcaseRouteRow } from "./showcase";
 export { getPlaces, type PlaceRow } from "./places";
 export { getVehicles, type VehicleRow } from "./vehicles";
-export { DEFAULT_NOTICE_LIMIT, getNotices, type NoticeRow } from "./notices";
+export { DEFAULT_NOTICE_LIMIT, getNotice, getNotices, parseNoticeId, type NoticeRow } from "./notices";
 export { DEFAULT_GALLERY_LIMIT, getGallery, mapGalleryRows, type GalleryRow } from "./gallery";
 export { getActivePopup, isActiveOn, type GetActivePopupOptions, type PopupRow } from "./popups";
 export type { GalleryItem, Notice, Place, PlacePin, Popup, ShowcaseRouteView, Vehicle } from "../types";

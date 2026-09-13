@@ -47,15 +47,15 @@ export type MenuItem = {
 const NAVER_BLOG_URL = process.env.NEXT_PUBLIC_NAVER_BLOG_URL ?? "";
 
 export const LEGACY_MENU: readonly MenuItem[] = [
-  { key: "about", labelKo: "회사소개 · 인사말", href: "/about", ready: false, group: "company" },
-  { key: "location", labelKo: "찾아오시는 길", href: "/about#location", ready: false, group: "company" },
-  { key: "fleet", labelKo: "차량소개 · 보험내용", href: "/fleet", ready: false, group: "fleet" },
-  { key: "fares", labelKo: "차량운임료", href: "/fares", ready: false, group: "fleet" },
+  { key: "about", labelKo: "회사소개 · 인사말", href: "/about", ready: true, group: "company" },
+  { key: "location", labelKo: "찾아오시는 길", href: "/about#location", ready: true, group: "company" },
+  { key: "fleet", labelKo: "차량소개 · 보험내용", href: "/fleet", ready: true, group: "fleet" },
+  { key: "fares", labelKo: "차량운임료", href: "/fares", ready: true, group: "fleet" },
   { key: "quote", labelKo: "견적요청", href: "/quote", ready: true, group: "quote" },
   { key: "reservationCheck", labelKo: "예약확인", href: "/reservation/check", ready: true, group: "quote" },
-  { key: "notices", labelKo: "공지사항", href: "/notices", ready: false, group: "support" },
+  { key: "notices", labelKo: "공지사항", href: "/notices", ready: true, group: "support" },
   { key: "guide", labelKo: "이용안내", href: "/guide", ready: true, group: "support" },
-  { key: "gallery", labelKo: "갤러리", href: "/gallery", ready: false, group: "support" },
+  { key: "gallery", labelKo: "갤러리", href: "/gallery", ready: true, group: "support" },
   { key: "blog", labelKo: "네이버 블로그", href: NAVER_BLOG_URL, external: true, ready: false, group: "support" },
 ] as const;
 

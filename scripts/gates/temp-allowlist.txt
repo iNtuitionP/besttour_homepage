@@ -104,3 +104,10 @@ lib/legal/disclosures.ts:\[TEMP\] TERMS\.articles\.six\.body:
 # 해제 조건: 사장님에게 블로그 주소를 받으면 env 를 채우고 LEGACY_MENU 의 blog.ready 를 true 로 올린 뒤
 #           마커와 이 항목을 지운다.
 lib/legacy-menu-map.ts:\[TEMP\] LEGACY_MENU\.blog\.href:
+
+# ── P6-3 공개 서브페이지 ───────────────────────────────────────────────────────
+# [등록 2026-09-13 · P6-3] /about#location 지도 임베드 보류.
+# 사유: 카카오맵/네이버 지도 임베드는 API 키 발급·약관(로고 표기·트래픽 한도) 확인 전이라 넣지 않았다. 지금은 원장 주소를
+#       인코딩한 검색 URL 외부 링크 2개(키 불필요)만 건다 — 지어낸 값은 없고 "임베드 여부를 아직 결정하지 않았다"는 표시다.
+# 해제 조건: 컨트롤러가 P7 에서 임베드 여부(키·약관)를 결정하면 임베드를 넣거나 링크 유지로 확정하고 마커와 이 항목을 지운다.
+app/[locale]/(site)/about/page.tsx:\[TEMP\] ABOUT\.mapEmbed:

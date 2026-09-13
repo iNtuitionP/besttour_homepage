@@ -924,8 +924,8 @@ describe("7. messages/ko.json — reservationCheck 네임스페이스", () => {
   const resolve = (key: string) => key.split(".").reduce<unknown>((acc, seg) => (acc && typeof acc === "object" ? (acc as Record<string, unknown>)[seg] : undefined), ko);
   const nsText = JSON.stringify(ns ?? {});
 
-  test("끝에 추가됐고 기존 최상위 키 순서는 그대로", () => {
-    expect(Object.keys(ko)).toEqual(["common", "layout", "errors", "home", "reservation", "quote", "reservationCheck"]);
+  test("quote 뒤에 추가됐고 기존 최상위 키 순서는 그대로 (뒤에 오는 태스크의 네임스페이스 — P6-3 pages — 는 그 뒤에 붙는다)", () => {
+    expect(Object.keys(ko).slice(0, 7)).toEqual(["common", "layout", "errors", "home", "reservation", "quote", "reservationCheck"]);
   });
 
   test("오류 5종 — validation·not_found·ratelimit·infra·server, 전부 비어 있지 않은 문자열", () => {
@@ -1174,7 +1174,10 @@ describe("8. 컴포넌트·페이지 정적", () => {
     expect(item?.ready).toBe(true);
     expect(item?.href).toBe("/reservation/check");
     expect(existsSync(path.join(ROOT, PAGE))).toBe(true);
-    expect(LEGACY_MENU.filter((m) => m.ready).map((m) => m.key).sort()).toEqual(["guide", "quote", "reservationCheck"]);
+    // P6-3 이 about·location·fleet·fares·notices·gallery 를 올렸다(ready 전체 집합은 tests/layout.test.ts EXPECTED_READY 와 같다).
+    expect(LEGACY_MENU.filter((m) => m.ready).map((m) => m.key).sort()).toEqual(
+      ["about", "fares", "fleet", "gallery", "guide", "location", "notices", "quote", "reservationCheck"],
+    );
   });
 
   test("뷰 모델 키 목록 — RESERVATION_VIEW_KEYS 15개, 원문 키 없음(타입 단언은 view.ts 의 keyof 잠금)", () => {

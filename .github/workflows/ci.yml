@@ -242,6 +242,23 @@ jobs:
           [ "$code" = "200" ] || { echo "/quote/done -> $code"; exit 1; }
           echo "/quote: 200, no-store, two requests -> two tokens, withdrawal notice present; /quote/done 200"
 
+      - name: Assert every public route answers 200 (P6-3 — legacy menu "삭제 금지, 재배치만" must not hide a 404 behind a live link)
+        run: |
+          # lib/legacy-menu-map.ts 의 ready:true 항목이 가리키는 경로 + 예약확인. 여기 없는 경로가 ready 로 올라가면 tests/layout.test.ts 가 잡고,
+          # 여기 있는 경로가 죽으면 이 step 이 잡는다. 존재하지 않는 공지 id 는 404 문서여야 한다(열거·색인 방지).
+          for p in /about /fleet /fares /notices /gallery /reservation/check /guide /privacy /terms; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:3111$p")
+            [ "$code" = "200" ] || { echo "$p -> $code (expected 200)"; exit 1; }
+            echo "$p -> 200"
+          done
+          # 없는 공지 id 는 404 여야 한다. 문서 껍데기(<html lang>)는 여기서 단언하지 않는다 —
+          # 라우트에 매칭된 페이지가 notFound() 를 부르면 Next 가 우리 껍데기 대신 __next_error__ 를 내는 것이
+          # 이 저장소 구조(root layout 이 <html> 을 만들지 않고 [locale]/layout.tsx 가 만든다)의 알려진 결함이다.
+          # 실측·원인·선택지는 docs/ops/known-defects.md D1. 매칭되지 않는 URL(아래 M1 step)은 정상이다.
+          code=$(curl -s -o /tmp/nf.html -w '%{http_code}' "http://127.0.0.1:3111/notices/does-not-exist")
+          [ "$code" = "404" ] || { echo "/notices/does-not-exist -> $code (expected 404)"; exit 1; }
+          echo "/notices/does-not-exist -> 404 (document shell: known defect D1)"
+
       - name: Assert 404 responses are full documents (M1)
         run: |
           for p in /no-such-page /fr /ko-KR/x; do
