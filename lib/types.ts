@@ -234,13 +234,37 @@ export interface Notice {
   active: boolean;
 }
 
-/** gallery 행(0001). imagePath 는 저장 경로 그대로 — URL 해석은 표시 계층(components/home/image-url.ts) 몫. */
+/**
+ * gallery 행(0001 + 0008). imagePath 는 저장 경로 그대로 — URL 해석은 표시 계층(components/home/image-url.ts) 몫.
+ *
+ * 0008 이 더한 세 필드는 **선택**이다: 기존 getGallery(홈·목록 페이지)는 0001 의 5컬럼만 읽으므로 그 결과에는
+ * 키 자체가 없고, getGalleryPage 가 읽은 결과에만 실린다(값이 null 이어도 키는 있다).
+ * bytes·originalPath 는 여기 없다 — 사용량·비공개 버킷 경로는 관리자 전용 정보이고, 공개 읽기 타입에 두면
+ * select 화이트리스트에 섞여 들어갈 여지가 생긴다(tests/gallery-albums.test.ts §6 이 컴파일 타임에 막는다).
+ */
 export interface GalleryItem {
   id: number;
   imagePath: string;
   caption: string | null;
   sort: number;
   active: boolean;
+  /** 0008. null = 미분류. */
+  albumId?: number | null;
+  /** 0008. 레이아웃 시프트(CLS) 방지용 — 업로드 전 행은 null. */
+  width?: number | null;
+  height?: number | null;
+}
+
+/** gallery_albums 행(0008). slug 는 URL 세그먼트(/gallery/<slug>)로 그대로 쓰인다. */
+export interface GalleryAlbum {
+  id: number;
+  slug: string;
+  title: string;
+  description: string | null;
+  sort: number;
+  active: boolean;
+  /** timestamptz → ISO 8601 문자열. */
+  createdAt: string;
 }
 
 /** popups 행(0001). 노출 기간은 KST 달력 날짜로 해석한다(lib/queries/popups.ts). */

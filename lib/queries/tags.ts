@@ -11,6 +11,8 @@ export const QUERY_TAGS = {
   notices: "notices",
   popups: "popups",
   gallery: "gallery",
+  /** 갤러리 앨범 목록(gallery_albums, 0008 · P6-1). admin 이 앨범을 추가·수정·숨기면 무효화한다. */
+  albums: "albums",
   /** 홈 "접수 현황" 피드(P3-5). 접수 서버액션(actions/reservation.ts, P3-3)이 성공 뒤 runAfter 로 무효화한다. */
   recent: "recent",
 } as const;

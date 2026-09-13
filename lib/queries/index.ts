@@ -7,6 +7,23 @@ export { getShowcaseRoutes, mapShowcaseRouteRows, type PlacePinRow, type Showcas
 export { getPlaces, type PlaceRow } from "./places";
 export { getVehicles, type VehicleRow } from "./vehicles";
 export { DEFAULT_NOTICE_LIMIT, getNotice, getNotices, parseNoticeId, type NoticeRow } from "./notices";
-export { DEFAULT_GALLERY_LIMIT, getGallery, mapGalleryRows, type GalleryRow } from "./gallery";
+export {
+  DEFAULT_GALLERY_LIMIT,
+  MAX_GALLERY_PAGE_LIMIT,
+  getGallery,
+  getGalleryPage,
+  mapGalleryRows,
+  type GalleryPage,
+  type GalleryPageParams,
+  type GalleryRow,
+} from "./gallery";
+export {
+  ALBUM_SLUG_MAX_LENGTH,
+  ALBUM_SLUG_PATTERN,
+  getAlbumBySlug,
+  getAlbums,
+  parseAlbumSlug,
+  type AlbumRow,
+} from "./albums";
 export { getActivePopup, isActiveOn, type GetActivePopupOptions, type PopupRow } from "./popups";
-export type { GalleryItem, Notice, Place, PlacePin, Popup, ShowcaseRouteView, Vehicle } from "../types";
+export type { GalleryAlbum, GalleryItem, Notice, Place, PlacePin, Popup, ShowcaseRouteView, Vehicle } from "../types";
