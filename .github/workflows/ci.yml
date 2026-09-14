@@ -101,11 +101,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 게이트가 TypeScript 파서로 구문 트리를 읽는다(P5-4 독립 리뷰 §재공격 — 정규식은 두 번 뚫렸다).
+      # 그래서 이 잡만 다른 게이트 4종과 달리 node + 의존성이 필요하다.
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Check admin paths never use the service role
         run: bash scripts/check-admin-no-service-role.sh
 
-      - name: Check every admin export gates on its first statement
-        run: bash scripts/check-admin-gate.sh
+      - name: Check every server action and admin screen gates on its first statement
+        run: node scripts/check-admin-gate.mjs
 
   db-test:
     name: DB Smoke (local Supabase stack)

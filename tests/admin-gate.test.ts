@@ -1,74 +1,43 @@
 /**
- * P5-4 Part 1 — 관리자 인가 게이트를 **구조로** 검사한다 (플랜 v4 P5-4 · P5-3 독립 리뷰 §재-2 (가)~(마)).
+ * P5-4 Part 1 — 관리자 인가 게이트를 **구문 트리(AST)로** 검사한다
+ * (플랜 v4 P5-4 · P5-3 독립 리뷰 §재-2 · P5-4 독립 리뷰 §재공격).
  *
- * 왜 이 파일이 생겼나: P5-3 이 만든 구조 단언 3종은 **줄 단위 정규식**이었고 `app/admin/(protected)` 만 걸었다.
- * 리뷰어가 다섯 가지 사각지대를 지목했다 —
- *   (가) `if (…) {` ⏎ `await requireAdmin();` ⏎ `}` 와 `try { await requireAdmin(); } catch {}` 가 통과한다
- *        (redirect() 는 throw 라 catch 가 게이트를 통째로 삼킨다)
- *   (나) 게이트보다 앞선 early return 을 보지 않는다
- *   (다) `route.ts` 를 보지 않는다 — Route Handler 는 레이아웃을 타지 않는다
- *   (라) `actions/admin/**` 이 검사 트리 밖이다 — `use server` export 는 전부 공개 POST 엔드포인트다
- *   (마) `(protected)` 경로가 하드코딩이라 그룹 **밖**에 만든 화면은 대상이 아니다
+ * 이 파일이 지키는 것은 하나다: **게이트가 공격을 견디는가.** 그래서 테스트의 대부분이 red 픽스처다 —
+ * 임시 디렉터리에 가짜 저장소를 만들고 `CLAUDE_PROJECT_DIR` 로 그곳을 루트로 위장해 스크립트를 돌린 뒤
+ * exit code 와 메시지를 본다. 픽스처는 테스트가 끝나면 지워진다(P0-5 규약 · tests/gates.test.ts 와 같은 방식).
  *
- * 그래서 검사를 **함수 본문의 첫 문장**으로 옮겼다. "첫 문장이 `await requireAdmin();` 인가" 하나로 (가)(나)가 동시에 닫히고,
- * 대상을 `app/admin` 전체 + `actions/admin` 전체로 넓혀 (다)(라)(마)가 닫힌다.
- *
- * 게이트 자체를 픽스처로 실증한다(P0-5 규약 · tests/gates.test.ts 와 같은 방식):
- * 임시 디렉터리에 가짜 저장소를 만들고 `CLAUDE_PROJECT_DIR` 로 그곳을 루트로 위장해 exit code 를 본다.
- * 픽스처는 테스트가 끝나면 지워진다(저장소에 남지 않는다).
+ * 왜 정규식이 아니라 AST 인가: 1·2세대 게이트는 정규식이었고 독립 리뷰가 두 번 공격해 다음을 통과시켰다 —
+ *   F3 `"use server"; // 주석`(줄 끝 주석 하나로 지시어 판정이 꺼졌다) · M5 매개변수 그림자 ·
+ *   M6 네 디렉터리 밖의 가짜 게이트 모듈 · M8 `const s: AdminSession = await requireAdmin();` **정상 코드 반려**.
+ * 주석·공백은 트리에 없고, 이름의 출처는 텍스트가 아니라 바인딩 해석으로 답한다. 아래 §2-c 가 그 넷을 고정한다.
  *
  * 이 파일은 tests/ 아래라 게이트 3종(가격·법정문구·임시값)의 검사 대상이기도 하다 — 금지 리터럴을 그대로 두지 않는다.
+ * 픽스처 소스 안의 `use server` 문자열은 **문자열일 뿐** 이라 게이트가 이 파일을 서버액션으로 보지 않는다(그것이 AST 의 요점이다).
  */
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 
+import { PUBLIC_ACTION_REASONS, PUBLIC_ACTIONS, PUBLIC_ROUTE_REASONS, PUBLIC_ROUTES } from "../scripts/check-admin-gate.mjs";
+
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const SCRIPT_REL = "scripts/check-admin-gate.sh";
+const SCRIPT_REL = "scripts/check-admin-gate.mjs";
 const SCRIPT = path.join(ROOT, SCRIPT_REL);
 const GATE_TIMEOUT_MS = 60_000;
-
-// ── bash 해석 (tests/gates.test.ts 와 같은 구현 — Windows 의 WSL bash 를 피한다) ──────────
-function resolveBash(): { bin: string; env: NodeJS.ProcessEnv } {
-  const env: NodeJS.ProcessEnv = { ...process.env };
-  if (process.env.BASH_PATH) return { bin: process.env.BASH_PATH, env };
-  if (process.platform !== "win32") return { bin: "bash", env };
-
-  const roots: string[] = [];
-  try {
-    const execPath = execFileSync("git", ["--exec-path"], { encoding: "utf8" }).trim();
-    roots.push(path.resolve(execPath, "..", "..", ".."));
-  } catch {
-    // git 이 PATH 에 없으면 아래 고정 후보로
-  }
-  roots.push("C:\\Program Files\\Git", "C:\\Program Files (x86)\\Git");
-  if (process.env.LOCALAPPDATA) roots.push(path.join(process.env.LOCALAPPDATA, "Programs", "Git"));
-
-  for (const root of roots) {
-    const bin = path.join(root, "bin", "bash.exe");
-    if (!existsSync(bin)) continue;
-    const pathKey = Object.keys(env).find((k) => k.toUpperCase() === "PATH") ?? "PATH";
-    env[pathKey] = [path.join(root, "usr", "bin"), path.join(root, "mingw64", "bin"), env[pathKey] ?? ""].join(path.delimiter);
-    return { bin, env };
-  }
-  return { bin: "bash", env };
-}
-
-const BASH = resolveBash();
-const toPosix = (p: string): string => p.split(path.sep).join("/");
 
 interface GateResult {
   status: number | null;
   out: string;
 }
 
+/** 스크립트를 node 로 돌린다 — bash 도, 셸 해석도 필요 없다(1·2세대와 달라진 점). */
 function runGate(projectDir: string): Promise<GateResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(BASH.bin, [toPosix(SCRIPT)], {
-      env: { ...BASH.env, CLAUDE_PROJECT_DIR: toPosix(projectDir) },
+    const child = spawn(process.execPath, [SCRIPT], {
+      env: { ...process.env, CLAUDE_PROJECT_DIR: projectDir },
       windowsHide: true,
     });
     let out = "";
@@ -83,7 +52,6 @@ function runGate(projectDir: string): Promise<GateResult> {
   });
 }
 
-// ── 픽스처 ───────────────────────────────────────────────────────────────
 class Fixture {
   constructor(readonly dir: string) {}
 
@@ -111,18 +79,26 @@ const it = test.extend<{ fx: Fixture }>({
 });
 
 // ── 정상 저장소의 최소 모양 ───────────────────────────────────────────────
-const IMPORT_GATE = 'import { requireAdmin } from "@/lib/auth/requireAdmin";';
-
-const GATED_PAGE = [
-  IMPORT_GATE,
+const GATE_MODULE = [
+  "export interface AdminSession {",
+  "  userId: string;",
+  "  email: string;",
+  "}",
   "",
-  "export default async function Page() {",
-  "  await requireAdmin();",
+  "export async function resolveAdminSession(): Promise<AdminSession | null> {",
   "  return null;",
+  "}",
+  "",
+  "export async function requireAdmin(): Promise<AdminSession> {",
+  '  return { userId: "u", email: "e" };',
   "}",
   "",
 ].join("\n");
 
+const IMPORT_GATE = 'import { requireAdmin } from "@/lib/auth/requireAdmin";';
+const SERVER = '"use server";';
+
+const GATED_PAGE = [IMPORT_GATE, "", "export default async function Page() {", "  await requireAdmin();", "  return null;", "}", ""].join("\n");
 const GATED_LAYOUT = [
   IMPORT_GATE,
   "",
@@ -132,21 +108,8 @@ const GATED_LAYOUT = [
   "}",
   "",
 ].join("\n");
-
-/** 공개 예외 2건 — 인증 전이라 게이트가 없다. */
-const PUBLIC_PAGE = ["export default function LoginPage() {", "  return null;", "}", ""].join("\n");
-const PUBLIC_ROUTE = [
-  "export async function GET(): Promise<Response> {",
-  "  return new Response(null, { status: 302 });",
-  "}",
-  "",
-].join("\n");
-
-/** 로그인 액션 — 인증 전(예외 1건). */
-const UNGATED_ACTION = ['"use server";', "", "export async function requestAdminLoginLink(): Promise<void> {", "  return;", "}", ""].join("\n");
-
 const GATED_ACTION = [
-  '"use server";',
+  SERVER,
   "",
   IMPORT_GATE,
   "",
@@ -156,7 +119,6 @@ const GATED_ACTION = [
   "}",
   "",
 ].join("\n");
-
 const GATED_ROUTE = [
   IMPORT_GATE,
   "",
@@ -172,66 +134,63 @@ const GATED_ROUTE = [
   "",
 ].join("\n");
 
-/** 게이트가 통과시켜야 하는 최소 저장소. 각 red 케이스는 여기에 파일 하나를 덮어쓴다. */
+/** 공개(인증 전) 액션 3종 — 게이트가 없어야 정상이다. */
+const PUBLIC_ACTION_SRC = (fn: string): string => [SERVER, "", `export async function ${fn}(): Promise<number> {`, "  return 1;", "}", ""].join("\n");
+
+/** 게이트가 통과시켜야 하는 최소 저장소. 각 red 케이스는 여기에 파일 하나를 덮어쓰거나 더한다. */
 function seed(fx: Fixture): Fixture {
+  fx.put("lib/auth/requireAdmin.ts", GATE_MODULE);
+  fx.put("actions/reservation.ts", PUBLIC_ACTION_SRC("submitReservation"));
+  fx.put("actions/reservation-check.ts", PUBLIC_ACTION_SRC("checkReservation"));
+  fx.put("actions/admin/auth.ts", PUBLIC_ACTION_SRC("requestAdminLoginLink"));
+  fx.put("actions/admin/popup.ts", GATED_ACTION);
   fx.put("app/admin/layout.tsx", ["export default function AdminShell({ children }: { children: unknown }) {", "  return children;", "}", ""].join("\n"));
-  fx.put("app/admin/login/page.tsx", PUBLIC_PAGE);
-  fx.put("app/admin/auth/callback/route.ts", PUBLIC_ROUTE);
+  fx.put("app/admin/login/page.tsx", ["export default function LoginPage() {", "  return null;", "}", ""].join("\n"));
+  fx.put("app/admin/auth/callback/route.ts", ["export async function GET(): Promise<Response> {", "  return new Response(null);", "}", ""].join("\n"));
   fx.put("app/admin/(protected)/layout.tsx", GATED_LAYOUT);
   fx.put("app/admin/(protected)/page.tsx", GATED_PAGE);
   fx.put("app/admin/(protected)/popups/page.tsx", GATED_PAGE);
-  fx.put("actions/admin/auth.ts", UNGATED_ACTION);
-  fx.put("actions/admin/popup.ts", GATED_ACTION);
-  fx.put("lib/admin/popups.ts", ["export const POPUP_TABLE = \"popups\";", ""].join("\n"));
+  fx.put("lib/admin/popups.ts", ['export const POPUP_TABLE = "popups";', ""].join("\n"));
   fx.put("components/admin/PopupForm.tsx", ['"use client";', "export function PopupForm() {", "  return null;", "}", ""].join("\n"));
   return fx;
 }
 
 // =============================================================================
-// 0. 산출물 · 배선
+// 0. 산출물 · 배선 · 예외 목록
 // =============================================================================
 describe("0. 산출물", () => {
-  test("스크립트가 있고 package.json 이 부른다", () => {
+  test("AST 스크립트가 있고, 정규식 시절 스크립트는 남아 있지 않다", () => {
     expect(existsSync(SCRIPT), SCRIPT_REL).toBe(true);
+    expect(existsSync(path.join(ROOT, "scripts/check-admin-gate.sh")), "게이트가 둘이면 규칙이 갈라진다").toBe(false);
+  });
+
+  test("package.json · CI 가 새 스크립트를 부른다", () => {
     const pkg = JSON.parse(readFileSync(path.join(ROOT, "package.json"), "utf8")) as { scripts: Record<string, string> };
-    expect(pkg.scripts["check:admin-gate"]).toBe(`bash ${SCRIPT_REL}`);
-    // 기존 게이트는 그대로 — 둘은 서로 다른 것을 본다(서비스 롤 / 인가 호출)
+    expect(pkg.scripts["check:admin-gate"]).toBe(`node ${SCRIPT_REL}`);
     expect(pkg.scripts["check:admin"]).toBe("bash scripts/check-admin-no-service-role.sh");
+    const ci = readFileSync(path.join(ROOT, ".github/workflows/ci.yml"), "utf8");
+    expect(ci).toContain(`node ${SCRIPT_REL}`);
+    expect(ci, "정규식 게이트를 CI 가 계속 부르면 안 된다").not.toContain("bash scripts/check-admin-gate.sh");
   });
 
   /**
-   * 예외 목록은 **스크립트 안에 상수로** 있고, 그 내용이 정확히 아래 세 줄이어야 한다.
-   * 예외가 하나라도 늘면 이 단언이 깨진다 — 게이트를 우회하는 가장 쉬운 방법이 "예외 목록에 한 줄 추가"이기 때문이다.
+   * 독립 리뷰 F2·M7: 목록은 게이트에서 가장 무른 곳이다. 이제 **해석된 배열 자체**를 단언한다 —
+   * 따옴표 유무·줄바꿈·주석 같은 텍스트 문제를 통째로 건너뛴다. 인덱스 대입·재선언은 스크립트가 스스로 막는다.
    */
-  /**
-   * 독립 리뷰 F2: 처음 이 검사는 **큰따옴표가 붙은 항목만** 모으고 `^NAME=(` 첫 번째 것만 읽었다.
-   * 그래서 따옴표 없이 한 줄 더하거나 `PUBLIC_ROUTES+=(...)` 로 덧붙이면 게이트도 테스트도 지나갔다.
-   * 이제 배열 본문을 **토큰 단위로 전부** 풀어 목록 전체를 비교하고, `+=` 와 중복 대입을 따로 막는다
-   * (스크립트 자신도 실행 첫머리에 같은 것을 확인하고 걸리면 exit 2 다).
-   */
-  test("예외 목록은 공개 라우트 2건 · 인증 전 액션 1건, 그게 전부다", () => {
+  test("예외 목록 — 해석된 배열이 공개 접수 3건 · 공개 화면 2건, 그게 전부다", () => {
+    expect([...PUBLIC_ACTIONS]).toEqual(["actions/reservation.ts", "actions/reservation-check.ts", "actions/admin/auth.ts"]);
+    expect([...PUBLIC_ROUTES]).toEqual(["app/admin/login/page.tsx", "app/admin/auth/callback/route.ts"]);
+    for (const rel of PUBLIC_ACTIONS) expect((PUBLIC_ACTION_REASONS as Record<string, string>)[rel]?.length, rel).toBeGreaterThan(20);
+    for (const rel of PUBLIC_ROUTES) expect((PUBLIC_ROUTE_REASONS as Record<string, string>)[rel]?.length, rel).toBeGreaterThan(10);
+    // 목록의 파일은 실제로 있어야 한다(낡은 예외 금지)
+    for (const rel of [...PUBLIC_ACTIONS, ...PUBLIC_ROUTES]) expect(existsSync(path.join(ROOT, rel)), rel).toBe(true);
+  });
+
+  test("목록을 나중에 고치는 경로가 없다 — 인덱스 대입·push·재선언 0", () => {
     const src = readFileSync(SCRIPT, "utf8");
-    const listOf = (name: string): string[] => {
-      const assigns = [...src.matchAll(new RegExp(`^${name}=\\(`, "gm"))];
-      expect(assigns.length, `${name} 대입은 정확히 한 번이어야 한다`).toBe(1);
-      const start = (assigns[0].index ?? 0) + assigns[0][0].length;
-      const end = src.indexOf(")", start);
-      expect(end, `${name} 배열이 닫히지 않았다`).toBeGreaterThan(start);
-      return src
-        .slice(start, end)
-        .split("\n")
-        .map((line) => line.replace(/#.*$/, "")) // 사유 주석 제거
-        .flatMap((line) => line.trim().split(/\s+/)) // 따옴표가 없어도 토큰으로 잡힌다
-        .map((token) => token.replace(/^['"]|['"]$/g, "").trim())
-        .filter((token) => token.length > 0);
-    };
-    expect(listOf("PUBLIC_ROUTES")).toEqual(["app/admin/login/page.tsx", "app/admin/auth/callback/route.ts"]);
-    expect(listOf("UNGATED_ACTIONS")).toEqual(["actions/admin/auth.ts"]);
-    // 나중에 덧붙이는 경로를 막는다 — 목록은 한 곳에서 한 번만 정의한다
-    expect(src, "예외 목록을 += 로 덧붙였다").not.toMatch(/(PUBLIC_ROUTES|UNGATED_ACTIONS)\s*\+=/);
-    // 예외마다 사유가 주석으로 붙어 있다
-    for (const rel of ["app/admin/login/page.tsx", "app/admin/auth/callback/route.ts", "actions/admin/auth.ts"]) {
-      expect(src, `${rel} 의 사유 주석이 없다`).toMatch(new RegExp(`${rel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[^\\n]*#`));
+    expect(src).not.toMatch(/(PUBLIC_ACTIONS|PUBLIC_ROUTES)\s*(\+=|\[[^\]]*\]\s*=|\.push|\.unshift|\.splice)/);
+    for (const name of ["PUBLIC_ACTION_REASONS", "PUBLIC_ROUTE_REASONS"]) {
+      expect((src.match(new RegExp(`^const ${name} = `, "gm")) ?? []).length, name).toBe(1);
     }
   });
 });
@@ -245,108 +204,79 @@ describe("1. 실제 저장소", { timeout: GATE_TIMEOUT_MS }, () => {
     expect(r.status, r.out).toBe(0);
   });
 
-  test("검사 대상 네 디렉터리를 전부 훑는다고 출력한다", async () => {
+  test("무엇을 훑는지 출력한다 — 저장소 전체의 use server + 관리자 경로", async () => {
     const r = await runGate(ROOT);
-    for (const dir of ["app/admin", "actions/admin", "lib/admin", "components/admin"]) {
-      expect(r.out, dir).toContain(dir);
-    }
+    expect(r.out).toContain("use server");
+    for (const dir of ["app/admin", "actions/admin", "lib/admin", "components/admin"]) expect(r.out, dir).toContain(dir);
   });
 });
 
 // =============================================================================
-// 2. 규칙 1·2 — actions/admin/** 의 export 는 첫 문장이 게이트다 (리뷰 (가)(나)(라))
+// 2. use server 파일 — 첫 문장 게이트 (리뷰 (가)(나)(라))
 // =============================================================================
-describe.concurrent("2. actions/admin 게이트", { timeout: GATE_TIMEOUT_MS }, () => {
+describe.concurrent("2. use server 파일의 게이트", { timeout: GATE_TIMEOUT_MS }, () => {
   it("green — 정상 저장소는 통과한다", async ({ fx }) => {
     const r = await fx.run();
     expect(r.status, r.out).toBe(0);
   });
 
   it("red — 게이트가 아예 없는 서버액션 (라)", async ({ fx }) => {
-    fx.put("actions/admin/popup.ts", ['"use server";', "", "export async function createPopup(): Promise<number> {", "  return 1;", "}", ""].join("\n"));
+    fx.put("actions/admin/popup.ts", [SERVER, "", "export async function createPopup(): Promise<number> {", "  return 1;", "}", ""].join("\n"));
     const r = await fx.run();
     expect(r.status, r.out).toBe(1);
-    expect(r.out).toContain("actions/admin/popup.ts");
     expect(r.out).toContain("createPopup");
   });
 
   it("red — 게이트가 if 로 감싸였다 (가)", async ({ fx }) => {
     fx.put(
       "actions/admin/popup.ts",
-      [
-        '"use server";',
-        "",
-        IMPORT_GATE,
-        "",
-        "export async function createPopup(flag: boolean): Promise<number> {",
-        "  if (flag) {",
-        "    await requireAdmin();",
-        "  }",
-        "  return 1;",
-        "}",
-        "",
-      ].join("\n"),
+      [SERVER, "", IMPORT_GATE, "", "export async function createPopup(flag: boolean): Promise<number> {", "  if (flag) {", "    await requireAdmin();", "  }", "  return 1;", "}", ""].join("\n"),
     );
     const r = await fx.run();
     expect(r.status, r.out).toBe(1);
-    expect(r.out).toContain("createPopup");
   });
 
   it("red — 게이트가 try/catch 안이다 — redirect 는 throw 라 catch 가 게이트를 삼킨다 (가)", async ({ fx }) => {
     fx.put(
       "actions/admin/popup.ts",
-      [
-        '"use server";',
-        "",
-        IMPORT_GATE,
-        "",
-        "export async function createPopup(): Promise<number> {",
-        "  try {",
-        "    await requireAdmin();",
-        "  } catch {}",
-        "  return 1;",
-        "}",
-        "",
-      ].join("\n"),
+      [SERVER, "", IMPORT_GATE, "", "export async function createPopup(): Promise<number> {", "  try {", "    await requireAdmin();", "  } catch {}", "  return 1;", "}", ""].join("\n"),
     );
     const r = await fx.run();
     expect(r.status, r.out).toBe(1);
-    expect(r.out).toMatch(/try|catch/);
   });
 
   it("red — 게이트 앞에 early return 이 있다 (나)", async ({ fx }) => {
     fx.put(
       "actions/admin/popup.ts",
-      [
-        '"use server";',
-        "",
-        IMPORT_GATE,
-        "",
-        "export async function createPopup(mode: string): Promise<number> {",
-        '  if (mode === "x") return 0;',
-        "  await requireAdmin();",
-        "  return 1;",
-        "}",
-        "",
-      ].join("\n"),
+      [SERVER, "", IMPORT_GATE, "", "export async function createPopup(mode: string): Promise<number> {", '  if (mode === "x") return 0;', "  await requireAdmin();", "  return 1;", "}", ""].join("\n"),
     );
     const r = await fx.run();
     expect(r.status, r.out).toBe(1);
-    expect(r.out).toContain("createPopup");
   });
 
   it("red — 예외 목록에 없는 두 번째 무게이트 액션 파일", async ({ fx }) => {
-    fx.put("actions/admin/notice.ts", ['"use server";', "", "export async function createNotice(): Promise<number> {", "  return 1;", "}", ""].join("\n"));
+    fx.put("actions/admin/notice.ts", [SERVER, "", "export async function createNotice(): Promise<number> {", "  return 1;", "}", ""].join("\n"));
     const r = await fx.run();
     expect(r.status, r.out).toBe(1);
     expect(r.out).toContain("actions/admin/notice.ts");
   });
 
-  it("red — 화살표 함수 export 는 구조를 확인할 수 없어 거부한다", async ({ fx }) => {
-    fx.put(
-      "actions/admin/popup.ts",
-      ['"use server";', "", IMPORT_GATE, "", "export const createPopup = async (): Promise<number> => {", "  await requireAdmin();", "  return 1;", "};", ""].join("\n"),
-    );
+  it("red — 화살표 함수 export 도 검사한다 (게이트 없으면 실패)", async ({ fx }) => {
+    fx.put("actions/admin/popup.ts", [SERVER, "", "export const createPopup = async (): Promise<number> => {", "  return 1;", "};", ""].join("\n"));
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(1);
+  });
+
+  it("red — export{ } 로 내보낸 함수도 따라가 검사한다", async ({ fx }) => {
+    fx.put("actions/admin/popup.ts", [SERVER, "", "async function createPopup(): Promise<number> {", "  return 1;", "}", "", "export{createPopup};", ""].join("\n"));
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(1);
+    expect(r.out).toContain("createPopup");
+  });
+
+  it("red — 다른 모듈에서 재수출해 게이트를 숨긴다", async ({ fx }) => {
+    fx.put("lib/admin/raw.ts", ["export async function createPopup(): Promise<number> {", "  return 1;", "}", ""].join("\n"));
+    fx.put("actions/admin/popup.ts", [SERVER, "", 'export { createPopup } from "@/lib/admin/raw";', ""].join("\n"));
     const r = await fx.run();
     expect(r.status, r.out).toBe(1);
   });
@@ -354,35 +284,24 @@ describe.concurrent("2. actions/admin 게이트", { timeout: GATE_TIMEOUT_MS }, 
   it("red — requireAdmin 을 그 파일 안에서 새로 정의했다 (같은 이름의 가짜 게이트)", async ({ fx }) => {
     fx.put(
       "actions/admin/popup.ts",
-      [
-        '"use server";',
-        "",
-        "async function requireAdmin(): Promise<void> {",
-        "  return;",
-        "}",
-        "",
-        "export async function createPopup(): Promise<number> {",
-        "  await requireAdmin();",
-        "  return 1;",
-        "}",
-        "",
-      ].join("\n"),
+      [SERVER, "", "async function requireAdmin(): Promise<void> {", "  return;", "}", "", "export async function createPopup(): Promise<number> {", "  await requireAdmin();", "  return 1;", "}", ""].join("\n"),
     );
     const r = await fx.run();
     expect(r.status, r.out).toBe(1);
   });
 
-  it("green — 주석은 첫 문장이 아니다 (게이트 위의 설명 주석은 허용)", async ({ fx }) => {
+  it("green — 게이트 위의 주석·빈 줄은 문장이 아니다", async ({ fx }) => {
     fx.put(
       "actions/admin/popup.ts",
       [
-        '"use server";',
+        SERVER,
         "",
         IMPORT_GATE,
         "",
         "export async function createPopup(): Promise<number> {",
         "  /* redirect() 는 throw 다 — 관리자가 아니면 여기서 끝난다. */",
-        "  // 이 주석도 문장이 아니다",
+        "  // 이 줄도 문장이 아니다",
+        "",
         "  await requireAdmin();",
         "  return 1;",
         "}",
@@ -392,25 +311,128 @@ describe.concurrent("2. actions/admin 게이트", { timeout: GATE_TIMEOUT_MS }, 
     const r = await fx.run();
     expect(r.status, r.out).toBe(0);
   });
+});
 
-  /**
-   * ─── 독립 리뷰가 뚫은 자리 (P5-4-review.md) ────────────────────────────────────────
-   * 아홉 번의 시도 중 셋이 통과했다. 그 셋과 리뷰어가 덧붙인 변종을 전부 red 로 고정한다.
-   */
-  it("red — export{ 로 붙여 쓰면 export 탐지 자체가 꺼졌다 (M1)", async ({ fx }) => {
+// =============================================================================
+// 2-b. 대상은 폴더가 아니다 (리뷰 F4 · F1 · M3)
+// =============================================================================
+describe.concurrent("2-b. 대상은 지시어로 정한다", { timeout: GATE_TIMEOUT_MS }, () => {
+  const UNGATED = [SERVER, "", "export async function writeThing(): Promise<number> {", "  return 1;", "}", ""].join("\n");
+
+  for (const rel of [
+    "lib/admin/writes.ts",
+    "components/admin/act.ts",
+    "app/admin/(protected)/popups/actions.ts",
+    "actions/tools.ts",
+    "lib/queries/secret-writes.ts",
+    "app/(site)/hidden/actions.ts",
+  ]) {
+    it(`red — ${rel} 의 use server 모듈 (F4)`, async ({ fx }) => {
+      fx.put(rel, UNGATED);
+      const r = await fx.run();
+      expect(r.status, r.out).toBe(1);
+      expect(r.out).toContain(rel);
+    });
+  }
+
+  it("red — 컴포넌트 함수 안의 인라인 서버액션 (M3)", async ({ fx }) => {
     fx.put(
-      "actions/admin/popup.ts",
-      ['"use server";', "", "async function createPopup(): Promise<number> {", "  return 1;", "}", "", "export{createPopup};", ""].join("\n"),
+      "components/admin/PopupForm.tsx",
+      ['"use client";', "export function PopupForm() {", "  async function save(): Promise<number> {", `    ${SERVER}`, "    return 1;", "  }", "  return save;", "}", ""].join("\n"),
     );
     const r = await fx.run();
     expect(r.status, r.out).toBe(1);
+    expect(r.out).toContain("use server");
+  });
+
+  it("green — 지시어가 없는 평범한 파일은 그대로 통과한다 (헛경보 0)", async ({ fx }) => {
+    fx.put(
+      "lib/admin/popups.ts",
+      ['import { createSsrClient } from "@/lib/supabase/ssr";', "", "export async function listPopups(): Promise<unknown[]> {", "  const db = createSsrClient();", "  return db ? [] : [];", "}", ""].join("\n"),
+    );
+    fx.put("components/admin/util.ts", ["export function labelOf(x: string): string {", "  return x.trim();", "}", ""].join("\n"));
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(0);
+  });
+});
+
+// =============================================================================
+// 2-c. 오늘의 공격 — 주석·그림자·가짜 모듈·정상 코드 반려 (리뷰 §재공격)
+// =============================================================================
+describe.concurrent("2-c. 재공격 고정", { timeout: GATE_TIMEOUT_MS }, () => {
+  for (const [label, directive] of [
+    ["줄 끝 주석", `${SERVER} // 관리자 쓰기 액션`],
+    ["앞 블록 주석", `/* 서버 전용 */ ${SERVER}`],
+    ["작은따옴표 + 주석", "'use server'; // 액션"],
+  ] as const) {
+    it(`red — ${label} 이 붙어도 use server 파일이다 (F3)`, async ({ fx }) => {
+      fx.put("actions/admin/popup.ts", [directive, "", "export async function createPopup(): Promise<number> {", "  return 1;", "}", ""].join("\n"));
+      const r = await fx.run();
+      expect(r.status, r.out).toBe(1);
+      expect(r.out).toContain("createPopup");
+    });
+  }
+
+  it("red — 매개변수가 게이트 이름을 가린다 (M5)", async ({ fx }) => {
+    fx.put(
+      "actions/admin/popup.ts",
+      [
+        SERVER,
+        "",
+        IMPORT_GATE,
+        "",
+        "export async function createPopup(requireAdmin = async () => undefined): Promise<number> {",
+        "  await requireAdmin();",
+        "  return 1;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(1);
+    expect(r.out).toContain("가려져");
+  });
+
+  it("red — 지역 선언이 게이트 이름을 가린다 (M5 변종)", async ({ fx }) => {
+    fx.put(
+      "actions/admin/popup.ts",
+      [
+        SERVER,
+        "",
+        IMPORT_GATE,
+        "",
+        "export async function createPopup(): Promise<number> {",
+        "  return inner();",
+        "}",
+        "",
+        "async function inner(): Promise<number> {",
+        "  const requireAdmin = async () => undefined;",
+        "  await requireAdmin();",
+        "  return 1;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(1);
+  });
+
+  it("red — 네 디렉터리 밖의 가짜 게이트 모듈 (M6)", async ({ fx }) => {
+    fx.put("lib/fake/requireAdmin.ts", ["export async function requireAdmin(): Promise<void> {", "  return;", "}", ""].join("\n"));
+    fx.put(
+      "actions/admin/popup.ts",
+      [SERVER, "", 'import { requireAdmin } from "@/lib/fake/requireAdmin";', "", "export async function createPopup(): Promise<number> {", "  await requireAdmin();", "  return 1;", "}", ""].join("\n"),
+    );
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(1);
+    expect(r.out).toContain("lib/auth/requireAdmin.ts");
   });
 
   it("red — 다른 함수를 requireAdmin 으로 별칭했다 — 그 함수는 redirect 하지 않는다 (M2)", async ({ fx }) => {
     fx.put(
       "actions/admin/popup.ts",
       [
-        '"use server";',
+        SERVER,
         "",
         'import { resolveAdminSession as requireAdmin } from "@/lib/auth/requireAdmin";',
         "",
@@ -425,20 +447,23 @@ describe.concurrent("2. actions/admin 게이트", { timeout: GATE_TIMEOUT_MS }, 
     expect(r.status, r.out).toBe(1);
   });
 
-  it("green — 타입 export 는 런타임에 사라진다 — 액션 파일에서도 허용한다 (M4 헛경보)", async ({ fx }) => {
+  it("green — 타입을 붙인 변수 선언도 같은 첫 문장이다 (M8 · N6)", async ({ fx }) => {
     fx.put(
       "actions/admin/popup.ts",
       [
-        '"use server";',
+        SERVER,
         "",
-        IMPORT_GATE,
+        'import { requireAdmin, type AdminSession } from "@/lib/auth/requireAdmin";',
         "",
-        "export type PopupResult = { ok: boolean };",
-        "",
-        "export async function createPopup(): Promise<PopupResult> {",
-        "  await requireAdmin();",
-        "  return { ok: true };",
+        "export async function createPopup(): Promise<string> {",
+        "  const session: AdminSession = await requireAdmin();",
+        "  return session.email;",
         "}",
+        "",
+        "export const alsoFine = async (): Promise<number> => {",
+        "  await requireAdmin();",
+        "  return 1;",
+        "};",
         "",
       ].join("\n"),
     );
@@ -446,19 +471,29 @@ describe.concurrent("2. actions/admin 게이트", { timeout: GATE_TIMEOUT_MS }, 
     expect(r.status, r.out).toBe(0);
   });
 
-  it("green — 여러 줄로 나눈 named import 도 이름 그대로면 통과한다 (M2 헛경보 방지)", async ({ fx }) => {
+  it("green — 세미콜론을 빼도(ASI) 같은 문장이다 (N7)", async ({ fx }) => {
+    fx.put(
+      "actions/admin/popup.ts",
+      [SERVER, "", IMPORT_GATE, "", "export async function createPopup(): Promise<number> {", "  await requireAdmin()", "  return 1", "}", ""].join("\n"),
+    );
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(0);
+  });
+
+  it("green — 여러 줄 named import · 타입 전용 import 가 섞여도 통과한다", async ({ fx }) => {
     fx.put(
       "actions/admin/popup.ts",
       [
-        '"use server";',
+        SERVER,
         "",
+        'import type { AdminSession } from "@/lib/auth/requireAdmin";',
         "import {",
         "  requireAdmin,",
         '} from "@/lib/auth/requireAdmin";',
         "",
-        "export async function createPopup(): Promise<number> {",
-        "  await requireAdmin();",
-        "  return 1;",
+        "export async function createPopup(): Promise<AdminSession> {",
+        "  const session: AdminSession = await requireAdmin();",
+        "  return session;",
         "}",
         "",
       ].join("\n"),
@@ -467,20 +502,24 @@ describe.concurrent("2. actions/admin 게이트", { timeout: GATE_TIMEOUT_MS }, 
     expect(r.status, r.out).toBe(0);
   });
 
-  it("green — 세션을 받아 쓰는 형태(const s = await requireAdmin();)도 첫 문장이면 통과한다", async ({ fx }) => {
+  /**
+   * `return await requireAdmin();` 은 게이트가 아니다 — 세션을 **돌려주는** 함수이지 그 뒤에 지킬 것이 없다.
+   * 그래서 이 형태는 반려한다: 게이트는 "이 아래를 보호한다" 는 뜻이어야 하고, 통과 여부를 호출부에 미루면
+   * 그 호출부가 또 검사 대상이 된다(= 게이트가 한 단계 안쪽으로 숨는다).
+   */
+  it("red — return await requireAdmin() 은 게이트가 아니라 반환이다", async ({ fx }) => {
     fx.put(
       "actions/admin/popup.ts",
-      [
-        '"use server";',
-        "",
-        IMPORT_GATE,
-        "",
-        "export async function createPopup(): Promise<string> {",
-        "  const session = await requireAdmin();",
-        "  return session.email;",
-        "}",
-        "",
-      ].join("\n"),
+      [SERVER, "", IMPORT_GATE, "", "export async function createPopup(): Promise<unknown> {", "  return await requireAdmin();", "}", ""].join("\n"),
+    );
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(1);
+  });
+
+  it("green — 상대 경로로 정본 모듈을 가져와도 같은 파일이면 통과한다", async ({ fx }) => {
+    fx.put(
+      "actions/admin/popup.ts",
+      [SERVER, "", 'import { requireAdmin } from "../../lib/auth/requireAdmin";', "", "export async function createPopup(): Promise<number> {", "  await requireAdmin();", "  return 1;", "}", ""].join("\n"),
     );
     const r = await fx.run();
     expect(r.status, r.out).toBe(0);
@@ -488,84 +527,9 @@ describe.concurrent("2. actions/admin 게이트", { timeout: GATE_TIMEOUT_MS }, 
 });
 
 // =============================================================================
-// 2-b. 규칙 1(a)(b) — 서버액션은 **지시어**로 찾는다, 그리고 한 곳에만 둔다 (독립 리뷰 F1·M3)
-//
-// 폴더 이름으로 대상을 고르면, 같은 지시어를 다른 폴더에 두는 것만으로 게이트 밖으로 나간다.
-// 아래 네 자리는 전부 "화면을 거치지 않는 공개 POST 엔드포인트" 이고, 전부 red 여야 한다.
+// 3. app/admin 화면·라우트 (리뷰 (다))
 // =============================================================================
-describe.concurrent("2-b. use server 는 지시어로 찾고 한 곳에만 둔다", { timeout: GATE_TIMEOUT_MS }, () => {
-  const UNGATED_SERVER_MODULE = [
-    '"use server";',
-    "",
-    "export async function writePopup(): Promise<number> {",
-    "  return 1;",
-    "}",
-    "",
-  ].join("\n");
-
-  for (const rel of ["lib/admin/writes.ts", "components/admin/act.ts", "app/admin/(protected)/popups/actions.ts"]) {
-    it(`red — ${rel} 의 use server 모듈 (F1)`, async ({ fx }) => {
-      fx.put(rel, UNGATED_SERVER_MODULE);
-      const r = await fx.run();
-      expect(r.status, r.out).toBe(1);
-      expect(r.out, "지시어의 위치 자체가 위반이어야 한다").toContain("use server");
-      expect(r.out).toContain(rel);
-    });
-  }
-
-  it("red — 게이트가 있어도 actions/admin 밖이면 거부한다 — 쓰기 액션은 한 곳에 모은다 (F1-b)", async ({ fx }) => {
-    fx.put(
-      "lib/admin/writes.ts",
-      ['"use server";', "", IMPORT_GATE, "", "export async function writePopup(): Promise<number> {", "  await requireAdmin();", "  return 1;", "}", ""].join("\n"),
-    );
-    const r = await fx.run();
-    expect(r.status, r.out).toBe(1);
-  });
-
-  it("red — 컴포넌트 함수 안의 인라인 서버액션 (M3)", async ({ fx }) => {
-    fx.put(
-      "components/admin/PopupForm.tsx",
-      [
-        '"use client";',
-        "export function PopupForm() {",
-        "  async function save() {",
-        '    "use server";',
-        "    return 1;",
-        "  }",
-        "  return save;",
-        "}",
-        "",
-      ].join("\n"),
-    );
-    const r = await fx.run();
-    expect(r.status, r.out).toBe(1);
-    expect(r.out).toContain("use server");
-  });
-
-  it("green — 지시어가 없는 평범한 lib/admin·components/admin 파일은 그대로 통과한다 (헛경보 0)", async ({ fx }) => {
-    fx.put(
-      "lib/admin/popups.ts",
-      [
-        'import { createSsrClient } from "@/lib/supabase/ssr";',
-        "",
-        "export async function listPopups(): Promise<unknown[]> {",
-        "  const db = createSsrClient();",
-        "  return db ? [] : [];",
-        "}",
-        "",
-        "export const POPUP_TABLE = \"popups\";",
-        "",
-      ].join("\n"),
-    );
-    const r = await fx.run();
-    expect(r.status, r.out).toBe(0);
-  });
-});
-
-// =============================================================================
-// 3. 규칙 3 — app/admin 의 page·layout·route (리뷰 (다))
-// =============================================================================
-describe.concurrent("3. app/admin 화면·라우트 게이트", { timeout: GATE_TIMEOUT_MS }, () => {
+describe.concurrent("3. 화면·라우트 게이트", { timeout: GATE_TIMEOUT_MS }, () => {
   it("red — 게이트 없는 page.tsx", async ({ fx }) => {
     fx.put("app/admin/(protected)/popups/page.tsx", ["export default async function Page() {", "  return null;", "}", ""].join("\n"));
     const r = await fx.run();
@@ -595,7 +559,7 @@ describe.concurrent("3. app/admin 화면·라우트 게이트", { timeout: GATE_
     expect(r.status, r.out).toBe(0);
   });
 
-  it("red — 기본 export 가 async 함수가 아니다 (동기 함수는 게이트를 걸 수 없다)", async ({ fx }) => {
+  it("red — 기본 export 가 async 함수가 아니다", async ({ fx }) => {
     fx.put("app/admin/(protected)/popups/page.tsx", ["export default function Page() {", "  return null;", "}", ""].join("\n"));
     const r = await fx.run();
     expect(r.status, r.out).toBe(1);
@@ -611,19 +575,35 @@ describe.concurrent("3. app/admin 화면·라우트 게이트", { timeout: GATE_
     expect(r.out).toContain("generateStaticParams");
   });
 
+  it("red — generateMetadata 가 게이트를 빠뜨렸다 (요청마다 서버에서 돈다)", async ({ fx }) => {
+    fx.put(
+      "app/admin/(protected)/popups/page.tsx",
+      [IMPORT_GATE, "", "export async function generateMetadata(): Promise<unknown> {", "  return {};", "}", "", "export default async function Page() {", "  await requireAdmin();", "  return null;", "}", ""].join("\n"),
+    );
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(1);
+  });
+
   it("red — 공개 예외 파일이 사라졌다 (예외 목록이 낡았다)", async ({ fx }) => {
     fx.remove("app/admin/login/page.tsx");
     const r = await fx.run();
     expect(r.status, r.out).toBe(1);
   });
 
-  it("red — 로그인 화면을 감싸는 바깥 레이아웃이 게이트를 걸었다 (로그인이 자기 자신으로 무한 리다이렉트한다)", async ({ fx }) => {
+  it("red — 로그인 화면을 감싸는 바깥 레이아웃이 게이트를 걸었다 (무한 리다이렉트)", async ({ fx }) => {
     fx.put("app/admin/layout.tsx", GATED_LAYOUT);
     const r = await fx.run();
     expect(r.status, r.out).toBe(1);
   });
 
-  it("green — 대상 디렉터리가 하나도 없으면 통과한다 (대상이 생기는 순간부터 검사)", async () => {
+  it("green — 세그먼트 설정 export 는 화면·라우트 양쪽에서 허용한다", async ({ fx }) => {
+    fx.put("app/admin/(protected)/popups/page.tsx", ['export const dynamic = "force-dynamic";', "", GATED_PAGE].join("\n"));
+    fx.put("app/admin/(protected)/export/route.ts", ['export const dynamic = "force-dynamic";', "", GATED_ROUTE].join("\n"));
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(0);
+  });
+
+  it("green — 대상이 하나도 없는 저장소는 통과한다", async () => {
     const dir = mkdtempSync(path.join(tmpdir(), "bestour-admin-gate-empty-"));
     try {
       writeFileSync(path.join(dir, "README.md"), "# 빈 저장소\n");
@@ -636,9 +616,9 @@ describe.concurrent("3. app/admin 화면·라우트 게이트", { timeout: GATE_
 });
 
 // =============================================================================
-// 4. 규칙 4 — (protected) 를 하드코딩하지 않는다 (리뷰 (마))
+// 4. 라우트 그룹·폴더 이름에 기대지 않는다 (리뷰 (마))
 // =============================================================================
-describe.concurrent("4. 라우트 그룹 밖도 대상이다", { timeout: GATE_TIMEOUT_MS }, () => {
+describe.concurrent("4. 경로 하드코딩 없음", { timeout: GATE_TIMEOUT_MS }, () => {
   it("red — 그룹 밖 app/admin/popups/page.tsx 가 게이트를 빠뜨렸다 (마)", async ({ fx }) => {
     fx.put("app/admin/popups/page.tsx", ["export default async function Page() {", "  return null;", "}", ""].join("\n"));
     const r = await fx.run();
@@ -660,10 +640,9 @@ describe.concurrent("4. 라우트 그룹 밖도 대상이다", { timeout: GATE_T
 });
 
 // =============================================================================
-// 5. 규칙 5 — 삭제된 우회 심볼 · 환경변수 분기 (리뷰 F1 · 브리프 §5)
+// 5. 삭제된 우회 심볼 · 환경변수 분기
 // =============================================================================
 describe.concurrent("5. 우회 심볼 · 환경변수 분기", { timeout: GATE_TIMEOUT_MS }, () => {
-  // 심볼 이름을 문자열 결합으로 조립한다 — 이 파일도 게이트의 검사 대상이 될 수 있다
   const SYMBOLS = ["preview" + "Admin", "ADMIN" + "_PREVIEW", "adminPreview" + "Allowed", "isAdmin" + "Preview", "PREVIEW" + "_ADMIN_ROWS"];
 
   for (const symbol of SYMBOLS) {
@@ -674,7 +653,7 @@ describe.concurrent("5. 우회 심볼 · 환경변수 분기", { timeout: GATE_T
     });
   }
 
-  it("red — 주석 안에 숨겨 둔 우회 심볼도 잡는다 (되살릴 조각을 남기지 않는다)", async ({ fx }) => {
+  it("red — 주석 안에 숨겨 둔 우회 심볼도 잡는다", async ({ fx }) => {
     fx.put("components/admin/PopupForm.tsx", [`// ${"ADMIN" + "_PREVIEW"} 로 열 수 있었다`, '"use client";', "export function PopupForm() {", "  return null;", "}", ""].join("\n"));
     const r = await fx.run();
     expect(r.status, r.out).toBe(1);
@@ -683,16 +662,7 @@ describe.concurrent("5. 우회 심볼 · 환경변수 분기", { timeout: GATE_T
   it("red — 관리자 경로의 NODE_ENV 분기", async ({ fx }) => {
     fx.put(
       "app/admin/(protected)/popups/page.tsx",
-      [
-        IMPORT_GATE,
-        "",
-        "export default async function Page() {",
-        "  await requireAdmin();",
-        '  if (process.env.NODE_ENV !== "production") return null;',
-        "  return null;",
-        "}",
-        "",
-      ].join("\n"),
+      [IMPORT_GATE, "", "export default async function Page() {", "  await requireAdmin();", '  if (process.env.NODE_ENV !== "production") return null;', "  return null;", "}", ""].join("\n"),
     );
     const r = await fx.run();
     expect(r.status, r.out).toBe(1);
@@ -702,34 +672,16 @@ describe.concurrent("5. 우회 심볼 · 환경변수 분기", { timeout: GATE_T
   it("green — 주석에 적힌 NODE_ENV 설명은 코드가 아니다 (사고 경위 기록을 지우게 만들지 않는다)", async ({ fx }) => {
     fx.put(
       "app/admin/(protected)/popups/page.tsx",
-      [
-        IMPORT_GATE,
-        "",
-        "/** 예전 우회 분기는 NODE_ENV 와 process.env 를 봤다 — 그 기록을 남겨 둔다. */",
-        "export default async function Page() {",
-        "  await requireAdmin();",
-        "  return null;",
-        "}",
-        "",
-      ].join("\n"),
+      [IMPORT_GATE, "", "/** 예전 우회 분기는 NODE_ENV 와 process.env 를 봤다 — 그 기록을 남겨 둔다. */", "export default async function Page() {", "  await requireAdmin();", "  return null;", "}", ""].join("\n"),
     );
     const r = await fx.run();
     expect(r.status, r.out).toBe(0);
   });
 
-  it('green — "미리보기" 기능 자체는 막지 않는다 (브리프 §5 — 팝업 미리보기는 정당하다)', async ({ fx }) => {
+  it('green — "미리보기" 기능 자체는 막지 않는다 (팝업 미리보기는 정당하다)', async ({ fx }) => {
     fx.put(
       "app/admin/(protected)/popups/[id]/page.tsx",
-      [
-        IMPORT_GATE,
-        'import { HomePopup } from "@/components/home/HomePopup";',
-        "",
-        "export default async function Page() {",
-        "  await requireAdmin();",
-        "  return HomePopup;",
-        "}",
-        "",
-      ].join("\n"),
+      [IMPORT_GATE, 'import { HomePopup } from "@/components/home/HomePopup";', "", "export default async function Page() {", "  await requireAdmin();", "  return HomePopup;", "}", ""].join("\n"),
     );
     const r = await fx.run();
     expect(r.status, r.out).toBe(0);

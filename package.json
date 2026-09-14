@@ -10,7 +10,7 @@
     "test": "vitest run",
     "check:pricing": "bash scripts/check-no-pricing.sh",
     "check:admin": "bash scripts/check-admin-no-service-role.sh",
-    "check:admin-gate": "bash scripts/check-admin-gate.sh"
+    "check:admin-gate": "node scripts/check-admin-gate.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.5",
