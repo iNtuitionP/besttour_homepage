@@ -36,6 +36,10 @@
  *    엔드포인트는 모듈 단위로 **열거 가능**해야 한다.
  * 6. 삭제된 개발용 우회 심볼 5종 금지 · 관리자 경로 코드의 NODE_ENV/process.env 분기 0.
  *
+ * 저장소 규약: **게이트는 별칭 없이 import 한다** — `import { requireAdmin } from "@/lib/auth/requireAdmin";`.
+ * `import { requireAdmin as gate }` 도 이 검사는 통과한다(바인딩이 정본이면 게이트다 — 이름으로 판정하면 M2 가 되살아난다).
+ * 그래도 이름을 고정하는 이유는 사람이다: 리뷰어가 `await gate();` 를 보고 게이트인지 판단하려면 import 까지 거슬러야 한다.
+ *
  * 검사하지 않는 것: 서비스 롤(scripts/check-admin-no-service-role.sh 가 본다 — 둘은 다른 층이다).
  * "미리보기" 기능 자체는 막지 않는다(P5-4 팝업 미리보기는 정당하다).
  *
@@ -86,8 +90,19 @@ export { PUBLIC_ACTION_REASONS, PUBLIC_ROUTE_REASONS };
 /** P5-3 에서 삭제된 개발용 우회 심볼. 이름을 조립해 이 파일 자신이 검사에 걸리지 않게 한다. */
 const BYPASS_SYMBOLS = ["preview" + "Admin", "ADMIN" + "_PREVIEW", "adminPreview" + "Allowed", "isAdmin" + "Preview", "PREVIEW" + "_ADMIN_ROWS"];
 
-/** 관리자 경로(여기에 NODE_ENV 분기가 있으면 개발 전용 우회가 시작된다). */
-const ADMIN_DIRS = ["app/admin", "actions/admin", "lib/admin", "components/admin"];
+/**
+ * 관리자 경로 — **경로 세그먼트로** 판정한다(리뷰 N10). `app/admin/**` 로 접두사를 고정하면
+ * `app/(admin)/dashboard/page.tsx` 같은 라우트 그룹이 화면 규칙 밖으로 빠진다. 폴더 이름에 기대는 가정은
+ * 이미 한 번 걷어냈으므로(F4) 마지막 하나도 같은 방식으로 없앤다: **세그먼트가 `admin` 또는 `(admin)`** 이면 관리자 경로다.
+ * 아래 목록은 화면이 아닌 경로(액션·쿼리·컴포넌트)까지 포함해 "무엇을 관리자 경로로 보는지" 를 사람에게 보여 주는 용도다.
+ */
+const ADMIN_DIRS = ["app/admin", "app/(admin)", "actions/admin", "lib/admin", "components/admin"];
+
+/** 경로에 `admin` 또는 `(admin)` 세그먼트가 있는가(파일 이름은 제외). */
+function hasAdminSegment(rel) {
+  const segments = rel.split("/").slice(0, -1);
+  return segments.some((seg) => seg === "admin" || seg === "(admin)");
+}
 
 const SCAN_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"]);
 const SKIP_DIRS = new Set(["node_modules", ".next", ".git", ".vercel", "coverage", "dist", "build", "out", ".turbo"]);
@@ -219,32 +234,68 @@ function gateBindings(sourceFile, abs, canonicalAbs) {
   return names;
 }
 
-/** fn 바깥(자기 매개변수 포함)에서 이름을 가리는 바인딩이 있는가 — 매개변수 그림자(M5)를 잡는다. */
-function isShadowed(name, fn, sourceFile) {
+/**
+ * 이름을 선언하는 노드인가 — 함수/클래스 선언과 변수 선언(구조분해 포함).
+ * 함수 선언은 **호이스팅**되므로 본문 어디에 있든 첫 문장보다 먼저 존재한다(리뷰 M9 가 그것을 썼다).
+ */
+function declaresName(node, name) {
+  if ((ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) && node.name?.text === name) return true;
+  if (ts.isVariableDeclaration(node)) {
+    if (ts.isIdentifier(node.name)) return node.name.text === name;
+    return bindsName(node.name, name);
+  }
+  return false;
+}
+
+/**
+ * 한 스코프(함수 본문·블록) 안에서 이름이 선언되는가. 중첩 블록·if·try 안까지 들어가지만
+ * **중첩 함수의 본문 안쪽으로는 들어가지 않는다**(거기서의 선언은 이쪽 스코프를 가리지 않는다).
+ * 단 중첩 함수의 **이름 자체**는 이 스코프의 바인딩이므로 본다.
+ */
+function declaresInScope(scope, name) {
+  let found = false;
+  const visit = (node) => {
+    if (found) return;
+    if (declaresName(node, name)) {
+      found = true;
+      return;
+    }
+    if (ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node) || ts.isArrowFunction(node) || ts.isClassDeclaration(node)) {
+      return; // 이름은 위에서 봤다. 본문은 다른 스코프다
+    }
+    if (ts.isCatchClause(node) && node.variableDeclaration && bindsName(node.variableDeclaration.name, name)) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(scope, visit);
+  return found;
+}
+
+/**
+ * 호출된 이름이 게이트가 아닌 **더 가까운 바인딩**에 가려져 있는가.
+ *
+ * 리뷰 M9: 이 함수는 `let node = fn` 에서 시작해 부모 방향으로만 올라갔다 —
+ * 그래서 **fn 자신의 본문을 한 번도 보지 않았고**, `node === fn.body` 가드와 `isSourceFile` 분기는 도달할 수 없는
+ * 죽은 코드였다. 본문 안에 `async function requireAdmin() {}` 하나를 호이스팅해 두면(정본 import 는 남겨 둔 채)
+ * 액션과 화면 양쪽이 통과했다. 이제 **본문부터 보고**, 그 다음에 매개변수와 바깥 스코프를 본다.
+ */
+function isShadowed(name, fn) {
+  // 1. 자기 본문 — 호이스팅된 함수 선언·지역 변수(첫 문장의 `const s = await …` 는 s 를 선언할 뿐이다)
+  if (fn.body && declaresInScope(fn.body, name)) return true;
+
+  // 2. 자기 매개변수 → 바깥 함수의 매개변수·이름 → 바깥 블록의 선언 (모듈 스코프는 import 바인딩 검사가 맡는다)
   let node = fn;
-  while (node && node !== sourceFile) {
+  while (node && !ts.isSourceFile(node)) {
     if (ts.isFunctionLike(node)) {
       for (const p of node.parameters ?? []) {
-        if (ts.isIdentifier(p.name) && p.name.text === name) return true;
-        if (!ts.isIdentifier(p.name) && bindsName(p.name, name)) return true;
+        if (bindsName(p.name, name)) return true;
       }
       if (node !== fn && node.name && ts.isIdentifier(node.name) && node.name.text === name) return true;
     }
-    if (ts.isBlock(node) || ts.isSourceFile(node)) {
-      for (const st of node.statements) {
-        if (node === fn.body && st === node.statements[0]) continue; // 첫 문장 자체(= 게이트)는 그림자가 아니다
-        if (ts.isVariableStatement(st)) {
-          for (const d of st.declarationList.declarations) {
-            if (ts.isIdentifier(d.name) && d.name.text === name) return true;
-            if (!ts.isIdentifier(d.name) && bindsName(d.name, name)) return true;
-          }
-        }
-        if ((ts.isFunctionDeclaration(st) || ts.isClassDeclaration(st)) && st.name?.text === name) return true;
-      }
-    }
-    if (ts.isCatchClause(node) && node.variableDeclaration && ts.isIdentifier(node.variableDeclaration.name)) {
-      if (node.variableDeclaration.name.text === name) return true;
-    }
+    if (ts.isBlock(node) && node !== fn.body && declaresInScope(node, name)) return true;
+    if (ts.isCatchClause(node) && node.variableDeclaration && bindsName(node.variableDeclaration.name, name)) return true;
     node = node.parent;
   }
   return false;
@@ -308,7 +359,7 @@ function requireGate(fn, label, ctx) {
     return;
   }
   const name = result.id.text;
-  if (isShadowed(name, target, sourceFile)) {
+  if (isShadowed(name, target)) {
     add(rel, result.id, sourceFile, `${label} — ${name} 이 매개변수·지역 선언에 가려져 있다. 게이트가 아니라 그 지역 값이 호출된다`);
     return;
   }
@@ -579,10 +630,10 @@ function main() {
   for (const abs of targets) {
     const rel = toPosix(path.relative(ROOT, abs));
     const text = readFileSync(abs, "utf8");
-    const inAdminDir = ADMIN_DIRS.some((d) => rel === d || rel.startsWith(`${d}/`));
+    const inAdminDir = hasAdminSegment(rel);
     const maybeServerAction = text.includes("use server");
     const stem = path.basename(rel, path.extname(rel));
-    const isScreenFile = rel.startsWith("app/admin/") && ["page", "layout", "default", "template", "route"].includes(stem);
+    const isScreenFile = rel.startsWith("app/") && inAdminDir && ["page", "layout", "default", "template", "route"].includes(stem);
 
     if (!maybeServerAction && !inAdminDir && !isScreenFile) continue;
 

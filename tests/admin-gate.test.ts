@@ -417,6 +417,99 @@ describe.concurrent("2-c. 재공격 고정", { timeout: GATE_TIMEOUT_MS }, () =>
     expect(r.status, r.out).toBe(1);
   });
 
+  /**
+   * 리뷰 M9 — 본문 안에 **호이스팅된** 가짜 게이트를 두고 정본 import 는 남겨 둔다.
+   * 첫 문장은 글자 그대로 `await requireAdmin();` 이지만 실행되는 것은 지역 함수다(리뷰어가 정본을 throw 로 바꿔 실증했다).
+   * 2세대 isShadowed 는 fn 에서 **위로만** 걸어 자기 본문을 한 번도 보지 않았다.
+   */
+  it("red — 본문 안에 호이스팅한 가짜 게이트 (M9 · 액션)", async ({ fx }) => {
+    fx.put(
+      "actions/admin/popup.ts",
+      [
+        SERVER,
+        "",
+        IMPORT_GATE,
+        "",
+        "export async function createPopup(): Promise<number> {",
+        "  await requireAdmin();",
+        "  return 1;",
+        "",
+        "  async function requireAdmin(): Promise<void> {",
+        "    return;",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(1);
+    expect(r.out).toContain("가려져");
+  });
+
+  it("red — 본문 안에 호이스팅한 가짜 게이트 (M9 · 화면)", async ({ fx }) => {
+    fx.put(
+      "app/admin/(protected)/popups/page.tsx",
+      [
+        IMPORT_GATE,
+        "",
+        "export default async function Page() {",
+        "  await requireAdmin();",
+        "  return null;",
+        "",
+        "  async function requireAdmin(): Promise<void> {",
+        "    return;",
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(1);
+  });
+
+  it("red — 블록 안에 숨긴 지역 게이트도 같은 스코프다 (M9 변종)", async ({ fx }) => {
+    fx.put(
+      "actions/admin/popup.ts",
+      [
+        SERVER,
+        "",
+        IMPORT_GATE,
+        "",
+        "export async function createPopup(flag: boolean): Promise<number> {",
+        "  await requireAdmin();",
+        "  if (flag) {",
+        "    const requireAdmin = async () => undefined;",
+        "    void requireAdmin;",
+        "  }",
+        "  return 1;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(1);
+  });
+
+  it("green — 중첩 함수 안의 같은 이름은 이 스코프를 가리지 않는다 (M9 헛경보 방지)", async ({ fx }) => {
+    fx.put(
+      "actions/admin/popup.ts",
+      [
+        SERVER,
+        "",
+        IMPORT_GATE,
+        "",
+        "export async function createPopup(): Promise<number> {",
+        "  await requireAdmin();",
+        "  const helper = (requireAdmin: string): string => requireAdmin.trim();",
+        '  return helper(" x ").length;',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(0);
+  });
+
   it("red — 네 디렉터리 밖의 가짜 게이트 모듈 (M6)", async ({ fx }) => {
     fx.put("lib/fake/requireAdmin.ts", ["export async function requireAdmin(): Promise<void> {", "  return;", "}", ""].join("\n"));
     fx.put(
@@ -634,6 +727,36 @@ describe.concurrent("4. 경로 하드코딩 없음", { timeout: GATE_TIMEOUT_MS 
 
   it("green — 그룹 밖이라도 게이트가 첫 문장이면 통과한다", async ({ fx }) => {
     fx.put("app/admin/popups/page.tsx", GATED_PAGE);
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(0);
+  });
+
+  /**
+   * 리뷰 N10 — `app/admin/**` 접두사로 화면을 고르면 `app/(admin)/…` 라우트 그룹이 규칙 밖이 된다.
+   * 판정을 **세그먼트**(`admin` 또는 `(admin)`)로 바꿨다: URL 에 나타나지 않는 그룹 표기까지 같은 뜻으로 읽는다.
+   */
+  it("red — 라우트 그룹 app/(admin)/dashboard/page.tsx 도 화면 규칙 대상이다 (N10)", async ({ fx }) => {
+    fx.put("app/(admin)/dashboard/page.tsx", ["export default async function Page() {", "  return null;", "}", ""].join("\n"));
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(1);
+    expect(r.out).toContain("app/(admin)/dashboard/page.tsx");
+  });
+
+  it("red — app/(admin) 아래의 route.ts 도 메서드마다 게이트를 요구한다 (N10)", async ({ fx }) => {
+    fx.put("app/(admin)/export/route.ts", ["export async function GET(): Promise<Response> {", "  return new Response(null);", "}", ""].join("\n"));
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(1);
+  });
+
+  it("green — app/(admin) 아래도 게이트가 첫 문장이면 통과한다 (N10)", async ({ fx }) => {
+    fx.put("app/(admin)/dashboard/page.tsx", GATED_PAGE);
+    fx.put("app/(admin)/export/route.ts", GATED_ROUTE);
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(0);
+  });
+
+  it("green — 이름이 비슷할 뿐인 공개 경로는 관리자 경로가 아니다 (N10 헛경보 방지)", async ({ fx }) => {
+    fx.put("app/[locale]/(site)/admin-guide/page.tsx", ["export default function Guide() {", "  return null;", "}", ""].join("\n"));
     const r = await fx.run();
     expect(r.status, r.out).toBe(0);
   });
