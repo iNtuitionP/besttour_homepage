@@ -868,14 +868,33 @@ describe("6-b. scripts/check-admin-no-service-role.sh", { timeout: 60_000 }, () 
     expect(r.out).toContain("admin");
   });
 
-  test("admin 밖(app/api·lib)의 서비스 롤은 잡지 않는다 — 이 게이트의 범위는 관리자 경로다", async () => {
+  test("admin 밖(app/api·lib/queries)의 서비스 롤은 잡지 않는다 — 이 게이트의 범위는 관리자 경로다", async () => {
     const r = await runGate(
       fixture({
         "app/api/cron/purge/route.ts": 'import { createServiceClient } from "@/lib/supabase/server";\n',
+        "lib/queries/recent.ts": 'import { createServiceClient } from "../supabase/server";\n',
         "app/admin/page.tsx": "export default function P() { return null; }\n",
       }),
     );
     expect(r.status, r.out).toBe(0);
+  });
+
+  /**
+   * P5-3 독립 리뷰 M4 — 게이트가 `app/admin`·`actions/admin` 만 보던 시절에는 **쿼리가 사는 lib/admin** 이 사각지대였다.
+   * 화면이 깨끗해도 거기서 서비스 롤로 읽으면 RLS 를 우회한다. 대상에 추가했고, 여기서 red 로 실증한다.
+   */
+  test.for([
+    ["lib/admin", "lib/admin/reservations.ts"],
+    ["components/admin", "components/admin/Panel.tsx"],
+  ] as const)("%s 의 서비스 롤도 잡는다 (M4)", async ([label, file]) => {
+    const r = await runGate(
+      fixture({
+        "app/admin/page.tsx": "export default function P() { return null; }\n",
+        [file]: 'import { createServiceClient } from "@/lib/supabase/server";\n',
+      }),
+    );
+    expect(r.status, `${label}: ${r.out}`).toBe(1);
+    expect(r.out).toContain("admin");
   });
 
   test("실제 저장소에서도 통과한다", async () => {
@@ -1071,11 +1090,21 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("7. DB — is_admin() RLS 
     expect(ins.status).toBeGreaterThanOrEqual(400);
   });
 
-  test("관리자는 상태를 바꿀 수 있다 (update 정책)", async () => {
+  /**
+   * P5-3 개정 — 0009 의 `reservations_admin_update` 정책은 **0010 이 제거했다**(독립 리뷰 N5: 컬럼 제한이 없어
+   * 관리자 세션이 retention_until·privacy_consent_at 까지 고칠 수 있었다). 이제 관리자의 쓰기는
+   * 0010 의 함수 4개(admin_confirm_reservation·admin_cancel_reservation·admin_complete_reservation·admin_update_memo)뿐이고,
+   * 직접 PATCH 는 RLS(정책 없음) + GRANT 회수 두 층에서 막힌다. 전이 자체의 실증은 tests/admin-reservations.test.ts §7.
+   * 0009 파일의 정책 텍스트는 그대로다(위 §1 이 단언) — 0010 이 런타임 상태를 바꾼 것이다.
+   */
+  test("관리자도 reservations 를 직접 UPDATE 할 수 없다 — 0010 이 정책을 회수했다 (P5-3 · 리뷰 N5·M3)", async () => {
     const up = await asUser(adminToken, "PATCH", `/reservations?id=eq.${reservationId}`, { status: "confirmed" });
-    expect(up.status, JSON.stringify(up.body).slice(0, 200)).toBeLessThan(300);
+    // M3: "행이 안 바뀌었다" 만 보면 네트워크 오류로도 통과한다. 요청이 **표까지 도달해 거절당했는지**를 먼저 단언한다.
+    // GRANT 회수 + 정책 부재라 PostgREST 는 4xx 를 준다(권한 오류). 5xx·2xx 는 둘 다 이 단언을 깬다.
+    expect(up.status, `PostgREST 응답: ${JSON.stringify(up.body).slice(0, 200)}`).toBeGreaterThanOrEqual(400);
+    expect(up.status, `PostgREST 응답: ${JSON.stringify(up.body).slice(0, 200)}`).toBeLessThan(500);
     const row = await rest("GET", `/reservations?select=status&id=eq.${reservationId}`);
-    expect((row.body as { status: string }[])[0].status).toBe("confirmed");
+    expect((row.body as { status: string }[])[0].status, `직접 UPDATE 가 통과했다 (HTTP ${up.status})`).toBe("new");
   });
 
   /**

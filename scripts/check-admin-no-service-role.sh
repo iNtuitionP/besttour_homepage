@@ -8,8 +8,10 @@
 # 전체를 그대로 내보낸다. 관리자 경로는 세션(anon 키 + 쿠키) 클라이언트로만 DB 에 닿고, 0009 의
 # `is_admin()` 정책이 DB 에서 한 번 더 막는다. 이 게이트는 그 규약이 코드로 깨지는 순간을 잡는다.
 #
-# 검사 대상(존재하는 것만): app/admin  actions/admin
-#   둘 다 없으면 통과(exit 0) — 대상이 생기는 순간부터 검사한다(0P5 게이트 3종과 같은 원칙).
+# 검사 대상(존재하는 것만): app/admin  actions/admin  lib/admin  components/admin
+#   하나도 없으면 통과(exit 0) — 대상이 생기는 순간부터 검사한다(0P5 게이트 3종과 같은 원칙).
+#   lib/admin·components/admin 은 P5-3 독립 리뷰 M4 로 추가했다: 화면(app/admin)은 깨끗해도 **실제 쿼리는 lib/admin 에 있다**.
+#   거기서 서비스 롤로 읽으면 RLS 를 우회하므로 방어선이 requireAdmin() 호출 하나로 줄어든다 — 게이트가 보지 못하던 자리였다.
 #
 # 금지 심볼: createServiceClient · SUPABASE_SERVICE_ROLE_KEY · supabase/server
 #   앞 둘은 사용, 셋째는 모듈 경로(import) 다. 셋 중 하나라도 나오면 실패한다.
@@ -28,7 +30,7 @@ cd "${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}" \
 
 TAG="check-admin-no-service-role"
 PATTERN='createServiceClient|SUPABASE_SERVICE_ROLE_KEY|supabase/server'
-TARGETS=(app/admin actions/admin)
+TARGETS=(app/admin actions/admin lib/admin components/admin)
 
 existing=()
 for t in "${TARGETS[@]}"; do

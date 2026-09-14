@@ -1,0 +1,399 @@
+/*
+ * 관리자 화면 — 예약 현황 목록·상세 (P5-3). 목업 mockups/admin.html 의 구조(탭 · 표 · 배지 · 상세 정의목록)를 역할 토큰으로 옮겼다.
+ * 목업의 "예상가" 열은 옮기지 않는다 — 가격 표시는 확정 기준(스펙 §12)에서 사라졌다.
+ *
+ * 색은 styles/semantic.css 의 역할 토큰만(HEX·rgba·원시 토큰 금지 — CLAUDE.md §4). 간격·라운드도 역할 토큰만
+ * (tests/layout.test.ts §4 가 components/ 아래 모든 CSS Module 을 검사한다). px 는 치수·타이포·선 두께에만.
+ * 팔레트에 상태색(빨강·초록)이 없다 — 상태 배지는 색이 아니라 **테두리 굵기와 글자 굵기**로 구분한다(색 단독 의존 금지).
+ * 공통 골격(.main .wrap .pageHead .title .sub .card)은 components/quote/quote.module.css 를 그대로 재사용한다.
+ */
+
+/* ── 탭 ─────────────────────────────────────────────────────────────────── */
+.tabs {
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-decorative);
+}
+.tabList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-inline-xs);
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: var(--space-stack-xs) var(--space-page-x);
+  list-style: none;
+}
+.tab {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-inline-xs);
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  border-radius: var(--radius-control);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+  color: var(--text-secondary);
+}
+.tab:hover {
+  background: var(--bg-subtle);
+  color: var(--text-brand);
+}
+.tab:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.tab[data-current="true"] {
+  background: var(--action-primary-bg);
+  color: var(--action-primary-fg);
+}
+.tab[aria-disabled="true"] {
+  color: var(--action-disabled-fg);
+  background: var(--action-disabled-bg);
+  cursor: not-allowed;
+}
+.tabNote {
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+/* ── 필터 ───────────────────────────────────────────────────────────────── */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  margin: var(--space-stack-md) 0 0;
+}
+.filterLabel {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.filter {
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999em;
+  font-size: 13.5px;
+  font-weight: 700;
+  text-decoration: none;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+}
+.filter:hover {
+  border-color: var(--border-strong);
+  color: var(--text-brand);
+}
+.filter:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.filter[aria-current="true"] {
+  background: var(--action-primary-bg);
+  border-color: var(--action-primary-bg);
+  color: var(--action-primary-fg);
+}
+
+/* ── 페이지 폭 ───────────────────────────────────────────────────────────
+ * 목록은 열이 10개라 공개 화면의 1080px 보다 넓어야 한 눈에 들어온다(quote.module.css .wrap 대신 이것을 쓴다).
+ * 그래도 부족한 폭에서는 표가 자기 컨테이너 안에서만 가로로 스크롤한다 — 페이지 자체는 넘치지 않는다.
+ */
+.pageWrap {
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 0 var(--space-page-x);
+}
+
+/* ── 표 ─────────────────────────────────────────────────────────────────── */
+.tableWrap {
+  margin: var(--space-stack-md) 0 0;
+  overflow-x: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--elevation-raised);
+}
+.table {
+  width: 100%;
+  min-width: 68rem;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.table caption {
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  text-align: left;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.th {
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  text-align: left;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border-decorative);
+}
+.td {
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  vertical-align: top;
+  border-bottom: 1px solid var(--border-decorative);
+  line-height: 1.5;
+  /* quote.module.css .main 의 `overflow-wrap: anywhere` 가 여기까지 내려오면 이름·지명이 글자 단위로 쪼개진다
+     ("한지 원", "인천공 항"). 표 셀에서는 단어를 지킨다 — 넘치면 컨테이너가 가로로 스크롤하면 된다. */
+  word-break: keep-all;
+  overflow-wrap: normal;
+}
+.tdNowrap {
+  white-space: nowrap;
+}
+.tdStrong {
+  font-weight: 700;
+}
+.rowLink {
+  color: var(--text-link);
+  font-weight: 700;
+  text-decoration: none;
+}
+.rowLink:hover {
+  text-decoration: underline;
+}
+.rowLink:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.telLink {
+  color: var(--text-primary);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--border-subtle);
+}
+.telLink:hover {
+  color: var(--text-brand);
+}
+
+/* ── 상태 배지 — 색이 아니라 굵기·테두리로 구분 ─────────────────────────── */
+.badge {
+  display: inline-block;
+  padding: 0 0.5rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-chip);
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.7;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+}
+.badge[data-status="new"] {
+  border-width: 2px;
+  border-color: var(--border-strong);
+  color: var(--text-brand);
+  font-weight: 800;
+}
+.badge[data-status="confirmed"] {
+  background: var(--action-primary-bg);
+  border-color: var(--action-primary-bg);
+  color: var(--action-primary-fg);
+}
+.badge[data-status="done"] {
+  background: var(--bg-subtle);
+}
+.badge[data-status="cancelled"] {
+  text-decoration: line-through;
+}
+
+/* ── 빈 상태 · 페이지 넘김 ───────────────────────────────────────────────── */
+.empty {
+  margin: var(--space-stack-md) 0 0;
+  padding: var(--space-stack-lg) var(--space-inline-sm);
+  text-align: center;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+}
+.pager {
+  display: flex;
+  gap: var(--space-inline-sm);
+  margin: var(--space-stack-md) 0 0;
+}
+.pagerLink {
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+  color: var(--text-brand);
+  background: var(--bg-surface);
+}
+.pagerLink:hover {
+  border-color: var(--border-strong);
+}
+.pagerLink:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* ── 상세 ───────────────────────────────────────────────────────────────── */
+.backLink {
+  display: inline-block;
+  margin: var(--space-stack-md) 0 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-link);
+  text-decoration: none;
+}
+.backLink:hover {
+  text-decoration: underline;
+}
+.backLink:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.section {
+  margin: var(--space-stack-md) 0 0;
+  padding: var(--space-stack-md) var(--space-inline-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--elevation-raised);
+}
+.sectionTitle {
+  margin: 0 0 var(--space-stack-sm);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--text-brand);
+}
+.dl {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-stack-xs);
+  margin: 0;
+}
+.row {
+  display: grid;
+  /* 라벨 열은 가장 긴 항목("광고성 정보 수신 동의")이 값 열로 넘치지 않을 만큼 */
+  grid-template-columns: 10.5rem 1fr;
+  gap: var(--space-inline-xs);
+  align-items: baseline;
+}
+.dt {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.dd {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+/* ── 처리 영역 ──────────────────────────────────────────────────────────── */
+/* .section 카드 안에 들어가므로 자기 테두리를 또 두르지 않는다(상자 안의 상자) */
+.actions {
+  margin: 0;
+}
+.actionRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-inline-sm);
+}
+.btnPrimary,
+.btnSecondary {
+  min-height: 2.75rem;
+  padding: 0 var(--space-inline-md);
+  font: inherit;
+  font-weight: 700;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  transition: var(--motion-base);
+}
+.btnPrimary {
+  color: var(--action-primary-fg);
+  background: var(--action-primary-bg);
+  border: 1px solid transparent;
+}
+.btnPrimary:hover:not(:disabled) {
+  background: var(--action-primary-bg-hover);
+}
+.btnSecondary {
+  color: var(--action-secondary-fg);
+  background: var(--action-secondary-bg);
+  border: 1px solid var(--action-secondary-border);
+}
+.btnSecondary:hover:not(:disabled) {
+  background: var(--action-secondary-bg-hover);
+}
+.btnPrimary:disabled,
+.btnSecondary:disabled {
+  color: var(--action-disabled-fg);
+  background: var(--action-disabled-bg);
+  border-color: var(--action-disabled-border);
+  cursor: not-allowed;
+}
+.btnPrimary:focus-visible,
+.btnSecondary:focus-visible,
+.textarea:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.hint {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.memoField {
+  margin: var(--space-stack-md) 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-stack-xs);
+}
+.label {
+  font-size: 14px;
+  font-weight: 700;
+}
+.textarea {
+  width: 100%;
+  padding: var(--space-stack-xs) var(--space-inline-xs);
+  font: inherit;
+  font-size: 16px; /* 16px 미만이면 iOS 가 포커스 시 화면을 확대한다 */
+  line-height: 1.6;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  resize: vertical;
+}
+.textarea:disabled {
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+}
+.notice {
+  min-height: 1.5rem;
+  margin: var(--space-stack-sm) 0 0;
+  font-size: 14px;
+  line-height: 1.6;
+  font-weight: 700;
+  color: var(--text-brand);
+}
+.notice:empty {
+  min-height: 0;
+  margin: 0;
+}
+
+
+@media (min-width: 768px) {
+  .dl {
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-stack-sm) var(--space-inline-md);
+  }
+}

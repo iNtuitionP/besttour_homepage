@@ -515,6 +515,115 @@
       "ratelimit": "짧은 시간에 여러 번 시도하셨습니다. 잠시 후 다시 시도해 주세요.",
       "infra": "지금은 로그인 요청을 처리할 수 없습니다. 잠시 후 다시 시도해 주세요.",
       "callbackFailed": "로그인 링크가 만료되었거나 이미 사용되었습니다. 링크를 다시 받아 주세요."
+    },
+    "tabs": {
+      "navLabel": "관리 메뉴",
+      "reservations": "예약 현황",
+      "popups": "팝업 관리",
+      "notices": "공지 관리",
+      "gallery": "갤러리 관리",
+      "routes": "대표 노선 관리",
+      "comingSoon": "준비 중"
+    },
+    "reservations": {
+      "title": "예약 현황",
+      "sub": "접수된 내용을 확인하고 확정하실 수 있습니다. 확정하시면 고객에게 보낼 문자가 발송 대기열에 쌓입니다.",
+      "listLabel": "예약 접수 목록",
+      "filterLabel": "상태로 보기",
+      "filter": {
+        "all": "전체",
+        "new": "신규",
+        "confirmed": "확정",
+        "done": "완료",
+        "cancelled": "취소"
+      },
+      "status": {
+        "new": "신규",
+        "confirmed": "확정",
+        "done": "완료",
+        "cancelled": "취소"
+      },
+      "col": {
+        "createdAt": "접수 일시",
+        "code": "접수번호",
+        "name": "고객명",
+        "phone": "전화번호",
+        "route": "운행 구간",
+        "departAt": "출발 일시",
+        "vehicle": "차량",
+        "count": "대수 · 인원",
+        "status": "상태",
+        "detail": "상세"
+      },
+      "routeValue": "{origin} → {destination}",
+      "countValue": "{buses}대 · {passengers}명",
+      "countBusesOnly": "{buses}대",
+      "callLabel": "전화 걸기",
+      "detail": "상세 보기",
+      "empty": "해당하는 접수 내역이 없습니다.",
+      "prev": "← 이전",
+      "next": "다음 →",
+      "pageLabel": "목록 넘기기"
+    },
+    "detail": {
+      "title": "예약 상세",
+      "back": "← 목록으로",
+      "notFound": "해당 예약을 찾을 수 없습니다. 목록에서 다시 선택해 주세요.",
+      "sectionCustomer": "고객",
+      "sectionTrip": "운행",
+      "sectionOptions": "접수 조건",
+      "sectionConsent": "동의 · 보유",
+      "sectionAdmin": "처리",
+      "field": {
+        "code": "접수번호",
+        "status": "상태",
+        "createdAt": "접수 일시",
+        "confirmedAt": "확정 일시",
+        "name": "고객명",
+        "phone": "전화번호",
+        "email": "메일 주소",
+        "purpose": "여행 구분",
+        "vehicle": "차량",
+        "route": "운행 구간",
+        "waypoints": "경유지",
+        "tripType": "운행 구분",
+        "departAt": "출발 일시",
+        "returnAt": "상행 일시",
+        "busCount": "차량 대수",
+        "passengers": "예상 인원",
+        "contactMethod": "견적 확인 방법",
+        "paymentMethod": "계산 방법",
+        "parking": "주차료",
+        "vat": "부가세(VAT)",
+        "message": "요청 사항",
+        "memo": "관리자 메모",
+        "privacyConsentAt": "개인정보 동의",
+        "marketingConsentAt": "광고성 정보 수신 동의",
+        "retentionUntil": "파기 예정"
+      },
+      "value": {
+        "none": "—",
+        "included": "포함 조건",
+        "excluded": "미포함 조건",
+        "consented": "동의",
+        "notConsented": "미동의"
+      },
+      "confirm": "확정하기",
+      "cancel": "취소 처리",
+      "complete": "완료 처리",
+      "confirmHint": "확정하시면 고객에게 보낼 확정 문자가 발송 대기열에 쌓입니다.",
+      "memoLabel": "관리자 메모",
+      "memoHint": "고객에게는 보이지 않습니다. 통화 내용이나 처리 사항을 남겨 두세요.",
+      "memoSave": "메모 저장",
+      "processing": "처리 중…",
+      "result": {
+        "confirmed": "확정 처리했습니다. 고객 문자는 발송 대기열에 있습니다.",
+        "cancelled": "취소 처리했습니다.",
+        "completed": "운행 완료로 처리했습니다.",
+        "memoUpdated": "메모를 저장했습니다.",
+        "alreadyHandled": "이미 처리된 예약입니다. 화면을 새로 불러왔습니다.",
+        "failed": "처리하지 못했습니다. 잠시 후 다시 시도해 주세요."
+      }
     }
   }
 }
