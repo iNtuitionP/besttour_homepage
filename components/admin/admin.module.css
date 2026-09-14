@@ -498,6 +498,22 @@
   text-decoration: line-through;
 }
 
+/* ── 공지 관리 (P5-5) ────────────────────────────────────────────────────
+ * 삭제는 되돌릴 수 없고 공개 상세 URL 을 영구히 죽인다. 폼의 다른 버튼과 섞이지 않게 따로 떼어 두고,
+ * 색이 아니라 **위치와 테두리**로 구분한다(팔레트에 상태색이 없다 — 배지·aria-invalid 와 같은 규약).
+ */
+.dangerZone {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-inline-sm);
+  margin: var(--space-stack-md) 0 0;
+  padding: var(--space-stack-sm) var(--space-inline-sm);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+}
+
 @media (min-width: 768px) {
   .dl {
     grid-template-columns: 1fr 1fr;

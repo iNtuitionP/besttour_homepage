@@ -56,6 +56,7 @@ import {
   parsePopupId,
   type PopupValues,
 } from "@/lib/admin/popupInput";
+import { PUBLIC_CACHE_PATH, PUBLIC_CACHE_SCOPE } from "@/lib/admin/publicRevalidate";
 import { requireAdmin } from "@/lib/auth/requireAdmin";
 import { revalidate } from "@/lib/ports/revalidate";
 import { QUERY_TAGS } from "@/lib/queries/tags";
@@ -324,6 +325,20 @@ describe("3. 서버액션", () => {
     expect(vi.mocked(revalidatePath)).toHaveBeenCalledWith(ADMIN_POPUPS_PATH);
   });
 
+  /**
+   * 홈 팝업도 공지·노선과 같은 지연을 안고 있었다(홈은 SSG + ISR 600초, 팝업 읽기는 태그 캐시가 아니다).
+   * 2026-09-15 실측으로 정한 유일하게 동작하는 형태 — 근거는 lib/admin/publicRevalidate.ts 헤더.
+   */
+  test("등록 — 홈 캐시를 루트 layout 으로 비운다 (경로 패턴은 조용히 실패한다)", async () => {
+    const { client } = dbStub({ data: [{ id: 9 }], error: null });
+    vi.mocked(createSsrClient).mockReturnValue(client as never);
+
+    await createPopup(validForm());
+    expect(PUBLIC_CACHE_PATH).toBe("/");
+    expect(PUBLIC_CACHE_SCOPE).toBe("layout");
+    expect(vi.mocked(revalidatePath)).toHaveBeenCalledWith(PUBLIC_CACHE_PATH, PUBLIC_CACHE_SCOPE);
+  });
+
   test("등록 — 검증에 걸리면 DB 를 부르지 않는다", async () => {
     const { client, from } = dbStub({ data: [{ id: 9 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
@@ -455,9 +470,15 @@ describe("4. 정적 규약", () => {
     expect(exists("components/admin/HomePopup.tsx"), "관리자 전용 사본을 만들지 않는다").toBe(false);
   });
 
-  test("탭 — 팝업이 켜졌고 나머지 3개는 자리를 지킨다", async () => {
+  // P5-5·P5-6 이 공지·대표 노선을 켰다(각 탭의 단언은 그 태스크의 테스트 파일에 있다). 갤러리는 P6-2 몫이다.
+  test("탭 — 팝업이 켜졌고 갤러리만 자리를 지킨다", async () => {
     const { ADMIN_TABS } = await import("@/components/admin/tabs");
-    expect(ADMIN_TABS.filter((t) => t.ready).map((t) => t.href)).toEqual(["/admin/reservations", "/admin/popups"]);
+    expect(ADMIN_TABS.filter((t) => t.ready).map((t) => t.href)).toEqual([
+      "/admin/reservations",
+      "/admin/popups",
+      "/admin/notices",
+      "/admin/routes",
+    ]);
     expect(ADMIN_TABS.find((t) => t.key === "popups")?.href).toBe(ADMIN_POPUPS_PATH);
     expect(read(TABS_DEF)).toContain("/admin/popups");
   });

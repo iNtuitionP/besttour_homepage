@@ -2,7 +2,7 @@
  * 관리자 탭 정의 — 단일 진실 (플랜 v4 P5-3~6·P6-2). 순수 모듈: 라벨도, Next 도, DOM 도 없다.
  *
  * `ready` 규약은 lib/legacy-menu-map.ts 와 같은 정신이다: "지금 링크해도 404 가 아니다" 를 손으로 적은 플래그로 믿는다.
- * 화면을 만드는 태스크가 자기 항목의 ready 를 true 로 올린다(P5-4 팝업 · P5-5 공지 · P5-6 갤러리 · P6-2 대표 노선).
+ * 화면을 만드는 태스크가 자기 항목의 ready 를 true 로 올린다(P5-4 팝업 · P5-5 공지 · P5-6 대표 노선 · P6-2 갤러리).
  * ready 가 아닌 항목은 **지우지 않는다** — 사장님이 앞으로 무엇이 생길지 알아야 하고, 지우면 다음 태스크가 자리를 잊는다.
  * 대신 링크가 아니라 `aria-disabled` 로 렌더한다(components/admin/AdminTabs.tsx).
  *
@@ -21,7 +21,7 @@ export interface AdminTab {
 export const ADMIN_TABS: readonly AdminTab[] = [
   { key: "reservations", href: "/admin/reservations", ready: true },
   { key: "popups", href: "/admin/popups", ready: true },
-  { key: "notices", href: "/admin/notices", ready: false },
+  { key: "notices", href: "/admin/notices", ready: true },
   { key: "gallery", href: "/admin/gallery", ready: false },
-  { key: "routes", href: "/admin/routes", ready: false },
+  { key: "routes", href: "/admin/routes", ready: true },
 ];

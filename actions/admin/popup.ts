@@ -30,6 +30,7 @@ import {
   type PopupActionResult,
 } from "@/lib/admin/popupInput";
 import { ADMIN_POPUPS_PATH, deletePopupRow, insertPopup, setPopupActive, updatePopupRow } from "@/lib/admin/popups";
+import { PUBLIC_CACHE_PATH, PUBLIC_CACHE_SCOPE } from "@/lib/admin/publicRevalidate";
 import { requireAdmin } from "@/lib/auth/requireAdmin";
 import { structuredLog, type StructuredLogEntry } from "@/lib/log";
 import { runAfter } from "@/lib/ports/after";
@@ -78,6 +79,9 @@ async function apply(action: PopupAction, id: number | null, code: PopupActionCo
   if (!changed) return report(action, id, id === null ? POPUP_FAILED : POPUP_NOT_FOUND);
 
   runAfter(() => {
+    // 공개 홈에 팝업을 실제로 반영하는 것은 **이 한 줄뿐**이다 — 근거·실측표는 lib/admin/publicRevalidate.ts.
+    revalidatePath(PUBLIC_CACHE_PATH, PUBLIC_CACHE_SCOPE);
+    // 아래 태그는 지금 소비자가 없다(공개 읽기가 unstable_cache 로 감싸여 있지 않다). 누가 감싸는 날을 위한 배선이지 반영 수단이 아니다.
     revalidate(QUERY_TAGS.popups);
     revalidatePath(ADMIN_POPUPS_PATH);
   });
