@@ -747,10 +747,12 @@ describe("6. 정적 규약", () => {
     }
   });
 
-  test("탭 — 예약 현황만 켜져 있고 나머지 4개는 자리만 지킨다 (P5-4~6·P6-2 가 켠다)", async () => {
+  // P5-4 가 팝업 탭을 켰다(tests/admin-popups.test.ts §4 가 그 탭의 화면·액션을 단언한다).
+  // 남은 셋(공지·갤러리·대표 노선)은 P5-5·P5-6·P6-2 가 자기 차례에 켠다 — 그때 이 줄이 다시 실패해야 한다.
+  test("탭 — 예약 현황·팝업만 켜져 있고 나머지 3개는 자리만 지킨다 (P5-5·P5-6·P6-2 가 켠다)", async () => {
     const { ADMIN_TABS } = await import("@/components/admin/tabs");
     expect(ADMIN_TABS.map((t) => t.key)).toEqual(["reservations", "popups", "notices", "gallery", "routes"]);
-    expect(ADMIN_TABS.filter((t) => t.ready).map((t) => t.href)).toEqual(["/admin/reservations"]);
+    expect(ADMIN_TABS.filter((t) => t.ready).map((t) => t.href)).toEqual(["/admin/reservations", "/admin/popups"]);
     const ui = stripComments(read(TABS_UI));
     expect(ui.split("\n")[0].trim()).toMatch(/^["']use client["'];?$/);
     expect(ui).toMatch(/aria-disabled/);

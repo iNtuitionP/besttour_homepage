@@ -20,7 +20,7 @@ export interface AdminTab {
 
 export const ADMIN_TABS: readonly AdminTab[] = [
   { key: "reservations", href: "/admin/reservations", ready: true },
-  { key: "popups", href: "/admin/popups", ready: false },
+  { key: "popups", href: "/admin/popups", ready: true },
   { key: "notices", href: "/admin/notices", ready: false },
   { key: "gallery", href: "/admin/gallery", ready: false },
   { key: "routes", href: "/admin/routes", ready: false },

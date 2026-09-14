@@ -8,7 +8,10 @@
  *
  * 경계 규칙
  *   - export 는 async 함수 4개뿐이다(ADR-3 — 'use server' 파일의 export 는 전부 공개 POST 엔드포인트가 된다).
- *     그래서 네 함수 모두 **자기 자리에서 다시** requireAdmin() 을 부른다. 화면의 게이트를 믿지 않는다.
+ *     그래서 네 함수 모두 **자기 자리에서, 본문 첫 문장으로** requireAdmin() 을 부른다. 화면의 게이트를 믿지 않는다.
+ *     P5-4 개정: 게이트를 공용 run() 안에 두던 것을 **export 마다 첫 문장**으로 끌어올렸다. 동작은 같지만
+ *     (그때도 rpc 앞이었다) 게이트가 한 단계 안쪽에 있으면 scripts/check-admin-gate.sh 가 구조로 확인할 수 없다 —
+ *     "첫 문장이 게이트인가" 만이 조건부·try/catch·앞선 early return 을 한꺼번에 막는다(P5-3 독립 리뷰 §재-2 (가)(나)(라)).
  *   - 서비스 롤을 쓰지 않는다(ADR-2). 0010 함수는 definer 라 RLS 를 우회하지만, **함수 자신이 is_admin() 을 확인한다** —
  *     그래서 세션(anon 키 + 쿠키) 클라이언트로 부르는 것이 맞고, 세션이 관리자가 아니면 DB 가 42501 로 거절한다.
  *   - 예외는 여기서 끝난다. 서버액션이 throw 하면 Next 가 500 과 다이제스트만 내고 사장님 화면은 아무 말도 못 한다.
@@ -72,10 +75,8 @@ function report(action: AdminAction, id: string, result: AdminActionResult): Adm
   return result;
 }
 
+/** 게이트를 통과한 뒤의 공통 경로. **이 함수는 인가를 하지 않는다** — 부르는 export 가 첫 문장에서 이미 했다. */
 async function run(action: AdminAction, id: string, memo: string | null): Promise<AdminActionResult> {
-  // redirect() 는 throw 다 — 관리자가 아니면 여기서 실행이 끝난다.
-  await requireAdmin();
-
   if (!isUuid(id)) return report(action, id, FAILED_RESULT);
 
   let rows: unknown;
@@ -101,20 +102,24 @@ async function run(action: AdminAction, id: string, memo: string | null): Promis
 
 /** new → confirmed. 성공하면 0010 이 확정 통지 1건을 큐에 넣는다(발송은 P4-2 의 발송기). */
 export async function confirmReservation(id: string, memo?: string | null): Promise<AdminActionResult> {
+  await requireAdmin();
   return run("confirm", id, normalizeMemo(memo));
 }
 
 /** new·confirmed → cancelled. 취소 통지는 넣지 않는다(문안 미승인 — 0010 헤더). */
 export async function cancelReservation(id: string, memo?: string | null): Promise<AdminActionResult> {
+  await requireAdmin();
   return run("cancel", id, normalizeMemo(memo));
 }
 
 /** confirmed → done (운행이 끝났다). 통지 없음 — 고객에게 알릴 일이 아니다(리뷰 M1: 목록의 '완료' 필터에 도달할 길이 없었다). */
 export async function completeReservation(id: string, memo?: string | null): Promise<AdminActionResult> {
+  await requireAdmin();
   return run("complete", id, normalizeMemo(memo));
 }
 
 /** admin_memo 만 바꾼다. 빈 값이면 메모를 지운다. */
 export async function saveReservationMemo(id: string, memo: string): Promise<AdminActionResult> {
+  await requireAdmin();
   return run("memo", id, normalizeMemo(memo));
 }
