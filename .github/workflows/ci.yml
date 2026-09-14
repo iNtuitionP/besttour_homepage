@@ -91,6 +91,22 @@ jobs:
       - name: Check for unallowlisted temporary-value markers
         run: bash scripts/check-temp-values.sh
 
+  # P5-4 (2026-09-14) — 관리자 인가의 구조적 통제 2종.
+  # tests/admin-gate.test.ts 가 이미 실제 저장소에 대고 스크립트를 돌리므로 test 잡 안에서도 강제되지만,
+  # 보안 통제의 실패는 **자기 이름으로** 빨간불이 떠야 한다(다른 게이트 4종과 같은 형식).
+  admin-gates:
+    name: Admin Authorization Gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check admin paths never use the service role
+        run: bash scripts/check-admin-no-service-role.sh
+
+      - name: Check every admin export gates on its first statement
+        run: bash scripts/check-admin-gate.sh
+
   db-test:
     name: DB Smoke (local Supabase stack)
     runs-on: ubuntu-latest
