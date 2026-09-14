@@ -1,0 +1,122 @@
+/*
+ * 관리자 로그인 화면 (P5-1). 공개 셸이 없는 화면이라 여기서 자기 여백을 만든다.
+ * 색은 전부 styles/semantic.css 의 역할 토큰만 쓴다(원시 토큰 직접 사용 금지 — CLAUDE.md §4).
+ */
+.main {
+  display: flex;
+  min-height: 100dvh;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-page);
+  color: var(--text-primary);
+  padding: var(--space-stack-xl) var(--space-page-x);
+}
+
+.card {
+  width: 100%;
+  max-width: 26rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--elevation-raised);
+  padding: var(--space-stack-lg) var(--space-stack-md);
+}
+
+.title {
+  font-size: 1.25rem;
+  line-height: 1.4;
+  font-weight: 700;
+}
+
+.sub {
+  margin-top: var(--space-stack-xs);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.form {
+  margin-top: var(--space-stack-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-stack-sm);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-stack-xs);
+}
+
+.label {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.input {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0 0.75rem;
+  font: inherit;
+  font-size: 1rem; /* 16px 미만이면 iOS 가 포커스 시 화면을 확대한다 */
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+}
+
+.input:focus-visible,
+.submit:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.input:disabled {
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+}
+
+.submit {
+  min-height: 2.75rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--action-primary-fg);
+  background: var(--action-primary-bg);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  transition: var(--motion-base);
+}
+
+.submit:hover:not(:disabled) {
+  background: var(--action-primary-bg-hover);
+}
+
+.submit:disabled {
+  color: var(--action-disabled-fg);
+  background: var(--action-disabled-bg);
+  border-color: var(--action-disabled-border);
+  cursor: not-allowed;
+}
+
+/* 결과·안내가 같은 자리에 뜬다. 비어 있어도 자리를 잡아 두어 레이아웃이 흔들리지 않는다. */
+.notice {
+  min-height: 1.5rem;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.notice:empty {
+  min-height: 0;
+}
+
+/* 허니팟 — 사람에게 보이지도, 포커스되지도 않는다(display:none 은 일부 봇이 걸러낸다). */
+.honeypot {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}

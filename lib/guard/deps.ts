@@ -27,10 +27,12 @@ export const GUARD_SECRET_MIN_LENGTH = 32;
 const DUMMY_TURNSTILE_SECRET = /^[123]x0{31}AA$/;
 
 /**
- * rate limit 카운터의 이름공간 (P6-3a). reserve = 접수(P3-3 runGuards) · check = 예약확인(lib/reservation-check/guards.ts).
- * Redis 키 prefix 가 갈리므로 예약확인 시도가 접수 한도를 먹지 않고, 접수가 예약확인 한도를 먹지 않는다. 한도 수치(RATE_LIMITS)는 같다.
+ * rate limit 카운터의 이름공간 (P6-3a). reserve = 접수(P3-3 runGuards) · check = 예약확인(lib/reservation-check/guards.ts) ·
+ * admin = 관리자 로그인 링크 요청(P5-1 actions/admin/auth.ts).
+ * Redis 키 prefix 가 갈리므로 한쪽 시도가 다른 쪽 한도를 먹지 않는다 — 특히 방문자의 접수 폭주가 사장님의 로그인을 막으면 안 된다.
+ * 한도 수치(RATE_LIMITS)는 셋 다 같다.
  */
-export type RateLimitScope = "reserve" | "check";
+export type RateLimitScope = "reserve" | "check" | "admin";
 
 const redisCache = new Map<string, Redis>();
 const limiterCache = new Map<string, RateLimiterSet>();
@@ -151,6 +153,27 @@ export function checkGuardDeps(): CheckGuardDeps {
     secret,
     rateLimit: {
       limiters: limitersFor(url, token, "check"),
+      timeoutMs: RATE_LIMIT_TIMEOUT_MS,
+    },
+  };
+}
+
+/** 관리자 로그인(P5-1)이 받는 deps — 예약확인과 같은 모양(Turnstile·타임트랩 없음)이고 limiter prefix 만 `guard:admin:*` 로 갈린다. */
+export type AdminGuardDeps = CheckGuardDeps;
+
+/**
+ * 관리자 로그인 링크 요청 전용 deps — GUARD_SECRET + Upstash 2종만 요구한다.
+ * 빠진 설정은 throw(fail-closed): 방어가 꺼진 채 메일 발송 엔드포인트를 열어 두느니 로그인을 잠깐 못 하는 편이 낫다.
+ * 호출자(actions/admin/auth.ts)는 이 throw 를 infra 로 다루고, 로그인 화면(app/admin/login/page.tsx)은 같은 throw 를 보고 버튼을 비활성화한다.
+ */
+export function adminGuardDeps(): AdminGuardDeps {
+  const secret = guardSecret();
+  const { url, token } = upstashEnv("adminGuardDeps");
+  return {
+    now: () => new Date(),
+    secret,
+    rateLimit: {
+      limiters: limitersFor(url, token, "admin"),
       timeoutMs: RATE_LIMIT_TIMEOUT_MS,
     },
   };

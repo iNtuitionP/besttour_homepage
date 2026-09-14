@@ -473,10 +473,21 @@ describe.runIf(Boolean(BASE))("HTTP — production 서버 실측 (LEGAL_BASE_URL
     },
   );
 
-  test("/admin → 200 · s-maxage=31536000 없음 · x-nextjs-prerender 없음 (M8)", async () => {
-    const res = await fetch(`${BASE}/admin`);
+  // P5-1 (2026-09-14): 세션 없는 /admin 은 이제 200 이 아니라 /admin/login 리다이렉트다(requireAdmin).
+  // redirect:"manual" 을 쓰지 않으면 fetch 가 따라가 로그인 화면의 200 을 보고 게이트가 사라져도 green 이 된다.
+  test("/admin → /admin/login 리다이렉트 · s-maxage=31536000 없음 · x-nextjs-prerender 없음 (M8 + P5-1)", async () => {
+    const res = await fetch(`${BASE}/admin`, { redirect: "manual" });
+    expect([302, 307]).toContain(res.status);
+    expect(res.headers.get("location")).toContain("/admin/login");
+    expect(res.headers.get("cache-control") ?? "").not.toContain("s-maxage=31536000");
+    expect(res.headers.get("x-nextjs-prerender")).toBeNull();
+  });
+
+  test("/admin/login → 200 · 캐시 안 됨 · ADMIN_EMAILS 없는 환경이라 닫혀 있다 (P5-1 fail-closed)", async () => {
+    const res = await fetch(`${BASE}/admin/login`);
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control") ?? "").not.toContain("s-maxage=31536000");
     expect(res.headers.get("x-nextjs-prerender")).toBeNull();
+    expect(await res.text()).toContain("disabled");
   });
 });

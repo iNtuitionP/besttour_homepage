@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "check:pricing": "bash scripts/check-no-pricing.sh"
+    "check:pricing": "bash scripts/check-no-pricing.sh",
+    "check:admin": "bash scripts/check-admin-no-service-role.sh"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.5",
