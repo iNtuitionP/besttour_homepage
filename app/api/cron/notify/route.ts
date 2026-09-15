@@ -21,8 +21,10 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 
 import { structuredLog, type StructuredLogEntry } from "@/lib/log";
 import { memorySender, unconfiguredSender, type NotificationSender } from "@/lib/notify/sender";
-import { solapiSender } from "@/lib/notify/solapi";
+import { solapiSender, type TemplateVarsPort } from "@/lib/notify/solapi";
+import { templateVars } from "@/lib/notify/vars";
 import { runNotificationWorker, supabaseWorkerDb } from "@/lib/notify/worker";
+import { siteOrigin } from "@/lib/site-url";
 import { createServiceClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -57,10 +59,11 @@ function json(body: unknown, status: number): Response {
  * 아래 선택을 계속한다 — 운영에서 memory 오설정이 발송 자체를 멈추게 하지는 않는다.
  *
  * SOLAPI 키 3종(키·시크릿·발신번호)이 전부 있으면 제공자 어댑터를, 하나라도 비면 unconfigured 를 돌려준다 — 발송기는 claim 하지
- * 않고 attempts 를 태우지 않는다. 어댑터 자신도 같은 규칙을 한 겹 더 건다: 문안 변수 포트(solapi.ts TemplateVarsPort)가 아직
- * 없으므로 키가 다 있어도 `configured`=false 라 claim 은 일어나지 않는다.
+ * 않고 attempts 를 태우지 않는다. 어댑터 자신도 같은 규칙을 한 겹 더 건다: 문안 변수 포트(solapi.ts TemplateVarsPort)가 비면
+ * 키가 다 있어도 `configured`=false 다. **P4-2b 가 그 포트를 구현했으므로(lib/notify/vars.ts) 이제 남은 전제는 키 3종뿐이다** —
+ * 키를 넣는 순간 문자가 나간다(vercel.json 의 `?dry=0` 전환은 별개의 오픈 게이트 항목이다).
  */
-function selectSender(): NotificationSender {
+function selectSender(vars: TemplateVarsPort): NotificationSender {
   if (process.env.NOTIFY_SENDER === "memory") {
     if (process.env.VERCEL_ENV !== "production") return memorySender();
     // 운영에서는 이 지시를 무시하고 아래 선택을 계속한다(키가 있으면 제공자, 없으면 unconfigured).
@@ -76,7 +79,8 @@ function selectSender(): NotificationSender {
       now: () => new Date(),
       randomBytes: (n) => randomBytes(n),
       log: structuredLog,
-      // vars: 문안 변수 조회 포트 — 아직 구현이 없다. 없으면 configured=false 라 claim 이 일어나지 않는다(의도된 안전 상태).
+      // 문안 변수 조회 포트(P4-2b). 없으면 configured=false 라 claim 이 일어나지 않는다 — 이제는 있다.
+      vars,
     });
   }
   return unconfiguredSender();
@@ -94,8 +98,12 @@ export async function GET(request: Request): Promise<Response> {
   }
   const dryRun = new URL(request.url).searchParams.get("dry") !== "0";
   try {
-    const db = supabaseWorkerDb(createServiceClient());
-    const report = await runNotificationWorker({ dryRun }, { db, sender: selectSender(), now: () => new Date(), log: structuredLog });
+    // 서비스 롤 클라이언트는 한 번 만들어 큐 어댑터와 문안 변수 로더가 함께 쓴다. 원점(origin)도 env 를 보는 이 파일에서 정한다 —
+    // lib/notify/** 는 env 를 읽지 않는다(P4-1 경계).
+    const client = createServiceClient();
+    const db = supabaseWorkerDb(client);
+    const vars = templateVars({ client, origin: siteOrigin() });
+    const report = await runNotificationWorker({ dryRun }, { db, sender: selectSender(vars), now: () => new Date(), log: structuredLog });
     return json(report, 200);
   } catch (err) {
     // 개인정보가 섞일 수 있는 원문 대신 메시지만(outbox.* 오류는 코드·메시지뿐이다). 실패는 크론 로그로 확인한다.

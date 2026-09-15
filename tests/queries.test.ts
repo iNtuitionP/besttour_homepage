@@ -22,6 +22,15 @@ const ROOT = path.resolve(import.meta.dirname, "..");
 const QUERIES_DIR = path.join(ROOT, "lib", "queries");
 // 쿼리 계층이 쓰는 anon 클라이언트 모듈도 같은 규칙을 받는다 — 여기서 서비스 롤로 새면 계층 전체가 뚫린다.
 const ANON_CLIENT_FILE = path.join(ROOT, "lib", "supabase", "anon.ts");
+// P4-2b: 통지 문안 변수 로더도 서비스 롤 클라이언트로 reservations 를 읽는다(크론에는 세션이 없다). lib/queries 밖이지만
+// 이 스캔에 넣어 아래 SERVICE_ROLE_EXCEPTIONS 에 사유와 함께 등록했다 — recent.ts 와 같은 절차를 받게 하려고.
+//
+// **이 목록의 범위를 오해하지 말 것**(2026-09-15 독립 리뷰 경미-4): SERVICE_ROLE_EXCEPTIONS 는 전사 등록부가 아니라
+// **아래 scannedFiles(= lib/queries/** + lib/supabase/anon.ts + lib/notify/vars.ts)에 대한 예외 목록**이다.
+// 저장소에서 createServiceClient() 를 실제로 부르는 곳은 이 스캔 밖에도 있다(app/api/cron/notify·app/api/cron/purge·
+// actions/reservation·actions/reservation-check) — 그것들은 이 목록에 없고, 여기 없다고 해서 서비스 롤을 안 쓰는 것이 아니다.
+// 전사 등록부로 넓히는 것은 별도 태스크다(넓히려면 스캔 대상과 「죽은 예외」 판정 방식을 함께 바꿔야 한다).
+const NOTIFY_VARS_FILE = path.join(ROOT, "lib", "notify", "vars.ts");
 
 function walk(dir: string): string[] {
   const out: string[] = [];
@@ -33,7 +42,7 @@ function walk(dir: string): string[] {
   return out;
 }
 
-const scannedFiles = [...walk(QUERIES_DIR), ANON_CLIENT_FILE];
+const scannedFiles = [...walk(QUERIES_DIR), ANON_CLIENT_FILE, NOTIFY_VARS_FILE];
 const toPosix = (p: string) => p.split(path.sep).join("/");
 const sources = scannedFiles.map((p) => ({ file: toPosix(path.relative(ROOT, p)), text: readFileSync(p, "utf-8") }));
 const placeByCode = new Map(PLACES.map((p) => [p.code as string, p]));
@@ -47,6 +56,10 @@ const SERVICE_ROLE_EXCEPTIONS: ReadonlyArray<{ file: string; why: string }> = [
   {
     file: "lib/queries/recent.ts",
     why: "reservations 는 RLS 정책이 없어 anon 이 0행이다(0001). 홈 접수 현황(P3-5·G4)은 서버가 서비스 롤로 화이트리스트 5컬럼(name·vehicle_slug·depart_at·status·created_at)만 읽어 maskName 으로 가린 뒤 RSC 가 60초 태그 캐시로 내린다. 반환 타입에 원문 필드가 없고 tests/recent-feed.test.ts 가 누출 0 을 property test 로 잠근다.",
+  },
+  {
+    file: "lib/notify/vars.ts",
+    why: "reservations 는 RLS 정책이 없어 anon 이 0행이고(0001) 크론에는 세션이 없다 — 통지 문안(P4-2b)을 그리려면 서비스 롤로 읽는 수밖에 없다. 화이트리스트는 고객 1컬럼(public_code)·사장님 9컬럼뿐이고 email·message·admin_memo·동의 컬럼·retention_until 은 어느 쪽도 읽지 않는다. 클라이언트는 이 파일이 만들지 않고 app/api/cron/notify/route.ts 가 주입한다(env 0·server-only 0). 고객 반환 타입에 이름·전화 키가 아예 없어 누출이 구조적으로 불가능하며 tests/notify-vars.test.ts 가 잠근다.",
   },
 ];
 const exceptionFiles = new Set(SERVICE_ROLE_EXCEPTIONS.map((e) => e.file));
@@ -88,7 +101,7 @@ describe("lib/queries 정적 검사", () => {
   });
 
   test("SERVICE_ROLE_EXCEPTIONS — 실재하는 파일 · 20자 이상의 사유 · 실제로 서비스 롤을 쓴다 (죽은 예외 금지)", () => {
-    expect(SERVICE_ROLE_EXCEPTIONS.map((e) => e.file)).toEqual(["lib/queries/recent.ts"]);
+    expect(SERVICE_ROLE_EXCEPTIONS.map((e) => e.file)).toEqual(["lib/queries/recent.ts", "lib/notify/vars.ts"]);
     for (const e of SERVICE_ROLE_EXCEPTIONS) {
       const src = sources.find((s) => s.file === e.file);
       expect(src, `${e.file} 이 없다`).toBeDefined();

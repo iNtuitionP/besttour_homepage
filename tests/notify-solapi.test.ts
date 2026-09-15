@@ -613,14 +613,17 @@ describe("8. selectSender() — 키가 있으면 solapi", () => {
     expect((await report()).sender).toBe(UNCONFIGURED_SENDER_NAME);
   });
 
-  test("문안 변수 포트가 아직 없으므로 키가 있어도 claim 하지 않는다 (attempts 를 태우지 않는다)", async () => {
+  // P4-2b 로 뒤집힌 단언이다. 전에는 "문안 변수 포트가 아직 없으므로 키가 있어도 claim 하지 않는다" 였다 —
+  // 그 상태가 옳았던 이유(렌더 못 하는 발송기가 attempts 를 태운다)는 lib/notify/vars.ts 가 생기면서 사라졌다.
+  // 이제 남은 전제는 키 3종뿐이고, 그것이 이 태스크가 만들려던 상태다.
+  test("문안 변수 포트가 배선됐으므로 키 3종이 있으면 claim 까지 간다 (P4-2b — 이제 키만 넣으면 나간다)", async () => {
     process.env.SOLAPI_API_KEY = API_KEY;
     process.env.SOLAPI_API_SECRET = API_SECRET;
     process.env.SMS_SENDER = FROM;
     const r = await report("?dry=0");
     expect(r.sender).toBe(SOLAPI_SENDER_NAME);
-    expect(r.skipped).toBe("sender_not_configured");
-    expect(routeRpcs).toEqual(["reap_stale_notifications"]);
+    expect(r.skipped).toBeUndefined();
+    expect(routeRpcs).toEqual(["reap_stale_notifications", "claim_pending_notifications"]);
   });
 
   test("운영에서 NOTIFY_SENDER=memory 는 여전히 거부된다 (P4-1 규칙 유지)", async () => {
