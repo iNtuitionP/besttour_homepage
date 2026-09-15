@@ -24,6 +24,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { MAX_ATTEMPTS, reapStale } from "@/lib/notify/outbox";
 import { consentFields } from "@/lib/reservations/consent";
 import type { OutboxRow } from "@/lib/types";
+import { withNotificationsLock } from "./helpers/db-lock";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
@@ -228,6 +229,9 @@ test("DB 쓰기 가드 — 원격 URL 이면 REQUIRE_DB_TESTS=1 을 강제해도
 });
 
 describe.skipIf(!gate.allowed || !env.hasServiceRole)("DB — 0007 회수기 실증 (로컬 스택 + REQUIRE_DB_TESTS=1)", () => {
+  // reap 도 claim 도 테이블 전체가 대상이다 — 같은 테이블을 쓰는 다른 파일과 직렬화한다 (tests/helpers/db-lock.ts).
+  withNotificationsLock();
+
   const headers = {
     apikey: env.serviceRoleKey,
     Authorization: `Bearer ${env.serviceRoleKey}`,
@@ -337,7 +341,11 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("DB — 0007 회수기 실
     const inFlight = await insertLog({ attempts: MAX_ATTEMPTS, next_attempt_at: future, template: "created.owner.email", channel: "email", to_phone: "o@x.kr" });
 
     const reaped = await reapStale(serviceClient);
-    expect(reaped.map((r) => r.id)).toEqual([stale]);
+    // reap 도 테이블 전체가 대상이다 — 결과가 어긋나면 남의 행을 회수한 것이다. 어느 행인지 메시지에 남긴다.
+    expect(
+      reaped.map((r) => r.id),
+      `reap 결과에 이 파일 밖의 행이 섞였다 (notifications-log 잠금을 안 잡은 DB 블록이 있다): ${JSON.stringify(reaped)}`,
+    ).toEqual([stale]);
     expect(reaped[0]).toMatchObject({ status: "failed", attempts: MAX_ATTEMPTS, last_error: REAP_ERROR });
 
     expect(await logById(stale)).toMatchObject({ status: "failed", attempts: MAX_ATTEMPTS, last_error: REAP_ERROR });

@@ -24,6 +24,7 @@ import { LOCATION_CODES } from "@/lib/codes";
 import { parseKst, toKstDateString } from "@/lib/kst";
 import { COMPANY, PAYMENT, QUOTE_BASIS, VERBATIM } from "@/lib/legal/disclosures";
 import { DEFAULT_GALLERY_LIMIT, getGallery, mapGalleryRows, QUERY_TAGS } from "@/lib/queries";
+import { withGalleryLock } from "./helpers/db-lock";
 import { loadDotEnvLocal } from "./helpers/load-env-local";
 
 loadDotEnvLocal();
@@ -284,6 +285,10 @@ if (process.env.REQUIRE_DB_TESTS === "1" && !hasAnon) {
 }
 
 describe.skipIf(!hasAnon)("4-DB. getGallery — anon 키 + RLS (읽기 전용, 행 수 0 이어도 OK)", () => {
+  // 읽기 전용인데도 잠금이 필요하다: 아래 단언은 `getGallery(100)` 과 직접 anon REST 조회가 **같은 행 집합**인지를 본다.
+  // 그 두 조회 사이에 갤러리 픽스처를 쓰는 다른 파일이 사진을 넣거나 지우면 어긋난다(P5-10 관측 → P6-3b 승격).
+  withGalleryLock();
+
   const SERVICE_KEY_NAME = "SUPABASE_SERVICE_ROLE_KEY";
   let saved: string | undefined;
   beforeAll(() => {

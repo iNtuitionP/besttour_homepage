@@ -18,6 +18,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
+import { withGalleryLock } from "./helpers/db-lock";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
 
 vi.mock("server-only", () => ({}));
@@ -1029,6 +1030,10 @@ test("DB 쓰기 가드 — 원격 URL 이면 REQUIRE_DB_TESTS=1 을 강제해도
 });
 
 describe.skipIf(!gate.allowed || !env.hasServiceRole)("8. DB — 0011 스토리지 RLS + 갤러리 표 실증", { timeout: 120_000 }, () => {
+  // 이 블록은 gallery · gallery_albums 에 행을 남긴다 — 표 전체를 단언하는 블록(home 4-DB)과 줄 세운다
+  // (tests/helpers/db-lock.ts GALLERY_LOCK).
+  withGalleryLock();
+
   const baseUrl = () => process.env.NEXT_PUBLIC_SUPABASE_URL as string;
   const serviceHeaders = {
     apikey: env.serviceRoleKey,

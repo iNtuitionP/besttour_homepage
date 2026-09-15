@@ -34,6 +34,7 @@ import {
 } from "@/lib/notify/outbox";
 import { consentFields } from "@/lib/reservations/consent";
 import type { NewOutboxRow, OutboxRow } from "@/lib/types";
+import { withNotificationsLock } from "./helpers/db-lock";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
@@ -524,6 +525,10 @@ test("DB 쓰기 가드 — 원격 URL 이면 REQUIRE_DB_TESTS=1 을 강제해도
 });
 
 describe.skipIf(!gate.allowed || !env.hasServiceRole)("DB — 0005 아웃박스 실증 (로컬 스택 + REQUIRE_DB_TESTS=1)", () => {
+  // claim 은 테이블 전체를 집어간다 — 같은 테이블에 pending 을 남기는 다른 파일과 겹치면 서로의 행을 먹는다.
+  // 맨 위에서 잡아 이 블록의 정리가 끝난 뒤 풀리게 한다 (tests/helpers/db-lock.ts).
+  withNotificationsLock();
+
   const headers = {
     apikey: env.serviceRoleKey,
     Authorization: `Bearer ${env.serviceRoleKey}`,
@@ -659,11 +664,13 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("DB — 0005 아웃박스 
     const b = await rpc("claim_pending_notifications", { p_limit: 2 });
     const idsA = (a.body as { id: number }[]).map((r) => r.id);
     const idsB = (b.body as { id: number }[]).map((r) => r.id);
-    expect(idsA).toHaveLength(2);
-    expect(idsB).toHaveLength(1);
+    // claim 은 테이블 전체가 대상이다 — 개수가 어긋나면 남의 행을 집어간 것이다. 어느 행인지 메시지에 남긴다.
+    const foreign = "claim 결과에 이 파일 밖의 행이 섞였다 (notifications-log 잠금을 안 잡은 DB 블록이 있다): ";
+    expect(idsA, foreign + JSON.stringify(a.body)).toHaveLength(2);
+    expect(idsB, foreign + JSON.stringify(b.body)).toHaveLength(1);
     expect(idsA.filter((id) => idsB.includes(id))).toEqual([]);
     const c = await rpc("claim_pending_notifications", { p_limit: 2 });
-    expect(c.body).toEqual([]);
+    expect(c.body, foreign + JSON.stringify(c.body)).toEqual([]);
     const claimed = (a.body as { attempts: number; next_attempt_at: string; status: string }[])[0];
     expect(claimed.attempts).toBe(1);
     expect(claimed.status).toBe("pending");
@@ -694,7 +701,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("DB — 0005 아웃박스 
     expect(await logsByStatus("failed")).toMatchObject([{ id: r2[0].id, last_error: "dead" }]);
     // 백오프 중인 행은 claim 에 잡히지 않는다
     const c = await rpc("claim_pending_notifications", { p_limit: 10 });
-    expect(c.body).toEqual([]);
+    expect(c.body, `claim 결과에 이 파일 밖의 행이 섞였다: ${JSON.stringify(c.body)}`).toEqual([]);
   });
 
   test.skipIf(!env.anonKey)("anon 은 claim RPC 를 부를 수 없다 (security definer 함수의 execute 회수)", async () => {

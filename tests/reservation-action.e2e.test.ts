@@ -39,6 +39,7 @@ import {
 } from "@/lib/guard";
 import { TEMPLATE_KEYS } from "@/lib/notify/outbox";
 import { QUERY_TAGS } from "@/lib/queries/tags";
+import { withNotificationsLock } from "./helpers/db-lock";
 import { dbSmokeEnv, dbWriteGate, isLocalStackUrl } from "./helpers/load-env-local";
 
 vi.mock("server-only", () => ({}));
@@ -207,6 +208,10 @@ const requestHeaders = () => new Headers({ "x-forwarded-for": CLIENT_IP, host: "
 // E2E
 // =============================================================================
 describe.skipIf(!gate.allowed || !env.hasServiceRole)("E2E — 진짜 guards + 진짜 createReservation + 로컬 스택 insert (dbWriteGate)", () => {
+  // 진짜 접수는 notifications_log 에 pending 을 넣는다(테스트 안에서 곧 지우지만 그 사이가 창이다).
+  // 그 행은 0005 claim 의 사정권 안이라 outbox 계열 파일과 겹치면 서로를 깨뜨린다 (tests/helpers/db-lock.ts).
+  withNotificationsLock();
+
   const restHeaders = {
     apikey: env.serviceRoleKey,
     Authorization: `Bearer ${env.serviceRoleKey}`,

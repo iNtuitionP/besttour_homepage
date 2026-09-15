@@ -17,6 +17,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
 
+import { withNotificationsLock } from "./helpers/db-lock";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
 
 vi.mock("server-only", () => ({}));
@@ -635,6 +636,10 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)(
   "9. DB — notifications_log RLS 실증 (로컬 스택 + REQUIRE_DB_TESTS=1)",
   { timeout: 60_000 },
   () => {
+    // 이 블록은 pending 통지 1건을 만들어 몇 개 테스트 동안 들고 있는다. 그 행은 0005 claim 의 사정권 안이라
+    // outbox.test.ts 의 claim 단언과 겹치면 서로를 깨뜨린다 — 같은 잠금으로 줄 세운다 (tests/helpers/db-lock.ts).
+    withNotificationsLock();
+
     const baseUrl = () => process.env.NEXT_PUBLIC_SUPABASE_URL as string;
     const serviceHeaders = {
       apikey: env.serviceRoleKey,

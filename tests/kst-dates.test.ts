@@ -166,22 +166,37 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("DB — 0004 실증 (로�
   // 정책 정의문 — 세션 TZ·실행 시각과 무관한 결정적 증거. REST 로는 pg_catalog 를 못 읽어 CLI(`supabase db query --local`)로 읽는다.
   let policyQual = "";
   let noticeDefault = "";
+  /** 셋업이 끝났는지. 아래 첫 테스트가 이것을 단언한다 — 셋업 실패가 "조용한 skip" 이 되지 않게. */
+  let setupError: unknown = null;
 
+  /**
+   * 훅 타임아웃 (P5-10). runLocalSql 은 `supabase db query --local` 프로세스를 띄운다 — 이 PC 실측으로 호출당 약 12초,
+   * 두 번이면 약 24초다. vitest 기본 훅 타임아웃은 10초라 이 훅은 **매번** 죽었고, 그 아래 DB 단언 4건이
+   * 실패가 아니라 skip 으로 조용히 사라졌다(그것이 tests/db-test-preconditions.test.ts 가 막으려던 바로 그 구멍이다).
+   * 값은 runLocalSql 자체의 execFileSync timeout(호출당 120초, 두 번이면 240초)보다 넉넉하게 잡는다 —
+   * 진짜로 멈춘 경우에도 "훅 타임아웃" 이라는 뭉뚱그린 메시지 대신 runLocalSql 의 구체적인 오류가 먼저 나오게.
+   */
   beforeAll(async () => {
-    policyQual = await runLocalSql(
-      "select pg_get_expr(polqual, polrelid) from pg_policy where polname = 'popups_select_active' and polrelid = 'public.popups'::regclass",
-    );
-    noticeDefault = await runLocalSql(
-      "select pg_get_expr(d.adbin, d.adrelid) from pg_attrdef d join pg_attribute a on a.attrelid = d.adrelid and a.attnum = d.adnum " +
-        "where d.adrelid = 'public.notices'::regclass and a.attname = 'published_at'",
-    );
-    if (!/asia\/seoul/i.test(policyQual)) {
-      throw new Error(
-        `0004_kst_dates.sql 이 이 DB(${process.env.NEXT_PUBLIC_SUPABASE_URL})에 적용되지 않은 것으로 보인다 — ` +
-          `popups_select_active 정의문: ${policyQual.slice(0, 300)}. CI(db-test)라면 supabase db reset 단계를 확인할 것.`,
+    try {
+      policyQual = await runLocalSql(
+        "select pg_get_expr(polqual, polrelid) from pg_policy where polname = 'popups_select_active' and polrelid = 'public.popups'::regclass",
       );
+      noticeDefault = await runLocalSql(
+        "select pg_get_expr(d.adbin, d.adrelid) from pg_attrdef d join pg_attribute a on a.attrelid = d.adrelid and a.attnum = d.adnum " +
+          "where d.adrelid = 'public.notices'::regclass and a.attname = 'published_at'",
+      );
+      if (!/asia\/seoul/i.test(policyQual)) {
+        throw new Error(
+          `0004_kst_dates.sql 이 이 DB(${process.env.NEXT_PUBLIC_SUPABASE_URL})에 적용되지 않은 것으로 보인다 — ` +
+            `popups_select_active 정의문: ${policyQual.slice(0, 300)}. CI(db-test)라면 supabase db reset 단계를 확인할 것.`,
+        );
+      }
+    } catch (e) {
+      // 여기서 throw 하면 아래 4건이 "skipped" 로 보고된다 — 그것이 이 파일이 오래 안고 있던 결함이다.
+      // 오류를 들고 있다가 첫 테스트에서 터뜨려 **실패**로 세게 한다.
+      setupError = e;
     }
-  });
+  }, 300_000);
 
   afterAll(async () => {
     for (const id of popupIds) await svcJson("DELETE", `/popups?id=eq.${id}`);
@@ -190,6 +205,12 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("DB — 0004 실증 (로�
     const leftN = await svcJson("GET", `/notices?select=id&title=like.p13kst-*`);
     expect(leftP.body).toEqual([]);
     expect(leftN.body).toEqual([]);
+  });
+
+  test("셋업이 끝났다 — pg_catalog 조회가 실패하면 skip 이 아니라 여기서 실패한다 (REQUIRE_DB_TESTS=1 의 약속)", () => {
+    if (setupError) throw setupError;
+    expect(policyQual.length, "policyQual 이 비었다 — runLocalSql 이 아무것도 돌려주지 않았다").toBeGreaterThan(0);
+    expect(noticeDefault.length, "noticeDefault 가 비었다 — runLocalSql 이 아무것도 돌려주지 않았다").toBeGreaterThan(0);
   });
 
   test("pg_policy: popups_select_active 정의문에 Asia/Seoul 이 있고 current_date 는 없다", () => {

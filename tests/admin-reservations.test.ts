@@ -23,6 +23,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
+import { withNotificationsLock } from "./helpers/db-lock";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
 
 // server-only 는 vitest(node) 에서 import 즉시 throw 한다 — 빈 모듈로 바꿔치기(tests/admin-auth.test.ts 선례).
@@ -917,6 +918,10 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
   "7. DB — 0010 원자적 상태 전이 실증 (로컬 스택 + REQUIRE_DB_TESTS=1)",
   { timeout: 90_000 },
   () => {
+    // admin_confirm_reservation 은 notifications_log 에 pending 을 넣는다(0010). 그 행은 0005 claim 의 사정권 안이라
+    // outbox 계열 파일의 claim/reap 단언과 겹치면 서로를 깨뜨린다 (tests/helpers/db-lock.ts).
+    withNotificationsLock();
+
     const baseUrl = () => process.env.NEXT_PUBLIC_SUPABASE_URL as string;
     const serviceHeaders = {
       apikey: dbEnv.serviceRoleKey,

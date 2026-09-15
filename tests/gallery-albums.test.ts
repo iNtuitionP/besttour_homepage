@@ -37,6 +37,7 @@ import {
 } from "@/lib/queries";
 import type { AnonClient } from "@/lib/supabase/anon";
 import type { GalleryAlbum, GalleryItem } from "@/lib/types";
+import { withGalleryLock } from "./helpers/db-lock";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
@@ -614,6 +615,10 @@ test("DB 쓰기 가드 — 원격 URL 이면 REQUIRE_DB_TESTS=1 을 강제해도
 });
 
 describe.skipIf(!gate.allowed || !env.hasServiceRole)("8. DB — 0008 앨범 RLS·FK 실증 (로컬 스택 + REQUIRE_DB_TESTS=1)", () => {
+  // 이 블록은 gallery · gallery_albums 에 행을 남기고 앨범 삭제까지 한다 — 표 전체를 단언하는 블록과 줄 세운다
+  // (tests/helpers/db-lock.ts GALLERY_LOCK).
+  withGalleryLock();
+
   const headers = {
     apikey: env.serviceRoleKey,
     Authorization: `Bearer ${env.serviceRoleKey}`,
@@ -846,7 +851,12 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("8. DB — 0008 앨범 RLS
       `${PATH_PREFIX}free.webp`,
     ]);
     expect(photos.filter((p) => p.album_id === activeAlbumId)).toEqual([]);
-    expect(photos.filter((p) => p.image_path.includes("a1") || p.image_path.includes("a2")).every((p) => p.album_id === null)).toBe(true);
+    // 부분 문자열(`includes("a1")`)로 고르면 안 된다 — PATH_PREFIX 에 들어간 임의 16진수 RUN 이 "a1"·"a2" 를
+    // 품을 확률이 5.4% 라, 그때는 b1(비활성 앨범 소속, album_id 가 null 이 아니다)까지 걸려 이 단언이 깨졌다.
+    // 스케줄링과 무관한 자체 결함이었다(P5-10 실측: 10회 중 6회째 재현). 이름을 정확히 짚는다.
+    const albumPhotos = photos.filter((p) => p.image_path === `${PATH_PREFIX}a1.webp` || p.image_path === `${PATH_PREFIX}a2.webp`);
+    expect(albumPhotos).toHaveLength(2);
+    expect(albumPhotos.every((p) => p.album_id === null)).toBe(true);
 
     // 미분류가 된 사진은 다시 anon 에게 보인다(앨범이 사라져도 사진이 사라지지 않는다)
     const rows = (await anonRest(

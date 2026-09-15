@@ -36,6 +36,7 @@ import {
   remainingPadMs,
   type AdminLoginResult,
 } from "@/lib/auth/adminLogin";
+import { withNotificationsLock } from "./helpers/db-lock";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
 
 // server-only 는 vitest(node) 에서 import 즉시 throw 한다 — 빈 모듈로 바꿔치기(guard.test.ts·reservation-check.test.ts 선례).
@@ -923,6 +924,10 @@ test("DB 쓰기 가드 — 원격 URL 이면 REQUIRE_DB_TESTS=1 을 강제해도
 });
 
 describe.skipIf(!gate.allowed || !env.hasServiceRole)("7. DB — is_admin() RLS 실증 (로컬 스택 + REQUIRE_DB_TESTS=1)", { timeout: 60_000 }, () => {
+  // 이 블록은 pending 통지 1건을 만들어 블록이 끝날 때까지 들고 있는다 — 0005 claim 의 사정권 안이라
+  // outbox 계열 파일의 claim/reap 단언과 겹치면 서로를 깨뜨린다 (tests/helpers/db-lock.ts).
+  withNotificationsLock();
+
   const baseUrl = () => process.env.NEXT_PUBLIC_SUPABASE_URL as string;
   const serviceHeaders = {
     apikey: env.serviceRoleKey,

@@ -86,4 +86,14 @@ bash scripts/check-mockup-drift.sh       # 목업 커밋 해시 고정 + public/
 
 - **TDD** 원칙 — 테스트 먼저 작성 후 구현.
 - DB가 필요한 테스트를 CI에서 skip하지 말 것 — 로컬 `supabase start` 스택으로 실행 예정(env 없다고 전부 skip 금지).
+- **통지 아웃박스를 건드리는 DB 블록은 `tests/helpers/db-lock.ts` 의 `withNotificationsLock()` 안에서만 돈다** (P5-10, 2026-09-15).
+  이유: `claim_pending_notifications`(0005)·`reap_stale_notifications`(0007)는 **소유자 조건이 없어 표 전체를 훑는 것이 설계**다.
+  그래서 claim/reap 결과를 단언하는 블록과, claim 가능한 pending 행을 남기는 블록은 **서로 배타적이어야** 한다 — vitest는 파일을 병렬로 돌린다.
+  `tests/db-test-preconditions.test.ts` 의 완전성 게이트가 테스트 파일을 grep해 **잠금을 빠뜨린 파일이 있으면 매번 실패**시킨다(파일 목록을 하드코딩하지 않고 유도하며, 마커가 낡아 아무 파일도 못 고르는 상황도 잡는다).
+  잠금은 **남의 잠금을 훔치지 않는다**(훔치는 구현을 두 번 만들었다가 둘 다 깨졌다). 테스트를 강제 종료하면 잠금 디렉터리가 남고, 다음 실행이 180초 뒤 **`rm -rf <경로>` 를 찍으며 크게 실패**한다 — 조용히 통과하는 것보다 낫다. CI는 매번 새 컨테이너라 누수가 남지 않는다.
+- **갤러리·앨범 표를 건드리는 DB 블록은 `withGalleryLock()`** (P6-3b, 2026-09-15). 같은 표를 다투는 파일이 다섯이다(`home`·`admin-gallery`·`gallery-albums`·`gallery-albums-public`·`write-privileges`).
+  실측: 잠금을 빼고 10회 돌리면 **8회 실패**하고(`home.test.ts` 의 `getGallery` 가 남의 행을 본다) 붙이면 10/10 통과한다.
+  **두 잠금을 함께 쓰는 파일은 `notifications → gallery` 순서로만 잡는다**(교착 방지). 완전성 게이트가 소스 위치를 비교해 강제한다.
+  탐지는 `describe.skipIf(!gate.allowed …)` 와 **anon 전용 `!hasAnon` 형태 둘 다** 본다 — 앞의 형태만 보면 정작 피해자인 `home.test.ts` 를 놓친다.
+- **테스트를 `%TEMP%` 사본에서 돌리지 마라.** 같은 5파일이 저장소에서 21초, 임시 폴더 사본에서 **5시간 39분** 이었다(vitest transform 단계만 느리다 — `next build` 는 정상). 빌드 실측이 필요하면 사본에서 빌드하되 **vitest 는 저장소에서** 돌린다.
 - UI 태스크는 gstack `/browse`로 실측 검증(콘솔 에러 0, 375px 가로 스크롤 없음, 인터랙션 동작 확인) 없이 완료로 간주하지 않는다.
