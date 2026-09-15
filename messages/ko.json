@@ -523,6 +523,7 @@
       "notices": "공지 관리",
       "gallery": "갤러리 관리",
       "routes": "대표 노선 관리",
+      "notifications": "발송 내역",
       "comingSoon": "준비 중"
     },
     "reservations": {
@@ -879,6 +880,84 @@
         "failed": "처리하지 못했습니다. 잠시 후 다시 시도해 주세요.",
         "fileFailed": "사진 파일을 지우지 못해 목록에 그대로 두었습니다. 노출은 중지했으니 잠시 후 다시 삭제해 주세요."
       }
+    },
+    "notifications": {
+      "title": "발송 내역",
+      "sub": "접수·확정 문자가 실제로 나갔는지 확인하실 수 있습니다. 보기 전용 화면이라 여기서 다시 보내지는 않습니다.",
+      "listLabel": "문자 발송 내역",
+      "empty": "해당하는 발송 내역이 없습니다.",
+      "maskNote": "받는 번호는 일부만 보여 드립니다. 어느 예약인지는 접수번호로 확인해 주세요.",
+      "filterStatusLabel": "상태로 보기",
+      "filterChannelLabel": "종류로 보기",
+      "filterPeriodLabel": "기간으로 보기",
+      "filterStatus": {
+        "all": "전체",
+        "pending": "대기",
+        "sent": "발송",
+        "failed": "실패"
+      },
+      "filterChannel": {
+        "all": "전체",
+        "sms": "문자",
+        "alimtalk": "알림톡",
+        "email": "메일"
+      },
+      "filterPeriod": {
+        "all": "전체",
+        "24h": "최근 24시간",
+        "7d": "최근 7일",
+        "30d": "최근 30일"
+      },
+      "status": {
+        "pending": "대기",
+        "sent": "발송",
+        "failed": "실패"
+      },
+      "channel": {
+        "sms": "문자",
+        "alimtalk": "알림톡",
+        "email": "메일"
+      },
+      "template": {
+        "created": {
+          "owner": {
+            "sms": "사장님 접수 알림",
+            "email": "사장님 접수 알림(메일)"
+          },
+          "customer": {
+            "sms": "고객 접수 확인"
+          }
+        },
+        "confirmed": {
+          "customer": {
+            "sms": "고객 확정 안내"
+          }
+        }
+      },
+      "col": {
+        "status": "상태",
+        "channel": "종류",
+        "template": "문자 종류",
+        "to": "받는 번호",
+        "code": "접수번호",
+        "attempts": "시도",
+        "nextAttemptAt": "다음 시도",
+        "lastError": "마지막 오류",
+        "createdAt": "기록 일시",
+        "updatedAt": "갱신 일시"
+      },
+      "attemptsValue": "{n}회",
+      "none": "—",
+      "summary": {
+        "title": "발송 상태",
+        "failed": "실패 {n}건",
+        "stuck": "더 시도되지 않는 대기 {n}건",
+        "ok": "이상 없음",
+        "note": "실패한 건은 사장님께서 전화로 직접 안내해 주셔야 합니다. 다시 보내는 기능은 아직 없습니다."
+      },
+      "prev": "← 이전",
+      "next": "다음 →",
+      "pageLabel": "목록 넘기기"
     }
   }
 }

@@ -9,7 +9,7 @@
  */
 import { isLocationCode, locationLabelKo } from "../codes";
 import { toKstDateString } from "../kst";
-import { maskName, maskPhone } from "../mask";
+import { maskName, maskStoredPhone } from "../mask";
 import type { ReservationCheckRow } from "./lookup";
 
 /** 0001 reservation_status enum 그대로. */
@@ -37,7 +37,7 @@ export interface ReservationView {
   passengers: number | null;
   /** lib/mask.ts maskName — 첫 글자 + `*` 1~2개. */
   maskedName: string;
-  /** lib/mask.ts maskPhone — 가운데 자리 `****`. 국내 형식이 아니면 `***`. */
+  /** lib/mask.ts maskStoredPhone — `+82` 휴대전화만 가운데 자리 `****`, 그 밖은 `***`. */
   maskedPhone: string;
   createdAtKst: string;
 }
@@ -95,23 +95,11 @@ function labelOf(code: string): string {
   return isLocationCode(code) ? locationLabelKo(code) : code;
 }
 
-/** 국내 휴대전화 국내 표기(01x + 8~9자리). maskPhone 은 10·11자리를 국내 3-3-4 / 3-4-4 로 가정하므로 이 형태만 넘긴다. */
-const KR_MOBILE_DOMESTIC = /^01\d{8,9}$/;
-/** lib/mask.ts maskPhone 의 자체 폴백과 같은 값 — 형식을 모르면 아무 숫자도 내보내지 않는다. */
-const MASKED_PHONE_FALLBACK = "***";
-
 /**
- * 저장 형식(E.164, lib/reservations/phone.ts)이 `+82` 휴대전화일 때만 국내 표기로 되돌려 가린다 — `+8210…` → `010…` → `010-****-5678`.
- * 그 밖은 **전부 `***`**(fail-closed, 리뷰 M-1): `+82` 가 아닌 해외 번호(`+15551234567` 을 숫자열 그대로 넘기면 maskPhone 이 11자리 국내 번호로
- * 오인해 `155-****-4567` 을 만든다 — 국가번호·지역번호가 새고 국내 번호처럼 오독된다), `+82` 유선 번호, 형식을 알 수 없는 값.
- * 원문은 어떤 경우에도 나가지 않는다.
+ * 저장형(E.164) 전화 마스킹은 lib/mask.ts maskStoredPhone 이다 — 판정(+82 휴대전화만, 그 밖은 fail-closed `***`)은
+ * 리뷰 M-1 때와 한 글자도 같고, 구현만 공용 모듈로 옮겼다(P5-8 발송 내역이 같은 변환을 써야 했다 — 사본을 두면
+ * 한쪽만 조여지고 다른 쪽이 계속 샌다).
  */
-function maskStoredPhone(phone: string): string {
-  const trimmed = phone.trim();
-  if (!trimmed.startsWith("+82")) return MASKED_PHONE_FALLBACK;
-  const domestic = `0${trimmed.replace(/\D/g, "").slice(2)}`;
-  return KR_MOBILE_DOMESTIC.test(domestic) ? maskPhone(domestic) : MASKED_PHONE_FALLBACK;
-}
 
 export function toReservationView(row: ReservationCheckRow, vehicleNameKo: string | null): ReservationView {
   const status = asStatus(row.status);

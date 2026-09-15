@@ -747,18 +747,20 @@ describe("6. 정적 규약", () => {
     }
   });
 
-  // P5-4 가 팝업 탭을, P5-5·P5-6 이 공지·대표 노선 탭을, P6-2 가 마지막으로 갤러리 탭을 켰다
-  // (tests/admin-popups.test.ts · admin-notices.test.ts · admin-routes.test.ts · admin-gallery.test.ts 가 각 탭의 화면·액션을 단언한다).
+  // P5-4 가 팝업 탭을, P5-5·P5-6 이 공지·대표 노선 탭을, P6-2 가 갤러리 탭을, P5-8 이 발송 내역 탭을 켰다
+  // (tests/admin-popups.test.ts · admin-notices.test.ts · admin-routes.test.ts · admin-gallery.test.ts ·
+  //  admin-notifications.test.ts 가 각 탭의 화면·액션을 단언한다).
   // 이제 자리만 지키는 탭은 없다 — aria-disabled 분기는 그대로 두되(다음 탭이 생길 자리) 켜진 목록이 전부여야 한다.
-  test("탭 — 다섯 탭이 전부 켜져 있다", async () => {
+  test("탭 — 여섯 탭이 전부 켜져 있다", async () => {
     const { ADMIN_TABS } = await import("@/components/admin/tabs");
-    expect(ADMIN_TABS.map((t) => t.key)).toEqual(["reservations", "popups", "notices", "gallery", "routes"]);
+    expect(ADMIN_TABS.map((t) => t.key)).toEqual(["reservations", "popups", "notices", "gallery", "routes", "notifications"]);
     expect(ADMIN_TABS.filter((t) => t.ready).map((t) => t.href)).toEqual([
       "/admin/reservations",
       "/admin/popups",
       "/admin/notices",
       "/admin/gallery",
       "/admin/routes",
+      "/admin/notifications",
     ]);
     expect(ADMIN_TABS.filter((t) => !t.ready).map((t) => t.key)).toEqual([]);
     const ui = stripComments(read(TABS_UI));

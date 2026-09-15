@@ -503,7 +503,7 @@ describe("4. 정적 규약", () => {
     expect(pub).not.toMatch(/insert\(|update\(|delete\(/);
   });
 
-  test("탭 — 대표 노선이 켜졌고 다섯 탭 전부 ready 다 (P6-2 가 갤러리를 켰다)", async () => {
+  test("탭 — 대표 노선이 켜졌고 여섯 탭 전부 ready 다 (P6-2 갤러리 · P5-8 발송 내역)", async () => {
     const { ADMIN_TABS } = await import("@/components/admin/tabs");
     expect(ADMIN_TABS.filter((t) => t.ready).map((t) => t.href)).toEqual([
       "/admin/reservations",
@@ -511,6 +511,7 @@ describe("4. 정적 규약", () => {
       "/admin/notices",
       "/admin/gallery",
       "/admin/routes",
+      "/admin/notifications",
     ]);
     expect(ADMIN_TABS.find((t) => t.key === "routes")?.href).toBe(ADMIN_ROUTES_PATH);
     expect(read(TABS_DEF)).toContain("/admin/routes");

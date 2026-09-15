@@ -41,3 +41,49 @@ export function maskPhone(phone: string): string {
 
   return "***";
 }
+
+// =============================================================================
+// 저장형(E.164) 값 마스킹 — 표시 계층 공용 (P6-3a 리뷰 M-1 · P5-8)
+//
+// 이 두 함수는 원래 lib/reservation-check/view.ts 안에 있었고, P5-8 발송 내역이 같은 판정을 다시 써야 해서
+// 여기로 올렸다. **사본을 두지 않는 것이 요점이다** — 개인정보 변환은 한쪽만 조여지면 다른 쪽이 계속 새는
+// 종류의 코드다. 호출부는 lib/reservation-check/view.ts 와 lib/admin/notifications.ts 둘뿐이고, 둘 다 아래 구현을 그대로 쓴다.
+// =============================================================================
+
+/** 국내 휴대전화 국내 표기(01x + 8~9자리). maskPhone 은 10·11자리를 국내 3-3-4 / 3-4-4 로 가정하므로 이 형태만 넘긴다. */
+const KR_MOBILE_DOMESTIC = /^01\d{8,9}$/;
+
+/** 형식을 모르면 아무 숫자도 내보내지 않는다 — maskPhone 의 자체 폴백과 같은 값. */
+const MASKED_FALLBACK = "***";
+
+/**
+ * 저장 형식(E.164, lib/reservations/phone.ts)의 전화번호를 가린다.
+ *
+ * `+82` **휴대전화일 때만** 국내 표기로 되돌려 가린다 — `+8210…` → `010…` → `010-****-5678`.
+ * 그 밖은 **전부 `***`**(fail-closed, P6-3a 리뷰 M-1):
+ *   - `+82` 가 아닌 해외 번호 — `+15551234567` 을 숫자열 그대로 maskPhone 에 넘기면 11자리 국내 번호로 오인해
+ *     `155-****-4567` 을 만든다. 국가번호·지역번호가 새고 국내 번호처럼 오독된다.
+ *   - `+82` 유선 번호(`+82212345678`), 형식을 알 수 없는 값, 빈 값.
+ *   - **국내 표기 원문(`010-1234-5678`)도 `***` 다.** 저장값은 언제나 E.164 이므로 국내 표기가 들어왔다는 것은
+ *     출처를 모른다는 뜻이고, 모르는 값을 짐작해 일부라도 내보내지 않는다.
+ * 원문은 어떤 경우에도 나가지 않는다.
+ */
+export function maskStoredPhone(phone: string): string {
+  const trimmed = phone.trim();
+  if (!trimmed.startsWith("+82")) return MASKED_FALLBACK;
+  const domestic = `0${trimmed.replace(/\D/g, "").slice(2)}`;
+  return KR_MOBILE_DOMESTIC.test(domestic) ? maskPhone(domestic) : MASKED_FALLBACK;
+}
+
+/**
+ * 메일 주소를 가린다 — 로컬 파트를 통째로 가리고 도메인만 남긴다(`bestour2013@naver.com` → `***@naver.com`).
+ * `@` 가 없거나 로컬 파트가 비면(`@naver.com`) 도메인도 내보내지 않고 `***`.
+ * 도메인을 남기는 이유: 어느 계정으로 나갔는지 사람이 알아볼 수 있어야 하는데, 그 판단에 로컬 파트는 필요 없다.
+ */
+export function maskEmailAddress(address: string): string {
+  const trimmed = address.trim();
+  const at = trimmed.lastIndexOf("@");
+  if (at <= 0) return MASKED_FALLBACK;
+  const domain = trimmed.slice(at + 1);
+  return domain === "" ? MASKED_FALLBACK : `${MASKED_FALLBACK}@${domain}`;
+}
