@@ -156,3 +156,91 @@
   padding-top: var(--space-stack-sm);
   border-top: 1px solid var(--border-decorative);
 }
+
+/* ── 앨범 카드 (P6-3b /gallery 색인) ──────────────────────────────────
+   그리드 브레이크포인트는 갤러리 타일(Sections.module.css .gal)과 같은 1 → 2 → 4 열이다.
+   타일과 달리 첫 칸을 넓히지 않는다: 앨범은 서로 대등해서 하나만 커지면 순서가 중요해 보인다. */
+.albumGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-stack-md);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+@media (min-width: 640px) {
+  .albumGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (min-width: 1024px) {
+  .albumGrid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+.albumItem {
+  min-width: 0;
+}
+.albumLink {
+  display: grid;
+  gap: var(--space-stack-xs);
+  color: inherit;
+  text-decoration: none;
+}
+.albumLink:hover .albumTitle {
+  color: var(--text-link);
+}
+.albumLink:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-surface);
+}
+.albumThumb {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: var(--radius-surface);
+  background: var(--bg-inverse);
+}
+.albumImg {
+  object-fit: cover;
+}
+.albumPending {
+  position: relative;
+  z-index: 1;
+  padding: 0 var(--space-inline-sm);
+  font-size: 13.5px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--text-secondary-on-inverse);
+}
+.albumTitle {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.4;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+.albumDesc {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+/* ── 앨범 상세의 페이지 넘김 ─────────────────────────────────────────── */
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-inline-sm);
+  margin: var(--space-stack-lg) 0 0;
+}
+.pagerLabel {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+}

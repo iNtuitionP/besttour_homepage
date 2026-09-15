@@ -495,7 +495,25 @@
         "title": "{brand} 갤러리",
         "description": "베스트투어가 다녀온 운행 현장 사진입니다."
       },
-      "empty": "갤러리를 준비 중입니다. 운행 사진이 올라오면 이곳에서 보실 수 있습니다."
+      "empty": "갤러리를 준비 중입니다. 운행 사진이 올라오면 이곳에서 보실 수 있습니다.",
+      "albumsTitle": "앨범",
+      "albumsLabel": "앨범 목록",
+      "albumPending": "사진 준비 중",
+      "allTitle": "전체 사진",
+      "detail": {
+        "meta": {
+          "title": "{title} — 갤러리 | {brand}",
+          "description": "베스트투어가 다녀온 운행 현장 사진입니다."
+        },
+        "empty": "이 앨범에는 아직 사진이 없습니다.",
+        "back": "갤러리로",
+        "pager": {
+          "label": "사진 페이지 넘김",
+          "prev": "이전",
+          "next": "다음",
+          "page": "{page} 페이지"
+        }
+      }
     }
   },
   "admin": {

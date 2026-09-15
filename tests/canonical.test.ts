@@ -101,6 +101,8 @@ const NO_CANONICAL = new Set<string>(["/quote/done"]);
 /** 동적 라우트의 canonical 인자 — 소스에 그대로 있어야 하는 텍스트. */
 const DYNAMIC_CANONICAL_ARG: Record<string, string> = {
   "/notices/[id]": "`/notices/${notice.id}`",
+  // P6-3b — 앨범 상세. 정본은 조회한 행의 slug 다(라우트 파라미터의 표기를 그대로 쓰지 않는다).
+  "/gallery/[album]": "`/gallery/${album.slug}`",
 };
 
 /** 소스에서 `canonicalUrl(<인자>)` 호출의 인자 텍스트를 전부 뽑는다. */

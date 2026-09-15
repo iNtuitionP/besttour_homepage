@@ -296,6 +296,11 @@ jobs:
           code=$(curl -s -o /tmp/nf.html -w '%{http_code}' "http://127.0.0.1:3111/notices/does-not-exist")
           [ "$code" = "404" ] || { echo "/notices/does-not-exist -> $code (expected 404)"; exit 1; }
           echo "/notices/does-not-exist -> 404 (document shell: known defect D1)"
+          # P6-3b: 없는 앨범도 같은 경로다(매칭된 라우트의 notFound()). D1 의 영향 경로가 둘이 되었으므로
+          # 상태코드를 여기서 함께 잠근다 — 문서 껍데기는 여전히 단언하지 않는다(위와 같은 이유: 거짓 green 방지).
+          code=$(curl -s -o /tmp/nf-album.html -w '%{http_code}' "http://127.0.0.1:3111/gallery/does-not-exist")
+          [ "$code" = "404" ] || { echo "/gallery/does-not-exist -> $code (expected 404)"; exit 1; }
+          echo "/gallery/does-not-exist -> 404 (document shell: known defect D1)"
 
       - name: Assert 404 responses are full documents (M1)
         run: |
