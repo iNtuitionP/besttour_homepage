@@ -1,0 +1,851 @@
+/**
+ * P5-9 — `0012_write_privileges.sql`: 쓰기가 의도된 적 없는 두 표에서 write 권한을 회수한다.
+ *
+ * 왜 이 파일이 있나. Supabase 는 public 스키마의 표에 `anon`·`authenticated` 로 **기본 권한을 넓게** 깔아 둔다.
+ * 마이그레이션이 명시적으로 회수하지 않으면 GRANT 층은 아무것도 막지 않고 **RLS 가 유일한 방어선**이 된다.
+ * 그 상태에서 정책이 없는 동작(예: notifications_log 의 update)을 PostgREST 로 치면 0행이 매치되고,
+ * PostgREST 는 그것을 **성공(204)** 으로 보고한다. 거부가 아니라 성공이다 — 이 미묘한 차이가 이 태스크의 출발점이다:
+ *   tests/admin-notifications.test.ts 의 "관리자도 쓸 수는 없다" 가 204 를 받고 실패했다(CI db-test, 8bc3549 이후).
+ *   테스트가 틀린 게 아니라 스키마가 틀렸다.
+ *
+ * 같은 뿌리에서 나온 세 번째 재발이다: P5-1/P5-2 리뷰 M1 이 `admin_users` 에서(→ 0009 `revoke all`),
+ * 0010 이 `reservations` 의 UPDATE 에서, 그리고 0012 가 나머지를 닫는다.
+ *
+ * **범위를 좁게 잡는 것이 0012 의 핵심이었다.** 콘텐츠 표 6개(notices·popups·gallery·gallery_albums·
+ * showcase_routes·vehicles)는 관리자가 `authenticated` + `is_admin()` 정책으로 **정말 쓴다**. 거기서 회수하면
+ * 관리자 화면이 죽는다. 그래서 0012 의 회수 대상은 서비스 롤과 security definer 함수만 쓰는 두 표뿐이다.
+ *
+ * **그리고 `0013_anon_write_privileges.sql` 이 나머지 절반을 닫는다.** 위 규칙은 `authenticated` 에 대한 것이고
+ * `anon` 에는 해당하지 않는다 — 공개 롤은 어떤 표에도 쓰지 않는다. 그런데 0012 뒤에도 `anon` 은 콘텐츠 6표 +
+ * `places` 에 insert·update·delete·**truncate** 를 그대로 갖고 있었다(P5-9 독립 리뷰 M1). TRUNCATE 는
+ * RLS 의 적용을 아예 받지 않으므로, 그 표들에서는 "RLS 가 막아 주고 있었다" 조차 사실이 아니었다.
+ *
+ * 이 파일이 단언하는 것:
+ *   1·2. 0012 SQL·롤백 — 회수 대상 2표만 · select 미회수 · 재실행 안전 · 데이터 미변경 ·
+ *        롤백은 회수한 것만 되돌리고(0010 이 닫은 문은 되살리지 않는다) 승인 플래그를 **언제나** 요구한다
+ *   3·4. 0013 SQL·롤백 — 7표 × 4동작을 `anon` 에서만 · `authenticated` 미접촉 · select 미회수 · 대칭 롤백
+ *   5. DB 실증(로컬 스택) — 관리자·anon 세션의 쓰기가 4xx 로 **거부**된다(204 아님) · select 는 200 ·
+ *      서비스 롤 경로(접수·enqueue·발송기·파기)와 0010 definer 함수 3종은 **그대로 동작한다** ·
+ *      관리자의 콘텐츠 표 쓰기도 그대로다
+ *   6. 권한 행렬 실측 — 행동이 아니라 권한 상태 자체를 `has_table_privilege` 로 읽는다
+ *
+ * tests/ 아래라 게이트 3종의 검사 대상이다 — 금지어·임시값 마커 리터럴을 그대로 쓰지 않는다.
+ */
+import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
+import { beforeAll, describe, expect, test } from "vitest";
+
+import { withGalleryLock, withNotificationsLock } from "./helpers/db-lock";
+import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
+import { runLocalSql } from "./helpers/local-stack-sql";
+
+// =============================================================================
+// 공통 헬퍼 (tests/admin-reservations.test.ts 와 같은 구현)
+// =============================================================================
+const ROOT = path.resolve(import.meta.dirname, "..");
+const read = (rel: string) => readFileSync(path.join(ROOT, rel), "utf-8").replace(/\r\n/g, "\n");
+const exists = (rel: string) => existsSync(path.join(ROOT, rel));
+
+const UP_SQL = "supabase/migrations/0012_write_privileges.sql";
+const DOWN_SQL = "supabase/rollbacks/0012_write_privileges.down.sql";
+const UP13_SQL = "supabase/migrations/0013_anon_write_privileges.sql";
+const DOWN13_SQL = "supabase/rollbacks/0013_anon_write_privileges.down.sql";
+
+const stripSqlComments = (sql: string) => sql.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
+const compact = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
+const sqlCode = (rel: string) => compact(stripSqlComments(read(rel)));
+
+/** 회수/부여 대상 두 표. 이 목록 밖의 표는 0012 가 손대지 않는다. */
+const TARGET_TABLES = ["notifications_log", "reservations"] as const;
+
+/** 관리자가 `authenticated` 로 정말 쓰는 표 — 여기서 회수하면 관리자 화면이 죽는다(P5-4~6·P6-2). */
+const CONTENT_TABLES = ["notices", "popups", "gallery", "gallery_albums", "showcase_routes", "vehicles"] as const;
+
+/** 0012 가 이름조차 꺼내면 안 되는 표. `admin_users` 는 0009 가 이미 `revoke all` 했고 `places` 는 0013 소관이다. */
+const OUT_OF_SCOPE_TABLES = ["admin_users", "places"] as const;
+
+/**
+ * 0013 이 `anon` 에서 쓰기를 회수하는 7표 — 콘텐츠 6표 + 참조 데이터 `places`.
+ * `authenticated` 는 건드리지 않는다(관리자가 그 롤로 쓴다). `anon` 은 이 7표 어디에도 쓰지 않는다.
+ */
+const ANON_REVOKE_TABLES = [...CONTENT_TABLES, "places"] as const;
+
+/** 0013 이 손대면 안 되는 표. 두 개인정보 표는 0012 소관이고 `admin_users` 는 0009 가 `revoke all` 했다. */
+const OUT_OF_SCOPE_FOR_13 = ["reservations", "notifications_log", "admin_users"] as const;
+
+const WRITE_PRIVS = ["insert", "update", "delete", "truncate"] as const;
+
+interface PrivStatement {
+  verb: "revoke" | "grant";
+  privs: string[];
+  table: string;
+  roles: string[];
+  raw: string;
+}
+
+/**
+ * `revoke a, b on table t from r1, r2` / `grant … to …` 를 (동사·권한·표·롤) 로 쪼갠다.
+ *
+ * 문장 단위로 자른 뒤 매칭한다. 롤백은 표 존재 확인(to_regclass) 때문에 do 블록 안에서 `execute 'grant …'` 로
+ * 부여하므로, 그 껍데기를 벗겨 같은 규칙으로 읽는다 — 상·하행의 대칭을 문자열 눈대중이 아니라 삼중항 집합으로 비교하기 위해서다.
+ */
+function parsePrivStatements(rel: string): PrivStatement[] {
+  const out: PrivStatement[] = [];
+  // 종결자는 `;`(최상위 문장) 또는 `'`(do 블록 안의 execute 문자열) 둘 다.
+  const re = /\b(revoke|grant)\s+([a-z, ]+?)\s+on\s+table\s+([a-z_, ]+?)\s+(?:from|to)\s+([a-z_, ]+?)\s*(?:;|')/g;
+  const code = sqlCode(rel);
+  for (const m of code.matchAll(re)) {
+    const [raw, verb, privs, tables, roles] = m;
+    const list = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
+    for (const table of list(tables)) {
+      out.push({ verb: verb as "revoke" | "grant", privs: list(privs), table, roles: list(roles), raw: raw.trim() });
+    }
+  }
+  return out;
+}
+
+/** (롤, 표, 권한) 삼중항 집합 — 상·하행의 대칭을 비교하기 위한 정규형. */
+function triples(stmts: PrivStatement[], verb: "revoke" | "grant"): Set<string> {
+  const set = new Set<string>();
+  for (const s of stmts.filter((x) => x.verb === verb)) {
+    for (const role of s.roles) for (const priv of s.privs) set.add(`${role}|${s.table}|${priv}`);
+  }
+  return set;
+}
+
+// =============================================================================
+// 1. supabase/migrations/0012_write_privileges.sql — 텍스트
+// =============================================================================
+describe("1. 0012_write_privileges.sql", () => {
+  test("존재하고, 0012 번호는 이 파일 하나뿐이다. migrations/ 안에 롤백이 섞여 있지 않다", () => {
+    expect(exists(UP_SQL), `${UP_SQL} 이 없다`).toBe(true);
+    const files = readdirSync(path.join(ROOT, "supabase", "migrations"));
+    expect(files.filter((f) => f.startsWith("0012"))).toEqual(["0012_write_privileges.sql"]);
+    expect(files.filter((f) => f.endsWith(".down.sql")), "롤백이 migrations/ 안에 있으면 db reset 이 롤백까지 적용한다").toEqual([]);
+  });
+
+  test("notifications_log — insert·update·delete·truncate 를 anon·authenticated 양쪽에서 회수한다", () => {
+    const revoked = triples(parsePrivStatements(UP_SQL), "revoke");
+    for (const role of ["anon", "authenticated"]) {
+      for (const priv of WRITE_PRIVS) {
+        expect(revoked.has(`${role}|notifications_log|${priv}`), `${role} 의 notifications_log ${priv} 가 남는다`).toBe(true);
+      }
+    }
+  });
+
+  test("reservations — insert·delete·truncate 는 양쪽에서, update 는 anon 에서 회수한다 (authenticated update 는 0010 이 이미 닫았다)", () => {
+    const revoked = triples(parsePrivStatements(UP_SQL), "revoke");
+    for (const role of ["anon", "authenticated"]) {
+      for (const priv of ["insert", "delete", "truncate"]) {
+        expect(revoked.has(`${role}|reservations|${priv}`), `${role} 의 reservations ${priv} 가 남는다`).toBe(true);
+      }
+    }
+    expect(revoked.has("anon|reservations|update"), "anon 의 reservations update 가 남으면 RLS 가 다시 유일한 방어선이다").toBe(true);
+  });
+
+  test("select 는 어디서도 회수하지 않는다 — 관리자 화면이 그것으로 읽는다(0009 정책)", () => {
+    for (const s of parsePrivStatements(UP_SQL)) {
+      expect(s.privs, `${s.raw} 가 select 를 건드린다`).not.toContain("select");
+      expect(s.privs, `${s.raw} 가 all 로 뭉뚱그린다 — select 까지 사라진다`).not.toContain("all");
+    }
+    expect(sqlCode(UP_SQL)).not.toMatch(/revoke\s+all/);
+  });
+
+  test("콘텐츠 6표와 범위 밖 2표는 회수 대상이 아니다 — 회수하면 관리자 화면이 죽는다", () => {
+    const stmts = parsePrivStatements(UP_SQL);
+    expect(stmts.length, "권한 문장이 하나도 없다").toBeGreaterThan(0);
+    for (const s of stmts) {
+      expect(TARGET_TABLES as readonly string[], `${s.raw} 가 범위 밖 표를 건드린다`).toContain(s.table);
+    }
+    const code = sqlCode(UP_SQL);
+    for (const t of OUT_OF_SCOPE_TABLES) {
+      expect(code, `0012 가 ${t} 를 언급한다 — 이 태스크의 범위가 아니다`).not.toContain(t);
+    }
+    // 콘텐츠 6표는 "권한이 살아 있는지" 확인하는 검증 블록에서만 나온다. 회수 문장에는 없다.
+    for (const s of stmts) {
+      expect(CONTENT_TABLES as readonly string[], `${s.raw} 가 콘텐츠 표를 건드린다`).not.toContain(s.table);
+    }
+  });
+
+  test("부여(grant)는 하나도 없다 — 이 마이그레이션은 닫기만 한다", () => {
+    expect(parsePrivStatements(UP_SQL).filter((s) => s.verb === "grant")).toEqual([]);
+    expect(sqlCode(UP_SQL)).not.toMatch(/grant\s+(select|insert|update|delete|truncate|all|usage)/);
+  });
+
+  test("데이터·스키마를 바꾸지 않는다 — 권한 문장과 검증 블록뿐", () => {
+    const code = sqlCode(UP_SQL);
+    for (const forbidden of ["create table", "alter table", "drop table", "create policy", "drop policy", "insert into", "delete from", "truncate table", "create or replace function"]) {
+      expect(code, `0012 가 "${forbidden}" 을 한다 — 권한만 건드려야 한다`).not.toContain(forbidden);
+    }
+  });
+
+  test("재실행 안전 — revoke 는 멱등이고 조건 분기(if not exists 류)가 필요 없다", () => {
+    const code = sqlCode(UP_SQL);
+    // revoke 는 없는 권한을 회수해도 오류가 아니다. 그래서 재실행 안전이 문장 자체의 성질로 성립한다.
+    expect(code).toMatch(/revoke /);
+    // 재실행하면 실패하는 문장이 섞여 있지 않은지(위 데이터·스키마 검사와 함께 이중으로 본다).
+    expect(code).not.toMatch(/create (?!or replace)/);
+  });
+
+  test("스스로 검증한다 — 회수 후에도 권한이 남으면 마이그레이션이 실패한다", () => {
+    const code = sqlCode(UP_SQL);
+    expect(code, "has_table_privilege 로 결과를 확인하지 않는다").toContain("has_table_privilege");
+    expect(code, "권한이 남아도 조용히 성공한다 — raise exception 이 없다").toContain("raise exception");
+    // 검증 블록은 세 가지를 본다: 회수됐나 · select 는 살아 있나 · 콘텐츠 6표는 멀쩡한가
+    for (const t of CONTENT_TABLES) {
+      expect(code, `검증 블록이 ${t} 의 권한 생존을 확인하지 않는다`).toContain(t);
+    }
+  });
+
+  test("0001~0011 을 수정하지 않는다 — 0012 는 파일 하나를 더할 뿐이다", () => {
+    // 0009 §6 의 grant 문장과 0010 §6 의 revoke 문장이 그대로 남아 있어야 한다(0012 가 그것을 지우고 다시 쓰지 않았다).
+    const nine = sqlCode("supabase/migrations/0009_admin_rls.sql");
+    expect(nine).toContain("grant select on table notifications_log to authenticated");
+    expect(nine).toContain("grant select, update on table reservations to authenticated");
+    const ten = sqlCode("supabase/migrations/0010_admin_reservation_actions.sql");
+    expect(ten).toContain("revoke update on table reservations from authenticated");
+  });
+});
+
+// =============================================================================
+// 2. supabase/rollbacks/0012_write_privileges.down.sql — 텍스트
+// =============================================================================
+describe("2. 0012 롤백", () => {
+  test("rollbacks/ 에만 있고, 수동 실행 절차를 헤더에 적는다", () => {
+    expect(exists(DOWN_SQL), `${DOWN_SQL} 이 없다`).toBe(true);
+    const raw = read(DOWN_SQL);
+    expect(raw).toMatch(/migration repair --status reverted 0012/);
+    expect(raw).toMatch(/begin;/);
+    expect(raw).toMatch(/commit;/);
+  });
+
+  test("승인 플래그를 **언제나** 요구한다 — 행 수를 조건으로 걸지 않는다 (독립 리뷰 M2)", () => {
+    const raw = read(DOWN_SQL);
+    expect(raw, "승인 플래그가 없다 (0003·0009·0010 롤백과 같은 규약)").toContain("bestour.rollback_0012_ack");
+    const code = sqlCode(DOWN_SQL);
+    expect(code).toContain("raise exception");
+    // 처음에는 `if (n + m) > 0 and coalesce(current_setting(…))` 였다. 그러면 빈 DB(= 오픈 전인 지금)에서는
+    // 롤백이 말없이 통과하고 TRUNCATE 를 포함한 15종이 조용히 복원된다. 행 0은 "위험 없음" 이 아니라 "아직 없음" 이다.
+    expect(code, "행 수가 승인 조건에 섞여 있다 — 빈 DB 에서 조용히 복원된다").not.toMatch(/[>)]\s*0\s+and\s+coalesce\s*\(\s*current_setting/);
+    expect(code, "승인 플래그 검사가 단독 조건이 아니다").toContain("if coalesce(current_setting('bestour.rollback_0012_ack', true), '') <> '1' then");
+  });
+
+  test("대칭 — 0012 가 회수한 것을 되돌린다. 단 0010 이 닫은 문(reservations update → authenticated)은 되살리지 않는다", () => {
+    const revoked = triples(parsePrivStatements(UP_SQL), "revoke");
+    const granted = triples(parsePrivStatements(DOWN_SQL), "grant");
+
+    for (const t of revoked) {
+      expect(granted.has(t), `0012 가 회수한 ${t} 를 롤백이 되돌리지 않는다`).toBe(true);
+    }
+    for (const t of granted) {
+      expect(revoked.has(t), `롤백이 0012 가 회수하지 않은 ${t} 를 부여한다 — 이전 상태보다 넓어진다`).toBe(true);
+    }
+    // 0012 는 authenticated 의 reservations update 를 회수하지 않았다(0010 소관). 따라서 롤백도 주면 안 된다 —
+    // 주는 순간 리뷰 N5 가 지적한 "관리자가 retention_until·privacy_consent_at 을 고칠 수 있는" 상태로 돌아간다.
+    expect(revoked.has("authenticated|reservations|update"), "0012 가 0010 의 회수를 중복 실행하면 롤백이 그것을 되살리게 된다").toBe(false);
+    expect(granted.has("authenticated|reservations|update"), "롤백이 0010 이 닫은 문을 되살린다").toBe(false);
+  });
+
+  test("데이터는 건드리지 않는다", () => {
+    const code = sqlCode(DOWN_SQL);
+    for (const forbidden of ["delete from", "truncate table", "drop table", "insert into"]) {
+      expect(code, `롤백이 "${forbidden}" 을 한다`).not.toContain(forbidden);
+    }
+  });
+
+  test("재실행 안전 — grant 는 멱등이고, 표가 없으면 건너뛴다", () => {
+    const code = sqlCode(DOWN_SQL);
+    expect(code, "표 존재 확인 없이 grant 하면 0001 롤백 뒤 재실행에서 죽는다").toContain("to_regclass");
+  });
+});
+
+// =============================================================================
+// 3. supabase/migrations/0013_anon_write_privileges.sql — 텍스트
+//
+//    0012 는 "관리자가 authenticated 로 정말 쓰는 표는 건드리지 않는다" 는 규칙으로 범위를 두 표에 한정했다.
+//    그 규칙은 `authenticated` 에 대한 것이고 `anon` 에는 해당하지 않는다 — 공개 롤은 어떤 표에도 쓰지 않는다.
+//    그래서 0012 뒤에도 `anon` 은 콘텐츠 6표 + `places` 에 insert·update·delete·truncate 를 그대로 갖고 있었다.
+// =============================================================================
+describe("3. 0013_anon_write_privileges.sql", () => {
+  test("존재하고, 0013 번호는 이 파일 하나뿐이다. migrations/ 안에 롤백이 섞여 있지 않다", () => {
+    expect(exists(UP13_SQL), `${UP13_SQL} 이 없다`).toBe(true);
+    const files = readdirSync(path.join(ROOT, "supabase", "migrations"));
+    expect(files.filter((f) => f.startsWith("0013"))).toEqual(["0013_anon_write_privileges.sql"]);
+    expect(files.filter((f) => f.endsWith(".down.sql"))).toEqual([]);
+  });
+
+  test("7표 × 4동작을 `anon` 에서만 회수한다", () => {
+    const revoked = triples(parsePrivStatements(UP13_SQL), "revoke");
+    for (const table of ANON_REVOKE_TABLES) {
+      for (const priv of WRITE_PRIVS) {
+        expect(revoked.has(`anon|${table}|${priv}`), `anon 의 ${table} ${priv} 가 남는다`).toBe(true);
+      }
+    }
+    expect(revoked.size, `회수 삼중항이 ${ANON_REVOKE_TABLES.length} × ${WRITE_PRIVS.length} 가 아니다: ${[...revoked].join(" ")}`).toBe(
+      ANON_REVOKE_TABLES.length * WRITE_PRIVS.length,
+    );
+  });
+
+  test("`authenticated` 는 한 칸도 건드리지 않는다 — 관리자 화면이 그 롤로 쓴다", () => {
+    for (const s of parsePrivStatements(UP13_SQL)) {
+      expect(s.roles, `${s.raw} 가 authenticated 를 건드린다 — 관리자 화면이 죽는다`).not.toContain("authenticated");
+      expect(s.roles, `${s.raw} 가 service_role 을 건드린다`).not.toContain("service_role");
+      expect(s.roles, `${s.raw} 가 public 롤을 건드린다 — 이 파일의 범위가 아니다`).not.toContain("public");
+    }
+  });
+
+  test("select 는 회수하지 않는다 — 공개 사이트가 anon 키로 이 7표를 읽는다", () => {
+    for (const s of parsePrivStatements(UP13_SQL)) {
+      expect(s.privs, `${s.raw} 가 select 를 건드린다`).not.toContain("select");
+      expect(s.privs, `${s.raw} 가 all 로 뭉뚱그린다`).not.toContain("all");
+    }
+    expect(sqlCode(UP13_SQL)).not.toMatch(/revoke\s+all/);
+  });
+
+  test("0012 가 이미 닫은 두 표와 admin_users 는 언급조차 하지 않는다", () => {
+    const code = sqlCode(UP13_SQL);
+    for (const t of OUT_OF_SCOPE_FOR_13) {
+      // 헤더 주석에서는 설명하지만(주석은 stripSqlComments 가 걷어낸다) SQL 본문에는 나오면 안 된다.
+      expect(code, `0013 의 SQL 본문이 ${t} 를 건드린다`).not.toContain(t);
+    }
+  });
+
+  test("부여(grant)는 하나도 없고, 데이터·스키마를 바꾸지 않는다", () => {
+    expect(parsePrivStatements(UP13_SQL).filter((s) => s.verb === "grant")).toEqual([]);
+    const code = sqlCode(UP13_SQL);
+    for (const forbidden of ["create table", "alter table", "drop table", "create policy", "drop policy", "insert into", "delete from", "truncate table", "create or replace function"]) {
+      expect(code, `0013 이 "${forbidden}" 을 한다 — 권한만 건드려야 한다`).not.toContain(forbidden);
+    }
+    expect(code).not.toMatch(/grant\s+(select|insert|update|delete|truncate|all|usage)/);
+  });
+
+  test("스스로 검증한다 — 회수 후 상태가 어긋나면 마이그레이션이 실패한다 (0012 §3 과 같은 규약)", () => {
+    const code = sqlCode(UP13_SQL);
+    expect(code, "has_table_privilege 로 결과를 확인하지 않는다").toContain("has_table_privilege");
+    expect(code, "권한이 남아도 조용히 성공한다 — raise exception 이 없다").toContain("raise exception");
+    // ② anon select 생존 · ③ authenticated CRUD 생존 — 둘 다 "너무 많이 회수하는" 사고를 잡는 검사다.
+    expect(code, "anon select 생존을 확인하지 않는다").toContain("'select'");
+    expect(code, "authenticated 쪽 생존을 확인하지 않는다").toContain("authenticated");
+  });
+
+  test("TRUNCATE 가 왜 특별한지 파일에 적혀 있다 — RLS 는 TRUNCATE 에 관여하지 않는다", () => {
+    // 나머지 세 동작은 공개 정책이 select 뿐이라 0행이 되지만, TRUNCATE 는 정책을 아예 통과하지 않는다.
+    // 이 사실이 파일에 없으면 다음 사람이 "RLS 가 막아 주는데 왜 회수하나" 로 되돌린다.
+    const raw = read(UP13_SQL);
+    expect(raw).toMatch(/TRUNCATE/);
+    expect(raw).toMatch(/RLS[^\n]*TRUNCATE|TRUNCATE[^\n]*RLS/);
+  });
+
+  test("0001~0012 를 수정하지 않는다 — 0013 은 파일 하나를 더할 뿐이다", () => {
+    const twelve = sqlCode(UP_SQL);
+    expect(twelve).toContain("revoke insert, update, delete, truncate on table notifications_log from anon, authenticated");
+    const nine = sqlCode("supabase/migrations/0009_admin_rls.sql");
+    expect(nine).toContain("grant select, insert, update, delete on table notices, popups, gallery, gallery_albums, showcase_routes, vehicles to authenticated");
+  });
+});
+
+// =============================================================================
+// 4. supabase/rollbacks/0013_anon_write_privileges.down.sql — 텍스트
+// =============================================================================
+describe("4. 0013 롤백", () => {
+  test("rollbacks/ 에만 있고, 수동 실행 절차를 헤더에 적는다", () => {
+    expect(exists(DOWN13_SQL), `${DOWN13_SQL} 이 없다`).toBe(true);
+    const raw = read(DOWN13_SQL);
+    expect(raw).toMatch(/migration repair --status reverted 0013/);
+    expect(raw).toMatch(/begin;/);
+    expect(raw).toMatch(/commit;/);
+  });
+
+  test("승인 플래그를 **언제나** 요구한다 — 행 수를 보지 않는다 (0012 롤백과 같은 규약)", () => {
+    const raw = read(DOWN13_SQL);
+    expect(raw).toContain("bestour.rollback_0013_ack");
+    const code = sqlCode(DOWN13_SQL);
+    expect(code).toContain("raise exception");
+    expect(code, "행 수가 승인 조건에 섞여 있다").not.toMatch(/[>)]\s*0\s+and\s+coalesce\s*\(\s*current_setting/);
+    expect(code).toContain("if coalesce(current_setting('bestour.rollback_0013_ack', true), '') <> '1' then");
+  });
+
+  test("대칭 — 0013 이 회수한 것을 정확히 되돌린다(더도 덜도 아니게)", () => {
+    const revoked = triples(parsePrivStatements(UP13_SQL), "revoke");
+    const granted = triples(parsePrivStatements(DOWN13_SQL), "grant");
+    for (const t of revoked) expect(granted.has(t), `0013 이 회수한 ${t} 를 롤백이 되돌리지 않는다`).toBe(true);
+    for (const t of granted) expect(revoked.has(t), `롤백이 0013 이 회수하지 않은 ${t} 를 부여한다`).toBe(true);
+    expect(granted.size).toBe(revoked.size);
+  });
+
+  test("데이터는 건드리지 않고, 표가 없으면 건너뛴다", () => {
+    const code = sqlCode(DOWN13_SQL);
+    for (const forbidden of ["delete from", "truncate table", "drop table", "insert into"]) {
+      expect(code, `롤백이 "${forbidden}" 을 한다`).not.toContain(forbidden);
+    }
+    expect(code, "표 존재 확인 없이 grant 하면 0001·0002·0008 롤백 뒤 재실행에서 죽는다").toContain("to_regclass");
+  });
+});
+
+// =============================================================================
+// 5. DB 실증 — 로컬 스택 + REQUIRE_DB_TESTS=1 에서만. 원격에는 어떤 쓰기도 하지 않는다
+// =============================================================================
+const gate = dbWriteGate();
+const dbEnv = dbSmokeEnv();
+if (!gate.allowed) {
+  console.warn(`[write-privileges.test] DB 실증 블록 skip — ${gate.reason}`);
+}
+
+test("DB 쓰기 가드 — 원격 URL 이면 REQUIRE_DB_TESTS=1 을 강제해도 닫힌다", () => {
+  const forced = dbWriteGate({ NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL, REQUIRE_DB_TESTS: "1" });
+  if (!/^https?:\/\/(127\.0\.0\.1|localhost|kong)(:|\/|$)/i.test(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "")) {
+    expect(forced.allowed).toBe(false);
+    expect(gate.allowed).toBe(false);
+  } else {
+    expect(forced.allowed).toBe(true);
+  }
+});
+
+describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
+  "5. DB — 0012·0013 권한 실증 (로컬 스택 + REQUIRE_DB_TESTS=1)",
+  { timeout: 180_000 },
+  () => {
+    // 이 블록은 pending 통지를 만들고(직접 insert 1건 + definer 함수가 넣는 1건) 몇 개 테스트 동안 들고 있는다.
+    // 그 행은 0005 claim 의 사정권 안이라 outbox.test.ts 의 claim 단언과 겹치면 서로를 깨뜨린다 — 같은 잠금으로 줄 세운다
+    // (tests/helpers/db-lock.ts). definer 가 넣는 행은 next_attempt_at 을 우리가 정할 수 없어 삽입 순간부터 claim 대상이고,
+    // 아래 pushOutOfClaimWindow 는 RPC 왕복이 끝난 뒤에야 민다 — 그 틈을 잠금이 닫는다(P5-9 독립 리뷰 M3).
+    withNotificationsLock();
+    // 같은 블록이 콘텐츠 표 6개(gallery · gallery_albums 포함)에 행을 넣었다 지운다 — 갤러리 표 전체를 단언하는
+    // 블록(home 4-DB)과도 줄 세운다. **순서 고정**: notifications → gallery. 모두가 같은 순서로 잡아야
+    // 순환 대기가 생기지 않는다(tests/helpers/db-lock.ts GALLERY_LOCK 주석, 게이트가 강제한다).
+    withGalleryLock();
+
+    const baseUrl = () => process.env.NEXT_PUBLIC_SUPABASE_URL as string;
+    const serviceHeaders = {
+      apikey: dbEnv.serviceRoleKey,
+      Authorization: `Bearer ${dbEnv.serviceRoleKey}`,
+      "Content-Type": "application/json",
+    };
+    const RUN = randomUUID().replace(/-/g, "").slice(0, 8);
+    const PASSWORD = `p59-${randomUUID()}`;
+    const emailFor = (who: string) => `p59-${RUN}-${who}@example.test`;
+
+    type Res = { status: number; body: unknown };
+    async function call(method: string, url: string, hdrs: Record<string, string>, json?: unknown, prefer?: string): Promise<Res> {
+      const res = await fetch(url, {
+        method,
+        headers: prefer ? { ...hdrs, Prefer: prefer } : hdrs,
+        body: json === undefined ? undefined : JSON.stringify(json),
+      });
+      const text = await res.text();
+      let body: unknown = text;
+      try {
+        body = text ? JSON.parse(text) : null;
+      } catch {
+        // JSON 이 아니면 문자열 그대로
+      }
+      return { status: res.status, body };
+    }
+
+    const rest = (method: string, pathAndQuery: string, json?: unknown, prefer?: string) =>
+      call(method, `${dbEnv.restRoot}${pathAndQuery}`, serviceHeaders, json, prefer);
+
+    const asUser = (token: string, method: string, pathAndQuery: string, json?: unknown, prefer?: string) =>
+      call(
+        method,
+        `${dbEnv.restRoot}${pathAndQuery}`,
+        { apikey: dbEnv.anonKey as string, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        json,
+        prefer,
+      );
+
+    const asAnon = (method: string, pathAndQuery: string, json?: unknown) =>
+      call(method, `${dbEnv.restRoot}${pathAndQuery}`, { apikey: dbEnv.anonKey as string, "Content-Type": "application/json" }, json);
+
+    async function createUser(email: string): Promise<string> {
+      const r = await call("POST", `${baseUrl()}/auth/v1/admin/users`, serviceHeaders, { email, password: PASSWORD, email_confirm: true });
+      expect(r.status, `사용자 생성 실패: ${JSON.stringify(r.body).slice(0, 300)}`).toBeLessThan(300);
+      return (r.body as { id: string }).id;
+    }
+
+    async function signIn(email: string): Promise<string> {
+      const r = await call(
+        "POST",
+        `${baseUrl()}/auth/v1/token?grant_type=password`,
+        { apikey: dbEnv.anonKey as string, "Content-Type": "application/json" },
+        { email, password: PASSWORD },
+      );
+      expect(r.status, `로그인 실패: ${JSON.stringify(r.body).slice(0, 300)}`).toBe(200);
+      return (r.body as { access_token: string }).access_token;
+    }
+
+    /** 공개 접수와 같은 경로 — 서비스 롤 insert (lib/reservations/db.ts). 열 목록은 tests/admin-reservations.test.ts 의 seed 와 같다. */
+    async function seedReservation(tag: string): Promise<string> {
+      const now = new Date();
+      const later = new Date(now.getTime() + 30 * 24 * 3600 * 1000);
+      const ins = await rest(
+        "POST",
+        "/reservations",
+        {
+          public_code: `P59${tag}`.slice(0, 12),
+          status: "new",
+          name: "P59",
+          phone: "010-0000-0000",
+          vehicle_slug: "bus45",
+          purpose_code: "family",
+          origin_code: "SEL",
+          destination_code: "BSN",
+          waypoint_codes: [],
+          trip_type: "oneway",
+          depart_at: later.toISOString(),
+          return_at: null,
+          nights: 0,
+          bus_count: 1,
+          locale: "ko",
+          privacy_consent_at: now.toISOString(),
+          privacy_policy_version: "2026-09-11",
+          marketing_consent_at: null,
+          retention_until: later.toISOString(),
+        },
+        "return=representation",
+      );
+      expect(ins.status, `서비스 롤 접수 경로가 막혔다: ${JSON.stringify(ins.body).slice(0, 300)}`).toBe(201);
+      return (ins.body as { id: string }[])[0].id;
+    }
+
+    /**
+     * 이 파일이 만드는 통지 행은 **claim 대상이 되면 안 된다.**
+     * 0005 의 `claim_pending_notifications` 는 표 전체에서 `status='pending' and next_attempt_at <= now()` 인 행을 집는다 —
+     * 예약·파일을 가리지 않는다. vitest 는 테스트 파일을 병렬로 돌리므로, 이 파일이 pending 행을 살려 두는 동안
+     * tests/outbox.test.ts 의 claim 테스트가 그것을 함께 집어 "2회 claim 에 겹치는 id 0" 단언이 깨진다(실측).
+     * 그래서 여기서 만드는 pending 행은 전부 next_attempt_at 을 먼 미래로 밀어 claim 창 밖에 둔다.
+     * (definer 함수가 넣는 행은 우리가 컬럼을 정할 수 없으므로 호출 직후 서비스 롤로 민다.)
+     */
+    const OUT_OF_CLAIM_WINDOW = new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString();
+    const pushOutOfClaimWindow = (reservationId: string) =>
+      rest("PATCH", `/notifications_log?reservation_id=eq.${reservationId}`, { next_attempt_at: OUT_OF_CLAIM_WINDOW });
+
+    let adminToken = "";
+    let plainToken = "";
+    let adminId = "";
+    let plainId = "";
+    let logId = 0;
+    let resId = "";
+    const madeReservations: string[] = [];
+    const madeNotices: number[] = [];
+    const madePopups: number[] = [];
+
+    test("준비 — 관리자 1명 · 일반 로그인 1명 · 예약 1건 · pending 통지 1건 (전부 서비스 롤로 만든다)", async () => {
+      const probe = await rest("GET", "/reservations?select=id&limit=1");
+      expect(probe.status, "이전 마이그레이션이 적용되지 않았다").toBe(200);
+
+      adminId = await createUser(emailFor("admin"));
+      plainId = await createUser(emailFor("plain"));
+      adminToken = await signIn(emailFor("admin"));
+      plainToken = await signIn(emailFor("plain"));
+      const add = await rest("POST", "/admin_users", { user_id: adminId, email: emailFor("admin"), note: "P5-9 test" });
+      expect(add.status, JSON.stringify(add.body).slice(0, 300)).toBeLessThan(300);
+
+      resId = await seedReservation(`A${RUN.slice(0, 4).toUpperCase()}`);
+      madeReservations.push(resId);
+
+      // 아웃박스 enqueue 와 같은 경로 — 서비스 롤 insert (lib/notify/outbox.ts).
+      const ins = await rest(
+        "POST",
+        "/notifications_log",
+        { reservation_id: resId, event: "created", channel: "sms", to_phone: "+821000000000", template: "created.customer.sms", status: "pending", next_attempt_at: OUT_OF_CLAIM_WINDOW },
+        "return=representation",
+      );
+      expect(ins.status, `서비스 롤 enqueue 경로가 막혔다: ${JSON.stringify(ins.body).slice(0, 300)}`).toBe(201);
+      logId = (ins.body as { id: number }[])[0].id;
+    });
+
+    // -------------------------------------------------------------------------
+    // 3-1. 회수된 쪽 — 거부(4xx)여야 한다. 0012 이전에는 204/201 이었다.
+    // -------------------------------------------------------------------------
+    test("관리자 세션 · notifications_log — insert·update·delete 가 전부 4xx 로 거부된다 (0012 이전엔 update 가 204 였다)", async () => {
+      const up = await asUser(adminToken, "PATCH", `/notifications_log?id=eq.${logId}`, { status: "sent" });
+      expect(up.status, `PATCH 가 거부되지 않았다: ${JSON.stringify(up.body).slice(0, 300)}`).toBeGreaterThanOrEqual(400);
+
+      const del = await asUser(adminToken, "DELETE", `/notifications_log?id=eq.${logId}`);
+      expect(del.status, `DELETE 가 거부되지 않았다: ${JSON.stringify(del.body).slice(0, 300)}`).toBeGreaterThanOrEqual(400);
+
+      const post = await asUser(adminToken, "POST", "/notifications_log", {
+        reservation_id: resId,
+        event: "confirmed",
+        channel: "sms",
+        to_phone: "+821000000001",
+        template: "confirmed.customer.sms",
+        status: "sent",
+      });
+      expect(post.status, `INSERT 가 거부되지 않았다: ${JSON.stringify(post.body).slice(0, 300)}`).toBeGreaterThanOrEqual(400);
+
+      const still = await rest("GET", `/notifications_log?select=status&reservation_id=eq.${resId}`);
+      const rows = still.body as { status: string }[];
+      expect(rows.length, "관리자 세션이 통지를 새로 만들었다").toBe(1);
+      expect(rows[0].status, "관리자 세션이 '보내지 않은 것을 보냈다' 고 적었다").toBe("pending");
+    });
+
+    test("관리자 세션 · reservations — insert·delete 가 4xx 로 거부된다 (update 는 0010 이 이미 닫았다)", async () => {
+      const post = await asUser(adminToken, "POST", "/reservations", { public_code: `P59X${RUN.slice(0, 3)}`, name: "X", phone: "010-0000-0000", vehicle_slug: "bus45", purpose_code: "family", origin_code: "SEL", destination_code: "BSN", trip_type: "oneway", depart_at: new Date(Date.now() + 864e5).toISOString() });
+      expect(post.status, `INSERT 가 거부되지 않았다: ${JSON.stringify(post.body).slice(0, 300)}`).toBeGreaterThanOrEqual(400);
+
+      const del = await asUser(adminToken, "DELETE", `/reservations?id=eq.${resId}`);
+      expect(del.status, `DELETE 가 거부되지 않았다: ${JSON.stringify(del.body).slice(0, 300)}`).toBeGreaterThanOrEqual(400);
+
+      const patch = await asUser(adminToken, "PATCH", `/reservations?id=eq.${resId}`, { retention_until: new Date(Date.now() + 9 * 864e5).toISOString() });
+      expect(patch.status, `UPDATE 가 거부되지 않았다: ${JSON.stringify(patch.body).slice(0, 300)}`).toBeGreaterThanOrEqual(400);
+
+      const still = await rest("GET", `/reservations?select=id,status&id=eq.${resId}`);
+      expect((still.body as unknown[]).length, "관리자 세션이 예약을 지웠다").toBe(1);
+    });
+
+    test("anon 세션도 같다 — 회수는 두 롤 모두에서 이뤄졌다", async () => {
+      const up = await asAnon("PATCH", `/notifications_log?id=eq.${logId}`, { status: "sent" });
+      expect(up.status, `anon PATCH 가 거부되지 않았다: ${JSON.stringify(up.body).slice(0, 300)}`).toBeGreaterThanOrEqual(400);
+      const del = await asAnon("DELETE", `/reservations?id=eq.${resId}`);
+      expect(del.status, `anon DELETE 가 거부되지 않았다: ${JSON.stringify(del.body).slice(0, 300)}`).toBeGreaterThanOrEqual(400);
+    });
+
+    // -------------------------------------------------------------------------
+    // 3-2. 남겨야 하는 쪽 — 정상 경로가 하나도 막히지 않았다
+    // -------------------------------------------------------------------------
+    test("관리자 select 는 그대로 200 — 0009 의 두 정책이 살아 있다", async () => {
+      const log = await asUser(adminToken, "GET", `/notifications_log?select=id,status&id=eq.${logId}`);
+      expect(log.status, JSON.stringify(log.body).slice(0, 300)).toBe(200);
+      expect((log.body as unknown[]).length).toBe(1);
+
+      const res = await asUser(adminToken, "GET", `/reservations?select=id,status&id=eq.${resId}`);
+      expect(res.status, JSON.stringify(res.body).slice(0, 300)).toBe(200);
+      expect((res.body as unknown[]).length).toBe(1);
+    });
+
+    test("명단에 없는 로그인 세션은 여전히 0행 — 권한 회수가 RLS 를 대신하지 않는다", async () => {
+      const r = await asUser(plainToken, "GET", `/reservations?select=id&id=eq.${resId}`);
+      expect(r.status).toBe(200);
+      expect(r.body).toEqual([]);
+    });
+
+    test("서비스 롤 경로는 전부 그대로 — 접수 insert · enqueue insert · 발송기 update · 파기 delete", async () => {
+      // 접수(lib/reservations/db.ts)
+      const extra = await seedReservation(`B${RUN.slice(0, 4).toUpperCase()}`);
+      madeReservations.push(extra);
+
+      // enqueue(lib/notify/outbox.ts)
+      const enq = await rest(
+        "POST",
+        "/notifications_log",
+        { reservation_id: extra, event: "created", channel: "sms", to_phone: "+821000000002", template: "created.customer.sms", status: "pending", next_attempt_at: OUT_OF_CLAIM_WINDOW },
+        "return=representation",
+      );
+      expect(enq.status, JSON.stringify(enq.body).slice(0, 300)).toBe(201);
+      const extraLogId = (enq.body as { id: number }[])[0].id;
+
+      // 발송기(lib/notify/worker.ts) — pending → sent
+      const sent = await rest("PATCH", `/notifications_log?id=eq.${extraLogId}`, { status: "sent", provider_message_id: "p59-local" });
+      expect(sent.status, `발송기의 update 가 막혔다: ${JSON.stringify(sent.body).slice(0, 300)}`).toBeLessThan(300);
+      const after = await rest("GET", `/notifications_log?select=status&id=eq.${extraLogId}`);
+      expect((after.body as { status: string }[])[0].status, "서비스 롤 update 가 0행을 고쳤다").toBe("sent");
+
+      // 파기 크론(lib/retention/purge.ts) — notifications_log 먼저, reservations 다음
+      const delLog = await rest("DELETE", `/notifications_log?reservation_id=eq.${extra}`);
+      expect(delLog.status, JSON.stringify(delLog.body).slice(0, 300)).toBeLessThan(300);
+      const delRes = await rest("DELETE", `/reservations?id=eq.${extra}`);
+      expect(delRes.status, JSON.stringify(delRes.body).slice(0, 300)).toBeLessThan(300);
+      const gone = await rest("GET", `/reservations?select=id&id=eq.${extra}`);
+      expect(gone.body, "서비스 롤 delete 가 0행을 지웠다").toEqual([]);
+      madeReservations.splice(madeReservations.indexOf(extra), 1);
+    });
+
+    test("0010 definer 함수 3종은 그대로 동작한다 — 권한 회수는 소유자 권한 실행을 막지 않는다", async () => {
+      const id = await seedReservation(`C${RUN.slice(0, 4).toUpperCase()}`);
+      madeReservations.push(id);
+
+      // 확정: reservations update + notifications_log insert — 둘 다 authenticated 에게서 회수한 동작이다.
+      const confirm = await asUser(adminToken, "POST", "/rpc/admin_confirm_reservation", { p_id: id, p_memo: "P59" });
+      await pushOutOfClaimWindow(id); // 방금 큐에 쌓인 pending 행을 claim 창 밖으로 (위 주석)
+      expect(confirm.status, `definer 확정이 막혔다: ${JSON.stringify(confirm.body).slice(0, 300)}`).toBe(200);
+      const cRow = (confirm.body as { outcome: string; enqueued: number }[])[0];
+      expect(cRow.outcome).toBe("confirmed");
+      expect(cRow.enqueued, "definer 함수가 notifications_log 에 넣지 못했다").toBe(1);
+
+      // 메모: reservations update 만
+      const memo = await asUser(adminToken, "POST", "/rpc/admin_update_memo", { p_id: id, p_memo: "P59 memo" });
+      expect(memo.status, JSON.stringify(memo.body).slice(0, 300)).toBe(200);
+      expect((memo.body as { outcome: string }[])[0].outcome).toBe("memo_updated");
+
+      // 완료: confirmed → done
+      const done = await asUser(adminToken, "POST", "/rpc/admin_complete_reservation", { p_id: id, p_memo: null });
+      expect(done.status, JSON.stringify(done.body).slice(0, 300)).toBe(200);
+      expect((done.body as { outcome: string }[])[0].outcome).toBe("completed");
+
+      const row = await rest("GET", `/reservations?select=status,admin_memo,confirmed_at&id=eq.${id}`);
+      const got = (row.body as { status: string; admin_memo: string | null; confirmed_at: string | null }[])[0];
+      expect(got.status).toBe("done");
+      expect(got.admin_memo).toBe("P59 memo");
+      expect(got.confirmed_at).not.toBeNull();
+    });
+
+    // -------------------------------------------------------------------------
+    // 5-3. 0013 — anon 의 쓰기는 7표 전부에서 거부된다. authenticated 는 그대로.
+    // -------------------------------------------------------------------------
+    test("anon 세션 · 콘텐츠 6표 + places — update·delete 가 전부 4xx (0013 이전엔 204 였다)", async () => {
+      // 필터는 어느 행에도 맞지 않는 값이다. 0013 이 적용됐으면 권한에서 먼저 막히고,
+      // 만에 하나 적용되지 않았더라도 RLS(공개 정책은 select 뿐)가 0행을 낸다 — 어느 쪽이든 데이터는 안전하다.
+      const NOWHERE: Record<string, string> = {
+        notices: "id=eq.0",
+        popups: "id=eq.0",
+        gallery: "id=eq.0",
+        gallery_albums: "id=eq.0",
+        showcase_routes: "id=eq.0",
+        vehicles: "id=eq.0",
+        places: "code=eq.ZZZ",
+      };
+      for (const table of ANON_REVOKE_TABLES) {
+        const filter = NOWHERE[table];
+        const up = await asAnon("PATCH", `/${table}?${filter}`, { active: false });
+        expect(up.status, `anon 이 ${table} 를 고칠 수 있다(204=0행 성공 포함): ${JSON.stringify(up.body).slice(0, 200)}`).toBeGreaterThanOrEqual(400);
+        const del = await asAnon("DELETE", `/${table}?${filter}`);
+        expect(del.status, `anon 이 ${table} 를 지울 수 있다: ${JSON.stringify(del.body).slice(0, 200)}`).toBeGreaterThanOrEqual(400);
+      }
+    });
+
+    test("콘텐츠 표는 관리자가 여전히 쓴다 — notices·popups insert·update·delete (0013 이 authenticated 를 건드리지 않았음을 실증)", async () => {
+      // notices — 활성 행을 만들지 않는다(active:false). 다른 파일의 "anon 은 활성 행만 본다" 단언과 겹치지 않게.
+      const ins = await asUser(adminToken, "POST", "/notices", { title: `P59-${RUN}`, body: "P5-9", active: false }, "return=representation");
+      expect(ins.status, `관리자 화면이 죽었다 — notices insert: ${JSON.stringify(ins.body).slice(0, 300)}`).toBe(201);
+      const noticeId = (ins.body as { id: number }[])[0].id;
+      madeNotices.push(noticeId);
+
+      const upd = await asUser(adminToken, "PATCH", `/notices?id=eq.${noticeId}`, { title: `P59-${RUN}-edit` });
+      expect(upd.status, JSON.stringify(upd.body).slice(0, 300)).toBeLessThan(300);
+      const check = await rest("GET", `/notices?select=title&id=eq.${noticeId}`);
+      expect((check.body as { title: string }[])[0].title, "관리자 update 가 0행을 고쳤다").toBe(`P59-${RUN}-edit`);
+
+      const del = await asUser(adminToken, "DELETE", `/notices?id=eq.${noticeId}`);
+      expect(del.status, JSON.stringify(del.body).slice(0, 300)).toBeLessThan(300);
+      const gone = await rest("GET", `/notices?select=id&id=eq.${noticeId}`);
+      expect(gone.body, "관리자 delete 가 0행을 지웠다").toEqual([]);
+      madeNotices.splice(madeNotices.indexOf(noticeId), 1);
+
+      // popups — 표를 하나 더 확인한다(0009 §6 의 grant 는 6표를 한 문장으로 준다. 하나가 깨지면 보통 전부 깨진다).
+      const pIns = await asUser(
+        adminToken,
+        "POST",
+        "/popups",
+        { title: `P59-${RUN}`, body: "P5-9", starts_at: "2000-01-01", ends_at: "2000-01-02", active: false },
+        "return=representation",
+      );
+      expect(pIns.status, `관리자 화면이 죽었다 — popups insert: ${JSON.stringify(pIns.body).slice(0, 300)}`).toBe(201);
+      const popupId = (pIns.body as { id: number }[])[0].id;
+      madePopups.push(popupId);
+
+      const pUpd = await asUser(adminToken, "PATCH", `/popups?id=eq.${popupId}`, { body: "P5-9 edit" });
+      expect(pUpd.status, JSON.stringify(pUpd.body).slice(0, 300)).toBeLessThan(300);
+      const pDel = await asUser(adminToken, "DELETE", `/popups?id=eq.${popupId}`);
+      expect(pDel.status, JSON.stringify(pDel.body).slice(0, 300)).toBeLessThan(300);
+      const pGone = await rest("GET", `/popups?select=id&id=eq.${popupId}`);
+      expect(pGone.body, "관리자 delete 가 0행을 지웠다").toEqual([]);
+      madePopups.splice(madePopups.indexOf(popupId), 1);
+    });
+
+    test("공개 사이트 읽기(anon)는 무영향 — 7표 전부 활성 행 조회가 그대로 200", async () => {
+      const paths = [
+        "/notices?select=id&active=eq.true",
+        "/popups?select=id&active=eq.true",
+        "/showcase_routes?select=id&active=eq.true",
+        "/vehicles?select=id&active=eq.true",
+        "/gallery?select=id&active=eq.true",
+        "/gallery_albums?select=id&active=eq.true",
+        "/places?select=code&active=eq.true",
+      ];
+      for (const p of paths) {
+        const r = await asAnon("GET", p);
+        expect(r.status, `${p} 가 ${r.status} 를 냈다: ${JSON.stringify(r.body).slice(0, 200)}`).toBe(200);
+      }
+      // 시드 데이터가 실제로 읽히는지도 본다 — 200 만으로는 "권한은 있는데 0행" 을 구분하지 못한다.
+      const places = await asAnon("GET", "/places?select=code&active=eq.true");
+      expect((places.body as unknown[]).length, "anon 이 places 를 읽지 못한다 — 지도 히어로가 빈다").toBeGreaterThan(0);
+      const routes = await asAnon("GET", "/showcase_routes?select=id&active=eq.true");
+      expect((routes.body as unknown[]).length, "anon 이 showcase_routes 를 읽지 못한다 — 홈의 대표 노선이 빈다").toBeGreaterThan(0);
+    });
+
+    test("정리 — 만든 것을 전부 지운다", async () => {
+      for (const id of madeReservations) {
+        await rest("DELETE", `/notifications_log?reservation_id=eq.${id}`);
+        await rest("DELETE", `/reservations?id=eq.${id}`);
+      }
+      for (const id of madeNotices) await rest("DELETE", `/notices?id=eq.${id}`);
+      for (const id of madePopups) await rest("DELETE", `/popups?id=eq.${id}`);
+      await rest("DELETE", `/admin_users?user_id=eq.${adminId}`);
+      for (const id of [adminId, plainId]) {
+        if (id) await call("DELETE", `${baseUrl()}/auth/v1/admin/users/${id}`, serviceHeaders);
+      }
+      const left = await rest("GET", `/reservations?select=id&public_code=like.P59*`);
+      expect(left.body, "정리되지 않은 예약이 남았다").toEqual([]);
+    });
+  },
+);
+
+// =============================================================================
+// 6. 권한 실측 — pg_catalog 를 직접 본다 (PostgREST 로는 information_schema 를 읽을 수 없다)
+//
+//    §5 는 행동(PostgREST 응답 코드)을 보고 여기는 권한 상태 자체를 본다. 둘이 필요한 이유는 서로의 사각을 덮기 때문이다:
+//    행동만 보면 "권한은 남았는데 RLS 가 막아 4xx" 를 구분하지 못하고, 상태만 보면 "권한은 없는데 다른 경로로 뚫린다" 를 놓친다.
+// =============================================================================
+describe.skipIf(!gate.allowed)("6. DB — 권한 행렬 실측 (로컬 스택)", { timeout: 300_000 }, () => {
+  let verdict = "";
+
+  beforeAll(() => {
+    verdict = runLocalSql(
+      [
+        "select",
+        // ① 0012 회수 대상: anon·authenticated 에게 두 개인정보 표의 쓰기 권한이 하나도 남으면 안 된다.
+        "  coalesce((select 'PII_WRITE_LEAK ' || string_agg(format('%s/%s/%s', r.role, t.tbl, p.priv), ' ')",
+        "     from (values ('anon'),('authenticated')) r(role)",
+        "     cross join (values ('public.reservations'),('public.notifications_log')) t(tbl)",
+        "     cross join (values ('insert'),('update'),('delete'),('truncate')) p(priv)",
+        "    where has_table_privilege(r.role, t.tbl, p.priv)), 'PII_WRITE_NONE') as leaked,",
+        // ② 0013 회수 대상: anon 에게 콘텐츠 6표 + places 의 쓰기 권한이 하나도 남으면 안 된다.
+        "  coalesce((select 'ANON_WRITE_LEAK ' || string_agg(format('%s/%s', t.tbl, p.priv), ' ')",
+        "     from (values ('public.notices'),('public.popups'),('public.gallery'),('public.gallery_albums'),('public.showcase_routes'),('public.vehicles'),('public.places')) t(tbl)",
+        "     cross join (values ('insert'),('update'),('delete'),('truncate')) p(priv)",
+        "    where has_table_privilege('anon', t.tbl, p.priv)), 'ANON_WRITE_NONE') as anon_leaked,",
+        // ③ 남아야 하는 것: 관리자 select 2표 · 공개 select 7표 · 서비스 롤의 두 표 쓰기
+        "  coalesce((select 'MISSING ' || string_agg(format('%s/%s/%s', r.role, r.tbl, r.priv), ' ')",
+        "     from (values ('authenticated','public.reservations','select'),",
+        "                  ('authenticated','public.notifications_log','select'),",
+        "                  ('anon','public.notices','select'),",
+        "                  ('anon','public.popups','select'),",
+        "                  ('anon','public.gallery','select'),",
+        "                  ('anon','public.gallery_albums','select'),",
+        "                  ('anon','public.showcase_routes','select'),",
+        "                  ('anon','public.vehicles','select'),",
+        "                  ('anon','public.places','select'),",
+        "                  ('service_role','public.reservations','insert'),",
+        "                  ('service_role','public.reservations','delete'),",
+        "                  ('service_role','public.notifications_log','insert'),",
+        "                  ('service_role','public.notifications_log','update'),",
+        "                  ('service_role','public.notifications_log','delete')) r(role, tbl, priv)",
+        "    where not has_table_privilege(r.role, r.tbl, r.priv)), 'MISSING_NONE') as missing,",
+        // ④ 관리자 화면: 콘텐츠 6표의 authenticated CRUD 는 0013 뒤에도 멀쩡해야 한다.
+        "  coalesce((select 'CONTENT_BROKEN ' || string_agg(format('%s/%s', t.tbl, p.priv), ' ')",
+        "     from (values ('public.notices'),('public.popups'),('public.gallery'),('public.gallery_albums'),('public.showcase_routes'),('public.vehicles')) t(tbl)",
+        "     cross join (values ('select'),('insert'),('update'),('delete')) p(priv)",
+        "    where not has_table_privilege('authenticated', t.tbl, p.priv)), 'CONTENT_OK') as content;",
+      ].join("\n"),
+    );
+  }, 300_000);
+
+  test("anon·authenticated 에게 reservations·notifications_log 의 쓰기 권한이 하나도 없다 (0012)", () => {
+    expect(verdict, verdict).toContain("PII_WRITE_NONE");
+  });
+
+  test("anon 에게 콘텐츠 6표 + places 의 쓰기 권한이 하나도 없다 (0013)", () => {
+    expect(verdict, verdict).toContain("ANON_WRITE_NONE");
+  });
+
+  test("남겨야 하는 권한은 전부 남아 있다 — 관리자 select · 공개 select 7표 · 서비스 롤 쓰기", () => {
+    expect(verdict, verdict).toContain("MISSING_NONE");
+  });
+
+  test("콘텐츠 6표의 authenticated CRUD 는 멀쩡하다 — 관리자 화면이 살아 있다", () => {
+    expect(verdict, verdict).toContain("CONTENT_OK");
+  });
+});
