@@ -17,10 +17,11 @@
  * middleware.ts matcher 가 /api 를 제외하므로 이 경로는 로케일 리다이렉트를 받지 않는다.
  * 서비스 롤 클라이언트(lib/supabase/server.ts)는 서버 전용 — 이 파일은 Route Handler 라 서버에서만 실행된다.
  */
-import { timingSafeEqual } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 
 import { structuredLog, type StructuredLogEntry } from "@/lib/log";
 import { memorySender, unconfiguredSender, type NotificationSender } from "@/lib/notify/sender";
+import { solapiSender } from "@/lib/notify/solapi";
 import { runNotificationWorker, supabaseWorkerDb } from "@/lib/notify/worker";
 import { createServiceClient } from "@/lib/supabase/server";
 
@@ -46,20 +47,37 @@ function json(body: unknown, status: number): Response {
 /**
  * sender 선택 — env 를 보는 곳은 이 함수뿐이다.
  *
- * P4-2 인계: 제공자 어댑터(lib/notify/solapi.ts 예정)가 생기면 **이 함수 첫 줄에** 분기 하나를 추가한다:
- *   if (process.env.SOLAPI_API_KEY && process.env.SOLAPI_API_SECRET) return solapiSender({ ... });
- * 키가 비어 있으면 아래로 떨어져 unconfigured 가 된다 — 발송기는 claim 하지 않고 attempts 를 태우지 않는다.
+ * **우선순위: 명시적 지시(NOTIFY_SENDER) > 우연히 존재하는 설정(SOLAPI 키).**
+ * P4-1 §6 인계는 SOLAPI 분기(P4-2)를 첫 줄에 두라고 했지만 컨트롤러가 2026-09-15 에 뒤집었다. 근거: 실키가 `.env.local` 에 남아 있는
+ * 개발자가 `NOTIFY_SENDER=memory` 를 **일부러 켰는데도** 실제 문자가 실제 번호로 나간다 — 사람이 적은 지시를, 그저 존재할 뿐인
+ * 설정이 조용히 덮는 형태다. 운영은 어차피 memory 를 거부하므로(아래) 이 순서 변경으로 약해지는 것은 없다.
  *
  * NOTIFY_SENDER="memory": 인메모리 sender(실제 발송 없이 sent 처리) — 로컬 스택 실증 전용. 운영에서 켜지면 고객이 문자를 못 받는데
- * 행은 sent 가 된다(ADR-7 이 막으려던 "조용히 사라짐"). 그래서 VERCEL_ENV=production 이면 무시하고 warn 을 남긴다.
+ * 행은 sent 가 된다(ADR-7 이 막으려던 "조용히 사라짐"). 그래서 VERCEL_ENV=production 이면 **그 지시만 무시하고**(warn 한 줄)
+ * 아래 선택을 계속한다 — 운영에서 memory 오설정이 발송 자체를 멈추게 하지는 않는다.
+ *
+ * SOLAPI 키 3종(키·시크릿·발신번호)이 전부 있으면 제공자 어댑터를, 하나라도 비면 unconfigured 를 돌려준다 — 발송기는 claim 하지
+ * 않고 attempts 를 태우지 않는다. 어댑터 자신도 같은 규칙을 한 겹 더 건다: 문안 변수 포트(solapi.ts TemplateVarsPort)가 아직
+ * 없으므로 키가 다 있어도 `configured`=false 라 claim 은 일어나지 않는다.
  */
 function selectSender(): NotificationSender {
   if (process.env.NOTIFY_SENDER === "memory") {
-    if (process.env.VERCEL_ENV === "production") {
-      structuredLog({ level: "warn", event: "notify.memory_sender_refused" });
-      return unconfiguredSender();
-    }
-    return memorySender();
+    if (process.env.VERCEL_ENV !== "production") return memorySender();
+    // 운영에서는 이 지시를 무시하고 아래 선택을 계속한다(키가 있으면 제공자, 없으면 unconfigured).
+    structuredLog({ level: "warn", event: "notify.memory_sender_refused" });
+  }
+  const { SOLAPI_API_KEY, SOLAPI_API_SECRET, SMS_SENDER } = process.env;
+  if (SOLAPI_API_KEY && SOLAPI_API_SECRET && SMS_SENDER) {
+    return solapiSender({
+      apiKey: SOLAPI_API_KEY,
+      apiSecret: SOLAPI_API_SECRET,
+      from: SMS_SENDER,
+      fetch: globalThis.fetch,
+      now: () => new Date(),
+      randomBytes: (n) => randomBytes(n),
+      log: structuredLog,
+      // vars: 문안 변수 조회 포트 — 아직 구현이 없다. 없으면 configured=false 라 claim 이 일어나지 않는다(의도된 안전 상태).
+    });
   }
   return unconfiguredSender();
 }
