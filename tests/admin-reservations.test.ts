@@ -747,19 +747,20 @@ describe("6. 정적 규약", () => {
     }
   });
 
-  // P5-4 가 팝업 탭을, P5-5·P5-6 이 공지·대표 노선 탭을 켰다
-  // (tests/admin-popups.test.ts · admin-notices.test.ts · admin-routes.test.ts §4 가 각 탭의 화면·액션을 단언한다).
-  // 남은 하나(갤러리)는 P6-2 가 자기 차례에 켠다 — 그때 이 줄이 다시 실패해야 한다.
-  test("탭 — 갤러리만 자리를 지키고 나머지 4개는 켜져 있다 (P6-2 가 켠다)", async () => {
+  // P5-4 가 팝업 탭을, P5-5·P5-6 이 공지·대표 노선 탭을, P6-2 가 마지막으로 갤러리 탭을 켰다
+  // (tests/admin-popups.test.ts · admin-notices.test.ts · admin-routes.test.ts · admin-gallery.test.ts 가 각 탭의 화면·액션을 단언한다).
+  // 이제 자리만 지키는 탭은 없다 — aria-disabled 분기는 그대로 두되(다음 탭이 생길 자리) 켜진 목록이 전부여야 한다.
+  test("탭 — 다섯 탭이 전부 켜져 있다", async () => {
     const { ADMIN_TABS } = await import("@/components/admin/tabs");
     expect(ADMIN_TABS.map((t) => t.key)).toEqual(["reservations", "popups", "notices", "gallery", "routes"]);
     expect(ADMIN_TABS.filter((t) => t.ready).map((t) => t.href)).toEqual([
       "/admin/reservations",
       "/admin/popups",
       "/admin/notices",
+      "/admin/gallery",
       "/admin/routes",
     ]);
-    expect(ADMIN_TABS.filter((t) => !t.ready).map((t) => t.key)).toEqual(["gallery"]);
+    expect(ADMIN_TABS.filter((t) => !t.ready).map((t) => t.key)).toEqual([]);
     const ui = stripComments(read(TABS_UI));
     expect(ui.split("\n")[0].trim()).toMatch(/^["']use client["'];?$/);
     expect(ui).toMatch(/aria-disabled/);

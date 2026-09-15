@@ -22,6 +22,6 @@ export const ADMIN_TABS: readonly AdminTab[] = [
   { key: "reservations", href: "/admin/reservations", ready: true },
   { key: "popups", href: "/admin/popups", ready: true },
   { key: "notices", href: "/admin/notices", ready: true },
-  { key: "gallery", href: "/admin/gallery", ready: false },
+  { key: "gallery", href: "/admin/gallery", ready: true },
   { key: "routes", href: "/admin/routes", ready: true },
 ];

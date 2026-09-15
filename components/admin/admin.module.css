@@ -514,6 +514,104 @@
   background: var(--bg-subtle);
 }
 
+/* ── 갤러리 (P6-2) ───────────────────────────────────────────────────────
+ * 업로더는 진행 상태를 **줄마다** 보여 준다. 30장을 한 번에 올리면 어느 장이 실패했는지가 유일하게 중요한 정보라
+ * 전체 진행률 하나로 뭉개지 않는다. 상태는 색이 아니라 배지와 글자로 구분한다(팔레트에 상태색이 없다).
+ * 사진 그리드는 카드 하나가 한 장이다 — 375px 에서 1열, 넓어지면 자동으로 열이 늘어난다(auto-fill).
+ */
+.uploader {
+  margin: 0;
+}
+.uploadList {
+  list-style: none;
+  margin: var(--space-stack-sm) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-stack-xs);
+}
+.uploadItem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  padding: var(--space-stack-xs) var(--space-inline-xs);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  font-size: 14px;
+}
+.uploadItem[data-state="failed"] {
+  border-width: 2px;
+  border-color: var(--border-strong);
+}
+.uploadName {
+  font-weight: 700;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+.uploadMessage {
+  flex: 1 1 100%;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+.photoGrid {
+  list-style: none;
+  margin: var(--space-stack-md) 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: var(--space-inline-sm);
+}
+.photoCard {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-inline-sm);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+  background: var(--bg-surface);
+}
+.photoCard[data-active="false"] {
+  background: var(--bg-subtle);
+}
+.photoThumb {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-stack-xs);
+  margin: 0 0 var(--space-stack-sm);
+}
+.photoImg {
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+}
+/* 파일이 없는 행 — 삭제가 중간에 멈춘 흔적이다. 빈 칸으로 두지 않고 무엇을 하면 되는지 적는다 */
+.photoMissing {
+  margin: 0;
+  padding: var(--space-stack-sm) var(--space-inline-sm);
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.albumList {
+  list-style: none;
+  margin: var(--space-stack-md) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-stack-sm);
+}
+.albumRow {
+  padding: var(--space-inline-sm);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+}
+
 @media (min-width: 768px) {
   .dl {
     grid-template-columns: 1fr 1fr;

@@ -470,13 +470,14 @@ describe("4. 정적 규약", () => {
     expect(exists("components/admin/HomePopup.tsx"), "관리자 전용 사본을 만들지 않는다").toBe(false);
   });
 
-  // P5-5·P5-6 이 공지·대표 노선을 켰다(각 탭의 단언은 그 태스크의 테스트 파일에 있다). 갤러리는 P6-2 몫이다.
-  test("탭 — 팝업이 켜졌고 갤러리만 자리를 지킨다", async () => {
+  // P5-5·P5-6 이 공지·대표 노선을, P6-2 가 마지막으로 갤러리를 켰다(각 탭의 단언은 그 태스크의 테스트 파일에 있다).
+  test("탭 — 팝업이 켜졌고 다섯 탭 전부 ready 다", async () => {
     const { ADMIN_TABS } = await import("@/components/admin/tabs");
     expect(ADMIN_TABS.filter((t) => t.ready).map((t) => t.href)).toEqual([
       "/admin/reservations",
       "/admin/popups",
       "/admin/notices",
+      "/admin/gallery",
       "/admin/routes",
     ]);
     expect(ADMIN_TABS.find((t) => t.key === "popups")?.href).toBe(ADMIN_POPUPS_PATH);

@@ -123,6 +123,21 @@ file_size_limit = "50MiB"
 # allowed_mime_types = ["image/png", "image/jpeg"]
 # objects_path = "./images"
 
+# P6-2 갤러리 버킷 두 개 — **로컬 스택 전용 선언**이다.
+# 원격 프로젝트에는 컨트롤러가 2026-09-14 에 같은 설정으로 손수 만들어 뒀고(브리프), 마이그레이션 0011 은
+# 버킷을 만들지 않고 정책만 건다. 그런데 CI db-test(`supabase start` + `db reset`)의 로컬 스택에는 버킷이 없어서
+# 이 선언이 없으면 tests/admin-gallery.test.ts §8 의 스토리지 정책 실증이 "버킷 없음"으로 죽는다.
+# 상한 20MB·허용 형식 5종은 스펙 §13.9 (4) 그대로이고 원격 버킷 설정과 같은 값이다.
+[storage.buckets.gallery]
+public = true
+file_size_limit = "20MiB"
+allowed_mime_types = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]
+
+[storage.buckets.gallery-originals]
+public = false
+file_size_limit = "20MiB"
+allowed_mime_types = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]
+
 # Allow connections via S3 compatible clients
 [storage.s3_protocol]
 enabled = true

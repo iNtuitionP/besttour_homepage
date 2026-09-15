@@ -503,12 +503,13 @@ describe("4. 정적 규약", () => {
     expect(pub).not.toMatch(/insert\(|update\(|delete\(/);
   });
 
-  test("탭 — 대표 노선이 켜졌고 갤러리만 자리를 지킨다 (P6-2 가 켠다)", async () => {
+  test("탭 — 대표 노선이 켜졌고 다섯 탭 전부 ready 다 (P6-2 가 갤러리를 켰다)", async () => {
     const { ADMIN_TABS } = await import("@/components/admin/tabs");
     expect(ADMIN_TABS.filter((t) => t.ready).map((t) => t.href)).toEqual([
       "/admin/reservations",
       "/admin/popups",
       "/admin/notices",
+      "/admin/gallery",
       "/admin/routes",
     ]);
     expect(ADMIN_TABS.find((t) => t.key === "routes")?.href).toBe(ADMIN_ROUTES_PATH);
