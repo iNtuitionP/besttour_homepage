@@ -23,6 +23,7 @@ import { WithdrawalNotice } from "@/components/quote/WithdrawalNotice";
 import { TURNSTILE_ACTION } from "@/lib/guard";
 import { COMPANY, LEGAL_LINKS, PRIVACY_NOTICE } from "@/lib/legal/disclosures";
 import { getVehicles } from "@/lib/queries/vehicles";
+import { canonicalUrl } from "@/lib/site-url";
 
 import s from "@/components/quote/quote.module.css";
 
@@ -37,6 +38,8 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   return {
     title: t("title", { brand: COMPANY.brandName }),
     description: t("description"),
+    // 프리필 쿼리(`?vehicle=`·`?from=` — components/quote/prefill.ts)가 붙어도 정본은 `/quote` 하나다.
+    alternates: { canonical: canonicalUrl("/quote") },
   };
 }
 

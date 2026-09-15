@@ -13,6 +13,7 @@ import { getTranslations, setRequestLocale } from "next-intl/server";
 import { CheckForm } from "@/components/reservation-check/CheckForm";
 import { parsePreviewResult } from "@/components/reservation-check/preview-result";
 import { COMPANY, VERBATIM } from "@/lib/legal/disclosures";
+import { canonicalUrl } from "@/lib/site-url";
 
 import s from "@/components/quote/quote.module.css";
 import c from "@/components/reservation-check/check.module.css";
@@ -26,6 +27,8 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   return {
     title: t("title", { brand: COMPANY.brandName }),
     description: t("description"),
+    // 옛 게시판(`?bo_table=confirm`)의 301 목적지 — 정본은 쿼리 없는 `/reservation/check`.
+    alternates: { canonical: canonicalUrl("/reservation/check") },
   };
 }
 

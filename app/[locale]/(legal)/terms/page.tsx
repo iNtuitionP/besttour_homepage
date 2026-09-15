@@ -7,11 +7,14 @@ import { setRequestLocale } from "next-intl/server";
 import { LegalArticle } from "@/components/legal/LegalArticle";
 import { LegalPageHeader } from "@/components/legal/LegalPageHeader";
 import { LEGAL_PAGES, TERMS } from "@/lib/legal/disclosures";
+import { canonicalUrl } from "@/lib/site-url";
 
 export function generateMetadata(): Metadata {
   return {
     title: LEGAL_PAGES.terms.title,
     robots: { index: true, follow: true },
+    // `/en/terms` 도 같은 한국어를 렌더한다(법정 문서의 진실은 ko) — 정본은 `/terms` 하나다.
+    alternates: { canonical: canonicalUrl("/terms") },
   };
 }
 

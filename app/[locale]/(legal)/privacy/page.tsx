@@ -17,11 +17,14 @@ import {
   PRIVACY_POLICY_SECTIONS,
   PROCESSORS,
 } from "@/lib/legal/disclosures";
+import { canonicalUrl } from "@/lib/site-url";
 
 export function generateMetadata(): Metadata {
   return {
     title: LEGAL_PAGES.privacy.title,
     robots: { index: true, follow: true },
+    // `/en/privacy` 도 같은 한국어를 렌더한다 — 정본은 `/privacy` 하나다.
+    alternates: { canonical: canonicalUrl("/privacy") },
   };
 }
 

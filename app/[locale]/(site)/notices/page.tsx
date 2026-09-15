@@ -13,6 +13,7 @@ import { NoticeList } from "@/components/pages/NoticeList";
 import { PageHeader } from "@/components/pages/PageHeader";
 import { COMPANY } from "@/lib/legal/disclosures";
 import { getNotices } from "@/lib/queries";
+import { canonicalUrl } from "@/lib/site-url";
 
 import h from "@/components/home/home.module.css";
 import p from "@/components/pages/pages.module.css";
@@ -28,6 +29,8 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   return {
     title: t("title", { brand: COMPANY.brandName }),
     description: t("description"),
+    // 옛 게시판(`?bo_table=notice`)의 301 목적지 — 정본은 쿼리 없는 `/notices`.
+    alternates: { canonical: canonicalUrl("/notices") },
   };
 }
 

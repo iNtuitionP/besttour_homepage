@@ -21,12 +21,15 @@ import {
   QUOTE_BASIS,
   VERBATIM,
 } from "@/lib/legal/disclosures";
+import { canonicalUrl } from "@/lib/site-url";
 import styles from "@/components/legal/legal.module.css";
 
 export function generateMetadata(): Metadata {
   return {
     title: LEGAL_PAGES.guide.title,
     robots: { index: true, follow: true },
+    // 옛 견적 안내(`?bo_page=estimate`)의 301 목적지. `/en/guide` 도 같은 한국어를 렌더하므로 정본은 여기 하나다.
+    alternates: { canonical: canonicalUrl("/guide") },
   };
 }
 

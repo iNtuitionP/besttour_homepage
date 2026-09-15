@@ -15,6 +15,7 @@ import { PageHeader } from "@/components/pages/PageHeader";
 import { Link } from "@/i18n/navigation";
 import { COMPANY } from "@/lib/legal/disclosures";
 import { getGallery } from "@/lib/queries";
+import { canonicalUrl } from "@/lib/site-url";
 
 import h from "@/components/home/home.module.css";
 import p from "@/components/pages/pages.module.css";
@@ -30,6 +31,8 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   return {
     title: t("title", { brand: COMPANY.brandName }),
     description: t("description"),
+    // 옛 게시판(`?bo_table=thema1`)의 301 목적지 — 정본은 쿼리 없는 `/gallery`.
+    alternates: { canonical: canonicalUrl("/gallery") },
   };
 }
 

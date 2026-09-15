@@ -32,6 +32,7 @@ import { COMPANY } from "@/lib/legal/disclosures";
 import { getActivePopup, getGallery, getNotices, getShowcaseRoutes, getVehicles, QUERY_TAGS } from "@/lib/queries";
 import { getRecentReservationsMasked } from "@/lib/queries/recent";
 import { mapRecentRows } from "@/lib/recent-feed";
+import { canonicalUrl } from "@/lib/site-url";
 
 import h from "@/components/home/home.module.css";
 
@@ -58,6 +59,8 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   return {
     title: t("title", { brand: COMPANY.brandName }),
     description: t("description"),
+    // 정본은 로케일 prefix 없는 한국어 경로. `/en` 도 여기를 가리킨다(en.json 이 비어 있어 같은 문서다 — canonicalUrl 주석).
+    alternates: { canonical: canonicalUrl("/") },
   };
 }
 

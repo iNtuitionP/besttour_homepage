@@ -19,6 +19,7 @@ import { splitParagraphs } from "@/components/pages/paragraphs";
 import { Link } from "@/i18n/navigation";
 import { COMPANY } from "@/lib/legal/disclosures";
 import { getNotice } from "@/lib/queries";
+import { canonicalUrl } from "@/lib/site-url";
 
 import h from "@/components/home/home.module.css";
 import s from "@/components/home/Sections.module.css";
@@ -43,11 +44,14 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   ]);
   if (!notice) {
     // 404 문서의 제목 — 목록 제목으로. 색인 금지.
+    // canonical 은 내지 않는다: 색인하지 말라면서 정본을 알려 주는 것은 모순이고, 없는 문서에는 정본이 없다.
     return { title: tList("title", { brand: COMPANY.brandName }), robots: { index: false, follow: false } };
   }
   return {
     title: t("title", { title: notice.title, brand: COMPANY.brandName }),
     description: t("description"),
+    // 정본은 조회한 행의 id — 라우트 파라미터(`?from=list` 같은 유입 쿼리·비정규 표기)를 그대로 쓰지 않는다.
+    alternates: { canonical: canonicalUrl(`/notices/${notice.id}`) },
   };
 }
 

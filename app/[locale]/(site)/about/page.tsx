@@ -21,6 +21,7 @@ import { LegalRecordList } from "@/components/legal/LegalTable";
 import { menuLabel } from "@/components/pages/menu-label";
 import { PageHeader } from "@/components/pages/PageHeader";
 import { COMPANY, LEGAL_LABELS } from "@/lib/legal/disclosures";
+import { canonicalUrl } from "@/lib/site-url";
 
 import h from "@/components/home/home.module.css";
 import p from "@/components/pages/pages.module.css";
@@ -40,6 +41,8 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   return {
     title: t("title", { brand: COMPANY.brandName }),
     description: t("description"),
+    // 옛 URL 301 이 `?bo_page=greeting`·`?bo_page=map` 을 데려온다 — 정본은 쿼리 없는 `/about` 하나다.
+    alternates: { canonical: canonicalUrl("/about") },
   };
 }
 

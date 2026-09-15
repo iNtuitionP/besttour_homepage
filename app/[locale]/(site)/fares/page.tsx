@@ -20,6 +20,7 @@ import { PageHeader } from "@/components/pages/PageHeader";
 import { Link } from "@/i18n/navigation";
 import { COMPANY, LEGAL_LABELS, PAYMENT, QUOTE_BASIS, VERBATIM } from "@/lib/legal/disclosures";
 import { getShowcaseRoutes } from "@/lib/queries";
+import { canonicalUrl } from "@/lib/site-url";
 
 import h from "@/components/home/home.module.css";
 import s from "@/components/home/Sections.module.css";
@@ -36,6 +37,8 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   return {
     title: t("title", { brand: COMPANY.brandName }),
     description: t("description"),
+    // 옛 요금표(`?bo_page=intro11`)의 301 목적지 — 정본은 쿼리 없는 `/fares`.
+    alternates: { canonical: canonicalUrl("/fares") },
   };
 }
 

@@ -17,6 +17,7 @@ import { menuLabel } from "@/components/pages/menu-label";
 import { PageHeader } from "@/components/pages/PageHeader";
 import { COMPANY, INSURANCE } from "@/lib/legal/disclosures";
 import { getVehicles } from "@/lib/queries";
+import { canonicalUrl } from "@/lib/site-url";
 
 import h from "@/components/home/home.module.css";
 import p from "@/components/pages/pages.module.css";
@@ -32,6 +33,8 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   return {
     title: t("title", { brand: COMPANY.brandName }),
     description: t("description"),
+    // 옛 차종 10 페이지(`?bo_page=intro1..10`)가 전부 여기로 301 된다 — 정본은 쿼리 없는 `/fleet` 하나다.
+    alternates: { canonical: canonicalUrl("/fleet") },
   };
 }
 
