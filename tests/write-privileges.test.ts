@@ -73,7 +73,7 @@ import { beforeAll, describe, expect, test } from "vitest";
 import { withGalleryLock, withNotificationsLock, withShowcaseRoutesLock } from "./helpers/db-lock";
 import { expectPermissionDenied } from "./helpers/expect-denied";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
-import { runLocalSql, runLocalSqlExpectingError } from "./helpers/local-stack-sql";
+import { runLocalSql, runLocalSqlExpectingError, runLocalSuperuserSqlExpectingError } from "./helpers/local-stack-sql";
 import { type SqlDataMode, sqlView, stripComments } from "./helpers/strip-comments";
 
 // =============================================================================
@@ -1292,6 +1292,11 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
         made.unshift({ table: "gallery", id: photoId });
         const gUpd = await asUser(adminToken, "PATCH", `/gallery?id=eq.${photoId}`, { caption: "P5-15" }, "return=representation");
         expect(gUpd.status, `0019 뒤 관리자 gallery update: ${JSON.stringify(gUpd.body).slice(0, 300)}`).toBe(200);
+        // astra R2 P2-D — 200 만으로는 RLS 가 걸러 낸 `[]`(0행 갱신)도 통과한다. 바뀐 행 1개와 caption 을 본다.
+        const gRows = gUpd.body as { id: number; caption: string | null }[];
+        expect(gRows.length, `gallery update 가 ${gRows.length}행을 고쳤다(RLS 가 걸렀나): ${JSON.stringify(gUpd.body).slice(0, 300)}`).toBe(1);
+        expect(gRows[0].id).toBe(photoId);
+        expect(gRows[0].caption, "gallery update 가 caption 을 바꾸지 않았다").toBe("P5-15");
 
         // 노선 — 행 수를 바꾸지 않는다(§5-4 의 사유). 실제 관리 화면과 같은 update 를 치고 되돌린다.
         const before = await rest("GET", "/showcase_routes?select=id,sort&origin_code=eq.ICN&destination_code=eq.SEL");
@@ -1689,64 +1694,13 @@ describe("8. 0016 롤백", () => {
 // =============================================================================
 describe.skipIf(!gate.allowed)("9. DB — 0016 권한·함수 행렬 실측 (로컬 스택)", { timeout: 300_000 }, () => {
   let verdict = "";
-  const SEVEN =
-    "(values ('public.notices'),('public.popups'),('public.gallery'),('public.gallery_albums'),('public.showcase_routes'),('public.vehicles'),('public.places'))";
 
   beforeAll(() => {
-    verdict = runLocalSql(
-      [
-        "select",
-        // ① RLS 가 막지 못하는 셋이 authenticated 에게 남았는가 (표 단위 + 컬럼 단위 references).
-        "  coalesce((select 'RLS_BLIND_LEAK ' || string_agg(format('%s/%s', t.tbl, p.priv), ' ')",
-        `     from ${SEVEN} t(tbl)`,
-        "     cross join (values ('truncate'),('trigger'),('references')) p(priv)",
-        "    where has_table_privilege('authenticated', t.tbl, p.priv)",
-        "       or (p.priv = 'references' and has_any_column_privilege('authenticated', t.tbl, 'references'))), 'RLS_BLIND_NONE') as blind,",
-        // ② anon 은 일곱 표에서 select 만 갖는다.
-        "  coalesce((select 'ANON_EXTRA ' || string_agg(format('%s/%s', t.tbl, p.priv), ' ')",
-        `     from ${SEVEN} t(tbl)`,
-        "     cross join (values ('insert'),('update'),('delete'),('truncate'),('trigger'),('references')) p(priv)",
-        "    where has_table_privilege('anon', t.tbl, p.priv)), 'ANON_SELECT_ONLY') as anon_extra,",
-        // ③ places 의 쓰기 셋은 authenticated 에게서 사라졌고 select 는 두 롤 모두 살아 있다.
-        "  coalesce((select 'PLACES_WRITE_LEAK ' || string_agg(p.priv, ' ')",
-        "     from (values ('insert'),('update'),('delete')) p(priv)",
-        "    where has_table_privilege('authenticated', 'public.places', p.priv)), 'PLACES_WRITE_NONE') as places_write,",
-        "  coalesce((select 'PLACES_READ_LOST ' || string_agg(r.role, ' ')",
-        "     from (values ('anon'),('authenticated')) r(role)",
-        "    where not has_table_privilege(r.role, 'public.places', 'select')), 'PLACES_READ_OK') as places_read,",
-        // ④ 함수 셋: proconfig 에 pg_temp 가 있는가.
-        "  coalesce((select 'PG_TEMP_MISSING ' || string_agg(p.proname, ' ')",
-        "     from pg_proc p join pg_namespace n on n.oid = p.pronamespace",
-        "    where n.nspname = 'public'",
-        "      and p.proname in ('mark_notification_sent','mark_notification_failed','reap_stale_notifications')",
-        "      and not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) c where c like '%pg_temp%')), 'PG_TEMP_OK') as pg_temp,",
-        // ⑤ 함수 셋의 EXECUTE 보유자가 service_role(과 소유자) 뿐인가 — create or replace 가 ACL 을 보존했는가.
-        "  coalesce((select 'FN_EXEC_EXTRA ' || string_agg(format('%s/%s', p.proname, g.who), ' ')",
-        "     from pg_proc p join pg_namespace n on n.oid = p.pronamespace",
-        "     cross join lateral (select case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end as who",
-        "                           from aclexplode(p.proacl) a where a.privilege_type = 'EXECUTE') g",
-        "    where n.nspname = 'public'",
-        "      and p.proname in ('mark_notification_sent','mark_notification_failed','reap_stale_notifications')",
-        "      and g.who <> 'service_role' and g.who <> pg_get_userbyid(p.proowner)), 'FN_EXEC_ONLY_SERVICE') as fn_exec,",
-        // ⑥ 그 셋을 service_role 이 여전히 실행할 수 있는가 — 못 하면 발송기가 멈춘다.
-        "  coalesce((select 'FN_SERVICE_LOST ' || string_agg(p.proname, ' ')",
-        "     from pg_proc p join pg_namespace n on n.oid = p.pronamespace",
-        "    where n.nspname = 'public'",
-        "      and p.proname in ('mark_notification_sent','mark_notification_failed','reap_stale_notifications')",
-        "      and not has_function_privilege('service_role', p.oid, 'execute')), 'FN_SERVICE_OK') as fn_service,",
-        // ⑦ 1-인자 claim 구버전이 되살아나지 않았는가(되살아나면 발송기가 42725 로 멈춘다).
-        "  case when to_regprocedure('public.claim_pending_notifications(int)') is not null",
-        "       then 'CLAIM_ONE_ARG_BACK' else 'CLAIM_ONE_ARG_GONE' end as claim_old,",
-        // ⑧ 콘텐츠 6표의 CRUD 와 시퀀스는 그대로인가 — 관리자 화면이 죽지 않았다는 상태 쪽 증거.
-        "  coalesce((select 'ADMIN_BROKEN ' || string_agg(format('%s/%s', t.tbl, p.priv), ' ')",
-        "     from (values ('public.notices'),('public.popups'),('public.gallery'),('public.gallery_albums'),('public.showcase_routes'),('public.vehicles')) t(tbl)",
-        "     cross join (values ('select'),('insert'),('update'),('delete')) p(priv)",
-        "    where not has_table_privilege('authenticated', t.tbl, p.priv)), 'ADMIN_OK') as admin_crud,",
-        "  coalesce((select 'SEQ_BROKEN ' || string_agg(s.seq, ' ')",
-        "     from (values ('public.notices_id_seq'),('public.popups_id_seq'),('public.gallery_id_seq'),('public.gallery_albums_id_seq'),('public.showcase_routes_id_seq'),('public.vehicles_id_seq')) s(seq)",
-        "    where not has_sequence_privilege('authenticated', s.seq, 'usage')), 'SEQ_OK') as seqs;",
-      ].join("\n"),
-    );
+    // P5-15 R5 — 원격에 붙이는 행렬 원문(runbook 0016 절 표식 사이)을 **그대로** 실행한다. 사본을 두지 않는다(§19 가 잠근다).
+    // 항목: ① authenticated 의 truncate·trigger·references(컬럼 references 포함) ② anon 은 select 만 ③ places 쓰기 0·읽기 생존
+    //       ④ 함수 셋 존재·pg_temp·EXECUTE 보유자(NULL ACL = PUBLIC EXECUTE)·공개 롤 유효 EXECUTE 0·service_role 실행 가능
+    //       ⑤ 1-인자 claim 없음 ⑥ 콘텐츠 6표 CRUD·시퀀스 usage 생존
+    verdict = runLocalSql(runbookSql("0016"));
   }, 300_000);
 
   test("authenticated 에게 TRUNCATE·TRIGGER·REFERENCES 가 하나도 없다 — RLS 가 막지 못하던 것들이다", () => {
@@ -1763,10 +1717,36 @@ describe.skipIf(!gate.allowed)("9. DB — 0016 권한·함수 행렬 실측 (로
   });
 
   test("definer 함수 셋에 pg_temp 가 붙었고 EXECUTE 보유자는 그대로다 — create or replace 가 ACL 을 보존했다", () => {
+    expect(verdict, verdict).toContain("FN_ALL_PRESENT");
     expect(verdict, verdict).toContain("PG_TEMP_OK");
     expect(verdict, verdict).toContain("FN_EXEC_ONLY_SERVICE");
+    expect(verdict, verdict).toContain("FN_NO_PUBLIC_ROLE_EXEC");
     expect(verdict, verdict).toContain("FN_SERVICE_OK");
   });
+
+  test("🔴 R5 — 행렬은 NULL proacl(기본 PUBLIC EXECUTE)과 사라진 함수를 실패 라벨로 보고한다 (슈퍼유저 · 되돌림)", () => {
+    const matrix = runbookSql("0016").replace(/;\s*$/, "");
+    const out = runLocalSuperuserSqlExpectingError(
+      [
+        "do $p515n$",
+        "declare payload text;",
+        "begin",
+        "  update pg_catalog.pg_proc set proacl = null where oid = 'public.reap_stale_notifications()'::regprocedure;",
+        "  alter function public.mark_notification_failed(bigint, text, boolean, bigint) rename to p515_renamed_mark_failed;",
+        `  select row_to_json(m)::text into payload from (${matrix}) m;`,
+        "  raise exception 'P515N %', payload;",
+        "end",
+        "$p515n$;",
+      ].join("\n"),
+    );
+    expect(out, out).toMatch(/FN_MISSING public\.mark_notification_failed\(bigint, text, boolean, bigint\)/);
+    expect(out, out).toMatch(/FN_EXEC_EXTRA [^"\\]*reap_stale_notifications\/PUBLIC/);
+    expect(out, out).toMatch(/FN_PUBLIC_ROLE_EXEC [^"\\]*reap_stale_notifications\(\)\/anon/);
+    const after = runLocalSql(
+      "select 'P515B ' || coalesce((select proacl::text from pg_proc where oid = to_regprocedure('public.reap_stale_notifications()')), 'NULL') || ' ' || (to_regprocedure('public.mark_notification_failed(bigint, text, boolean, bigint)') is not null)::text as a;",
+    );
+    expect(after, after).toMatch(/P515B \{[^}]*service_role=X[^}]*\} true/);
+  }, 300_000);
 
   test("1-인자 claim 구버전이 되살아나지 않았다 — 되살아나면 호출이 모호해져 발송기가 멈춘다", () => {
     expect(verdict, verdict).toContain("CLAIM_ONE_ARG_GONE");
@@ -1816,7 +1796,8 @@ describe("10. 0017_pii_tables_trigger_references.sql", () => {
       }
     }
     // `all` 로 뭉뚱그리면 authenticated 의 select 까지 사라진다.
-    expect(sqlCode(UP17_SQL)).not.toMatch(/revoke\s+all\s+on\s+table/);
+    // 예외는 ⑦ 의 일회용 표 하나뿐이다(P5-15 astra R3 — 기본 권한을 전부 걷고 TRIGGER 만 준다. 서브트랜잭션째 되돌린다).
+    expect(sqlCode(UP17_SQL)).not.toMatch(/revoke\s+all\s+on\s+table\s+(?!public\.p0017_probe_tbl\s)/);
   });
 
   test("쓰기 네 동작은 다시 회수하지 않는다 — 0010·0012 소관이고, 중복하면 롤백이 그 문을 되살린다", () => {
@@ -1873,9 +1854,12 @@ describe("10. 0017_pii_tables_trigger_references.sql", () => {
 
   test("데이터·스키마·정책을 바꾸지 않는다 — 권한 문장과 검증 블록뿐", () => {
     const code = sqlCode(UP17_SQL);
-    for (const forbidden of ["create table", "alter table", "drop table", "create policy", "drop policy", "insert into", "delete from", "truncate table"]) {
+    for (const forbidden of ["alter table", "drop table", "create policy", "drop policy", "insert into", "delete from", "truncate table"]) {
       expect(code, `0017 이 "${forbidden}" 을 한다 — 권한만 건드려야 한다`).not.toContain(forbidden);
     }
+    // P5-15 astra R3 — ⑦ 의 일회용 표만 예외다. 되돌려지는 execute 안에서만 만든다(최상위에 있으면 커밋된다).
+    expect([...code.matchAll(/create table ([a-z0-9_.]+)/g)].map((m) => m[1]), "일회용 표 말고 다른 표를 만든다").toEqual(["public.p0017_probe_tbl"]);
+    expect(code, "최상위 create table 이 있다").not.toMatch(/(?:^|;)\s*create\s+table\b/);
     // 거동 탐침이 트리거를 만들었다 지우지만, 그것은 **동적 SQL**(execute format(…)) 안에 있고 최상위 문장이 아니다.
     // 최상위에 남아 있으면 마이그레이션이 트리거를 실제로 남기게 된다.
     expect(code, "최상위 create trigger 문장이 있다 — 탐침은 execute format(…) 안에 있어야 한다").not.toMatch(/(?:^|;)\s*create\s+trigger\b/);
@@ -1931,7 +1915,43 @@ describe("10. 0017_pii_tables_trigger_references.sql", () => {
     expect(code, "권한 거부 코드(42501)를 명시하지 않는다 — 다른 이유로 실패해도 통과한다").toContain("42501");
     // 대조군이 없으면 "탐침 SQL 이 틀려서 실패한 것" 과 "권한이 없어서 거부된 것" 이 구분되지 않는다.
     expect(code, "대조군(service_role)이 없다").toContain("service_role");
-    expect(code, "탐침이 만든 트리거가 남지 않는지 확인하지 않는다").toContain("drop trigger");
+    expect(code, "탐침 뒤 두 표의 사용자 트리거 0 을 확인하지 않는다").toContain("where not tgisinternal");
+  });
+
+  test("🔴 P5-15 astra R4 P1 — ⑥ 은 NULL proacl 을 기본 ACL(PUBLIC EXECUTE)로 읽고, 공개 롤의 유효 EXECUTE 를 따로 거부한다", () => {
+    const code = sqlCode(UP17_SQL);
+    expect(code, "aclexplode(NULL) 은 0행이다 — 기본 ACL 로 채우지 않으면 NULL 이 '서비스 전용' 으로 통과한다").toContain("aclexplode(coalesce(p.proacl, acldefault('f', p.proowner)))");
+    expect(code).not.toMatch(/aclexplode\(p\.proacl\)/);
+    expect(code).toContain("where has_function_privilege(r.role, fn_oid, 'execute');");
+    expect(code).toContain("공개 롤이 % 를 실행할 수 있다(유효 execute)");
+  });
+
+  test("🔴 P5-15 astra R3 — ⑦ 은 실제 두 표에 CREATE/DROP TRIGGER 를 치지 않는다 (잠금이 권한 검사보다 먼저다) · 거동은 일회용 표에서만", () => {
+    const code = sqlCode(UP17_SQL);
+    const creates = [...code.matchAll(/create trigger %i before update on ([a-z0-9_.%]+)/g)].map((m) => m[1]);
+    expect(creates, "create trigger 대상이 일회용 표가 아니다").toEqual(["public.p0017_probe_tbl"]);
+    expect(code, "실제 표에 drop trigger 를 실행한다(ACCESS EXCLUSIVE 를 커밋까지 쥔다)").not.toMatch(/execute\s+format\('drop trigger/);
+    // 일회용 표: 서브트랜잭션 안에서 만들고, TRIGGER 는 service_role 에게만, 끝에서 P0017 로 되돌린다
+    const make = code.indexOf("execute 'create table public.p0017_probe_tbl (id int)';");
+    const revokeAll = code.indexOf("execute 'revoke all on table public.p0017_probe_tbl from public, anon, authenticated, service_role';");
+    // astra R4 P2-3 — 탐침 직전마다 의도한 유효 권한만(열거) 있는지 단언한다
+    expect(code).toContain("일회용 표의 유효 권한이 의도와 다르다");
+    expect(code).toContain("aclexplode(acldefault('r', (select relowner from pg_class where oid = 'public.p0017_probe_tbl'::regclass)))");
+    const grantSvc = code.indexOf("execute 'grant trigger on table public.p0017_probe_tbl to service_role';");
+    const rollback = code.indexOf("raise exception using errcode = 'p0017'");
+    expect(make).toBeGreaterThan(-1);
+    expect(revokeAll).toBeGreaterThan(make);
+    expect(grantSvc).toBeGreaterThan(revokeAll);
+    expect(rollback).toBeGreaterThan(grantSvc);
+    // 실제 두 표는 카탈로그로만 — 시도 없이 멈추는 검사가 일회용 표 블록보다 먼저다
+    const catalogStop = code.indexOf("(실제 표에는 아무것도 시도하지 않았다)");
+    expect(catalogStop, "실제 두 표의 카탈로그 검사가 없다").toBeGreaterThan(-1);
+    expect(catalogStop).toBeLessThan(make);
+    expect(code.slice(code.lastIndexOf("select string_agg", catalogStop), catalogStop), "카탈로그 검사가 acldefault 열거를 쓰지 않는다").toContain("aclexplode(acldefault('r'");
+    // 카탈로그 ↔ 거동 일치 — 매 시도의 예측과 결과를 대조하고, TRIGGER 를 받은 anon 은 성공해야 한다
+    expect(code).toContain("expected := has_table_privilege(role_name, 'public.p0017_probe_tbl', 'trigger');");
+    expect(code).toContain("if created is distinct from expected then");
+    expect(code).toContain("execute 'grant trigger on table public.p0017_probe_tbl to anon';");
   });
 
   test("무엇이 왜 위험한지 파일에 적혀 있다 — 다음 사람이 되돌리지 않도록", () => {
@@ -2036,66 +2056,11 @@ describe("11. 0017 롤백", () => {
 // =============================================================================
 describe.skipIf(!gate.allowed)("12. DB — 0017 권한 행렬 + 거동 실증 (로컬 스택)", { timeout: 300_000 }, () => {
   let verdict = "";
-  const TWO = "(values ('public.reservations'),('public.notifications_log'))";
-  const FN_NAMES = OUTBOX_DEFINER_FNS.map((f) => `'${f}'`).join(",");
-
   beforeAll(() => {
-    verdict = runLocalSql(
-      [
-        "select",
-        // ① RLS 가 막지 못하는 둘이 두 공개 롤에 남았는가 (표 단위 + 컬럼 단위 references).
-        "  coalesce((select 'PII_BLIND_LEAK ' || string_agg(format('%s/%s/%s', r.role, t.tbl, p.priv), ' ')",
-        "     from (values ('anon'),('authenticated')) r(role)",
-        `     cross join ${TWO} t(tbl)`,
-        "     cross join (values ('trigger'),('references')) p(priv)",
-        "    where has_table_privilege(r.role, t.tbl, p.priv)",
-        "       or (p.priv = 'references' and has_any_column_privilege(r.role, t.tbl, 'references'))), 'PII_BLIND_NONE') as blind,",
-        // ② anon 은 두 표에서 **아무 권한도** 갖지 않는다(select 까지 회수했다).
-        "  coalesce((select 'ANON_PII_LEFT ' || string_agg(format('%s/%s', t.tbl, p.priv), ' ')",
-        `     from ${TWO} t(tbl)`,
-        "     cross join (values ('select'),('insert'),('update'),('delete'),('truncate'),('trigger'),('references')) p(priv)",
-        "    where has_table_privilege('anon', t.tbl, p.priv)), 'ANON_PII_NONE') as anon_pii,",
-        // ③ 관리자 화면: authenticated 의 select 는 표 단위·컬럼 단위 모두 살아 있어야 한다.
-        "  coalesce((select 'ADMIN_READ_LOST ' || string_agg(t.tbl, ' ')",
-        `     from ${TWO} t(tbl)`,
-        "    where not has_table_privilege('authenticated', t.tbl, 'select')",
-        "       or not has_any_column_privilege('authenticated', t.tbl, 'select')), 'ADMIN_READ_OK') as admin_read,",
-        // ④ 서비스 롤: 접수·enqueue·발송기·파기가 그것으로 돈다. 일곱 동작 전부 그대로여야 한다.
-        "  coalesce((select 'SERVICE_LOST ' || string_agg(format('%s/%s', t.tbl, p.priv), ' ')",
-        `     from ${TWO} t(tbl)`,
-        "     cross join (values ('select'),('insert'),('update'),('delete'),('truncate'),('trigger'),('references')) p(priv)",
-        "    where not has_table_privilege('service_role', t.tbl, p.priv)), 'SERVICE_OK') as service,",
-        // ⑤ 컬럼 단위 — 표 단위 revoke 가 지우지 못하는 경로. authenticated 의 select 만 예외다.
-        "  coalesce((select 'PII_COLUMN_LEAK ' || string_agg(format('%s/%s/%s', r.role, t.tbl, p.priv), ' ')",
-        "     from (values ('anon'),('authenticated')) r(role)",
-        `     cross join ${TWO} t(tbl)`,
-        "     cross join (values ('select'),('insert'),('update'),('references')) p(priv)",
-        "    where not (r.role = 'authenticated' and p.priv = 'select')",
-        "      and has_any_column_privilege(r.role, t.tbl, p.priv)), 'PII_COLUMN_NONE') as pii_col,",
-        // ⑥ PUBLIC 롤 grant 전수 — 표 단위 revoke 는 PUBLIC 의 grant 를 지우지 않는다(CLAUDE.md §3).
-        "  coalesce((select 'PII_PUBLIC_ACL ' || string_agg(format('%s/%s', c.relname, a.privilege_type), ' ')",
-        "     from pg_class c join pg_namespace n on n.oid = c.relnamespace",
-        "     cross join lateral aclexplode(c.relacl) a",
-        "    where n.nspname = 'public' and c.relname in ('reservations','notifications_log')",
-        "      and a.grantee = 0), 'PII_PUBLIC_NONE') as pii_public,",
-        // ⑦ 아웃박스 definer 함수 넷 — 0017 은 함수를 건드리지 않는다. 건드려지지 않았음을 확인한다.
-        "  coalesce((select 'OUTBOX_FN_EXTRA ' || string_agg(format('%s/%s', p.proname, g.who), ' ')",
-        "     from pg_proc p join pg_namespace n on n.oid = p.pronamespace",
-        "     cross join lateral (select case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end as who",
-        "                           from aclexplode(p.proacl) a where a.privilege_type = 'EXECUTE') g",
-        `    where n.nspname = 'public' and p.proname in (${FN_NAMES})`,
-        "      and g.who <> 'service_role' and g.who <> pg_get_userbyid(p.proowner)), 'OUTBOX_FN_ONLY_SERVICE') as fn_exec,",
-        "  coalesce((select 'OUTBOX_FN_SERVICE_LOST ' || string_agg(p.proname, ' ')",
-        "     from pg_proc p join pg_namespace n on n.oid = p.pronamespace",
-        `    where n.nspname = 'public' and p.proname in (${FN_NAMES})`,
-        "      and not has_function_privilege('service_role', p.oid, 'execute')), 'OUTBOX_FN_SERVICE_OK') as fn_service,",
-        // ⑧ 탐침이 만든 트리거(또는 누가 붙인 트리거)가 두 표에 남아 있지 않은가.
-        "  coalesce((select 'PII_USER_TRIGGER ' || string_agg(tgname, ' ')",
-        "     from pg_trigger",
-        "    where not tgisinternal",
-        "      and tgrelid in ('public.reservations'::regclass, 'public.notifications_log'::regclass)), 'PII_NO_USER_TRIGGER') as trg;",
-      ].join("\n"),
-    );
+    // P5-15 astra R3 — 원격에 붙이는 행렬 원문(runbook 0017 절 표식 사이)을 **그대로** 실행한다. 사본을 두지 않는다(§19 가 잠근다).
+    // 항목: ① 두 공개 롤의 trigger·references(컬럼 references 포함) ② anon 일곱 동작 0 ③ 관리자 select 생존 ④ service_role 불변
+    //       ⑤ 컬럼 단위 0 ⑥ PUBLIC grant 0 ⑦ 아웃박스 definer 넷의 EXECUTE ⑧ 두 표의 사용자 트리거 0
+    verdict = runLocalSql(runbookSql("0017"));
   }, 300_000);
 
   test("두 공개 롤에게 TRIGGER·REFERENCES 가 하나도 없다 — RLS 가 막지 못하던 것들이다", () => {
@@ -2120,13 +2085,46 @@ describe.skipIf(!gate.allowed)("12. DB — 0017 권한 행렬 + 거동 실증 (�
   });
 
   test("아웃박스 definer 함수 넷은 그대로다 — EXECUTE 보유자는 service_role(+소유자) 뿐이고 실행할 수 있다", () => {
+    expect(verdict, verdict).toContain("OUTBOX_FN_ALL_PRESENT");
     expect(verdict, verdict).toContain("OUTBOX_FN_ONLY_SERVICE");
+    expect(verdict, verdict).toContain("OUTBOX_FN_NO_PUBLIC_ROLE_EXEC");
     expect(verdict, verdict).toContain("OUTBOX_FN_SERVICE_OK");
   });
 
   test("두 표에 사용자 트리거가 하나도 없다", () => {
     expect(verdict, verdict).toContain("PII_NO_USER_TRIGGER");
   });
+
+  /**
+   * astra R4 P1·P2-4 — 원격 행렬의 이빨. 슈퍼유저 채널(로컬 전용)에서 되돌려지는 트랜잭션 안에서
+   *   ① `reap_stale_notifications()` 의 proacl 을 NULL(= 기본 ACL · PUBLIC EXECUTE)로 만들고
+   *   ② `mark_notification_sent` 의 이름을 바꿔 "함수가 없음" 을 만든 뒤
+   * **runbook 원문 행렬**을 돌려 결과를 예외로 실어 나른다. 옛 행렬(aclexplode(p.proacl) · proname 목록)은 두 경우 모두 성공 라벨을 냈다.
+   */
+  test("🔴 R4 — 행렬은 NULL proacl(기본 PUBLIC EXECUTE)과 사라진 함수를 실패 라벨로 보고한다 (슈퍼유저 · 되돌림)", () => {
+    const matrix = runbookSql("0017").replace(/;\s*$/, "");
+    const out = runLocalSuperuserSqlExpectingError(
+      [
+        "do $p515m$",
+        "declare payload text;",
+        "begin",
+        "  update pg_catalog.pg_proc set proacl = null where oid = 'public.reap_stale_notifications()'::regprocedure;",
+        "  alter function public.mark_notification_sent(bigint, text) rename to p515_renamed_mark_sent;",
+        `  select row_to_json(m)::text into payload from (${matrix}) m;`,
+        "  raise exception 'P515M %', payload;",
+        "end",
+        "$p515m$;",
+      ].join("\n"),
+    );
+    expect(out, out).toMatch(/OUTBOX_FN_MISSING public\.mark_notification_sent\(bigint, text\)/);
+    expect(out, out).toMatch(/OUTBOX_FN_EXTRA [^"]*reap_stale_notifications\/PUBLIC/);
+    expect(out, out).toMatch(/OUTBOX_FN_PUBLIC_ROLE_EXEC [^"]*reap_stale_notifications\(\)\/anon/);
+    // 되돌려졌다
+    const after = runLocalSql(
+      "select 'P515A ' || coalesce((select proacl::text from pg_proc where oid = to_regprocedure('public.reap_stale_notifications()')), 'NULL') || ' ' || (to_regprocedure('public.mark_notification_sent(bigint, text)') is not null)::text as a;",
+    );
+    expect(after, after).toMatch(/P515A \{[^}]*service_role=X[^}]*\} true/);
+  }, 300_000);
 
   /**
    * **거동 실증** — 행렬은 "권한이 없다" 까지만 말한다. 여기서는 실제로 `CREATE TRIGGER` 를 친다.
@@ -2225,8 +2223,8 @@ describe("13. 0018_sequence_privileges.sql", () => {
     for (const seq of CONTENT_SEQS) {
       expect(revoked.has(`authenticated|${seq}|usage`), `authenticated 의 ${seq} usage 를 회수한다 — 관리자 insert 의 nextval 이 42501 로 죽는다`).toBe(false);
     }
-    // `all` 로 뭉뚱그리면 usage 까지 사라진다.
-    expect(sqlCode(UP18_SQL)).not.toMatch(/revoke\s+all\s+on\s+sequence/);
+    // `all` 로 뭉뚱그리면 usage 까지 사라진다. 예외는 ⑤-나 의 일회용 시퀀스 하나뿐이다(P5-15 astra R4 — 서브트랜잭션째 되돌린다).
+    expect(sqlCode(UP18_SQL)).not.toMatch(/revoke\s+all\s+on\s+sequence\s+(?!public\.p0018_probe_seq\s)/);
   });
 
   test("service_role·postgres·public 롤은 건드리지 않는다 — 통지 적재와 definer 함수가 nextval 한다", () => {
@@ -2242,7 +2240,7 @@ describe("13. 0018_sequence_privileges.sql", () => {
     expect(parseSeqStatements(UP18_SQL, "keep").filter((s) => s.verb === "grant")).toEqual([]);
     const code = sqlCode(UP18_SQL);
     expect(code).not.toMatch(/(?:^|;)\s*grant\s+/);
-    const probeGrants = [...code.matchAll(/grant [a-z, ]+ on sequence ([a-z0-9_.]+)/g)].map((m) => m[1]);
+    const probeGrants = [...new Set([...code.matchAll(/grant [a-z, ]+ on sequence ([a-z0-9_.]+)/g)].map((m) => m[1]))];
     expect(probeGrants, "임시 시퀀스 말고 다른 것에 부여한다").toEqual(["public.p0018_probe_seq"]);
   });
 
@@ -2273,15 +2271,30 @@ describe("13. 0018_sequence_privileges.sql", () => {
     expect(code, "필터된 뷰를 증거로 쓴다").not.toContain("information_schema");
   });
 
-  test("거동 탐침은 시퀀스 값을 바꾸지 않는다 — setval 은 현재 값 그대로, 값은 적용 롤이 먼저 읽는다", () => {
+  test("🔴 P5-15 astra R4 — ⑤ 는 실제 시퀀스에 setval·nextval 을 치지 않는다 (잠금이 권한 검사보다 먼저다) · 거동은 일회용 시퀀스에서만", () => {
     const code = sqlCode(UP18_SQL);
-    // setval 을 리터럴 숫자로 치면(예: 1) 권한이 남아 있을 때 통지 시퀀스를 **되감는다** — 트랜잭션으로 되돌려지지 않는다.
-    const calls = [...code.matchAll(/pg_catalog\.setval\(([^)]*)\)/g)].map((m) => m[1]);
-    const real = calls.filter((c) => !c.includes("p0018_probe_seq"));
-    expect(real.length, "실제 시퀀스 setval 탐침이 없다").toBeGreaterThan(0);
-    for (const c of real) expect(c, `setval 탐침이 현재 값을 쓰지 않는다: ${c}`).toMatch(/%l::regclass, %s, %l::boolean/);
-    expect(code, "현재 값을 적용 롤로 먼저 읽지 않는다").toContain("select last_value, is_called from public.%i");
-    expect(code.indexOf("select last_value, is_called"), "값을 읽기 전에 롤을 바꾼다").toBeLessThan(code.indexOf("set local role %i"));
+    const calls = [...code.matchAll(/pg_catalog\.(setval|nextval)\(([^)]*)\)/g)].map((m) => m[2]);
+    expect(calls.length, "거동 탐침이 없다").toBeGreaterThan(0);
+    for (const c of calls) expect(c, `실제 시퀀스에 호출한다: ${c}`).toContain("p0018_probe_seq");
+    expect(code, "실제 시퀀스 값을 읽는다").not.toContain("select last_value");
+    // ⑤-가 실제 시퀀스는 카탈로그로만 — 종류 열거, 소스상 허용하지 않는 것만 제외, 허용 경로(authenticated nextval × 콘텐츠 usage)만 제외
+    const catalogStop = code.indexOf("(실제 시퀀스에는 아무것도 시도하지 않았다)");
+    const make = code.indexOf("execute 'create sequence public.p0018_probe_seq';");
+    expect(catalogStop).toBeGreaterThan(-1);
+    expect(make, "일회용 시퀀스 생성이 카탈로그 검사보다 먼저다").toBeGreaterThan(catalogStop);
+    const cat = code.slice(code.lastIndexOf("select string_agg", catalogStop), catalogStop);
+    expect(cat).toContain("aclexplode(acldefault('s', c.relowner))");
+    expect(cat).toContain("d.privilege_type <> 'select'");
+    expect(cat).toContain("not (q.call = 'setval' and d.privilege_type = 'usage')");
+    expect(cat).toContain("not (r.role = 'authenticated' and q.call = 'nextval' and d.privilege_type = 'usage' and c.relname = any(content6))");
+    expect(cat, "카탈로그 검사가 UPDATE 를 뺀다").not.toMatch(/privilege_type\s*(?:=|<>)\s*'update'/);
+    // ⑤-나 일회용 시퀀스: PUBLIC 까지 회수 → 의도한 유효 권한만(열거) → 예측↔결과 대조 → P0018 되돌림
+    expect(code).toContain("execute 'revoke all on sequence public.p0018_probe_seq from public, anon, authenticated, service_role';");
+    expect(code).toContain("aclexplode(acldefault('s', (select relowner from pg_class where oid = 'public.p0018_probe_seq'::regclass)))");
+    expect(code).toContain("일회용 시퀀스의 유효 권한이 의도와 다르다");
+    expect(code).toContain("if ok is distinct from expected then");
+    expect(code).toContain("'anon+update:setval', 'anon+update:nextval'");
+    expect(code).toContain("raise exception using errcode = 'p0018'");
   });
 
   test("자기검증 순서 — PUBLIC 검사가 공개 롤 행렬 검사보다 먼저다 (상속된 권한을 anon 의 것으로 오진하지 않게)", () => {
@@ -2374,41 +2387,13 @@ describe("14. 0018 롤백", () => {
 // =============================================================================
 describe.skipIf(!gate.allowed)("15. DB — 0018 시퀀스 권한 행렬 + 거동 실증 (로컬 스택)", { timeout: 300_000 }, () => {
   let verdict = "";
-  const CONTENT6 = CONTENT_SEQS.map((s) => `'${s}'`).join(",");
-  const SEVEN = ALL_SEQS.map((s) => `('public.${s}')`).join(",");
 
   beforeAll(() => {
+    // P5-15 astra R3 — 원격에 붙이는 행렬 원문(runbook 0018 절 표식 사이)을 **그대로** 실행한다. 사본을 두지 않는다(§19 가 잠근다).
+    // 항목: ① 허용(콘텐츠 여섯 × authenticated usage) 밖의 공개 롤 시퀀스 권한 0 ② 관리자 usage 생존 ③ 서비스 롤·소유자 일곱 × 셋
+    //       ④ PUBLIC 직접 부여 0 · 시퀀스 수(열거가 공허하지 않다)
     verdict = runLocalSql(
-      [
-        "select",
-        // ① 허용(콘텐츠 여섯 × authenticated usage) 밖의 공개 롤 시퀀스 권한 — 카탈로그 전수
-        "  coalesce((select 'SEQ_LEAK ' || string_agg(format('%s/%s/%s', r.role, c.relname, p.priv), ' ')",
-        "     from pg_class c join pg_namespace n on n.oid = c.relnamespace",
-        "     cross join (values ('anon'),('authenticated')) r(role)",
-        "     cross join (values ('usage'),('select'),('update')) p(priv)",
-        "    where n.nspname = 'public' and c.relkind = 'S'",
-        "      and has_sequence_privilege(r.role, c.oid, p.priv)",
-        `      and not (r.role = 'authenticated' and p.priv = 'usage' and c.relname in (${CONTENT6}))), 'SEQ_NONE') as leak,`,
-        // ② 관리자 화면 — 콘텐츠 여섯의 authenticated usage
-        "  coalesce((select 'ADMIN_SEQ_LOST ' || string_agg(c.relname, ' ')",
-        "     from pg_class c join pg_namespace n on n.oid = c.relnamespace",
-        `    where n.nspname = 'public' and c.relname in (${CONTENT6})`,
-        "      and not has_sequence_privilege('authenticated', c.oid, 'usage')), 'ADMIN_SEQ_OK') as admin_seq,",
-        // ③ 서비스 롤·소유자 — 일곱 × 셋
-        "  coalesce((select 'SERVICE_SEQ_LOST ' || string_agg(format('%s/%s/%s', r.role, s.seq, p.priv), ' ')",
-        "     from (values ('service_role'),('postgres')) r(role)",
-        `     cross join (values ${SEVEN}) s(seq)`,
-        "     cross join (values ('usage'),('select'),('update')) p(priv)",
-        "    where not has_sequence_privilege(r.role, s.seq, p.priv)), 'SERVICE_SEQ_OK') as service_seq,",
-        // ④ PUBLIC 직접 부여
-        "  coalesce((select 'SEQ_PUBLIC_ACL ' || string_agg(format('%s/%s', c.relname, a.privilege_type), ' ')",
-        "     from pg_class c join pg_namespace n on n.oid = c.relnamespace",
-        "     cross join lateral aclexplode(c.relacl) a",
-        "    where n.nspname = 'public' and c.relkind = 'S' and a.grantee = 0), 'SEQ_PUBLIC_NONE') as seq_public,",
-        // 열거가 공허하지 않다 — 일곱이 실제로 있다
-        "  (select 'SEQ_COUNT ' || count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace",
-        "    where n.nspname = 'public' and c.relkind = 'S') as seq_count;",
-      ].join("\n"),
+      runbookSql("0018"),
     );
   }, 300_000);
 
@@ -2521,12 +2506,12 @@ const DOWN19_SQL = "supabase/rollbacks/0019_maintain_privilege.down.sql";
 const MAINTAIN_BASELINE_TABLES = [...CONTENT_TABLES, "places", "reservations", "notifications_log"] as const;
 
 /**
- * §18 의 LOCK 거동 블록 — **runbook 이 원격 SQL Editor 에 붙이라고 하는 원문**이다(astra P1-1). 원격 안전 조건:
- *   · 실제 표에는 **거부**만 기대한다(권한 검사가 잠금보다 먼저 — §18 주석의 PostgreSQL 소스 인용)
- *   · **성공**을 기대하는 대조군은 블록 안에서 만든 일회용 표 `public.p0515_probe_tbl` 뿐이다(MAINTAIN 만 준다)
- *   · 매 시도는 서브트랜잭션 안에서 하고 **언제나** P0516 으로 되돌린다 — 잡힌 잠금·임시 표·롤 전환이 즉시 사라진다
- *   · 롤 복원은 캡처한 적용 롤로 `set local role`(reset role 금지)
- * PostgreSQL 17 전용이다(`grant maintain`). runbook 은 버전부터 확인하게 한다.
+ * §18 의 LOCK 거동 블록 — 🔴 **로컬 테스트 전용. 원격에 붙이지 마라** (astra R2 P1-A · 컨트롤러 결정).
+ * 1라운드에서는 이것을 runbook 과 공유하는 "원격 안전" 블록으로 만들었지만, 권한이 예상과 달리 남아 있으면 거부를 기대한
+ * 실제 표 LOCK 도 **잡히고**(되돌릴 때까지 접수가 막힌다), 일회용 표 DDL 은 운영의 이벤트 트리거를 태운다.
+ * 원격 확인은 runbook 의 카탈로그 행렬(§19)만 쓰고, 적용 시점의 거동 확인은 0019 ⑥(시도 직전 사전 검사 포함)이 한다.
+ * 로컬에서의 구조: 실제 표는 거부만 기대 · 성공 대조군은 일회용 표 · 매 시도를 서브트랜잭션으로 **언제나** 되돌림 · 적용 롤 복원.
+ * PostgreSQL 17 전용이다(`grant maintain`).
  */
 const LOCK_PROBE_SQL = [
   "do $$",
@@ -2622,8 +2607,11 @@ describe("16. 0019_maintain_privilege.sql", () => {
     const revokes = [...code.matchAll(/revoke ([a-z, ]+) on table ([^ ]+) from ([a-z_, ]+)/g)].map((m) => m.slice(1, 4));
     expect(revokes).toEqual([
       ["maintain", "%s", "anon, authenticated"],
-      ["all", "public.p0019_probe_tbl", "anon, authenticated, service_role"],
+      ["all", "public.p0019_probe_tbl", "public, anon, authenticated, service_role"],
     ]);
+    // astra R4 P2-3 — 대조군 직전에 anon 의 MAINTAIN 하나만 유효한지(열거) 단언한다
+    expect(code).toContain("대조군 일회용 표의 유효 권한이 의도와 다르다");
+    expect(code).toContain("is distinct from (w.role = 'anon' and d.privilege_type = 'maintain')");
     // 회수 루프는 pg_class 를 relkind 로 열거한다
     expect(code).toMatch(/for rel in\s+select c\.oid::regclass\s+from pg_class c join pg_namespace n on n\.oid = c\.relnamespace\s+where n\.nspname = 'public' and c\.relkind in \('r', 'p', 'v', 'm', 'f'\)/);
     // 부여는 대조군 임시 표에만
@@ -2684,6 +2672,25 @@ describe("16. 0019_maintain_privilege.sql", () => {
   test("⑥ 탐침 대상 선정이 MAINTAIN 을 '다른 권한' 으로 세지 않는다 — 새는 조합에서 눈을 감지 않게", () => {
     const code = sqlCode(UP19_SQL);
     expect(code).toContain("d.privilege_type not in ('select', 'maintain')");
+  });
+
+  test("🔴 astra R2 P1-A — ⑥ 은 시도 직전에 SELECT 외 모든 권한(열거)이 false 인지 보고, 아니면 LOCK 없이 멈춘다 · ① 이 ⑥ 보다 먼저다", () => {
+    const code = sqlCode(UP19_SQL);
+    const matrix = code.indexOf("and has_table_privilege(r.role, c.oid, 'maintain');");
+    const loop = code.indexOf("n_probes := n_probes + 1;");
+    const pre = code.indexOf("and has_table_privilege(probe.who, k.oid, d.privilege_type);");
+    const stop = code.indexOf("잠금을 시도하지 않고 멈춘다");
+    const lock = code.indexOf("lock table %s in access exclusive mode nowait");
+    expect(matrix, "① 행렬이 없다").toBeGreaterThan(-1);
+    expect(matrix, "① 이 ⑥ 보다 뒤에 있다 — MAINTAIN 이 남은 채 LOCK 을 시도한다").toBeLessThan(loop);
+    expect(pre, "시도 직전 사전 검사가 없다").toBeGreaterThan(loop);
+    expect(stop).toBeGreaterThan(pre);
+    expect(lock, "사전 검사가 LOCK 뒤에 있다").toBeGreaterThan(stop);
+    // 사전 검사의 종류는 열거(acldefault)에서 오고, SELECT 만 뺀다 — MAINTAIN 을 빼면 안 된다
+    const preBlock = code.slice(loop, lock);
+    expect(preBlock).toContain("aclexplode(acldefault('r', k.relowner))");
+    expect(preBlock).toContain("d.privilege_type <> 'select'");
+    expect(preBlock, "사전 검사가 MAINTAIN 을 뺀다").not.toContain("'maintain'");
   });
 
   test("무엇이 왜 위험한지, 무엇을 닫지 못하는지 파일에 적혀 있다", () => {
@@ -2793,28 +2800,10 @@ describe.skipIf(!gate.allowed)("18. DB — 0019 MAINTAIN 행렬 + LOCK 거동 + 
     const v = runLocalSql("select 'P515_VER ' || current_setting('server_version_num') as v;");
     version = Number(v.match(/P515_VER (\d+)/)?.[1] ?? 0);
     if (version < 170000) return;
-    verdict = runLocalSql(
-      [
-        "select",
-        "  coalesce((select 'MAINTAIN_LEAK ' || string_agg(format('%s/%s', r.role, c.relname), ' ')",
-        "     from pg_class c join pg_namespace n on n.oid = c.relnamespace",
-        "     cross join (values ('anon'),('authenticated')) r(role)",
-        "    where n.nspname = 'public' and c.relkind in ('r','p','v','m','f')",
-        "      and has_table_privilege(r.role, c.oid, 'MAINTAIN')), 'MAINTAIN_NONE') as leak,",
-        // service_role 은 "true" 를 요구한다 — **로컬·CI 는 마이그레이션으로 만든 17 DB** 라 기본 권한이 m 을 준다.
-        // 원격(16→17 업그레이드일 수 있다)에 붙일 때는 이 줄을 적용 직전 스냅샷과 대조한다(runbook 0019 · astra P2-6).
-        "  coalesce((select 'SERVICE_MAINTAIN_LOST ' || string_agg(c.relname, ' ')",
-        "     from pg_class c join pg_namespace n on n.oid = c.relnamespace",
-        "    where n.nspname = 'public' and c.relkind = 'r'",
-        "      and not has_table_privilege('service_role', c.oid, 'MAINTAIN')), 'SERVICE_MAINTAIN_OK') as svc,",
-        "  coalesce((select 'MAINTAIN_PUBLIC_ACL ' || string_agg(c.relname, ' ')",
-        "     from pg_class c join pg_namespace n on n.oid = c.relnamespace",
-        "     cross join lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a",
-        "    where n.nspname = 'public' and c.relkind in ('r','p','v','m','f') and a.grantee = 0 and a.privilege_type = 'MAINTAIN'), 'MAINTAIN_PUBLIC_NONE') as pub,",
-        // 롤백의 고정 목록이 실제 표를 가리키는가 — 아홉 모두 존재
-        `  (select 'BASELINE_PRESENT ' || count(*) from unnest(array[${MAINTAIN_BASELINE_TABLES.map((t) => `'public.${t}'`).join(",")}]) t(n) where to_regclass(t.n) is not null) as baseline;`,
-      ].join("\n"),
-    );
+    // astra R2 P1-A — 원격에 붙이는 행렬 원문(runbook 표식 사이)을 **그대로** 실행한다. 사본을 두지 않는다(§19 가 잠근다).
+    // service_role 은 "true" 를 요구한다 — 로컬·CI 는 마이그레이션으로 만든 17 DB 라 기본 권한이 m 을 준다.
+    // 원격(16→17 업그레이드일 수 있다)에서는 그 줄을 적용 직전 스냅샷과 대조한다(runbook 0019 · astra P2-6).
+    verdict = runLocalSql(runbookMatrixSql());
   }, 300_000);
 
   test("서버 버전을 읽었다 (로컬 스택·CI 는 17 이다 — supabase/config.toml)", () => {
@@ -2836,13 +2825,11 @@ describe.skipIf(!gate.allowed)("18. DB — 0019 MAINTAIN 행렬 + LOCK 거동 + 
    *   · service_role: **일회용 임시 표**(블록 안에서 만들고 되돌린다)에 MAINTAIN 만 주면 잠금 **성공**(대조군)
    *   · 매 시도 전에 `current_user` 가 기대 롤로 바뀌었고, 매 시도 뒤 **적용 롤로 `set local role`** 해서 돌아왔다(reset role 금지)
    *
-   * 🔴 astra P1-1 — **이 블록은 runbook 이 원격 SQL Editor 에 붙이라고 하는 블록이다.** 그래서 실제 표를 **잡는 데 성공하는**
-   * 탐침을 두지 않는다. 처음 판의 대조군은 `('service_role', 'reservations', true)` 였고, 성공하면 되돌리기 전까지 실제 접수를 막고,
-   * 앱 트랜잭션이 이미 잠금을 쥐고 있으면 NOWAIT 가 55P03 으로 **거짓 실패**한다. 대조군은 0019 ⑥ 처럼 일회용 표로 옮겼다.
-   * 실제 표에 대한 **거부** 탐침은 남겼다 — PostgreSQL 17 `LockTableCommand` 는 `RangeVarGetRelidExtended(…, RangeVarCallbackForLockTable)`
-   * 로 **잠금을 잡기 전에** 콜백에서 `LockTableAclCheck`(MAINTAIN|UPDATE|DELETE|TRUNCATE, 약한 모드면 +SELECT/INSERT)를 하고,
-   * 실패하면 `aclcheck_error` 로 끝난다(namespace.c: "Callback allows caller to check permissions … prior to grabbing the relation lock").
-   * 즉 42501 로 거부되는 시도는 잠금을 잡지 않는다. (허용되면 — 그 자체가 결함 — 서브트랜잭션째 즉시 되돌린다.)
+   * 🔴 **로컬 전용** (astra R2 P1-A). 원격 확인은 §19 의 카탈로그 행렬뿐이다 — 이 블록은 권한이 예상과 달리 남아 있으면 실제 표를
+   * 잡을 수 있고(거부를 "기대" 할 뿐 보장하지 않는다), 일회용 표 DDL 이 운영 이벤트 트리거를 태운다.
+   * 로컬에서의 설계: 성공 대조군은 일회용 표뿐(1라운드 P1-1 — 옛 대조군은 실제 `reservations` 였다). 거부 탐침이 잠금을 잡지 않는 근거는
+   * PostgreSQL 17 `LockTableCommand` → `RangeVarGetRelidExtended(…, RangeVarCallbackForLockTable)` 가 **잠금 전에** `LockTableAclCheck`
+   * (MAINTAIN|UPDATE|DELETE|TRUNCATE, 약한 모드면 +SELECT/INSERT)를 하고 실패하면 `aclcheck_error` 로 끝나기 때문이다.
    */
   test("거동 실증 — 공개 롤의 LOCK TABLE … ACCESS EXCLUSIVE 는 42501 · service_role 은 일회용 표에서 성공 (롤 전환 확인 포함)", () => {
     const out = runLocalSql(LOCK_PROBE_SQL);
@@ -2850,7 +2837,7 @@ describe.skipIf(!gate.allowed)("18. DB — 0019 MAINTAIN 행렬 + LOCK 거동 + 
     expect(runLocalSql("select 'P515_LEFT ' || count(*) as l from pg_class where relname = 'p0515_probe_tbl';")).toContain("P515_LEFT 0");
   }, 300_000);
 
-  test("🔴 astra P1-1 — 원격에 붙일 블록은 실제 표에서 잠금 성공을 기대하지 않는다 (성공 기대 = 일회용 표뿐)", () => {
+  test("astra P1-1 — (로컬 전용) LOCK 블록은 실제 표에서 잠금 성공을 기대하지 않는다 (성공 기대 = 일회용 표뿐)", () => {
     const rows = [...LOCK_PROBE_SQL.matchAll(/\('(\w+)', '([\w.]+)', (true|false)\)/g)].map((m) => ({ who: m[1], tbl: m[2], allowed: m[3] === "true" }));
     expect(rows.length).toBeGreaterThanOrEqual(8);
     for (const r of rows.filter((x) => x.allowed)) expect(r.tbl, `${r.who} 가 실제 표 ${r.tbl} 를 잠그는 데 성공해야 한다고 적혀 있다`).toBe("p0515_probe_tbl");
@@ -2897,5 +2884,291 @@ describe.skipIf(!gate.allowed)("18. DB — 0019 MAINTAIN 행렬 + LOCK 거동 + 
   test("판정식 단위 — 경계값 (160099 → 건너뜀 · 170000 → 적용 · 180001 → 적용)", () => {
     const out = runLocalSql("select 'P515_EDGE ' || (160099 >= 170000)::text || ' ' || (170000 >= 170000)::text || ' ' || (180001 >= 170000)::text as e;");
     expect(out).toContain("P515_EDGE false true true");
+  });
+});
+
+// =============================================================================
+// 19. runbook 0019 절 — **원격에 붙이는 확인 절차는 카탈로그 질의뿐** (astra R2 P1-A)
+//
+//     컨트롤러 결정(2026-09-17): 운영자가 원격에 붙이는 확인은 `has_table_privilege`·`aclexplode` 행렬만 쓴다.
+//     LOCK 거동과 일회용 표 대조군은 **로컬 테스트 전용**이다 — 권한이 예상과 달리 남아 있으면 거부를 "기대" 한 LOCK 도 잡히고,
+//     일회용 표 DDL 은 운영의 이벤트 트리거를 태운다. 적용 시점의 거동 확인은 0019 자기검증 ⑥ 이 이미 한다(그쪽은 시도 직전에
+//     강한 잠금을 줄 수 있는 권한이 전부 false 임을 확인하므로 잠금 획득이 구조적으로 불가능하다).
+//     그리고 **원격에 붙이는 행렬 원문 = 이 파일이 실행하는 원문** 이 되도록, §18 은 runbook 의 표식 사이 SQL 을 읽어 실행한다.
+// =============================================================================
+const RUNBOOK = "docs/ops/migration-runbook.md";
+type RunbookSection = "0016" | "0017" | "0018" | "0019";
+const MATRIX_MARKER: Record<RunbookSection, string> = {
+  "0016": "0016_MATRIX_SQL",
+  "0017": "0017_MATRIX_SQL",
+  "0018": "0018_MATRIX_SQL",
+  "0019": "MAINTAIN_MATRIX_SQL",
+};
+
+/** runbook 의 한 마이그레이션 절(`## <번호>` 부터 다음 `## ` 머리 전까지). */
+function runbookSection(num: RunbookSection): string {
+  const raw = read(RUNBOOK);
+  const start = raw.indexOf(`\n## ${num}`);
+  expect(start, `runbook 에 ${num} 절이 없다`).toBeGreaterThan(-1);
+  const next = raw.indexOf("\n## ", start + 5);
+  return raw.slice(start, next === -1 ? undefined : next);
+}
+
+/** runbook 표식 사이의 ```sql 블록 — 운영자가 원격 SQL Editor 에 붙이는 원문이고, 테스트가 그대로 실행하는 원문이다. */
+function runbookSql(num: RunbookSection): string {
+  const sec = runbookSection(num);
+  const begin = `<!-- P515:${MATRIX_MARKER[num]}:BEGIN -->`;
+  const end = `<!-- P515:${MATRIX_MARKER[num]}:END -->`;
+  const b = sec.indexOf(begin);
+  const e = sec.indexOf(end);
+  expect(b, `runbook ${num} 절에 행렬 SQL 시작 표식이 없다`).toBeGreaterThan(-1);
+  expect(e, `runbook ${num} 절에 행렬 SQL 끝 표식이 없다`).toBeGreaterThan(b);
+  const m = sec.slice(b + begin.length, e).match(/^```sql\n([\s\S]*?)\n```\s*$/m);
+  expect(m, "표식 사이에 ```sql 블록이 하나 있어야 한다").not.toBeNull();
+  return (m as RegExpMatchArray)[1];
+}
+const runbookMatrixSql = () => runbookSql("0019");
+
+/** 원격에서 실행되면 안 되는 문장 — 잠금·DDL·DML·롤 전환·유지보수·익명 블록. */
+const REMOTE_FORBIDDEN =
+  /\b(lock\s+table|create\s|alter\s|drop\s|grant\s|revoke\s|truncate\b|vacuum\b|analyze\b|cluster\b|reindex\b|refresh\s|insert\s+into|delete\s+from|update\s+[\w."]+\s+set\b|do\s+\$|set\s+(local\s+)?role|setval\s*\(|nextval\s*\()/i;
+
+/**
+ * 판정 전에 주석을 지우고 문자열 내용을 비운다 — 행렬은 `('truncate')` 같은 **권한 이름 리터럴**을 담는다.
+ * 저장소의 단일 스캐너(`sqlView` · executable 시야)를 쓴다(제자리 정규식 제거기 금지 — strip-comments §6-S).
+ * 동적 SQL 은 `do $…$` 없이는 실행될 수 없으므로 `do $` 가 남아 잡힌다(executable 시야는 execute 인자도 실행될 SQL 로 남긴다).
+ */
+const remoteScan = (sql: string) => sqlView(sql, "runbook-remote-block.sql", { data: "executable" });
+
+/** 로컬 전용 표식 — 이것이 붙은 줄, 또는 바로 앞 줄에 이것이 있는 코드 블록만 위험 문장을 담을 수 있다. */
+const LOCAL_ONLY = "원격에 붙이지 마라";
+
+/**
+ * astra R4 P2-1 — **실행 가능한 문장의 모양**(위험 토큰 + 대상). 코드 블록(언어 무관)과 산문 둘 다에 적용한다.
+ * 산문에는 "revoke 는 …" 같은 설명이 많아서 토큰만으로는 못 본다 — 대상이 붙은 문장 모양만 잡는다.
+ */
+const T = String.raw`"?[a-z_][\w."]*`; // 대상 이름 — 식별자로 시작해야 한다(산문의 따옴표·기호에 걸리지 않게)
+const STATEMENT_SHAPE = new RegExp(
+  [
+    String.raw`\block\s+(?:table\s+)?${T}\s+in\s+[a-z ]+\s+mode`,
+    String.raw`\bcreate\s+(?:or\s+replace\s+)?(?:unique\s+)?(?:table|trigger|sequence|function|procedure|policy|index|role|schema|extension|view|event\s+trigger)\s+${T}`,
+    String.raw`\bdrop\s+(?:table|trigger|sequence|function|procedure|policy|index|role|schema|extension|view|owned)\s+${T}`,
+    String.raw`\balter\s+(?:table|sequence|function|procedure|role|default\s+privileges|schema|view)\s+${T}`,
+    String.raw`\b(?:grant|revoke)\s+[\w ,()]+?\s+on\s+(?:all\s+\w+\s+in\s+schema\s+|table\s+|sequence\s+|function\s+|schema\s+)?${T}`,
+    String.raw`\b(?:grant|revoke)\s+[a-z_"]+\s+(?:to|from)\s+[a-z_"]+`,
+    String.raw`\btruncate\s+(?:table\s+)?${T}`,
+    String.raw`\bvacuum\b(?:\s*\([^)]*\))?\s+${T}`,
+    String.raw`\banalyze\s+${T}`,
+    String.raw`\b(?:cluster|reindex)\s+${T}`,
+    String.raw`\brefresh\s+materialized\s+view\s+${T}`,
+    String.raw`\binsert\s+into\s+${T}`,
+    String.raw`\bdelete\s+from\s+${T}`,
+    String.raw`\bupdate\s+${T}\s+set\b`,
+    String.raw`\bset\s+(?:local\s+)?role\s+"?[a-z_]`,
+    String.raw`\bdo\s+\$`,
+    String.raw`\b(?:setval|nextval)\s*\(\s*['"\w]`,
+  ].join("|"),
+  "i",
+);
+
+/** 원격 확인 안내가 테스트 파일·테스트 절을 가리키는 모양 — runbook 밖의 원문을 붙이게 만든다. */
+// `§1~§4` 같은 **마이그레이션 자신의 절 번호**는 잡지 않는다 — 테스트를 가리키는 모양(tests/ 경로 · "테스트/test … §N" · "§N … SQL/원문/블록")만.
+const TEST_REFERENCE = /tests\/|(?:테스트|test)[^\n]{0,20}§\s*\d|§\s*\d+[^\n]{0,10}(?:SQL|원문|블록)/i;
+const PASTE_WORDS = /SQL\s*Editor|붙여|복사|copy|paste|psql/i;
+
+/**
+ * runbook 한 절에서 **원격에 붙일 수 있는 위험 문장**을 찾는다 (astra R4 P2-1).
+ *   · 코드 블록: ``` 와 ~~~ 둘 다, 언어 무관. `sql` 블록은 sqlView(executable)로 본 뒤 넓은 토큰(REMOTE_FORBIDDEN)과 문장 모양 둘 다,
+ *     그 밖의 블록(text·c·무표기)은 문장 모양. 블록 바로 앞의 비지 않은 줄에 LOCAL_ONLY 가 있으면 예외.
+ *   · 산문: 문장 모양, 그리고 "테스트 파일/§번호 + 붙여넣기 말" 이 같은 줄에 있으면 위반. 그 줄에 LOCAL_ONLY 가 있으면 예외.
+ * **한계**: 정규식 휴리스틱이다 — 문장을 여러 줄로 쪼개거나 다른 말로 풀어 쓰면 빠진다. 보증이 아니라 회귀 방지 보조다.
+ */
+function remoteViolations(sec: string): string[] {
+  const lines = sec.replace(/\r\n/g, "\n").split("\n");
+  const out: string[] = [];
+  let lastProse = "";
+  for (let i = 0; i < lines.length; i++) {
+    const open = lines[i].match(/^\s*(`{3,}|~{3,})\s*([\w-]*)/);
+    if (open) {
+      const fence = open[1];
+      const lang = open[2].toLowerCase();
+      const body: string[] = [];
+      let j = i + 1;
+      while (j < lines.length && !lines[j].trimStart().startsWith(fence)) body.push(lines[j++]);
+      if (j >= lines.length) out.push(`닫히지 않은 코드 블록 (${i + 1}행)`);
+      const text = body.join("\n");
+      const exempt = lastProse.includes(LOCAL_ONLY);
+      if (!exempt) {
+        const shaped = text.match(STATEMENT_SHAPE);
+        if (shaped) out.push(`코드 블록(${lang || "무표기"}, ${i + 1}행)에 실행 문장: ${shaped[0]}`);
+        if (lang === "sql") {
+          const broad = remoteScan(text).match(REMOTE_FORBIDDEN);
+          if (broad) out.push(`sql 블록(${i + 1}행)에 금지 토큰: ${broad[0]}`);
+        }
+      }
+      i = j;
+      continue;
+    }
+    const line = lines[i];
+    if (line.trim() !== "") lastProse = line;
+    if (line.includes(LOCAL_ONLY)) continue;
+    const shaped = line.match(STATEMENT_SHAPE);
+    if (shaped) out.push(`산문(${i + 1}행)에 실행 문장: ${shaped[0]} — ${line.slice(0, 120)}`);
+    if (TEST_REFERENCE.test(line) && PASTE_WORDS.test(line)) out.push(`산문(${i + 1}행)이 테스트 원문을 붙이라고 한다 — ${line.slice(0, 120)}`);
+  }
+  return out;
+}
+
+describe("19. runbook 0017·0018·0019 — 원격 확인 절차는 카탈로그 질의뿐 (astra R2 P1-A · R3 · R4)", () => {
+  test("🔴 R4 P2-1 — 스캐너의 이빨: astra 의 세 우회(text 펜스의 LOCK · 산문의 명령 · 테스트 절 복사 안내)와 변형을 잡는다", () => {
+    const base = ["## 0019 — 예시", "", "원격 확인:", ""];
+    const cases: [string, string[]][] = [
+      ["text 펜스의 LOCK", [...base, "```text", "LOCK TABLE public.reservations IN ACCESS EXCLUSIVE MODE;", "```"]],
+      ["산문의 명령", [...base, "운영에서 LOCK TABLE public.reservations IN ACCESS EXCLUSIVE MODE; 를 실행해 확인한다."]],
+      ["테스트 절 복사 안내", [...base, "For production verification, copy section 18 of tests/write-privileges.test.ts into the SQL editor."]],
+      ["§ 번호 복사 안내(한국어)", [...base, "§18 을 SQL Editor 에 복사하라."]],
+      ["~~~ 펜스", [...base, "~~~sql", "grant maintain on table notices to anon;", "~~~"]],
+      ["무표기 펜스의 트리거", [...base, "```", "create trigger t before update on public.reservations for each row execute function f();", "```"]],
+      ["인라인 코드의 롤 전환", [...base, "먼저 `set local role anon` 을 친다."]],
+      ["sql 펜스의 do 블록", [...base, "```sql", "do $$ begin perform 1; end $$;", "```"]],
+      ["sql 펜스의 nextval", [...base, "```sql", "select nextval('public.notices_id_seq');", "```"]],
+      ["닫히지 않은 펜스", [...base, "```sql", "select 1;"]],
+    ];
+    for (const [name, sec] of cases) {
+      expect(remoteViolations(sec.join("\n")), name).not.toEqual([]);
+    }
+    // 로컬 전용 표식이 붙으면 허용 — 블록은 바로 앞 줄, 산문은 같은 줄
+    const ok = [
+      ...base,
+      "⛔ 아래는 로컬 실측 출력이다 — 원격에 붙이지 마라:",
+      "```text",
+      "[anon → reservations] CREATE TRIGGER 성공",
+      "LOCK TABLE public.reservations IN ACCESS EXCLUSIVE MODE;",
+      "```",
+      "로컬에서 `set local role anon` 으로 쟀다(원격에 붙이지 마라).",
+      "revoke 는 실행 롤이 부여한 grant 만 지운다. `CREATE TRIGGER` 는 TRIGGER 권한을 요구한다.",
+      "```sql",
+      "select has_table_privilege('anon', c.oid, 'MAINTAIN'), p.priv from pg_class c cross join (values ('truncate')) p(priv);",
+      "```",
+    ];
+    expect(remoteViolations(ok.join("\n"))).toEqual([]);
+  });
+
+  for (const num of ["0016", "0017", "0018", "0019"] as const) {
+    test(`🔴 R4·R5 — ${num} 절 전체(모든 펜스·산문)에 원격에 붙일 수 있는 위험 문장 0 · 테스트 원문 복사 안내 0`, () => {
+      const v = remoteViolations(runbookSection(num));
+      expect(v, v.join("\n")).toEqual([]);
+    });
+  }
+  for (const num of ["0016", "0017", "0018", "0019"] as const) {
+    test(`🔴 ${num} 절의 코드 블록 — sql 은 잠금·DDL·DML·롤 전환·setval/nextval 0개 · 그 밖은 출력(text)·C 인용뿐`, () => {
+      const sec = runbookSection(num);
+      const blocks = [...sec.matchAll(/```(\w*)\n([\s\S]*?)\n```/g)];
+      const sql = blocks.filter((m) => m[1] === "sql");
+      expect(sql.length, `${num} 절에 원격 확인 SQL 이 없다`).toBeGreaterThanOrEqual(1);
+      for (const [, lang, body] of blocks) {
+        expect(["sql", "text", "c"], `${num} 절의 코드 블록 언어가 '${lang}' — 붙여 넣을 SQL 인지 출력인지 알 수 없다`).toContain(lang);
+        if (lang !== "sql") continue;
+        const hit = remoteScan(body).match(REMOTE_FORBIDDEN);
+        expect(hit?.[0] ?? null, `${num} 절의 원격 SQL 블록에 금지 문장이 있다:\n${body}`).toBeNull();
+      }
+    });
+
+    test(`🔴 ${num} 절 — 로컬 전용 거동 블록을 언급하는 줄은 전부 '원격에 붙이지 마라' 를 말한다`, () => {
+      const lines = runbookSection(num)
+        .split("\n")
+        .filter((l) => l.includes("LOCK_PROBE_SQL") || (/거동/.test(l) && /DO 블록|테스트/.test(l)));
+      // 0016 절에는 로컬 전용 거동 블록이 없다(그 절의 테스트 §9 는 행렬뿐) — 경고 줄이 없어도 된다.
+      if (num !== "0016") expect(lines.length, `${num} 절에 로컬 전용 경고가 없다`).toBeGreaterThan(0);
+      for (const l of lines) expect(l, `원격에 붙이라는 뜻으로 읽힐 수 있다:\n${l}`).toMatch(/원격에 붙이지 마라/);
+      expect(runbookSection(num), "옛 안내 문장이 남아 있다").not.toMatch(/원문을 붙인다|원격에 붙여도 되는 이유|거동 DO 블록이 오류 없이|SQL 을 그대로 SQL Editor/);
+    });
+  }
+
+  test("금지 문장 판정의 이빨 — 옛 안내가 붙이던 LOCK·트리거·시퀀스 블록과 흔한 DDL 을 잡고, 권한 이름 리터럴은 넘긴다", () => {
+    for (const bad of [LOCK_PROBE_SQL, "create table public.x (id int);", "grant maintain on table t to anon;", "set local role anon;", "vacuum reservations;", "select setval('s', 1);", "create trigger t before update on public.reservations for each row execute function f();", "select nextval('public.notices_id_seq');"]) {
+      expect(remoteScan(bad), bad.slice(0, 60)).toMatch(REMOTE_FORBIDDEN);
+    }
+    for (const ok of ["select has_table_privilege('anon', c.oid, 'MAINTAIN') from pg_class c;", "select current_setting('server_version_num'), version();", "select 1 from (values ('truncate'),('trigger'),('update')) p(priv);"]) {
+      expect(remoteScan(ok)).not.toMatch(REMOTE_FORBIDDEN);
+    }
+  });
+
+  test("🔴 0017·0018 행렬 SQL 은 테스트의 대상 목록과 같다 (runbook 원문 = §12·§15 실행 원문)", () => {
+    const s17 = runbookSql("0017");
+    expect(s17).toMatch(/^select\b/i);
+    expect(s17).toContain("(values ('public.reservations'),('public.notifications_log')) t(tbl)");
+    for (const f of OUTBOX_DEFINER_FNS) expect(s17, f).toContain(`'public.${f}(`);
+    // P2-4 — 네 시그니처가 **존재**하는지 단언한다(없으면 나머지 검사가 0행으로 통과한다)
+    expect(s17).toContain("where to_regprocedure(s.sig) is null), 'OUTBOX_FN_ALL_PRESENT')");
+    expect(s17.match(/\('public\.\w+\([^)]*\)'\)/g)?.length ?? 0, "네 시그니처 목록이 네 곳(존재·보유자·유효·서비스)에 있어야 한다").toBe(16);
+    // P1 — NULL proacl 을 기본 ACL 로 읽고, 공개 롤의 유효 EXECUTE 를 따로 본다
+    expect(s17).toContain("aclexplode(coalesce(p.proacl, acldefault('f', p.proowner)))");
+    expect(s17).not.toMatch(/aclexplode\(p\.proacl\)/);
+    expect(s17).toContain("'OUTBOX_FN_NO_PUBLIC_ROLE_EXEC'");
+    for (const k of ["'PII_BLIND_NONE'", "'ANON_PII_NONE'", "'ADMIN_READ_OK'", "'SERVICE_OK'", "'PII_COLUMN_NONE'", "'PII_PUBLIC_NONE'", "'OUTBOX_FN_ALL_PRESENT'", "'OUTBOX_FN_ONLY_SERVICE'", "'OUTBOX_FN_SERVICE_OK'", "'PII_NO_USER_TRIGGER'"]) {
+      expect(s17, k).toContain(k);
+    }
+    const s18 = runbookSql("0018");
+    expect(s18).toMatch(/^select\b/i);
+    expect(s18).toContain(`c.relname in (${CONTENT_SEQS.map((s) => `'${s}'`).join(",")})`);
+    expect(s18).toContain(`(values ${ALL_SEQS.map((s) => `('public.${s}')`).join(",")}) s(seq)`);
+    for (const k of ["'SEQ_NONE'", "'ADMIN_SEQ_OK'", "'SERVICE_SEQ_OK'", "'SEQ_PUBLIC_NONE'", "'SEQ_COUNT '"]) expect(s18, k).toContain(k);
+    // 테스트 파일에 같은 행렬의 사본이 남아 있으면 둘이 어긋날 수 있다
+    const self = read("tests/write-privileges.test.ts");
+    // (1 = 아래 검사식 자신)
+    expect(self.match(/'PII_BLIND_LEAK '/g)?.length ?? 0, "0017 행렬 사본이 테스트 파일에 남아 있다").toBe(1);
+    expect(self.match(/'SEQ_LEAK '/g)?.length ?? 0, "0018 행렬 사본이 테스트 파일에 남아 있다").toBe(1);
+  });
+
+  test("🔴 R5 — 0016 상행·롤백의 함수 EXECUTE 검사는 NULL proacl 을 기본 ACL 로 읽고, 둘 다 공개 롤 유효 EXECUTE 를 거부한다", () => {
+    for (const rel of [UP16_SQL, DOWN16_SQL]) {
+      const code = sqlCode(rel);
+      expect(code, `${rel}: aclexplode(NULL) 은 0행이다`).toContain("aclexplode(coalesce(p.proacl, acldefault('f', p.proowner)))");
+      expect(code, rel).not.toMatch(/aclexplode\(p\.proacl\)/);
+      expect(code, `${rel}: 유효 EXECUTE 거부가 없다`).toMatch(/has_function_privilege\('anon', fn_oid, 'execute'\) or has_function_privilege\('authenticated', fn_oid, 'execute'\)/);
+    }
+  });
+
+  test("R5 — 소스 의미에 근거한 제외(컨트롤러 승인)마다 PG 소스 경로 주석이 붙어 있다", () => {
+    const lineOf = (rel: string, needle: string) => read(rel).split("\n").find((l) => l.includes(needle)) ?? "";
+    expect(lineOf(UP17_SQL, "where d.privilege_type = 'TRIGGER'")).toContain("src/backend/commands/trigger.c");
+    expect(lineOf(UP17_SQL, "expected := has_table_privilege(role_name, 'public.p0017_probe_tbl', 'TRIGGER');")).toContain("src/backend/commands/trigger.c");
+    expect(lineOf(UP18_SQL, "and d.privilege_type <> 'SELECT'")).toContain("src/backend/commands/sequence.c");
+    expect(lineOf(UP18_SQL, "and not (q.call = 'setval' and d.privilege_type = 'USAGE')")).toContain("src/backend/commands/sequence.c");
+    const up18 = read(UP18_SQL);
+    expect(up18.slice(up18.indexOf("expected := case probe_call") - 10, up18.indexOf("when 'setval' then has_sequence_privilege"))).toContain("src/backend/commands/sequence.c");
+    expect(lineOf(UP19_SQL, "where d.privilege_type not in ('SELECT', 'MAINTAIN')")).toContain("src/backend/commands/lockcmds.c");
+    expect(lineOf(UP19_SQL, "and d.privilege_type <> 'SELECT'")).toContain("src/backend/commands/lockcmds.c");
+  });
+
+  test("🔴 R5 — 0016 행렬 SQL 은 runbook 한 곳에 있고, 세 시그니처 존재·NULL ACL·유효 EXECUTE 를 본다", () => {
+    const s16 = runbookSql("0016");
+    expect(s16).toMatch(/^select\b/i);
+    for (const f of PG_TEMP_FIXED_FNS) expect(s16, f).toContain(`('public.${f}(`);
+    expect(s16).toContain("where to_regprocedure(s.sig) is null), 'FN_ALL_PRESENT')");
+    const sigRe = new RegExp(String.raw`\('public\.(?:${PG_TEMP_FIXED_FNS.join("|")})\([^)]*\)'\)`, "g");
+    expect(s16.match(sigRe)?.length ?? 0, "세 시그니처 목록이 다섯 곳(존재·pg_temp·보유자·유효·서비스)에 있어야 한다").toBe(15);
+    expect(s16).toContain("aclexplode(coalesce(p.proacl, acldefault('f', p.proowner)))");
+    expect(s16).not.toMatch(/aclexplode\(p\.proacl\)/);
+    expect(s16).not.toMatch(/p\.proname in \(/);
+    for (const k of ["'RLS_BLIND_NONE'", "'ANON_SELECT_ONLY'", "'PLACES_WRITE_NONE'", "'PLACES_READ_OK'", "'PG_TEMP_OK'", "'FN_EXEC_ONLY_SERVICE'", "'FN_NO_PUBLIC_ROLE_EXEC'", "'FN_SERVICE_OK'", "'CLAIM_ONE_ARG_GONE'", "'ADMIN_OK'", "'SEQ_OK'"]) {
+      expect(s16, k).toContain(k);
+    }
+    const self = read("tests/write-privileges.test.ts");
+    expect(self.match(/'RLS_BLIND_LEAK '/g)?.length ?? 0, "0016 행렬 사본이 테스트 파일에 남아 있다(1 = 이 검사식 자신)").toBe(1);
+  });
+
+  test("🔴 행렬 SQL 은 runbook 한 곳에 있고, 카탈로그 질의뿐이며, 롤백 기준선 아홉 표를 그대로 담는다", () => {
+    const sql = runbookMatrixSql();
+    expect(sql).toMatch(/^select\b/i);
+    expect(remoteScan(sql)).not.toMatch(REMOTE_FORBIDDEN);
+    for (const needle of ["has_table_privilege(r.role, c.oid, 'MAINTAIN')", "'MAINTAIN_NONE'", "'SERVICE_MAINTAIN_OK'", "'MAINTAIN_PUBLIC_NONE'", "a.grantee = 0", "'BASELINE_PRESENT '"]) {
+      expect(sql, needle).toContain(needle);
+    }
+    const listed = [...(sql.match(/unnest\(array\[([^\]]*)\]\)/)?.[1] ?? "").matchAll(/'public\.(\w+)'/g)].map((m) => m[1]);
+    expect(listed).toEqual([...MAINTAIN_BASELINE_TABLES]);
+    // 테스트 파일에 같은 행렬의 사본이 따로 있으면 둘이 어긋날 수 있다 — 사본 0
+    expect(read("tests/write-privileges.test.ts").match(/'SERVICE_MAINTAIN_LOST '/g)?.length ?? 0, "행렬 SQL 사본이 테스트 파일에 남아 있다").toBe(1);
   });
 });

@@ -311,12 +311,15 @@ begin
 
     -- EXECUTE 보유자는 service_role 과 소유자뿐이어야 한다. `create or replace` 는 ACL 을 보존하므로
     -- 여기가 깨졌다면 이 파일 밖에서 grant 했거나, drop 이 섞여 기본 권한이 다시 붙은 것이다.
+    -- 🔴 `proacl IS NULL` 은 기본 ACL(소유자 + PUBLIC EXECUTE)이다 — aclexplode(NULL) 은 0행이라 그대로 두면 이 검사가
+    --    통과한다(P5-15 astra R4·R5 · 0017 과 같은 수정). acldefault('f', 소유자) 로 채운다.
+    --    (바로 아래의 유효 EXECUTE 검사는 원래부터 있었다 — 두 판정이 서로를 보완한다.)
     select string_agg(distinct g, ', ')
       into holders
       from (
         select case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end as g
           from pg_proc p
-          cross join lateral aclexplode(p.proacl) a
+          cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
          where p.oid = fn_oid and a.privilege_type = 'EXECUTE'
       ) s
      where s.g <> 'service_role'

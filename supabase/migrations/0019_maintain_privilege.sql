@@ -202,6 +202,14 @@ begin
   --    옳다면 전부 42501 이어야 한다. **MAINTAIN 을 선정 조건에서 빼는 이유**: 회수가 실패해 MAINTAIN 이 남은 조합이
   --    바로 잡아야 할 대상인데, 그것을 "다른 권한이 있다" 로 보고 제외하면 탐침이 정확히 새는 곳에서 눈을 감는다(깨뜨리기 ⑥ 에서 확인).
   --    (UPDATE·DELETE 가 있는 조합 — authenticated × 콘텐츠 여섯 — 은 MAINTAIN 없이도 잠글 수 있어 대상이 아니다. 헤더 "닫지 못하는 것".)
+  --
+  --    🔴 **잠금 획득은 구조적으로 불가능해야 한다** (astra R2 P1-A — 이 블록은 원격 적용 중에 실제 표를 대상으로 돈다).
+  --    ① 이 이 블록보다 먼저 돌아 MAINTAIN 이 남았으면 여기 오기 전에 멈춘다. 그래도 **시도 직전에 한 번 더**,
+  --    그 롤이 그 표에 **SELECT 말고 어떤 권한이든**(종류는 acldefault 에서 열거 — MAINTAIN·UPDATE·DELETE·TRUNCATE·INSERT… 전부)
+  --    갖고 있으면 **LOCK 을 시도하지 않고** 멈춘다. PostgreSQL 17 LockTableAclCheck 는 ACCESS EXCLUSIVE 에
+  --    MAINTAIN|UPDATE|DELETE|TRUNCATE 중 하나를 요구하므로(SELECT·INSERT 는 약한 모드에만), 이 사전 검사를 통과한 조합은
+  --    잠금을 **얻을 수 없다**. has_table_privilege 는 소유권·슈퍼유저·멤버십(pg_maintain 포함)·PUBLIC 까지 반영한다.
+  --    처음 판은 이 검사가 없어서, ① 을 가린 깨뜨리기 변형에서 탐침이 실제로 gallery 의 ACCESS EXCLUSIVE 를 **잡았다가** 되돌렸다.
   for probe in
     select r.role as who, c.oid::regclass as tbl
       from pg_class c join pg_namespace n on n.oid = c.relnamespace
@@ -209,11 +217,23 @@ begin
      where n.nspname = 'public' and c.relkind in ('r', 'p')
        and not exists (
              select 1 from aclexplode(acldefault('r', c.relowner)) d
-              where d.privilege_type not in ('SELECT', 'MAINTAIN')
+              where d.privilege_type not in ('SELECT', 'MAINTAIN')  -- src/backend/commands/lockcmds.c LockTableAclCheck: ACCESS EXCLUSIVE 는 SELECT 로 허용되지 않는다(MAINTAIN 은 ① 과 아래 사전 검사가 본다)
                 and has_table_privilege(r.role, c.oid, d.privilege_type))
      order by c.relname, r.role
   loop
     n_probes := n_probes + 1;
+    -- 시도 직전 사전 검사 — SELECT 외의 권한이 하나라도 있으면 시도하지 않는다(위 🔴).
+    select string_agg(lower(d.privilege_type), ',' order by d.privilege_type)
+      into leaked
+      from pg_class k
+      cross join lateral aclexplode(acldefault('r', k.relowner)) d
+     where k.oid = probe.tbl
+       and d.privilege_type <> 'SELECT'  -- src/backend/commands/lockcmds.c LockTableAclCheck: SELECT 는 ACCESS SHARE 이하만, INSERT 는 ROW EXCLUSIVE 이하만 — 그래도 INSERT 는 남겨 보수적으로 멈춘다
+       and has_table_privilege(probe.who, k.oid, d.privilege_type);
+    if leaked is not null then
+      raise exception '0019: % 가 % 에 강한 잠금을 줄 수 있는 권한(%)을 갖고 있다 — 잠금을 시도하지 않고 멈춘다', probe.who, probe.tbl, leaked
+        using hint = '① 의 행렬이 통과했는데 여기 걸렸다면 권한 판정 밖의 경로가 있다(롤 멤버십·다른 부여자·소유권). 실제 표에 잠금을 거는 시도는 하지 않았다.';
+    end if;
     begin
       execute format('set local role %I', probe.who);
     exception when others then
@@ -263,8 +283,20 @@ begin
   --    구분되지 않는다(0017·0018 규범). 임시 표는 서브트랜잭션 안에서 만들고 끝에서 예외로 통째로 되돌린다 — 커밋되지 않는다.
   begin
     execute 'create table public.p0019_probe_tbl (id int)';
-    execute 'revoke all on table public.p0019_probe_tbl from anon, authenticated, service_role';
+    -- PUBLIC 까지 회수한다 — 기본 PUBLIC UPDATE 등이 있으면 "MAINTAIN 하나로 성공" 이 다른 권한으로 성립한다(P5-15 astra R4 P2-3).
+    execute 'revoke all on table public.p0019_probe_tbl from public, anon, authenticated, service_role';
     execute 'grant maintain on table public.p0019_probe_tbl to anon';
+    -- 의도한 유효 권한만 — anon 의 MAINTAIN 하나. 세 롤 × 열거한 표 권한 종류 전부를 본다.
+    select string_agg(format('%s(%s)=%s', w.role, lower(d.privilege_type), has_table_privilege(w.role, 'public.p0019_probe_tbl', d.privilege_type)), ', ')
+      into leaked
+      from (values ('anon'), ('authenticated'), ('service_role')) w(role)
+      cross join lateral aclexplode(acldefault('r', (select relowner from pg_class where oid = 'public.p0019_probe_tbl'::regclass))) d
+     where has_table_privilege(w.role, 'public.p0019_probe_tbl', d.privilege_type)
+           is distinct from (w.role = 'anon' and d.privilege_type = 'MAINTAIN');
+    if leaked is not null then
+      raise exception '0019: 대조군 일회용 표의 유효 권한이 의도와 다르다 — %', leaked
+        using hint = 'PUBLIC 이나 기본 권한이 남아 있으면 대조군이 MAINTAIN 이 아닌 권한으로 성공한다. 회수 목록에 public 이 있는지 볼 것.';
+    end if;
     execute 'set local role anon';
     if current_user <> 'anon' then
       raise exception '0019: 대조군의 롤 전환이 반영되지 않았다 (current_user=%)', current_user;
@@ -277,6 +309,9 @@ begin
       control_ok := true;
     when others then
       get stacked diagnostics st = returned_sqlstate, ms = message_text;
+      if ms like '0019:%' then
+        raise exception '%', ms using hint = '대조군 준비 단계의 자기검증이 멈췄다(위 메시지).';
+      end if;
       raise exception '0019: 대조군이 실패했다 — MAINTAIN 만 준 임시 표에서도 anon 의 LOCK 이 돌지 않았다 (SQLSTATE=% MESSAGE=%)', st, ms
         using hint = '탐침 SQL 자체가 틀렸거나 롤 전환이 되지 않는다. 대조군이 실패하면 ⑥ 의 "거부" 는 아무것도 증명하지 못한다 — 그래서 여기서 멈춘다.';
   end;

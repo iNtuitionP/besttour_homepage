@@ -70,14 +70,76 @@ const gate = dbWriteGate();
  * astra P1-5 — **API 에 노출되는 스키마**. 하드코딩하지 않고 supabase/config.toml `[api] schemas` 에서 읽는다
  * (PostgREST 가 실제로 노출하는 목록과 같은 원천). 파싱에 실패하면 게이트 전체가 실패한다 — 조용히 public 만 보지 않는다.
  */
-const EXPOSED_SCHEMAS: readonly string[] = (() => {
-  const toml = readFileSync(path.resolve(import.meta.dirname, "..", "supabase", "config.toml"), "utf8");
-  const api = toml.split(/^\[api\]\s*$/m)[1]?.split(/^\[/m)[0] ?? "";
-  const m = api.match(/^schemas\s*=\s*\[([^\]]*)\]/m);
-  const list = [...(m?.[1] ?? "").matchAll(/"([a-z_][a-z0-9_]*)"/g)].map((x) => x[1]);
-  if (list.length === 0) throw new Error("supabase/config.toml 의 [api] schemas 를 읽지 못했다 — 노출 스키마를 모르면 게이트가 성립하지 않는다");
-  return list;
-})();
+/**
+ * `[api] schemas = [ … ]` 를 **토큰 단위로** 읽는다 (astra R2 P2-C).
+ * 처음 판은 정규식이 `"소문자"` 원소만 골라 `'secret_api'`·`"PrivateAPI"` 를 **조용히 빠뜨렸다**(원소가 0개일 때만 throw).
+ * 지금은 배열 끝 `]` 까지 한 글자씩 훑어 — 공백·줄바꿈·쉼표·`#` 주석·큰따옴표 문자열(이스케이프 포함)·작은따옴표 리터럴 문자열 —
+ * 그 밖의 글자가 하나라도 나오면 throw 한다. 빈 문자열·빈 배열·닫히지 않은 배열/문자열도 throw 한다.
+ * 식별자 대소문자는 그대로 둔다(PostgREST 는 스키마 이름을 그대로 쓴다 — 게이트는 `nspname = any(...)` 로 정확히 대조한다).
+ */
+function parseExposedSchemas(toml: string): string[] {
+  const fail = (why: string): never => {
+    throw new Error(`supabase/config.toml [api] schemas 를 해석하지 못한다 — ${why} (노출 스키마를 모르면 게이트가 성립하지 않는다)`);
+  };
+  const lines = toml.replace(/\r\n/g, "\n").split("\n");
+  const head = lines.findIndex((l) => /^\s*\[api\]\s*(#.*)?$/.test(l));
+  if (head === -1) fail("[api] 절이 없다");
+  let end = lines.findIndex((l, i) => i > head && /^\s*\[/.test(l));
+  if (end === -1) end = lines.length;
+  const body = lines.slice(head + 1, end).join("\n");
+  const key = body.match(/^\s*schemas\s*=\s*\[/m);
+  if (!key || key.index === undefined) return fail("schemas 키가 없다");
+  const s = body.slice(key.index + key[0].length);
+  const out: string[] = [];
+  let i = 0;
+  let expectValue = true;
+  for (;;) {
+    if (i >= s.length) fail("배열이 닫히지 않았다");
+    const c = s[i];
+    if (c === " " || c === "\t" || c === "\n") {
+      i++;
+    } else if (c === "#") {
+      const nl = s.indexOf("\n", i);
+      i = nl === -1 ? s.length : nl;
+    } else if (c === "]") {
+      break;
+    } else if (c === ",") {
+      if (expectValue) fail(`${out.length + 1}번째 자리에 값 없이 쉼표가 있다`);
+      expectValue = true;
+      i++;
+    } else if (c === '"' || c === "'") {
+      if (!expectValue) fail(`${out.length}번째 원소 뒤에 쉼표가 없다`);
+      let j = i + 1;
+      let v = "";
+      for (;;) {
+        if (j >= s.length || s[j] === "\n") fail(`${out.length + 1}번째 문자열이 닫히지 않았다`);
+        const d = s[j];
+        if (d === c) break;
+        if (c === '"' && d === "\\") {
+          const e = s[j + 1];
+          const map: Record<string, string> = { '"': '"', "\\": "\\", n: "\n", t: "\t" };
+          if (e === undefined || !Object.hasOwn(map, e)) fail(`${out.length + 1}번째 문자열의 이스케이프 \\${e ?? ""} 를 해석하지 못한다`);
+          v += map[e];
+          j += 2;
+          continue;
+        }
+        v += d;
+        j++;
+      }
+      if (v.length === 0) fail(`${out.length + 1}번째 원소가 빈 문자열이다`);
+      out.push(v);
+      expectValue = false;
+      i = j + 1;
+    } else {
+      fail(`해석하지 못한 원소가 있다: ${JSON.stringify(s.slice(i, i + 20))}`);
+    }
+  }
+  if (out.length === 0) fail("원소가 0개다");
+  return out;
+}
+const EXPOSED_SCHEMAS: readonly string[] = parseExposedSchemas(
+  readFileSync(path.resolve(import.meta.dirname, "..", "supabase", "config.toml"), "utf8"),
+);
 
 // =============================================================================
 // 허용 목록 — 항목마다 사유 한 줄. **넓혀서 통과시키지 마라**: 빨개졌다면 그것이 진짜 구멍일 수 있다.
@@ -151,14 +213,19 @@ const OWNERS: Reasoned = { postgres: "supabase db push / SQL Editor 의 적용 �
 // ── astra 수정 라운드 (P5-15) — **새 수집기**의 기준선. 기존 목록은 넓히지 않았다. 항목은 전부 2026-09-17 로컬 실측 그대로다.
 
 /**
- * 노출 스키마(graphql_public)의 **프레임워크 기본 함수** — 이름·시그니처·소유자·허용 롤까지 고정한다.
+ * 노출 스키마(graphql_public)의 **프레임워크 기본 함수** — 이름·시그니처·소유자·허용 롤·실행 모드까지 고정한다.
  * 이 밖의 graphql_public 객체는 전부 위반이다(그 스키마의 기본 권한도 anon·authenticated 에게 전권을 준다 — 실측).
+ * 컨트롤러 결정(2026-09-17, P5-15 R3): graphql_public 노출은 **유지**하고 이 게이트로 감시한다(config.toml 은 바꾸지 않는다).
  */
 interface FrameworkFn {
   readonly reason: string;
   readonly owner: string;
   readonly roles: readonly string[];
   readonly publicExecute: boolean;
+  /** astra R2 P1-B — `prosecdef`. 허용은 **이 실행 모드일 때만** 성립한다(definer 로 바뀌면 소유자 권한으로 돈다). */
+  readonly securityDefiner: boolean;
+  /** `proconfig` 를 ` && ` 로 이은 값, 없으면 `(none)`. 설정 주입(search_path 등)도 기준선 이탈이다. */
+  readonly config: string;
 }
 const FRAMEWORK_FNS: Readonly<Record<string, FrameworkFn>> = {
   "graphql_public.graphql(text,text,jsonb,jsonb)": {
@@ -166,6 +233,8 @@ const FRAMEWORK_FNS: Readonly<Record<string, FrameworkFn>> = {
     owner: "supabase_admin",
     roles: ["anon", "authenticated"],
     publicExecute: true,
+    securityDefiner: false,
+    config: "(none)",
   },
 };
 
@@ -178,9 +247,9 @@ const PUBLIC_SCHEMA_USAGE: Reasoned = { public: "PostgreSQL 15+ public 스키마
 /**
  * 사용자 타입의 USAGE. `reservation_status`(0001 enum)는 typacl 이 NULL 이라 PostgreSQL 기본값 = **PUBLIC USAGE** 다(실측).
  * 타입 USAGE 는 행을 읽게 해 주지 않는다(값 캐스팅·그 타입으로 객체를 정의하는 데 쓰인다). **새 수집기가 찾은 기준선**이라
- * 넓힌 것이 아니라 고정한 것이다 — 회수할지는 컨트롤러 판단으로 남긴다(P5-15 보고서 astra 절).
+ * 넓힌 것이 아니라 고정한 것이다. **컨트롤러 결정(2026-09-17, P5-15 R3): 유지** — 기준선 그대로 둔다.
  */
-const TYPE_USAGE: Reasoned = { reservation_status: "0001 enum — typacl NULL = PostgreSQL 기본 PUBLIC USAGE (실측 기준선 · 회수 여부 보고)" };
+const TYPE_USAGE: Reasoned = { reservation_status: "0001 enum — typacl NULL = PostgreSQL 기본 PUBLIC USAGE (실측 기준선 · 컨트롤러 결정 2026-09-17: 유지)" };
 
 /**
  * 공개 롤의 불리언 속성 기준선 — 여기 없는 속성은 **false 가 기준**이다(PostgreSQL 이 속성을 더해도 false 가 아니면 빨갛다).
@@ -380,6 +449,10 @@ function factsQuery(schemas: readonly string[]): string {
   "  union all",
   "  select format('definer|%s|%s', f.fname, coalesce((select c from unnest(f.proconfig) c where c like 'search_path=%' limit 1), 'search_path=(none)'))",
   "  from fns f where f.prosecdef",
+  "  union all",
+  // 실행 모드 — 모든 함수. 구분자 ';'·'|' 와 겹치지 않게 proconfig 는 ' && ' 로 잇는다(astra R2 P1-B).
+  "  select format('fnmode|%s|%s|%s', f.fname, f.prosecdef::text, coalesce(array_to_string(f.proconfig, ' && '), '(none)'))",
+  "  from fns f",
   "  union all",
   "  select format('public_acl|%s|%s', a.rname, a.privilege_type) from relacls a where a.grantee = 0",
   "  union all",
@@ -584,6 +657,18 @@ function evaluate(facts: readonly string[]): string[] {
       case "owner":
         if (!own(OWNERS, b)) out.push(`${obj} — 소유자가 ${b} 다 (허용: ${Object.keys(OWNERS).join(", ")})`);
         break;
+      case "fnmode": {
+        // [fnmode, 함수, prosecdef, proconfig…] — 프레임워크 예외는 기준선 실행 모드에서만 성립한다.
+        if (!own(FRAMEWORK_FNS, obj)) break;
+        const spec = FRAMEWORK_FNS[obj];
+        const config = r.slice(3).join("|");
+        if (a !== String(spec.securityDefiner) || config !== spec.config) {
+          out.push(
+            `${obj} — 프레임워크 함수의 실행 모드가 기준선과 다르다 (security definer=${a} · 설정=${config} / 기준선 definer=${spec.securityDefiner} · 설정=${spec.config}) — 허용은 그 모드에서만 성립한다`,
+          );
+        }
+        break;
+      }
       case "fnowner":
         if (own(OWNERS, a)) break;
         if (own(FRAMEWORK_FNS, obj) && FRAMEWORK_FNS[obj].owner === a) break;
@@ -595,6 +680,13 @@ function evaluate(facts: readonly string[]): string[] {
   }
   for (const t of exposed) {
     if (rlsOff.has(t)) out.push(`${t} — 공개 롤에 권한이 있는데 RLS 가 꺼져 있다`);
+  }
+  // 프레임워크 함수가 수집됐는데 실행 모드 사실이 없다 — 수집 누락을 허용으로 읽지 않는다(astra R2 P1-B).
+  const moded = new Set(rows.filter((r) => r[0] === "fnmode").map((r) => r[1]));
+  for (const r of rows) {
+    if (r[0] === "fnowner" && own(FRAMEWORK_FNS, r[1]) && !moded.has(r[1])) {
+      out.push(`${r[1]} — 프레임워크 함수의 실행 모드 사실이 없다 (definer 여부를 확인하지 못하면 허용하지 않는다)`);
+    }
   }
   return [...new Set(out)].sort();
 }
@@ -618,6 +710,7 @@ function deadAllowances(facts: readonly string[]): string[] {
     for (const role of spec.roles) if (!has.has(`function|${f}|${role}|execute`)) dead.push(`FRAMEWORK_FNS ${f}/${role}`);
     if (!has.has(`fnowner|${f}|${spec.owner}`)) dead.push(`FRAMEWORK_FNS ${f} 소유자 ${spec.owner}`);
     if (spec.publicExecute && !has.has(`public_fn_acl|${f}|EXECUTE`)) dead.push(`FRAMEWORK_FNS ${f} PUBLIC EXECUTE`);
+    if (!has.has(`fnmode|${f}|${spec.securityDefiner}|${spec.config}`)) dead.push(`FRAMEWORK_FNS ${f} 실행 모드 definer=${spec.securityDefiner} 설정=${spec.config}`);
   }
   for (const s of Object.keys(PUBLIC_SCHEMA_USAGE)) if (!has.has(`public_schema_acl|${s}|USAGE`)) dead.push(`PUBLIC_SCHEMA_USAGE ${s}`);
   for (const t of Object.keys(TYPE_USAGE)) if (!has.has(`public_type_acl|${t}|USAGE`)) dead.push(`TYPE_USAGE ${t}`);
@@ -816,7 +909,7 @@ describe("0. 허용 목록 — 사유 필수 · 비어 있지 않음(의도적 �
   test("🔴 astra P1-5 — 노출 스키마 전체: 프레임워크 함수만 이름으로 허용 · 그 밖의 graphql_public 객체는 위반", () => {
     const G = "graphql_public.graphql(text,text,jsonb,jsonb)";
     expect(
-      evaluate([`function|${G}|anon|execute`, `function|${G}|authenticated|execute`, `acl|function|${G}|anon|execute|false`, `public_fn_acl|${G}|EXECUTE`, `fnowner|${G}|supabase_admin`]),
+      evaluate([`function|${G}|anon|execute`, `function|${G}|authenticated|execute`, `acl|function|${G}|anon|execute|false`, `public_fn_acl|${G}|EXECUTE`, `fnowner|${G}|supabase_admin`, `fnmode|${G}|false|(none)`]),
       "프레임워크 기본 함수는 조용해야 한다",
     ).toEqual([]);
     const v = evaluate([
@@ -835,6 +928,43 @@ describe("0. 허용 목록 — 사유 필수 · 비어 있지 않음(의도적 �
     ]) {
       expect(v, needle).toContain(needle);
     }
+  });
+
+  test("🔴 astra R2 P1-B — 허용된 프레임워크 함수가 SECURITY DEFINER 로 바뀌면(pg_temp 가 있어도) 빨개진다", () => {
+    const G = "graphql_public.graphql(text,text,jsonb,jsonb)";
+    const base = [
+      `function|${G}|anon|execute`,
+      `function|${G}|authenticated|execute`,
+      `acl|function|${G}|anon|execute|false`,
+      `acl|function|${G}|authenticated|execute|false`,
+      `public_fn_acl|${G}|EXECUTE`,
+      `fnowner|${G}|supabase_admin`,
+    ];
+    // astra 가 넣은 사실 그대로 — definer + search_path=public, pg_temp
+    const escalated = evaluate([...base, `definer|${G}|search_path=public, pg_temp`, `fnmode|${G}|true|search_path=public, pg_temp`]).join("\n");
+    expect(escalated).toContain(`${G} — 프레임워크 함수의 실행 모드가 기준선과 다르다`);
+    // proconfig 만 붙어도(설정 주입) 빨갛다
+    expect(evaluate([...base, `fnmode|${G}|false|search_path=public`]).join("\n")).toContain(`${G} — 프레임워크 함수의 실행 모드가 기준선과 다르다`);
+    // 실행 모드 사실이 아예 없으면(수집 누락) 조용히 통과하지 않는다
+    expect(evaluate(base).join("\n")).toContain(`${G} — 프레임워크 함수의 실행 모드 사실이 없다`);
+    // 기준선(invoker · 설정 없음)은 조용하다
+    expect(evaluate([...base, `fnmode|${G}|false|(none)`])).toEqual([]);
+  });
+
+  test("🔴 astra R2 P2-C — config.toml schemas 파서: 모든 원소를 받거나, 하나라도 해석 못 하면 throw 한다", () => {
+    const wrap = (arr: string) => `project_id = "x"\n[api]\nenabled = true\n${arr}\nmax_rows = 1\n[api.tls]\nenabled = false\n`;
+    expect(parseExposedSchemas(wrap(`schemas = ["public", "graphql_public", 'secret_api']`))).toEqual(["public", "graphql_public", "secret_api"]);
+    expect(parseExposedSchemas(wrap(`schemas = ["public", "PrivateAPI"]`))).toEqual(["public", "PrivateAPI"]);
+    expect(parseExposedSchemas(wrap(`schemas = [\n  "public",\n  "graphql_public",\n]`))).toEqual(["public", "graphql_public"]);
+    expect(parseExposedSchemas(wrap(`schemas = [ # 노출 스키마\n  "public", # 기본\n  'a]b', # 괄호가 든 이름\n  "c\\"d", # 이스케이프\n]  # 끝`))).toEqual(["public", "a]b", 'c"d']);
+    expect(parseExposedSchemas(wrap(`schemas = []\n# schemas = ["x"]`).replace("schemas = []", `schemas = ["public"]`))).toEqual(["public"]);
+    // 해석 불가 — 조용히 빠뜨리지 않는다
+    expect(() => parseExposedSchemas(wrap(`schemas = ["public", graphql_public]`))).toThrow(/해석하지 못한/);
+    expect(() => parseExposedSchemas(wrap(`schemas = ["public", "unterminated]`))).toThrow();
+    expect(() => parseExposedSchemas(wrap(`schemas = ["public"`))).toThrow();
+    expect(() => parseExposedSchemas(wrap(`schemas = []`))).toThrow();
+    expect(() => parseExposedSchemas(wrap(`other = 1`))).toThrow();
+    expect(() => parseExposedSchemas(wrap(`schemas = ["public", ""]`))).toThrow();
   });
 
   test("astra P2-7 — 스키마 USAGE·CREATE, 타입 USAGE, large object 도 판정한다", () => {
@@ -974,7 +1104,7 @@ describe.skipIf(!gate.allowed)("1. DB — public 스키마 전수 권한 게이�
   });
 
   test("함수 — anon EXECUTE 0 · authenticated 는 허용 목록만 · definer 는 전부 search_path 에 pg_temp", () => {
-    const v = [...byKind(violations, " — 함수:"), ...byKind(violations, " — definer 함수")];
+    const v = [...byKind(violations, " — 함수:"), ...byKind(violations, " — definer 함수"), ...byKind(violations, " — 프레임워크 함수의")];
     expect(v, v.join("\n")).toEqual([]);
   });
 
@@ -992,6 +1122,7 @@ describe.skipIf(!gate.allowed)("1. DB — public 스키마 전수 권한 게이�
       ...byKind(violations, " — 시퀀스:"),
       ...byKind(violations, " — 함수:"),
       ...byKind(violations, " — definer 함수"),
+      ...byKind(violations, " — 프레임워크 함수의"),
       ...byKind(violations, "소유자가"),
       ...byKind(violations, "RLS 가 꺼져"),
       ...byKind(violations, " — 두 관점 불일치"),
@@ -1164,7 +1295,9 @@ describe.skipIf(!gate.allowed)("4. DB — 이빨 실측: 롤 속성·멤버십 �
     "  end if;",
     // ④ graphql_public 에 definer 함수 — 기본 권한이 anon·authenticated 에게 EXECUTE 를 연다
     "  create function graphql_public.p611_gate_probe_gql() returns int language sql security definer as $fn$ select 1 $fn$;",
-    `  select string_agg(q.f, ';' order by q.f) into payload from (${FACTS_QUERY}) q where q.f like 'role%' or q.f like '%p611_gate_probe%';`,
+    // ⑤ astra R2 P1-B — **허용된** 프레임워크 함수 자체를 definer 로 (pg_temp 를 넣어 definer 규칙은 통과하게)
+    "  alter function graphql_public.graphql(text, text, jsonb, jsonb) security definer set search_path = public, pg_temp;",
+    `  select string_agg(q.f, ';' order by q.f) into payload from (${FACTS_QUERY}) q where q.f like 'role%' or q.f like '%p611_gate_probe%' or q.f like '%graphql_public.graphql(%';`,
     `  raise exception '%', ${encodeFacts("select payload")};`,
     "end",
     "$p611s$;",
@@ -1200,8 +1333,16 @@ describe.skipIf(!gate.allowed)("4. DB — 이빨 실측: 롤 속성·멤버십 �
     expect(text).toContain("graphql_public.p611_gate_probe_gql() — 함수 소유자가 supabase_admin 다");
   });
 
+  test("🔴 R2 P1-B — 허용된 graphql 함수를 definer(search_path 에 pg_temp 포함)로 바꾸면 이름을 대며 빨개진다", () => {
+    const G = "graphql_public.graphql(text,text,jsonb,jsonb)";
+    const text = superViolations.filter((v) => v.startsWith(`${G} —`)).join("\n");
+    expect(text, text).toContain(`${G} — 프레임워크 함수의 실행 모드가 기준선과 다르다`);
+    expect(text, "definer 규칙(pg_temp)은 통과해야 탐침이 뜻대로다").not.toContain("definer 함수: search_path 에 pg_temp 가 없다");
+  });
+
   test("되돌림 확인 — 롤 속성·멤버십·임시 함수가 남지 않았다", () => {
     const after = parseFacts(runLocalSql(FACTS_SQL));
+    expect(after, "graphql 함수의 definer 전환이 커밋됐다").toContain("fnmode|graphql_public.graphql(text,text,jsonb,jsonb)|false|(none)");
     expect(after).toContain("roleattr|authenticated|rolbypassrls|false");
     expect(after.filter((f) => f.startsWith("rolemember|"))).toEqual([]);
     expect(after.filter((f) => f.includes("p611_gate_probe"))).toEqual([]);

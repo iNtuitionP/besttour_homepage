@@ -55,8 +55,9 @@
 -- 다른 부여자의 grant 가 남아 있으면 적용이 **멈춘다**(조용히 성공하지 않는다).
 --
 -- 기존 행 영향: 권한만 회수한다. 표·컬럼·시퀀스 값·정책·함수 변경 0, 데이터 변경 0.
---   §3 ⑤ 의 거동 탐침은 `setval` 을 **현재 값 그대로** 시도한다(거부돼야 하고, 만에 하나 통과해도 값이 바뀌지 않는다).
---   `nextval` 탐침은 거부만 기대하는 조합에서만 친다. 대조군은 되돌려지는 서브트랜잭션 안의 임시 시퀀스에서만 돈다.
+--   §3 ⑤ 는 실제 시퀀스에 아무것도 시도하지 않는다(P5-15 astra R4) — 거동은 되돌려지는 일회용 시퀀스에서만 본다.
+--   일회용 시퀀스(`public.p0018_probe_seq`)는 적용 중의 DDL 이다 — 이벤트 트리거가 CREATE SEQUENCE 태그로 분기할 수 있으므로
+--   원격 적용 **직전**에 `pg_event_trigger` 를 읽어 확인한다(runbook "적용 직전 필수"). 적용 롤에 public 스키마 CREATE 가 필요하다.
 -- 재실행 안전: `revoke` 는 없는 권한을 회수해도 오류가 아니다. 조건 분기가 필요 없다.
 -- PostgREST 스키마 캐시: 갱신하지 않는다(권한 변경은 캐시가 아니라 요청마다 평가된다).
 -- 적용 경로: `supabase db push` 또는 SQL Editor. **`psql -f` 를 쓰지 마라** — 파일이 원자적이지 않아 자기검증이
@@ -96,8 +97,10 @@ revoke usage on sequence
 --    ② 콘텐츠 6 × `authenticated.usage` 가 **true** — 이 마이그레이션의 가장 큰 사고는 "너무 많이 회수하는 것" 이다
 --    ③ `service_role`·`postgres` 가 일곱 시퀀스 모두에서 usage·select·update 를 그대로 갖는다
 --    ④ PUBLIC(`aclexplode` grantee 0) 에 부여된 시퀀스 권한 0 — 표 단위든 시퀀스 단위든 롤 단위 revoke 는 PUBLIC 을 지우지 않는다
---    ⑤ **거동 탐침** — 행렬 대조로 끝내지 않는다. 실제로 `setval`·`nextval` 을 시도해 42501 로 거부되는지 보고,
---       대조군(권한을 준 임시 시퀀스에서 같은 롤·같은 문장이 **성공**)으로 탐침 자체가 멀쩡함을 보인다.
+--    ⑤ **거동** — 행렬 대조로 끝내지 않는다. 단 **실제 시퀀스에는 setval·nextval 을 치지 않는다**(P5-15 astra R4 —
+--       두 함수는 권한 검사 전에 ROW EXCLUSIVE 를 커밋까지 잡는다). 실제 시퀀스는 카탈로그로만(⑤-가), 거동은
+--       PUBLIC 까지 회수한 **일회용 시퀀스**에서만(⑤-나: 거부 42501 · USAGE 만 가진 authenticated 의 nextval 성공 ·
+--       UPDATE 만 받은 anon 의 setval·nextval 성공 · 매 단계 의도한 유효 권한을 열거로 단언 · 예측↔결과 대조) 본다.
 --
 --    🔴 **④ 를 ① 보다 먼저 본다 — 순서가 진단을 가른다**(0017 의 ④/⑤ 와 같은 교훈).
 --    `has_sequence_privilege()` 는 PUBLIC 상속까지 잡으므로, PUBLIC 에 grant 가 있으면 ① 이 그것을 "anon → x(select)" 로
@@ -121,10 +124,9 @@ declare
   missing    text;
   -- 거동 탐침용. 루프 변수 이름은 질의의 컬럼 별칭과 겹치지 않게 짓는다(0017 의 42702 교훈).
   probe_role text;
-  probe_seq  text;
   probe_call text;
-  v_last     bigint;
-  v_called   boolean;
+  step       text;
+  expected   boolean;
   ok         boolean;
   st         text;
   ms         text;
@@ -194,86 +196,120 @@ begin
       using hint = '회수 문장의 롤 목록에 service_role 이나 postgres 가 섞였다. 통지 적재(lib/notify/outbox.ts)와 관리자 확정 definer 함수(0010)가 notifications_log 에 행을 넣으며 nextval 한다 — 막히면 접수는 되는데 문자가 한 통도 나가지 않는다.';
   end if;
 
-  -- ⑤ 거동 탐침 — **실제 setval·nextval** 로 본다.
-  --    setval 은 **현재 값 그대로** 친다: 거부돼야 하지만, 만에 하나 통과해도 시퀀스가 되감기지 않게.
-  --    (setval·nextval 은 트랜잭션으로 되돌려지지 않는다 — 그래서 값을 바꾸는 시도는 하지 않는다.)
-  --    nextval 은 **거부를 기대하는 조합에서만** 친다(통과하면 번호 하나가 비는 것이 최악이다).
-  foreach probe_role in array array['anon', 'authenticated'] loop
-    foreach probe_seq in array array['notifications_log_id_seq', 'notices_id_seq'] loop
-      foreach probe_call in array array['setval', 'nextval'] loop
-        -- authenticated 는 콘텐츠 시퀀스 usage 를 **가져야 한다** → 그 nextval 은 거부 대상이 아니다(②가 본다).
-        continue when probe_role = 'authenticated' and probe_seq = 'notices_id_seq' and probe_call = 'nextval';
+  -- ⑤ 거동 — **실제 시퀀스에는 setval·nextval 을 치지 않는다** (P5-15 astra R4 P2-2 · 컨트롤러 결정).
+  --
+  --    🔴 왜: PostgreSQL 17 sequence.c 의 nextval_internal·do_setval 은 `init_sequence` → `lock_and_open_sequence` 로
+  --    **권한 검사 전에** `LockRelationOid(seq, RowExclusiveLock)` 를 **최상위 트랜잭션 소유자**로 잡는다 — 거부돼도, 예외를 잡아도
+  --    마이그레이션 커밋까지 풀리지 않는다. 앱의 nextval 과는 직접 충돌하지 않지만, 그 사이 누가 `ALTER SEQUENCE`
+  --    (ShareRowExclusive)를 치면 그것이 이 잠금 뒤에 줄을 서고, **그 뒤의 앱 nextval 이 ALTER 뒤에 줄을 선다**(간접 정지).
+  --    원칙(0017 ⑦ 과 같다): 권한 검사보다 잠금이 먼저인 탐침은 실제 객체에 치지 않는다.
+  --
+  --    ⑤-가 실제 시퀀스 — **카탈로그로만**. 종류는 acldefault('s') 열거, 소스상 그 호출을 허용하지 않는 것만 뺀다
+  --         (nextval: ACL_USAGE|ACL_UPDATE → SELECT 제외 · setval: ACL_UPDATE → SELECT·USAGE 제외).
+  --         허용된 유일한 경로(authenticated × 콘텐츠 여섯 × nextval 의 USAGE — ② 가 본다)만 뺀다.
+  select string_agg(format('%s → %s(%s: %s)', r.role, q.call, c.relname, lower(d.privilege_type)), ', '
+                    order by c.relname, r.role, q.call, d.privilege_type)
+    into leaked
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    cross join (values ('anon'), ('authenticated')) as r(role)
+    cross join (values ('setval'), ('nextval')) as q(call)
+    cross join lateral aclexplode(acldefault('s', c.relowner)) d
+   where n.nspname = 'public'
+     and c.relkind = 'S'
+     and d.privilege_type <> 'SELECT'                             -- src/backend/commands/sequence.c: nextval_internal·do_setval 어느 쪽도 ACL_SELECT 로 허용하지 않는다
+     and not (q.call = 'setval' and d.privilege_type = 'USAGE')   -- src/backend/commands/sequence.c do_setval: pg_class_aclcheck(…, ACL_UPDATE) 만
+     and not (r.role = 'authenticated' and q.call = 'nextval' and d.privilege_type = 'USAGE' and c.relname = any(content6))
+     and has_sequence_privilege(r.role, c.oid, d.privilege_type);
+  if leaked is not null then
+    raise exception '0018: 공개 롤이 실제 시퀀스에 setval·nextval 을 할 수 있는 권한을 갖고 있다 — % (실제 시퀀스에는 아무것도 시도하지 않았다)', leaked
+      using hint = '① 이 통과했는데 여기 걸렸다면 판정 밖 경로(멤버십·소유권)다. setval 이 가능하면 notifications_log_id_seq 를 되감아 통지 적재를 전부 실패시킬 수 있다.';
+  end if;
 
-        -- 현재 값은 적용 롤로 먼저 읽는다(공개 롤로는 select 가 없어 읽기부터 막힌다 — 그러면 무엇이 거부됐는지 흐려진다).
-        execute format('select last_value, is_called from public.%I', probe_seq) into v_last, v_called;
-
-        begin
-          execute format('set local role %I', probe_role);
-        exception when others then
-          get stacked diagnostics st = returned_sqlstate, ms = message_text;
-          raise exception '0018: 거동 탐침이 롤 %(으)로 전환하지 못했다 — % %', probe_role, st, ms
-            using hint = '이 마이그레이션을 적용하는 롤이 anon·authenticated 의 멤버가 아니다. 보통 postgres(또는 supabase_admin)로 적용하며 그 롤은 둘 모두의 멤버다 — supabase db push 또는 SQL Editor 로 적용할 것. 조용히 건너뛰지 않는다.';
-        end;
-        if current_user <> probe_role then
-          raise exception '0018: 거동 탐침의 롤 전환이 반영되지 않았다 (current_user=% · 기대=%)', current_user, probe_role
-            using hint = 'set local role 이 트랜잭션 밖이라 무시됐을 수 있다. DO 블록 안에서는 정상 동작한다 — 적용 경로를 확인할 것.';
-        end if;
-
-        ok := false;
-        st := null;
-        ms := null;
-        begin
-          if probe_call = 'setval' then
-            execute format('select pg_catalog.setval(%L::regclass, %s, %L::boolean)', 'public.' || probe_seq, v_last, v_called);
-          else
-            execute format('select pg_catalog.nextval(%L::regclass)', 'public.' || probe_seq);
-          end if;
-          ok := true;
-        exception when others then
-          get stacked diagnostics st = returned_sqlstate, ms = message_text;
-        end;
-        -- `reset role` 을 쓰지 않는다 — 그것은 캡처한 적용 롤이 아니라 **세션 기본 롤**로 돌아간다.
-        -- `set role postgres` 로 바꿔 적용하는 연결(로그인 롤이 따로 있는 경우)이면 이후 문장이 로그인 롤로 돈다
-        -- (GPT 검증 P2 · 로컬 재현: session_user=supabase_admin 에서 current_user 가 supabase_admin 으로 돌아갔다).
-        execute format('set local role %I', applier);
-        if current_user <> applier then
-          raise exception '0018: 탐침 뒤 적용 롤(%)로 돌아오지 못했다 (current_user=%)', applier, current_user;
-        end if;
-
-        if ok then
-          raise exception '0018: % 가 %(%) 를 실행할 수 있다', probe_role, probe_call, probe_seq
-            using hint = '① 의 행렬이 통과했는데 실행이 된다면 권한 판정 밖의 경로가 있다(PUBLIC 상속·다른 부여자·롤 멤버십). setval 이 통과하면 notifications_log_id_seq 를 되감아 통지 적재를 전부 실패시킬 수 있다.';
-        end if;
-        if st is distinct from '42501' then
-          raise exception '0018: 탐침이 권한 거부(42501)가 아닌 이유로 실패했다 — % → %(%) : SQLSTATE=% MESSAGE=%', probe_role, probe_call, probe_seq, st, ms
-            using hint = '거부는 됐지만 이유가 권한이 아니다(시퀀스가 없다·인자가 틀렸다 등). 그 상태에서는 "권한을 회수했다" 가 증명되지 않는다 — 아래 대조군이 성공하는지 함께 볼 것.';
-        end if;
-      end loop;
-    end loop;
-  end loop;
-
-  -- ⑤-대조군 — **같은 롤·같은 문장**이 권한이 있을 때는 성공하는가.
-  --    대조군이 없으면 "탐침 SQL 이 틀려서 실패한 것" 과 "권한이 없어서 거부된 것" 이 구분되지 않는다(0017 규범).
-  --    임시 시퀀스는 서브트랜잭션 안에서 만들고, 끝에서 일부러 예외를 던져 **통째로 되돌린다** — 커밋되지 않는다.
+  --    ⑤-나 거동 — **일회용 시퀀스**에서만. 서브트랜잭션 안에서 만들고 끝에서 P0018 로 통째로 되돌린다.
+  --         PUBLIC 까지 전부 회수한 뒤 `authenticated` 에게 USAGE 만 주고, 탐침 직전마다 "의도한 권한만 유효하다" 를
+  --         열거로 단언한다(기본 PUBLIC 권한이 있으면 대조군이 엉뚱한 권한으로 성공한다 — astra R4 P2-3).
+  --         예측은 소스 그대로: setval ⇐ UPDATE · nextval ⇐ USAGE 또는 UPDATE. 결과가 예측과 다르면 멈춘다(카탈로그 ↔ 거동 일치).
+  --         마지막 두 단계는 anon 에게 UPDATE 만 주고 성공을 본다(대조군 — 같은 문장이 권한이 있으면 돈다).
   begin
     execute 'create sequence public.p0018_probe_seq';
-    execute 'grant usage, update on sequence public.p0018_probe_seq to anon';
-    execute 'set local role anon';
-    if current_user <> 'anon' then
-      raise exception '0018: 대조군의 롤 전환이 반영되지 않았다 (current_user=%)', current_user;
-    end if;
-    execute 'select pg_catalog.setval(''public.p0018_probe_seq''::regclass, 1, false)';
-    execute 'select pg_catalog.nextval(''public.p0018_probe_seq''::regclass)';
-    -- 이 블록은 아래 raise 로 서브트랜잭션째 되돌려져 롤도 블록 진입 전(적용 롤)으로 돌아간다. 그래도 명시한다 — reset role 이 아니라 적용 롤로.
-    execute format('set local role %I', applier);
-    raise exception using errcode = 'P0018', message = 'p0018 control rollback';
+    execute 'revoke all on sequence public.p0018_probe_seq from public, anon, authenticated, service_role';
+    execute 'grant usage on sequence public.p0018_probe_seq to authenticated';
+
+    foreach step in array array['anon:setval', 'anon:nextval', 'authenticated:setval', 'authenticated:nextval',
+                                'anon+update:setval', 'anon+update:nextval'] loop
+      probe_role := split_part(split_part(step, ':', 1), '+', 1);
+      probe_call := split_part(step, ':', 2);
+      if step = 'anon+update:setval' then
+        execute 'grant update on sequence public.p0018_probe_seq to anon';
+      end if;
+
+      -- 의도한 유효 권한만 — 세 롤 × 열거한 종류 전부
+      select string_agg(format('%s(%s)=%s', w.role, lower(d.privilege_type), has_sequence_privilege(w.role, 'public.p0018_probe_seq', d.privilege_type)), ', ')
+        into leaked
+        from (values ('anon'), ('authenticated'), ('service_role')) w(role)
+        cross join lateral aclexplode(acldefault('s', (select relowner from pg_class where oid = 'public.p0018_probe_seq'::regclass))) d
+       where has_sequence_privilege(w.role, 'public.p0018_probe_seq', d.privilege_type)
+             is distinct from ((w.role = 'authenticated' and d.privilege_type = 'USAGE')
+                               or (w.role = 'anon' and d.privilege_type = 'UPDATE' and step like 'anon+update:%'));
+      if leaked is not null then
+        raise exception '0018: 일회용 시퀀스의 유효 권한이 의도와 다르다 — % (단계 %)', leaked, step
+          using hint = 'PUBLIC 이나 기본 권한(pg_default_acl)이 남아 있으면 대조군이 엉뚱한 권한으로 성공하거나 거부 기대가 깨진다. 회수 목록에 public 이 있는지 볼 것.';
+      end if;
+
+      expected := case probe_call
+                    -- src/backend/commands/sequence.c do_setval: ACL_UPDATE · nextval_internal: ACL_USAGE | ACL_UPDATE
+                    when 'setval' then has_sequence_privilege(probe_role, 'public.p0018_probe_seq', 'UPDATE')
+                    else has_sequence_privilege(probe_role, 'public.p0018_probe_seq', 'USAGE')
+                      or has_sequence_privilege(probe_role, 'public.p0018_probe_seq', 'UPDATE')
+                  end;
+
+      begin
+        execute format('set local role %I', probe_role);
+      exception when others then
+        get stacked diagnostics st = returned_sqlstate, ms = message_text;
+        raise exception '0018: 거동 탐침이 롤 %(으)로 전환하지 못했다 — % %', probe_role, st, ms
+          using hint = '이 마이그레이션을 적용하는 롤이 anon·authenticated 의 멤버가 아니다. 보통 postgres(또는 supabase_admin)로 적용하며 그 롤은 둘 모두의 멤버다 — supabase db push 또는 SQL Editor 로 적용할 것. 조용히 건너뛰지 않는다.';
+      end;
+      if current_user <> probe_role then
+        raise exception '0018: 거동 탐침의 롤 전환이 반영되지 않았다 (current_user=% · 기대=%)', current_user, probe_role
+          using hint = 'set local role 이 트랜잭션 밖이라 무시됐을 수 있다. DO 블록 안에서는 정상 동작한다 — 적용 경로를 확인할 것.';
+      end if;
+
+      ok := false;
+      st := null;
+      ms := null;
+      begin
+        if probe_call = 'setval' then
+          execute 'select pg_catalog.setval(''public.p0018_probe_seq''::regclass, 1, false)';
+        else
+          execute 'select pg_catalog.nextval(''public.p0018_probe_seq''::regclass)';
+        end if;
+        ok := true;
+      exception when others then
+        get stacked diagnostics st = returned_sqlstate, ms = message_text;
+      end;
+      -- `reset role` 을 쓰지 않는다 — 그것은 캡처한 적용 롤이 아니라 **세션 기본 롤**로 돌아간다
+      -- (GPT 검증 P2 · 로컬 재현: session_user=supabase_admin 에서 current_user 가 supabase_admin 으로 돌아갔다).
+      execute format('set local role %I', applier);
+      if current_user <> applier then
+        raise exception '0018: 탐침 뒤 적용 롤(%)로 돌아오지 못했다 (current_user=%)', applier, current_user;
+      end if;
+
+      if ok is distinct from expected then
+        raise exception '0018: 카탈로그와 거동이 어긋난다 — % : 예측=% · 실행 성공=% (SQLSTATE=% MESSAGE=%)', step, expected, ok, st, ms
+          using hint = '⑤-가 는 실제 시퀀스를 카탈로그로만 본다 — 그 판단이 옳으려면 권한이 setval·nextval 을 정확히 결정해야 한다. 대조군(anon+update)이 실패했다면 탐침 SQL 이나 롤 전환이 고장 난 것이다.';
+      end if;
+      if not ok and st is distinct from '42501' then
+        raise exception '0018: 탐침이 권한 거부(42501)가 아닌 이유로 실패했다 — % : SQLSTATE=% MESSAGE=%', step, st, ms
+          using hint = '거부는 됐지만 이유가 권한이 아니다(인자가 틀렸다 등). 그 상태에서는 "권한이 거동을 막는다" 가 증명되지 않는다.';
+      end if;
+    end loop;
+
+    raise exception using errcode = 'P0018', message = 'p0018 probe rollback';
   exception
     when sqlstate 'P0018' then
       control_ok := true;
-    when others then
-      get stacked diagnostics st = returned_sqlstate, ms = message_text;
-      raise exception '0018: 대조군이 실패했다 — 권한을 준 임시 시퀀스에서도 anon 의 setval·nextval 이 돌지 않았다 (SQLSTATE=% MESSAGE=%)', st, ms
-        using hint = '탐침 SQL 자체가 틀렸거나(함수·인자) 롤 전환이 되지 않는다. 대조군이 실패하면 ⑤ 의 "거부" 는 아무것도 증명하지 못한다 — 그래서 여기서 멈춘다.';
   end;
   if not control_ok then
     raise exception '0018: 대조군이 끝까지 돌지 않았다';

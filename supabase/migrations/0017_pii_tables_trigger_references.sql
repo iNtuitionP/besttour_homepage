@@ -70,12 +70,14 @@
 --   · **`admin_users`** — 0009 가 이미 `revoke all` 했다. 이 파일의 대상이 아니다.
 --
 -- 기존 행 영향: 권한만 회수한다. 표·컬럼·CHECK·인덱스·정책·함수 변경 0, 데이터 변경 0.
---   §3 ⑦ 의 거동 탐침은 트리거를 **만들었다 지우는** 시도를 하지만 행을 만들지 않고, 대조군으로 만든 트리거는
---   같은 블록에서 즉시 drop 하며, 나머지는 서브트랜잭션이 롤백한다. 마지막에 "사용자 트리거 0" 을 확인한다.
+--   §3 ⑦ 의 거동 탐침은 **실제 두 표에 아무것도 시도하지 않는다**(2026-09-17 개정, P5-15 astra R3 — CREATE TRIGGER 는
+--   권한 검사 **전에** SHARE ROW EXCLUSIVE 를 기다려 잡으므로 거부될 시도도 접수를 멈출 수 있다). 거동은 서브트랜잭션 안의
+--   일회용 표(`public.p0017_probe_tbl`)에서만 보고 통째로 되돌린다. 마지막에 두 표의 "사용자 트리거 0" 과 일회용 표 0 을 확인한다.
 -- 재실행 안전: `revoke` 는 없는 권한을 회수해도 오류가 아니다. 조건 분기가 필요 없다.
 -- PostgREST 스키마 캐시: 갱신하지 않는다. 표·컬럼·함수 시그니처가 그대로다(권한 변경은 캐시가 아니라 요청마다 평가된다).
 -- 적용 경로: `supabase db push` 또는 SQL Editor. **`psql -f` 를 쓰지 마라** — 파일이 원자적이지 않아 자기검증이
 --   `raise` 해도 앞 문장이 남는다(P4-5 리뷰 K1, docs/ops/migration-runbook.md).
+-- ⚠️ §3 ⑦ 의 일회용 표는 적용 롤에 public 스키마 CREATE 가 필요하다(`postgres` 는 있다 — 0018·0019 와 같다).
 -- ⚠️ §3 ⑦ 은 탐침 뒤 `reset role` 이 아니라 **시작할 때 캡처한 적용 롤**로 `set local role` 해서 돌아온다(2026-09-17 수정, GPT 검증 P2).
 --    `reset role` 은 세션 기본 롤로 돌아가므로, `set role postgres` 후 적용하는 연결에서 권한이 옳아도 마지막 단언이 실패했다(로컬 재현).
 -- 롤백: supabase/rollbacks/0017_pii_tables_trigger_references.down.sql (수동 실행 전용 · 승인 플래그 요구).
@@ -111,9 +113,9 @@ revoke select on table
 --    ⑤ **컬럼 단위** 권한도 0 — 표 단위 revoke 가 지우지 못하는 경로
 --       (`delete`·`truncate`·`trigger` 는 **표 전용**이라 컬럼 검사에 넣으면 22023 이다 — 0016 이 한 번 걸렸다)
 --    ⑥ 아웃박스 definer 함수 넷의 EXECUTE 보유자가 `service_role`(+소유자) 뿐이고 service_role 이 실행할 수 있다
---    ⑦ **거동 탐침** — 행렬 대조로 끝내지 않는다. 실제로 `CREATE TRIGGER` 를 시도해
---       `anon`·`authenticated` 는 42501 로 거부되고 **`service_role` 은 성공**하는지 본다(대조군).
---       대조군이 없으면 "탐침 SQL 자체가 틀려서 실패한 것" 과 "권한이 없어서 거부된 것" 이 구분되지 않는다.
+--    ⑦ **거동 탐침** — 행렬 대조로 끝내지 않는다. 단 **일회용 표에서만** `CREATE TRIGGER` 를 시도해
+--       `anon`·`authenticated` 는 42501, TRIGGER 를 받은 `service_role`·`anon` 은 성공하는지(대조군 · 카탈로그↔거동 일치) 본다.
+--       실제 두 표는 시도 없이 카탈로그로 본다(⑦-가 — 이유는 블록 안 🔴).
 --
 --    🔴 **④ 를 ⑤ 보다 먼저 본다 — 순서가 진단을 가른다.** 표 단위 `select` 를 가지면 컬럼 단위도 자동으로
 --    참이 되므로(표 권한이 컬럼 권한을 함의한다), ⑤ 를 먼저 두면 표 단위 누락까지 "컬럼 단위 grant 가 남았다" 로
@@ -151,6 +153,8 @@ declare
   trg        text;
   probe_n    int := 0;
   created    boolean;
+  expected   boolean;
+  control_ok boolean := false;
   st         text;
   ms         text;
   applier    constant text := current_user;
@@ -223,19 +227,31 @@ begin
         using hint = '0005·0007·0014 가 적용됐는지 확인할 것. 0017 은 함수를 만들지도 지우지도 않는다 — 여기서 걸렸다면 앞선 마이그레이션이 빠졌거나 누가 drop 했다.';
     end if;
 
+    -- 🔴 `proacl IS NULL` 은 "아무도 없음" 이 아니라 **기본 ACL**(소유자 + PUBLIC EXECUTE)이다. aclexplode(NULL) 은 0행이라
+    --    그대로 두면 이 검사가 **통과**한다(P5-15 astra R4 P1). acldefault('f', 소유자) 로 채운다.
     select string_agg(distinct g, ', ')
       into holders
       from (
         select case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end as g
           from pg_proc p
-          cross join lateral aclexplode(p.proacl) a
+          cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
          where p.oid = fn_oid and a.privilege_type = 'EXECUTE'
       ) s
      where s.g <> 'service_role'
        and s.g <> (select pg_get_userbyid(proowner) from pg_proc where oid = fn_oid);
     if holders is not null then
       raise exception '0017: % 의 EXECUTE 를 service_role 말고도 갖고 있다 — %', fn_sig, holders
-        using hint = '0005 §6 · 0007 · 0014 §3 의 revoke all … from public, anon, authenticated 가 되돌려졌다. PUBLIC 이 보이면 누군가 drop function 후 재생성해 이 DB 의 기본 권한이 다시 붙은 것이다(CLAUDE.md §3). 이 문이 열리면 /rpc 로 통지 큐를 조작할 수 있어 표 권한 회수가 무의미해진다.';
+        using hint = '0005 §6 · 0007 · 0014 §3 의 revoke all … from public, anon, authenticated 가 되돌려졌다. PUBLIC 이 보이면 누군가 drop function 후 재생성해 이 DB 의 기본 권한이 다시 붙었거나 ACL 이 NULL(기본값 = PUBLIC EXECUTE)이다(CLAUDE.md §3). 이 문이 열리면 /rpc 로 통지 큐를 조작할 수 있어 표 권한 회수가 무의미해진다.';
+    end if;
+
+    -- 유효값으로도 본다 — 직접 ACL 이 아니라 PUBLIC·멤버십으로 얻은 EXECUTE 까지(ACL 해석과 독립된 두 번째 판정).
+    select string_agg(r.role, ', ' order by r.role)
+      into holders
+      from (values ('anon'), ('authenticated')) r(role)
+     where has_function_privilege(r.role, fn_oid, 'EXECUTE');
+    if holders is not null then
+      raise exception '0017: 공개 롤이 % 를 실행할 수 있다(유효 EXECUTE) — %', fn_sig, holders
+        using hint = '직접 ACL 검사가 통과했는데 여기 걸렸다면 멤버십이나 PUBLIC 상속 경로다. 아웃박스 definer 함수는 서비스 롤 전용이어야 한다.';
     end if;
 
     if not has_function_privilege('service_role', fn_oid, 'execute') then
@@ -244,14 +260,74 @@ begin
     end if;
   end loop;
 
-  -- ⑦ 거동 탐침 — 행렬이 아니라 **실제 CREATE TRIGGER** 로 본다.
-  --    대조군(`service_role`)이 함께 있어야 "탐침 SQL 이 틀려서 실패한 것" 과 "권한이 없어서 거부된 것" 이 구분된다.
-  foreach role_name in array array['anon', 'authenticated', 'service_role'] loop
-    foreach probe_tbl in array bare loop
+  -- ⑦ 거동 탐침 — **실제 두 표에는 CREATE TRIGGER 를 시도하지 않는다** (P5-15 astra R3 · 2026-09-17 개정).
+  --
+  --    🔴 왜: PostgreSQL 17 `CreateTriggerFiringOn`(src/backend/commands/trigger.c)은 **표를 먼저 잠그고 권한은 나중에 본다**:
+  --         rel = table_open(relOid, ShareRowExclusiveLock);   /  rel = table_openrv(stmt->relation, ShareRowExclusiveLock);
+  --         …
+  --         /* permission checks */
+  --         aclresult = pg_class_aclcheck(RelationGetRelid(rel), GetUserId(), ACL_TRIGGER);
+  --    즉 **거부될 시도도** SHARE ROW EXCLUSIVE 를 **기다려서** 잡는다(NOWAIT 없음) — 진행 중인 접수 insert 뒤에 줄을 서고, 그 뒤의 새
+  --    insert 는 이 잠금 뒤에 줄을 선다. 옛 판은 또 대조군이 실제 표에 트리거를 **만들고** `drop trigger` 했는데, drop 은
+  --    ACCESS EXCLUSIVE 를 **마이그레이션 커밋까지** 쥔다(RemoveTriggerById: table_open(relid, AccessExclusiveLock)). 원격 적용 중에 접수를 멈춘다.
+  --    그래서 이렇게 나눈다:
+  --      ⑦-가 실제 두 표는 **카탈로그로만** 본다 — CREATE TRIGGER 를 허용할 수 있는 것은 표의 TRIGGER 권한뿐이고
+  --           (소유권·슈퍼유저·멤버십·PUBLIC 은 has_table_privilege 가 반영한다), 종류는 acldefault 열거에서 얻는다.
+  --           ① 이 이미 본 것을 **시도 자리에서 한 번 더** 본다 — 하나라도 true 면 멈춘다(아무것도 시도하지 않았다).
+  --      ⑦-나 거동은 **일회용 표**에서 본다 — 서브트랜잭션 안에서 만들고 끝에서 예외로 통째로 되돌린다.
+  --           그 표에는 TRIGGER 권한을 **service_role 에게만** 준다(나머지 기본 권한은 전부 회수).
+  --           anon·authenticated 는 42501, service_role 은 성공(대조군), 그리고 **anon 에게 TRIGGER 만 주면 성공**한다(카탈로그 ↔ 거동 일치 —
+  --           ⑦-가 가 보는 권한이 정확히 그 거동을 결정한다는 증거). 매 시도 전에 has_table_privilege 의 예측을 적어 두고 결과와 대조한다.
+  --    일회용 표의 DDL(CREATE TABLE·CREATE TRIGGER)은 이벤트 트리거를 태운다 — 트리거는 태그로 분기할 수 있으므로 "revoke 도 DDL 이니
+  --    같다" 는 성립하지 않는다(P5-15 astra R4). 원격 적용 **직전**에 pg_event_trigger 를 읽어 확인한다(runbook "적용 직전 필수").
+  --
+  --    ⑦-가 실제 두 표 — 시도 없이 카탈로그로.
+  select string_agg(format('%s → %s(%s)', r.role, t.tbl, lower(d.privilege_type)), ', ' order by r.role, t.tbl, d.privilege_type)
+    into leaked
+    from (values ('anon'), ('authenticated')) as r(role)
+    cross join unnest(two) as t(tbl)
+    cross join lateral aclexplode(acldefault('r', (select relowner from pg_class where oid = t.tbl::regclass))) d
+   where d.privilege_type = 'TRIGGER'  -- 소스 근거: src/backend/commands/trigger.c CreateTriggerFiringOn — pg_class_aclcheck(…, ACL_TRIGGER) 하나뿐
+     and has_table_privilege(r.role, t.tbl, d.privilege_type);
+  if leaked is not null then
+    raise exception '0017: 공개 롤이 개인정보 표에 트리거를 붙일 수 있는 권한을 갖고 있다 — % (실제 표에는 아무것도 시도하지 않았다)', leaked
+      using hint = '① 이 통과했는데 여기 걸렸다면 판정 밖 경로(멤버십·소유권)다. 실제 표에 CREATE TRIGGER 를 치지 않는 이유: 권한 검사 전에 SHARE ROW EXCLUSIVE 를 기다려 잡기 때문에 거부될 시도도 접수를 멈출 수 있다.';
+  end if;
+
+  --    ⑦-나 일회용 표 — 거동과 대조군. 끝에서 P0017 로 통째로 되돌린다.
+  begin
+    execute 'create table public.p0017_probe_tbl (id int)';
+    -- PUBLIC 까지 회수한다 — 기본 PUBLIC TRIGGER 가 있으면 거부 기대가 깨진다(P5-15 astra R4 P2-3).
+    execute 'revoke all on table public.p0017_probe_tbl from public, anon, authenticated, service_role';
+    execute 'grant trigger on table public.p0017_probe_tbl to service_role';
+
+    -- 마지막 줄의 anon 은 **TRIGGER 를 준 뒤** 다시 시도한다(카탈로그 ↔ 거동 일치의 반대쪽).
+    foreach role_name in array array['anon', 'authenticated', 'service_role', 'anon+trigger'] loop
       probe_n := probe_n + 1;
       trg := format('p0017_probe_%s', probe_n);
+      probe_tbl := role_name;
+      if role_name = 'anon+trigger' then
+        execute 'grant trigger on table public.p0017_probe_tbl to anon';
+        role_name := 'anon';
+      end if;
+      -- 의도한 유효 권한만 — 세 롤 × 열거한 표 권한 종류 전부. TRIGGER 는 service_role(과 이 단계의 anon)에게만, 나머지는 전부 false.
+      select string_agg(format('%s(%s)=%s', w.role, lower(d.privilege_type), has_table_privilege(w.role, 'public.p0017_probe_tbl', d.privilege_type)), ', ')
+        into leaked
+        from (values ('anon'), ('authenticated'), ('service_role')) w(role)
+        cross join lateral aclexplode(acldefault('r', (select relowner from pg_class where oid = 'public.p0017_probe_tbl'::regclass))) d
+       where has_table_privilege(w.role, 'public.p0017_probe_tbl', d.privilege_type)
+             is distinct from (d.privilege_type = 'TRIGGER'
+                               and (w.role = 'service_role' or (w.role = 'anon' and probe_tbl = 'anon+trigger')));
+      if leaked is not null then
+        raise exception '0017: 일회용 표의 유효 권한이 의도와 다르다 — % (단계 %)', leaked, probe_tbl
+          using hint = 'PUBLIC 이나 기본 권한(alter default privileges)이 남아 있으면 거부 기대나 대조군이 엉뚱한 이유로 성립한다. 회수 목록에 public 이 있는지 볼 것.';
+      end if;
+
+      -- 예측 — 시도 전에 카탈로그가 뭐라고 하는가
+      expected := has_table_privilege(role_name, 'public.p0017_probe_tbl', 'TRIGGER');  -- src/backend/commands/trigger.c CreateTriggerFiringOn (ACL_TRIGGER)
       created := false;
       st := null;
+      ms := null;
 
       -- 롤 전환 자체가 실패하면(적용 롤이 그 롤의 멤버가 아님) 탐침 결과를 "거부" 로 오독할 수 있다 — 따로 잡는다.
       begin
@@ -267,42 +343,44 @@ begin
       end if;
 
       begin
-        execute format('create trigger %I before update on public.%I for each row execute function %s', trg, probe_tbl, probe_fn);
+        execute format('create trigger %I before update on public.p0017_probe_tbl for each row execute function %s', trg, probe_fn);
         created := true;
       exception when others then
         get stacked diagnostics st = returned_sqlstate, ms = message_text;
       end;
-      -- 적용 롤로 **명시적으로** 돌아온다. `reset role` 을 쓰지 않는다 — 그것은 캡처한 적용 롤이 아니라 **세션 기본 롤**로 돌아간다.
-      -- `set role postgres` 로 바꿔 적용하는 연결(로그인 롤이 따로 있는 경우)이면 아래 drop trigger 와 이후 검사가 로그인 롤로 돌고
-      -- 마지막 단언이 권한이 옳은데도 실패한다(GPT 검증 P2 · 0018 과 같은 수정 · 로컬 재현: session_user=supabase_admin).
-      -- 예외 경로에서는 서브트랜잭션 롤백이 역할 전환 이전으로 되돌리지 않는다(전환은 서브트랜잭션 밖에서 했다) — 그래서 두 경로 모두 여기서 복원한다.
+      -- 적용 롤로 **명시적으로** 돌아온다. `reset role` 을 쓰지 않는다 — 그것은 캡처한 적용 롤이 아니라 **세션 기본 롤**로 돌아간다
+      -- (GPT 검증 P2 · 로컬 재현: session_user=supabase_admin 에서 set role postgres 로 적용하면 마지막 단언이 실패했다).
       execute format('set local role %I', applier);
       if current_user <> applier then
         raise exception '0017: 탐침 뒤 적용 롤(%)로 돌아오지 못했다 (current_user=%)', applier, current_user;
       end if;
 
-      if created then
-        execute format('drop trigger %I on public.%I', trg, probe_tbl);
+      if created is distinct from expected then
+        raise exception '0017: 카탈로그와 거동이 어긋난다 — % (%) : has_table_privilege(TRIGGER)=% · CREATE TRIGGER 성공=% (SQLSTATE=% MESSAGE=%)', role_name, probe_tbl, expected, created, st, ms
+          using hint = '⑦-가 는 실제 표를 카탈로그로만 본다 — 그 판단이 옳으려면 TRIGGER 권한이 CREATE TRIGGER 를 정확히 결정해야 한다. 어긋나면 ⑦-가 의 결론을 믿을 수 없다.';
       end if;
-
-      if role_name = 'service_role' then
-        -- 대조군: 성공해야 한다. 실패하면 탐침 자체가 고장 났거나 서비스 롤 권한이 깨진 것이다.
-        if not created then
-          raise exception '0017: 대조군이 실패했다 — service_role 조차 % 에 트리거를 붙이지 못했다 (SQLSTATE=% MESSAGE=%)', probe_tbl, st, ms
-            using hint = '탐침 SQL 이 틀렸거나(트리거 함수가 없다) service_role 의 TRIGGER 권한이 회수됐다. 대조군이 실패하면 anon·authenticated 의 "거부" 는 아무것도 증명하지 못한다 — 그래서 여기서 멈춘다. ③ 이 service_role 의 표 권한을 따로 확인한다.';
-        end if;
-      else
-        if created then
-          raise exception '0017: % 가 % 에 트리거를 붙일 수 있다 — 고객 개인정보가 외부로 나갈 수 있다', role_name, probe_tbl
-            using hint = '§1 의 revoke trigger 가 적용되지 않았다. 이 상태에서 supabase_functions.http_request 트리거를 붙이면 행이 바뀔 때마다 고객 성명·전화번호·문의내용이 공격자 주소로 전송된다. RLS 는 이것을 막지 못한다.';
-        end if;
-        if st is distinct from '42501' then
-          raise exception '0017: 탐침이 권한 거부(42501)가 아닌 이유로 실패했다 — % → % : SQLSTATE=% MESSAGE=%', role_name, probe_tbl, st, ms
-            using hint = '거부는 됐지만 이유가 권한이 아니다(표가 없다·함수가 없다 등). 그 상태에서는 "권한을 회수했다" 가 증명되지 않는다 — 대조군(service_role)이 성공했는지 먼저 볼 것.';
-        end if;
+      if probe_tbl in ('anon', 'authenticated') and st is distinct from '42501' then
+        raise exception '0017: 탐침이 권한 거부(42501)가 아닌 이유로 실패했다 — % : SQLSTATE=% MESSAGE=%', role_name, st, ms
+          using hint = '거부는 됐지만 이유가 권한이 아니다(함수가 없다 등). 그 상태에서는 "권한이 거동을 막는다" 가 증명되지 않는다.';
+      end if;
+      if probe_tbl in ('service_role', 'anon+trigger') and not created then
+        raise exception '0017: 대조군이 실패했다 — % 가 TRIGGER 를 가진 일회용 표에 트리거를 붙이지 못했다 (SQLSTATE=% MESSAGE=%)', probe_tbl, st, ms
+          using hint = '탐침 SQL 이 틀렸거나(트리거 함수가 없다) 롤 전환이 되지 않는다. 대조군이 실패하면 anon·authenticated 의 "거부" 는 아무것도 증명하지 못한다 — 그래서 여기서 멈춘다.';
       end if;
     end loop;
-  end loop;
+
+    raise exception using errcode = 'P0017', message = 'p0017 probe rollback';
+  exception
+    when sqlstate 'P0017' then
+      control_ok := true;
+  end;
+  if not control_ok then
+    raise exception '0017: 거동 탐침이 끝까지 돌지 않았다';
+  end if;
+  if to_regclass('public.p0017_probe_tbl') is not null then
+    raise exception '0017: 일회용 표가 남았다'
+      using hint = '⑦-나 서브트랜잭션이 되돌려지지 않았다. public.p0017_probe_tbl 을 직접 지울 것.';
+  end if;
 
   if current_user <> applier then
     raise exception '0017: 탐침이 롤을 되돌리지 못했다 (current_user=% · 기대=%)', current_user, applier

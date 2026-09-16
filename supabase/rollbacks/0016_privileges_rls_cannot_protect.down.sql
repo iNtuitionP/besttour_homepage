@@ -230,14 +230,22 @@ begin
       into extra
       from (
         select case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end as g
-          from pg_proc p cross join lateral aclexplode(p.proacl) a
+          -- NULL proacl = 기본 ACL(PUBLIC EXECUTE) — aclexplode(NULL) 은 0행이라 그대로 두면 통과한다(P5-15 R5)
+          from pg_proc p cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
          where p.oid = fn_oid and a.privilege_type = 'EXECUTE'
       ) s
      where s.g <> 'service_role'
        and s.g <> (select pg_get_userbyid(proowner) from pg_proc where oid = fn_oid);
     if extra is not null then
       raise exception '0016 롤백: % 의 EXECUTE 를 service_role 말고도 갖게 됐다 — % (롤백이 상행보다 넓은 문을 열었다)', fn_sig, extra
-        using hint = '§2 에 drop function 이 섞였는지 확인할 것 — ACL 이 초기화되면 이 DB 의 기본 권한이 anon·authenticated·service_role 에 EXECUTE 를 다시 부여한다. create or replace 는 ACL 을 보존한다.';
+        using hint = '§2 에 drop function 이 섞였는지 확인할 것 — ACL 이 초기화되면 이 DB 의 기본 권한이 anon·authenticated·service_role 에 EXECUTE 를 다시 부여한다. create or replace 는 ACL 을 보존한다. PUBLIC 이 보이면 ACL 이 NULL(기본값)일 수 있다.';
+    end if;
+
+    -- 유효값으로도 본다 — PUBLIC·멤버십으로 얻은 EXECUTE 까지(P5-15 R5 · 상행 0016 ④ 와 같은 판정).
+    if has_function_privilege('anon', fn_oid, 'EXECUTE') or has_function_privilege('authenticated', fn_oid, 'EXECUTE') then
+      raise exception '0016 롤백: 공개 롤이 % 를 실행할 수 있다 (anon=% · authenticated=%) — 롤백이 상행보다 넓은 문을 열었다',
+        fn_sig, has_function_privilege('anon', fn_oid, 'EXECUTE'), has_function_privilege('authenticated', fn_oid, 'EXECUTE')
+        using hint = '롤백은 함수의 EXECUTE 를 건드리지 않는다 — 여기가 걸렸다면 drop 이 섞였거나 이 파일 밖에서 grant 했다.';
     end if;
 
     if not has_function_privilege('service_role', fn_oid, 'execute') then

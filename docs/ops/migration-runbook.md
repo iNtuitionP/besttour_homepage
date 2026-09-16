@@ -11,6 +11,23 @@
 5. 같은 확인을 **원격에서** 다시 실행해 로컬과 같은 결과인지 대조한다.
 6. 결과를 이 파일에 날짜와 함께 적는다.
 
+### 🔴 적용 직전 필수 — 공통 (P5-15 R5)
+**① 원격 적용 이력** — 무엇이 이미 원격에 들어갔는지 먼저 읽는다(읽기 질의):
+```sql
+select version, name from supabase_migrations.schema_migrations order by version;
+```
+기대(2026-09-16 원격 덤프 기준): 마지막이 `0011`. **0012~0019 중 하나라도 이미 있으면 멈추고 컨트롤러에게 보고한다.**
+⚠️ **이미 원격에 적용된 파일을 고쳐도 `supabase db push` 는 그 파일을 다시 돌리지 않는다**(이력에 있는 버전은 건너뛴다). P5-15 가 0016·0017·0018·0019 본문을 고친 것은 **네 파일 모두 원격 미적용**이라는 전제 위의 일이다 — 이미 적용됐다면 수정분은 **새 번호의 마이그레이션**으로 따로 내야 한다.
+**② 원격 PostgreSQL 버전** — 0019 절 "적용 직전 필수 — 원격 버전 확인".
+**③ 이벤트 트리거** — 0019 절 "적용 직전 필수 — 이벤트 트리거 확인"(0017·0018·0019 의 일회용 객체 생성이 CREATE TABLE·CREATE TRIGGER·CREATE SEQUENCE 태그를 낸다).
+**④ 0018 절의 적용 직전 스냅샷**(시퀀스·표 `relacl`) — 롤백 판단에 필요하다.
+
+### 🔴 적용 창 운영 규칙 (P5-15 R5 · 컨트롤러 결정 2026-09-17)
+- **적용하는 동안 대시보드·다른 세션에서 스키마 변경(DDL)과 권한 변경을 하지 않는다.** 적용 트랜잭션과 서로 기다리게 된다.
+- **적용은 접수가 적은 시간대에 한다.** 자기검증은 실제 표·시퀀스에 잠금을 잡는 탐침을 치지 않도록 고쳤지만(0017 ⑦ · 0018 ⑤ · 0019 ⑥), 마이그레이션 본문 자체의 잠금 대기는 남는다(아래).
+- **최상위 `REVOKE` 도 `pg_class` 튜플 잠금을 기다릴 수 있다.** 로컬 실측(다른 세션이 `alter sequence public.notifications_log_id_seq cache 1` 을 커밋하지 않고 쥔 상태 · `lock_timeout 3s`): 0018 의 최상위 `revoke … on sequence` 만 돌려도 `ERROR: canceling statement due to lock timeout` · `CONTEXT: while updating tuple (39,29) in relation "pg_class"`. 권한을 바꾸는 모든 마이그레이션의 성질이다. 그동안 그 시퀀스의 앱 `nextval` 은 ALTER 세션의 SHARE ROW EXCLUSIVE 에 막힌다.
+- SQL Editor 로 적용한다면 세션 첫 줄에 `set lock_timeout = '5s';` 를 두는 것을 권한다 — 기다리며 다른 세션을 줄 세우기보다 실패하고 다시 시도하는 편이 접수에 안전하다(실패하면 트랜잭션째 되돌려진다).
+
 **롤백 파일은 `supabase/rollbacks/` 에 있고 `migrations/` 밖이다** — CLI 가 `migrations/` 의 `^[0-9]+_.*\.sql$` 을 전부 마이그레이션으로 집기 때문이다. 롤백은 사람이 psql/SQL Editor 로 실행한 뒤 `supabase migration repair --status reverted <번호>`.
 0012·0013·0014·0015·0016·0017·0018·0019 롤백은 **승인 플래그를 조건 없이 요구**한다(`set bestour.rollback_00NN_ack = '1';`). 행이 0이어도 멈춘다 — 권한은 열린 채 남고 데이터는 나중에 들어오기 때문이다.
 
@@ -128,7 +145,9 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENC
   - **grant option**(직접 `is_grantable` · 유효 `WITH GRANT OPTION`) · **스키마 USAGE/CREATE 전 종류** · **사용자 타입 USAGE** · **large object 수(0)** · **공개 롤의 불리언 속성 전부·설정 키·도달 가능한 롤(SET·INHERIT 옵션 포함)**.
   - 허용 목록 조회를 `Object.hasOwn` 으로 바꿨다 — 표 이름이 `constructor` 면 허용으로 판정되던 결함(재현됨).
   - **실측 기준선(2026-09-17 로컬)**: 두 공개 롤 모두 `rolinherit` 만 true · 설정은 `statement_timeout` 하나(anon 3s·authenticated 8s) · 멤버십 0(반대로 `postgres`·`authenticator`·`supabase_realtime_admin` 이 두 롤의 멤버 — 공개 롤의 권한을 넓히지 않는다) · grant option 0 · large object 0 · 스키마 USAGE 는 노출 스키마만, `public` 에 PUBLIC USAGE(PG15+ 기본).
-  - 🔸 **새로 드러난 기준선 하나 — `reservation_status` enum 의 PUBLIC USAGE.** typacl 이 NULL(PostgreSQL 기본값 = PUBLIC USAGE)이다. 타입 USAGE 는 행을 읽게 해 주지 않는다. 게이트에 `TYPE_USAGE` 로 **고정**했고(넓힌 것이 아니라 새 수집기의 기준선), 회수할지는 컨트롤러 판단 — *미결*.
+  - 🔸 **새로 드러난 기준선 하나 — `reservation_status` enum 의 PUBLIC USAGE.** typacl 이 NULL(PostgreSQL 기본값 = PUBLIC USAGE)이다. 타입 USAGE 는 행을 읽게 해 주지 않는다. 게이트에 `TYPE_USAGE` 로 **고정**했다(넓힌 것이 아니라 새 수집기의 기준선). **결정(컨트롤러 2026-09-17): 유지.** ✅
+  - **graphql_public 노출 — 결정(컨트롤러 2026-09-17): 유지, 게이트 감시.** `supabase/config.toml [api] schemas` 는 바꾸지 않는다. 이 스키마의 기본 권한이 공개 롤 전권이므로 새 객체는 게이트가 이름으로 잡고, 허용된 `graphql(text,text,jsonb,jsonb)` 은 소유자·실행 모드(invoker·설정 없음)까지 고정했다(R2 P1-B). ✅
+  - **로컬 슈퍼유저 탐침 채널**(`tests/helpers/local-stack-sql.ts`) — CI 확인 완료(`cdaa51a` 8잡 green · DB Smoke 통과, 컨트롤러 2026-09-17). ✅
   - **여전히 보지 않는 것**: DB 단위 권한(CONNECT·TEMPORARY), 언어·FDW·foreign server, 설정 파라미터 ACL(`pg_parameter_acl`), large object 개별 ACL(개수 0 단언으로 갈음), 노출되지 않은 스키마(`extensions`·`auth`·`storage` — Supabase 소유), 표의 행 타입·배열 타입(표 권한을 따른다).
 - ④⑤ 질의에 `has_any_column_privilege` 추가, ② 질의를 `pg_class.relacl` + `aclexplode` 로 교체. → **0016 이 자기검증·테스트 §9 에서 그렇게 한다**(질의 자체는 아래 0016 절에 있다). ✅
 - ~~`0012:34` 의 TRIGGER 관련 주석 정정.~~ → **0016 (P5-12) 에서 완료.** `0012` 헤더에 원문을 남긴 채 정정을 덧붙였다. ✅
@@ -203,7 +222,61 @@ where p.prorettype = 'pg_catalog.trigger'::regtype
 로컬 실측 22건 — 그중 **`supabase_functions.http_request`**(행이 바뀔 때마다 외부 URL 로 HTTP 호출)가 `anon`·`authenticated` 모두 `execute=true`.
 
 ### 적용 전 확인 질의 (0016 판 — 컬럼 단위 grant 와 PUBLIC 까지 본다)
-`information_schema.role_table_grants` 를 **증거로 쓰지 않는다**(필터된 뷰). 아래 여덟 가지를 한 문장으로 묻는 질의가 `tests/write-privileges.test.ts` §9 에 그대로 들어 있다 — 원격에서는 그 SQL 을 SQL Editor 에 붙여넣어 같은 결과인지 대조한다.
+`information_schema.role_table_grants` 를 **증거로 쓰지 않는다**(필터된 뷰). 아래 여덟 가지를 한 문장으로 묻는다.
+
+아래 행렬(카탈로그 질의뿐)을 SQL Editor 에 붙여 넣는다. 붙이는 원문은 **이 runbook 의 블록뿐**이다.
+(로컬 검사도 이 표식 사이의 원문을 읽어 그대로 돌린다 — P5-15 R5.)
+<!-- P515:0016_MATRIX_SQL:BEGIN -->
+```sql
+select
+  coalesce((select 'RLS_BLIND_LEAK ' || string_agg(format('%s/%s', t.tbl, p.priv), ' ')
+     from (values ('public.notices'),('public.popups'),('public.gallery'),('public.gallery_albums'),('public.showcase_routes'),('public.vehicles'),('public.places')) t(tbl)
+     cross join (values ('truncate'),('trigger'),('references')) p(priv)
+    where has_table_privilege('authenticated', t.tbl, p.priv)
+       or (p.priv = 'references' and has_any_column_privilege('authenticated', t.tbl, 'references'))), 'RLS_BLIND_NONE') as blind,
+  coalesce((select 'ANON_EXTRA ' || string_agg(format('%s/%s', t.tbl, p.priv), ' ')
+     from (values ('public.notices'),('public.popups'),('public.gallery'),('public.gallery_albums'),('public.showcase_routes'),('public.vehicles'),('public.places')) t(tbl)
+     cross join (values ('insert'),('update'),('delete'),('truncate'),('trigger'),('references')) p(priv)
+    where has_table_privilege('anon', t.tbl, p.priv)), 'ANON_SELECT_ONLY') as anon_extra,
+  coalesce((select 'PLACES_WRITE_LEAK ' || string_agg(p.priv, ' ')
+     from (values ('insert'),('update'),('delete')) p(priv)
+    where has_table_privilege('authenticated', 'public.places', p.priv)), 'PLACES_WRITE_NONE') as places_write,
+  coalesce((select 'PLACES_READ_LOST ' || string_agg(r.role, ' ')
+     from (values ('anon'),('authenticated')) r(role)
+    where not has_table_privilege(r.role, 'public.places', 'select')), 'PLACES_READ_OK') as places_read,
+  coalesce((select 'FN_MISSING ' || string_agg(s.sig, ' ')
+     from (values ('public.mark_notification_sent(bigint, text)'),('public.mark_notification_failed(bigint, text, boolean, bigint)'),('public.reap_stale_notifications()')) s(sig)
+    where to_regprocedure(s.sig) is null), 'FN_ALL_PRESENT') as fn_present,
+  coalesce((select 'PG_TEMP_MISSING ' || string_agg(s.sig, ' ')
+     from (values ('public.mark_notification_sent(bigint, text)'),('public.mark_notification_failed(bigint, text, boolean, bigint)'),('public.reap_stale_notifications()')) s(sig)
+     join pg_proc p on p.oid = to_regprocedure(s.sig)
+    where not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) c where c like '%pg_temp%')), 'PG_TEMP_OK') as pg_temp,
+  coalesce((select 'FN_EXEC_EXTRA ' || string_agg(format('%s/%s', p.proname, g.who), ' ')
+     from (values ('public.mark_notification_sent(bigint, text)'),('public.mark_notification_failed(bigint, text, boolean, bigint)'),('public.reap_stale_notifications()')) s(sig)
+     join pg_proc p on p.oid = to_regprocedure(s.sig)
+     cross join lateral (select case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end as who
+                           from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a where a.privilege_type = 'EXECUTE') g
+    where g.who <> 'service_role' and g.who <> pg_get_userbyid(p.proowner)), 'FN_EXEC_ONLY_SERVICE') as fn_exec,
+  coalesce((select 'FN_PUBLIC_ROLE_EXEC ' || string_agg(format('%s/%s', s.sig, r.role), ' ')
+     from (values ('public.mark_notification_sent(bigint, text)'),('public.mark_notification_failed(bigint, text, boolean, bigint)'),('public.reap_stale_notifications()')) s(sig)
+     cross join (values ('anon'),('authenticated')) r(role)
+    where to_regprocedure(s.sig) is not null
+      and has_function_privilege(r.role, to_regprocedure(s.sig), 'EXECUTE')), 'FN_NO_PUBLIC_ROLE_EXEC') as fn_public_exec,
+  coalesce((select 'FN_SERVICE_LOST ' || string_agg(s.sig, ' ')
+     from (values ('public.mark_notification_sent(bigint, text)'),('public.mark_notification_failed(bigint, text, boolean, bigint)'),('public.reap_stale_notifications()')) s(sig)
+    where to_regprocedure(s.sig) is not null
+      and not has_function_privilege('service_role', to_regprocedure(s.sig), 'EXECUTE')), 'FN_SERVICE_OK') as fn_service,
+  case when to_regprocedure('public.claim_pending_notifications(int)') is not null
+       then 'CLAIM_ONE_ARG_BACK' else 'CLAIM_ONE_ARG_GONE' end as claim_old,
+  coalesce((select 'ADMIN_BROKEN ' || string_agg(format('%s/%s', t.tbl, p.priv), ' ')
+     from (values ('public.notices'),('public.popups'),('public.gallery'),('public.gallery_albums'),('public.showcase_routes'),('public.vehicles')) t(tbl)
+     cross join (values ('select'),('insert'),('update'),('delete')) p(priv)
+    where not has_table_privilege('authenticated', t.tbl, p.priv)), 'ADMIN_OK') as admin_crud,
+  coalesce((select 'SEQ_BROKEN ' || string_agg(s.seq, ' ')
+     from (values ('public.notices_id_seq'),('public.popups_id_seq'),('public.gallery_id_seq'),('public.gallery_albums_id_seq'),('public.showcase_routes_id_seq'),('public.vehicles_id_seq')) s(seq)
+    where not has_sequence_privilege('authenticated', s.seq, 'usage')), 'SEQ_OK') as seqs;
+```
+<!-- P515:0016_MATRIX_SQL:END -->
 
 | # | 기대 문자열 | 뜻 |
 |---|---|---|
@@ -211,7 +284,7 @@ where p.prorettype = 'pg_catalog.trigger'::regtype
 | ② | `ANON_SELECT_ONLY` | 7표에서 `anon` 은 select 만 |
 | ③ | `PLACES_WRITE_NONE` · `PLACES_READ_OK` | places 쓰기 0 · 두 롤의 읽기 생존 |
 | ④ | `PG_TEMP_OK` | 함수 셋의 `proconfig` 에 `pg_temp` |
-| ⑤ | `FN_EXEC_ONLY_SERVICE` | 그 셋의 EXECUTE 보유자는 `service_role`(+소유자) 뿐 |
+| ⑤ | `FN_ALL_PRESENT` · `FN_EXEC_ONLY_SERVICE` · `FN_NO_PUBLIC_ROLE_EXEC` | 세 시그니처가 **전부 있고**(없으면 `FN_MISSING …`), EXECUTE 보유자는 `service_role`(+소유자) 뿐이며(NULL ACL 은 기본값 = PUBLIC EXECUTE 로 읽는다), 공개 롤의 **유효** EXECUTE 0 (P5-15 R5) |
 | ⑥ | `FN_SERVICE_OK` | `service_role` 이 여전히 실행할 수 있다(발송기) |
 | ⑦ | `CLAIM_ONE_ARG_GONE` | 1-인자 claim 이 되살아나지 않았다 |
 | ⑧ | `ADMIN_OK` · `SEQ_OK` | 콘텐츠 6표 CRUD 와 시퀀스 usage 생존 = **관리자 화면이 살아 있다** |
@@ -228,6 +301,8 @@ where p.prorettype = 'pg_catalog.trigger'::regtype
 | 9표 | `service_role`·`postgres` | 7종 전부 | **변화 없음** |
 
 함수 셋: `{search_path=public}` → `{"search_path=public, pg_temp"}`, EXECUTE 보유자 `postgres,service_role` **불변**.
+
+**R5 수정 (2026-09-17, P5-15)**: ④ 의 EXECUTE 보유자 검사가 `aclexplode(p.proacl)` 이었다 — `proacl IS NULL`(기본 ACL = PUBLIC EXECUTE)이면 0행이라 통과한다. `coalesce(p.proacl, acldefault('f', p.proowner))` 로 고쳤다. 상행은 바로 뒤의 **유효 EXECUTE 검사**가 원래 있어 실제로는 멈췄지만(로컬 실측: NULL 로 만들면 `공개 롤이 … 를 실행할 수 있다 (anon=t · authenticated=t)`), **롤백 파일에는 그 검사가 없어 그대로 통과했다** — 롤백에도 두 가지(NULL 채움 · 유효 EXECUTE 거부)를 넣었다. 위 행렬도 함수 셋을 시그니처로 묶고(없으면 `FN_MISSING`) NULL ACL 과 유효 EXECUTE 를 본다. 이 절은 원격 미적용 전제다 — 공통 절 "① 원격 적용 이력" 을 먼저 본다.
 
 ### 적용 경로
 `supabase db push` 또는 SQL Editor. **`psql -f` 를 쓰지 마라**(리뷰 K1 — 파일이 원자적이지 않아 자기검증이 `raise` 해도 앞 문장이 남는다). 실제로 0016 을 만들면서 `supabase db reset` 이 **문장 단위로** 적용하다 6번째 문장에서 멈추는 것을 봤다(그 시점에 §1~§4 는 이미 적용돼 있었다) — 같은 성질이다.
@@ -249,15 +324,15 @@ where p.prorettype = 'pg_catalog.trigger'::regtype
 함수·정책·데이터는 건드리지 않는다. `drop function` 도, `create or replace function` 도 없다.
 
 ### 🔴 이것은 이론이 아니다 — 적용 **전에** 붙여 봤고, 붙었다 (2026-09-16 로컬 실측)
-`set local role <롤>` 뒤 `supabase_functions.http_request` 트리거를 `CREATE TRIGGER` 로 붙이는 시도(마지막에 `raise` 로 전부 롤백):
-```
+`set local role <롤>` 뒤 `supabase_functions.http_request` 트리거를 `CREATE TRIGGER` 로 붙이는 시도(마지막에 `raise` 로 전부 롤백 · **로컬에서만** 한 실측 — 아래 출력은 붙여 넣는 SQL 이 아니다):
+```text
 [anon → reservations]          CREATE TRIGGER 성공
 [anon → notifications_log]     CREATE TRIGGER 성공
 [authenticated → reservations] CREATE TRIGGER 성공
 [authenticated → notifications_log] CREATE TRIGGER 성공
 ```
 0017 적용 **후** 같은 시도:
-```
+```text
 [anon → reservations]          거부 SQLSTATE=42501 MESSAGE=permission denied for table reservations
 [anon → notifications_log]     거부 SQLSTATE=42501 MESSAGE=permission denied for table notifications_log
 [authenticated → reservations] 거부 SQLSTATE=42501 MESSAGE=permission denied for table reservations
@@ -271,7 +346,64 @@ where p.prorettype = 'pg_catalog.trigger'::regtype
 **거동 변화**: PostgREST 가 `200 []` 대신 **`401` + `42501`** 을 낸다. 그 0행은 *정책이 없어서* 나오던 결과라, 누가 `anon` 용 select 정책을 한 줄 붙이면 고객 표가 공개됐다 — 이제 정책과 무관하게 권한에서 먼저 막힌다. 바뀐 단언: `tests/notify-vars.test.ts` 의 "anon 키로는 0행" → "권한 거부(42501)".
 
 ### 적용 전/후 확인 질의 (0017 판 — 여덟 가지를 한 문장으로)
-`tests/write-privileges.test.ts` §12 의 SQL 을 그대로 SQL Editor 에 붙여 넣어 대조한다.
+아래 행렬(카탈로그 질의뿐)을 SQL Editor 에 붙여 넣어 대조한다. 붙이는 원문은 **이 runbook 의 블록뿐**이다.
+(로컬 테스트도 이 표식 사이의 원문을 읽어 그대로 돌린다 — P5-15 astra R3.)
+<!-- P515:0017_MATRIX_SQL:BEGIN -->
+```sql
+select
+  coalesce((select 'PII_BLIND_LEAK ' || string_agg(format('%s/%s/%s', r.role, t.tbl, p.priv), ' ')
+     from (values ('anon'),('authenticated')) r(role)
+     cross join (values ('public.reservations'),('public.notifications_log')) t(tbl)
+     cross join (values ('trigger'),('references')) p(priv)
+    where has_table_privilege(r.role, t.tbl, p.priv)
+       or (p.priv = 'references' and has_any_column_privilege(r.role, t.tbl, 'references'))), 'PII_BLIND_NONE') as blind,
+  coalesce((select 'ANON_PII_LEFT ' || string_agg(format('%s/%s', t.tbl, p.priv), ' ')
+     from (values ('public.reservations'),('public.notifications_log')) t(tbl)
+     cross join (values ('select'),('insert'),('update'),('delete'),('truncate'),('trigger'),('references')) p(priv)
+    where has_table_privilege('anon', t.tbl, p.priv)), 'ANON_PII_NONE') as anon_pii,
+  coalesce((select 'ADMIN_READ_LOST ' || string_agg(t.tbl, ' ')
+     from (values ('public.reservations'),('public.notifications_log')) t(tbl)
+    where not has_table_privilege('authenticated', t.tbl, 'select')
+       or not has_any_column_privilege('authenticated', t.tbl, 'select')), 'ADMIN_READ_OK') as admin_read,
+  coalesce((select 'SERVICE_LOST ' || string_agg(format('%s/%s', t.tbl, p.priv), ' ')
+     from (values ('public.reservations'),('public.notifications_log')) t(tbl)
+     cross join (values ('select'),('insert'),('update'),('delete'),('truncate'),('trigger'),('references')) p(priv)
+    where not has_table_privilege('service_role', t.tbl, p.priv)), 'SERVICE_OK') as service,
+  coalesce((select 'PII_COLUMN_LEAK ' || string_agg(format('%s/%s/%s', r.role, t.tbl, p.priv), ' ')
+     from (values ('anon'),('authenticated')) r(role)
+     cross join (values ('public.reservations'),('public.notifications_log')) t(tbl)
+     cross join (values ('select'),('insert'),('update'),('references')) p(priv)
+    where not (r.role = 'authenticated' and p.priv = 'select')
+      and has_any_column_privilege(r.role, t.tbl, p.priv)), 'PII_COLUMN_NONE') as pii_col,
+  coalesce((select 'PII_PUBLIC_ACL ' || string_agg(format('%s/%s', c.relname, a.privilege_type), ' ')
+     from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     cross join lateral aclexplode(c.relacl) a
+    where n.nspname = 'public' and c.relname in ('reservations','notifications_log')
+      and a.grantee = 0), 'PII_PUBLIC_NONE') as pii_public,
+  coalesce((select 'OUTBOX_FN_MISSING ' || string_agg(s.sig, ' ')
+     from (values ('public.claim_pending_notifications(integer, text[])'),('public.mark_notification_sent(bigint, text)'),('public.mark_notification_failed(bigint, text, boolean, bigint)'),('public.reap_stale_notifications()')) s(sig)
+    where to_regprocedure(s.sig) is null), 'OUTBOX_FN_ALL_PRESENT') as fn_present,
+  coalesce((select 'OUTBOX_FN_EXTRA ' || string_agg(format('%s/%s', p.proname, g.who), ' ')
+     from (values ('public.claim_pending_notifications(integer, text[])'),('public.mark_notification_sent(bigint, text)'),('public.mark_notification_failed(bigint, text, boolean, bigint)'),('public.reap_stale_notifications()')) s(sig)
+     join pg_proc p on p.oid = to_regprocedure(s.sig)
+     cross join lateral (select case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end as who
+                           from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a where a.privilege_type = 'EXECUTE') g
+    where g.who <> 'service_role' and g.who <> pg_get_userbyid(p.proowner)), 'OUTBOX_FN_ONLY_SERVICE') as fn_exec,
+  coalesce((select 'OUTBOX_FN_PUBLIC_ROLE_EXEC ' || string_agg(format('%s/%s', s.sig, r.role), ' ')
+     from (values ('public.claim_pending_notifications(integer, text[])'),('public.mark_notification_sent(bigint, text)'),('public.mark_notification_failed(bigint, text, boolean, bigint)'),('public.reap_stale_notifications()')) s(sig)
+     cross join (values ('anon'),('authenticated')) r(role)
+    where to_regprocedure(s.sig) is not null
+      and has_function_privilege(r.role, to_regprocedure(s.sig), 'EXECUTE')), 'OUTBOX_FN_NO_PUBLIC_ROLE_EXEC') as fn_public_exec,
+  coalesce((select 'OUTBOX_FN_SERVICE_LOST ' || string_agg(s.sig, ' ')
+     from (values ('public.claim_pending_notifications(integer, text[])'),('public.mark_notification_sent(bigint, text)'),('public.mark_notification_failed(bigint, text, boolean, bigint)'),('public.reap_stale_notifications()')) s(sig)
+    where to_regprocedure(s.sig) is not null
+      and not has_function_privilege('service_role', to_regprocedure(s.sig), 'EXECUTE')), 'OUTBOX_FN_SERVICE_OK') as fn_service,
+  coalesce((select 'PII_USER_TRIGGER ' || string_agg(tgname, ' ')
+     from pg_trigger
+    where not tgisinternal
+      and tgrelid in ('public.reservations'::regclass, 'public.notifications_log'::regclass)), 'PII_NO_USER_TRIGGER') as trg;
+```
+<!-- P515:0017_MATRIX_SQL:END -->
 
 | # | 기대 문자열 | 뜻 |
 |---|---|---|
@@ -280,9 +412,39 @@ where p.prorettype = 'pg_catalog.trigger'::regtype
 | ③ | `ADMIN_READ_OK` | `authenticated` 의 select 는 표·컬럼 단위 모두 생존 = 관리자 화면이 산다 |
 | ④ | `SERVICE_OK` | `service_role` 의 일곱 동작 불변 = 접수·enqueue·발송기·파기가 산다 |
 | ⑤ | `PII_COLUMN_NONE` · `PII_PUBLIC_NONE` | 컬럼 단위 grant 0 · PUBLIC 상속 0 |
-| ⑥ | `OUTBOX_FN_ONLY_SERVICE` · `OUTBOX_FN_SERVICE_OK` | 아웃박스 definer 함수 **넷**의 EXECUTE 보유자는 `service_role`(+소유자) 뿐이고 실행 가능 |
+| ⑥ | `OUTBOX_FN_ALL_PRESENT` · `OUTBOX_FN_ONLY_SERVICE` · `OUTBOX_FN_NO_PUBLIC_ROLE_EXEC` · `OUTBOX_FN_SERVICE_OK` | 아웃박스 definer 함수 **넷이 시그니처까지 전부 있고**(없으면 `OUTBOX_FN_MISSING …`), EXECUTE 보유자는 `service_role`(+소유자) 뿐이며(NULL ACL 은 기본값 = PUBLIC EXECUTE 로 읽는다), 공개 롤의 **유효** EXECUTE 0, service_role 은 실행 가능 (P5-15 astra R4) |
 | ⑦ | `PII_NO_USER_TRIGGER` | 두 표에 사용자 트리거 0 |
-| ⑧ | (같은 파일의 거동 테스트) | `anon`·`authenticated` 의 `CREATE TRIGGER` 4회가 **42501**, `service_role` 2회는 **성공**(대조군) |
+| ⑧ | (같은 파일의 거동 테스트 — ⛔ **로컬 전용, 원격에 붙이지 마라**) | `anon`·`authenticated` 의 `CREATE TRIGGER` 4회가 **42501**, `service_role` 2회는 **성공**(대조군) |
+
+⛔ ⑧ 의 DO 블록은 원격 확인 절차가 아니다 — 원격에 붙이지 마라(P5-15 astra R2 — 원격 확인은 카탈로그 질의만). 대조군이 **실제** `reservations`·`notifications_log` 에 `CREATE TRIGGER` 를 성공시키고, **거부될 시도조차** 권한 검사 전에 SHARE ROW EXCLUSIVE 를 기다려 잡는다(아래 근거) — 접수가 막힌다. 원격에서는 위 행렬 `select` 만 붙인다.
+
+### 🔴 자기검증 ⑦ 개정 (2026-09-17, P5-15 astra R3) — 실제 두 표에 CREATE TRIGGER 를 치지 않는다
+옛 ⑦ 은 적용 중에 `anon`·`authenticated`·`service_role` 로 **실제** 두 표에 `CREATE TRIGGER` 를 시도하고, 대조군이 만든 트리거를 `DROP TRIGGER` 했다. PostgreSQL 17 `src/backend/commands/trigger.c` `CreateTriggerFiringOn` 은 **표를 먼저 잠그고 권한은 나중에 본다**:
+```c
+if (OidIsValid(relOid))
+    rel = table_open(relOid, ShareRowExclusiveLock);
+else
+    rel = table_openrv(stmt->relation, ShareRowExclusiveLock);
+…
+/* permission checks */
+if (!isInternal)
+{
+    aclresult = pg_class_aclcheck(RelationGetRelid(rel), GetUserId(),
+                                  ACL_TRIGGER);
+    if (aclresult != ACLCHECK_OK)
+        aclcheck_error(aclresult, get_relkind_objtype(rel->rd_rel->relkind),
+                       RelationGetRelationName(rel));
+```
+그리고 `RemoveTriggerById` 는 `table_open(relid, AccessExclusiveLock)` — 대조군의 drop 은 **마이그레이션 커밋까지** ACCESS EXCLUSIVE 를 쥔다. 즉 거부를 기대한 탐침도 진행 중인 접수 뒤에 줄을 서고, 그 뒤의 새 접수는 탐침 뒤에 줄을 선다.
+**로컬 실측**(다른 세션이 `reservations` 에 ROW EXCLUSIVE 를 쥔 채 · `lock_timeout = 3s` · 센티넬):
+```text
+== 옛 0017 (HEAD)   ERROR:  0017: 탐침이 권한 거부(42501)가 아닌 이유로 실패했다 — anon → reservations : SQLSTATE=55P03 MESSAGE=canceling statement due to lock timeout
+== 새 0017          ERROR:  SENTINEL_NOT_STOPPED   (기다리지 않았다)
+== 새 0018          ERROR:  SENTINEL_NOT_STOPPED
+== 새 0019          ERROR:  SENTINEL_NOT_STOPPED
+```
+**개정된 ⑦**: ⑦-가 실제 두 표는 **카탈로그로만**(CREATE TRIGGER 를 허용하는 TRIGGER 권한이 `has_table_privilege` 로 하나라도 true 면 아무것도 시도하지 않고 멈춘다) · ⑦-나 거동은 서브트랜잭션 안의 **일회용 표**(`public.p0017_probe_tbl`, TRIGGER 는 `service_role` 에게만)에서 — `anon`·`authenticated` 42501, `service_role` 성공(대조군), `anon` 에게 TRIGGER 만 주면 성공(카탈로그 ↔ 거동 일치), 매 시도의 `has_table_privilege` 예측과 결과를 대조 — 끝에서 통째로 되돌린다. 적용 롤에 public 스키마 CREATE 가 필요하다(`postgres` 는 있다).
+R4 추가: 일회용 표는 **PUBLIC 까지** 회수하고, 매 시도 직전에 의도한 유효 권한만(TRIGGER 는 service_role·그 단계의 anon 에게만, 나머지 전부 false — 종류 열거) 있는지 단언한다. 아웃박스 함수 검사는 NULL `proacl` 을 기본 ACL(PUBLIC EXECUTE)로 읽고 공개 롤의 유효 EXECUTE 를 따로 본다. **적용 직전 필수: 0019 절의 "이벤트 트리거 확인"**(일회용 표 생성이 CREATE TABLE·CREATE TRIGGER 태그를 낸다).
 
 ### 로컬 실측 (2026-09-16, P5-13 구현)
 | 표 | 롤 | 적용 전 | 적용 후 |
@@ -296,7 +458,7 @@ PUBLIC 롤 grant 0 · 따로 부여된 컬럼 ACL 0(`pg_class.relacl`·`pg_attri
 ### 적용 경로
 `supabase db push` 또는 SQL Editor. **`psql -f` 를 쓰지 마라**(리뷰 K1).
 ⚠️ 자기검증 ⑦ 이 `set local role` 로 롤을 바꿔 `CREATE TRIGGER` 를 시도한다 — **적용하는 롤이 `anon`·`authenticated`·`service_role` 의 멤버여야 한다**(`postgres`/`supabase_admin` 은 멤버다). 아니면 마이그레이션이 "롤 전환 실패" 로 **명시적으로 멈춘다**(조용히 건너뛰지 않는다).
-✅ 탐침 뒤 복원은 `reset role` 이 아니라 **캡처한 적용 롤로 `set local role`** 한다(2026-09-17 수정, GPT 검증 P2 — 0018 과 같은 형태). 로컬 실측 세 방식 통과: postgres 로그인 · supabase_admin 로그인 + `set role postgres` · supabase_admin 로그인 그대로. 수정 전 파일은 두 번째 방식에서 멈췄다.
+✅ 탐침 뒤 복원은 `reset role` 이 아니라 **캡처한 적용 롤로 `set local role`** 한다(2026-09-17 수정, GPT 검증 P2 — 0018 과 같은 형태). 로컬 실측 세 방식 통과: postgres 로그인 · supabase_admin 로그인 뒤 적용 롤을 postgres 로 전환 · supabase_admin 로그인 그대로. 수정 전 파일은 두 번째 방식에서 멈췄다.
 
 ### 롤백
 `supabase/rollbacks/0017_pii_tables_trigger_references.down.sql` · **승인 플래그 요구**(`set bestour.rollback_0017_ack = '1';`). 근거: 되돌리면 `http_request` 트리거로 **접수마다 고객 개인정보가 외부로 나가는** 경로가 오류·로그·화면 변화 없이 다시 열린다. 되돌린 것을 필요로 하는 정상 경로는 하나도 없다.
@@ -336,7 +498,7 @@ PUBLIC 롤 grant 0 · 따로 부여된 컬럼 ACL 0(`pg_class.relacl`·`pg_attri
 | 2 | ① 행렬 | public 스키마 **모든** 시퀀스(카탈로그 열거)에서 `anon`·`authenticated` 권한이 콘텐츠 6 × `authenticated.usage` 밖에 있다 |
 | 3 | ② 관리자 | 콘텐츠 여섯 중 하나라도 `authenticated.usage` 가 없다 |
 | 4 | ③ 서비스 롤 | `service_role`·`postgres` 가 일곱 × 셋 중 하나라도 잃었다 |
-| 5 | ⑤ 거동 | `set local role` 로 `anon`·`authenticated` 가 되어 `setval`(**현재 값 그대로**)·`nextval` 을 쳐서 42501 이 아니면 멈춘다. 대조군: 권한을 준 임시 시퀀스에서 같은 문장이 성공해야 한다(서브트랜잭션째 되돌림) |
+| 5 | ⑤ 거동 | ⑤-가 실제 시퀀스: 공개 롤이 setval·nextval 을 허용할 수 있는 권한(열거)을 하나라도 가지면 **시도 없이** 멈춘다. ⑤-나 일회용 시퀀스(PUBLIC 까지 회수 · 매 단계 의도한 유효 권한만 단언): anon 거부 42501 · USAGE 만 가진 authenticated 는 setval 거부·nextval 성공 · UPDATE 만 받은 anon 은 둘 다 성공(대조군) · 예측과 결과가 다르면 멈춤. 서브트랜잭션째 되돌림 (R4) |
 
 로컬에서 각 항을 **일부러 깨뜨려** 전부 멈추는 것을 확인했다(P5-14 보고서 ⑤ — 7변형, 멈추지 않은 것 0).
 
@@ -344,8 +506,8 @@ PUBLIC 롤 grant 0 · 따로 부여된 컬럼 ACL 0(`pg_class.relacl`·`pg_attri
 `supabase db push` 또는 SQL Editor. **`psql -f` 를 쓰지 마라**(리뷰 K1). 로컬 단건 적용은 `psql -1`(단일 트랜잭션).
 ⚠️ 자기검증 ⑤ 가 `set local role` 로 롤을 바꾼다 — **적용하는 롤이 `anon`·`authenticated` 의 멤버여야 한다**(0017 과 같다). 아니면 "롤 전환 실패" 로 명시적으로 멈춘다.
 ⚠️ ⑤ 의 대조군은 `public.p0018_probe_seq` 를 **만들었다 되돌린다**(커밋되지 않는다). 적용 롤에 public 스키마 CREATE 가 필요하다(`postgres` 는 있다).
-⚠️ 탐침 뒤 롤 복원은 `reset role` 이 아니라 **캡처한 적용 롤로 `set local role`** 한다(GPT 검증 P2). 로컬 실측 세 방식 모두 통과: postgres 로그인 · supabase_admin 로그인 + `set role postgres` · supabase_admin 로그인 그대로.
-~~🔴 **0017 에는 같은 결함이 남아 있다**~~ → **0017 도 같은 두 줄로 고쳤다 (2026-09-17, P5-14 후속).** 수정 전에는 supabase_admin 로그인 + `set role postgres` 로 적용하면 `0017: 탐침이 롤을 되돌리지 못했다 (current_user=supabase_admin · 기대=postgres)` 로 멈췄다(로컬 재현). `db push` 가 0012~0018 을 한 번에 미므로 0017 이 멈추면 0018 까지 막혔을 것이다. 수정 후 세 방식 모두 통과. ✅
+⚠️ 탐침 뒤 롤 복원은 `reset role` 이 아니라 **캡처한 적용 롤로 `set local role`** 한다(GPT 검증 P2). 로컬 실측 세 방식 모두 통과: postgres 로그인 · supabase_admin 로그인 뒤 적용 롤을 postgres 로 전환 · supabase_admin 로그인 그대로.
+~~🔴 **0017 에는 같은 결함이 남아 있다**~~ → **0017 도 같은 두 줄로 고쳤다 (2026-09-17, P5-14 후속).** 수정 전에는 supabase_admin 로그인 뒤 적용 롤을 postgres 로 전환해 적용하면 `0017: 탐침이 롤을 되돌리지 못했다 (current_user=supabase_admin · 기대=postgres)` 로 멈췄다(로컬 재현). `db push` 가 0012~0018 을 한 번에 미므로 0017 이 멈추면 0018 까지 막혔을 것이다. 수정 후 세 방식 모두 통과. ✅
 
 **🔴 적용 직전 스냅샷 (필수 절차)** — 0018 롤백은 이전 ACL 이 아니라 **기본 기준선**(anon·authenticated 전권)으로 복원한다(롤백 헤더). 원격 적용 **직전** 아래를 실행해 결과를 이 절에 날짜와 함께 붙여 둔다:
 ```sql
@@ -365,7 +527,39 @@ select current_setting('server_version_num');
 부여자(`/postgres`)도 함께 본다 — `supabase_admin` 부여가 섞여 있으면 0018 의 자기검증 ① 이 적용을 멈춘다(위 "부여자" 경고).
 
 ### 적용 전/후 확인
-`tests/write-privileges.test.ts` §15 의 SQL 을 SQL Editor 에 붙여 넣는다. 기대 문자열: `SEQ_NONE` · `ADMIN_SEQ_OK` · `SERVICE_SEQ_OK` · `SEQ_PUBLIC_NONE` · `SEQ_COUNT 7`. 같은 절의 거동 DO 블록이 오류 없이 `DO` 로 끝나야 한다.
+아래 행렬(카탈로그 질의뿐)을 SQL Editor 에 붙여 넣는다. 붙이는 원문은 **이 runbook 의 블록뿐**이다.
+(로컬 테스트도 이 표식 사이의 원문을 읽어 그대로 돌린다 — P5-15 astra R3.) 기대 문자열: `SEQ_NONE` · `ADMIN_SEQ_OK` · `SERVICE_SEQ_OK` · `SEQ_PUBLIC_NONE` · `SEQ_COUNT 7`.
+<!-- P515:0018_MATRIX_SQL:BEGIN -->
+```sql
+select
+  coalesce((select 'SEQ_LEAK ' || string_agg(format('%s/%s/%s', r.role, c.relname, p.priv), ' ')
+     from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     cross join (values ('anon'),('authenticated')) r(role)
+     cross join (values ('usage'),('select'),('update')) p(priv)
+    where n.nspname = 'public' and c.relkind = 'S'
+      and has_sequence_privilege(r.role, c.oid, p.priv)
+      and not (r.role = 'authenticated' and p.priv = 'usage' and c.relname in ('notices_id_seq','popups_id_seq','gallery_id_seq','gallery_albums_id_seq','showcase_routes_id_seq','vehicles_id_seq'))), 'SEQ_NONE') as leak,
+  coalesce((select 'ADMIN_SEQ_LOST ' || string_agg(c.relname, ' ')
+     from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname in ('notices_id_seq','popups_id_seq','gallery_id_seq','gallery_albums_id_seq','showcase_routes_id_seq','vehicles_id_seq')
+      and not has_sequence_privilege('authenticated', c.oid, 'usage')), 'ADMIN_SEQ_OK') as admin_seq,
+  coalesce((select 'SERVICE_SEQ_LOST ' || string_agg(format('%s/%s/%s', r.role, s.seq, p.priv), ' ')
+     from (values ('service_role'),('postgres')) r(role)
+     cross join (values ('public.notices_id_seq'),('public.popups_id_seq'),('public.gallery_id_seq'),('public.gallery_albums_id_seq'),('public.showcase_routes_id_seq'),('public.vehicles_id_seq'),('public.notifications_log_id_seq')) s(seq)
+     cross join (values ('usage'),('select'),('update')) p(priv)
+    where not has_sequence_privilege(r.role, s.seq, p.priv)), 'SERVICE_SEQ_OK') as service_seq,
+  coalesce((select 'SEQ_PUBLIC_ACL ' || string_agg(format('%s/%s', c.relname, a.privilege_type), ' ')
+     from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     cross join lateral aclexplode(c.relacl) a
+    where n.nspname = 'public' and c.relkind = 'S' and a.grantee = 0), 'SEQ_PUBLIC_NONE') as seq_public,
+  (select 'SEQ_COUNT ' || count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relkind = 'S') as seq_count;
+```
+<!-- P515:0018_MATRIX_SQL:END -->
+
+**자기검증 ⑤ 개정 (P5-15 astra R3 → R4)**: **실제 시퀀스에는 `setval`·`nextval` 을 치지 않는다.** PostgreSQL 17 `src/backend/commands/sequence.c`: `nextval_internal` → `init_sequence(relid, &elm, &seqrel)` 후 `pg_class_aclcheck(elm->relid, GetUserId(), ACL_USAGE | ACL_UPDATE)` · `do_setval` → `init_sequence` 후 `pg_class_aclcheck(…, ACL_UPDATE)` · `lock_and_open_sequence` 는 `LockRelationOid(seq->relid, RowExclusiveLock)` 를 **최상위 트랜잭션 소유자**로 잡는다. 즉 거부될 시도도 **권한 검사 전에** 시퀀스의 ROW EXCLUSIVE 를 **마이그레이션 커밋까지** 쥔다(예외를 잡아도 풀리지 않는다). 앱의 `nextval` 과는 직접 충돌하지 않지만, 그 사이 `ALTER SEQUENCE`(SHARE ROW EXCLUSIVE)가 이 잠금 뒤에 줄을 서면 **그 뒤의 앱 `nextval` 이 ALTER 뒤에 줄을 선다**(간접 정지 — R3 에서 "무해" 라고 한 판단은 이것을 놓쳤다. R3 의 잠금 실측은 `reservations` 에 잠금을 걸었으므로 시퀀스 DDL 안전을 증명하지 못했다). 그래서 컨트롤러 결정대로 0017 ⑦ 과 같은 원칙을 따른다:
+⑤-가 실제 시퀀스는 **카탈로그로만** — 그 호출을 허용할 수 있는 권한(`acldefault('s')` 열거, 소스상 허용하지 않는 것만 제외: SELECT 는 둘 다, USAGE 는 setval · 허용 경로 authenticated×콘텐츠 여섯×nextval 의 USAGE 제외)이 하나라도 있으면 `(실제 시퀀스에는 아무것도 시도하지 않았다)` 로 멈춘다. ⑤-나 거동은 **일회용 시퀀스**에서만 — PUBLIC 까지 회수하고, 매 단계 의도한 유효 권한만(열거) 있는지 단언한 뒤, anon(거부)·authenticated USAGE 만(setval 거부·nextval 성공)·anon UPDATE 만(둘 다 성공, 대조군)을 실행해 예측(소스 그대로)과 대조한다. **적용 직전 필수: 0019 절의 "이벤트 트리거 확인"**(일회용 시퀀스 생성이 CREATE SEQUENCE 태그를 낸다).
+⛔ 같은 절의 거동 DO 블록은 **로컬 전용 — 원격에 붙이지 마라**(P5-15 astra R2 — 원격 확인은 카탈로그 질의만). 실제 시퀀스에 `setval`(권한이 남아 있으면 실행된다)·`nextval`(대조군 — 운영 번호를 소모한다)을 친다. 적용 시점의 거동 확인은 0018 자기검증 ⑤ 가 한다.
 
 ### 롤백
 `supabase/rollbacks/0018_sequence_privileges.down.sql` · **승인 플래그 요구**(`set bestour.rollback_0018_ack = '1';`). **복원 대상은 기본 기준선이다 — 실행 전에 위 스냅샷과 대조할 것.** 0012~0017 롤백도 같은 방식(상행이 회수한 고정 목록을 조건 없이 부여)이다. 근거: 되돌리면 공개 롤이 `setval` 로 통지 시퀀스를 되감는 문이 오류·로그·화면 변화 없이 다시 열린다. 되돌린 것을 필요로 하는 정상 경로는 없다(앱 코드는 시퀀스를 직접 부르지 않는다).
@@ -381,7 +575,7 @@ select current_setting('server_version_num');
 **출처**: P6-13 이 범위 밖에서 발견, 컨트롤러가 재측정. 그리고 **P6-11 게이트가 놓쳤다** — 권한 종류를 하드코딩했기 때문이다(후속 목록의 해당 항목). 기본 권한이 새 표를 `arwdDxtm` 으로 여는 같은 뿌리의 **여섯 번째 사례**다.
 
 **`MAINTAIN` 이 허용하는 것**: `VACUUM` · `ANALYZE` · `CLUSTER` · `REINDEX` · `REFRESH MATERIALIZED VIEW` · **`LOCK TABLE`(모든 모드)**. **RLS 는 이것을 보지 않는다**(TRUNCATE·TRIGGER 와 같은 부류).
-적용 전 로컬 실측(`set local role anon`): `lock table public.reservations in access exclusive mode nowait` → **`LOCK TABLE` 성공**, `analyze public.reservations` → **실제로 돌았다**(`pg_stat_user_tables.last_analyze` 갱신). 강한 잠금을 쥐는 동안 **예약 접수가 전부 멈춘다.** 오늘 PostgREST 로 도달할 경로는 없다 — 그러나 그 판단은 TRIGGER 때 틀렸다(0017).
+적용 전 로컬 실측(⛔ 아래 두 문장은 로컬에서 쟀다 — 원격에 붙이지 마라 · `set local role anon`): `lock table public.reservations in access exclusive mode nowait` → **`LOCK TABLE` 성공**, `analyze public.reservations` → **실제로 돌았다**(`pg_stat_user_tables.last_analyze` 갱신). 강한 잠금을 쥐는 동안 **예약 접수가 전부 멈춘다.** 오늘 PostgREST 로 도달할 경로는 없다 — 그러나 그 판단은 TRIGGER 때 틀렸다(0017).
 
 1. `anon`·`authenticated` — public 스키마 **모든 표·뷰**(카탈로그 열거, 시퀀스 제외)에서 `MAINTAIN`
 2. `service_role`·`postgres` 불변 · 다른 권한 전부 불변(자기검증 ④ 가 전후 ACL 전수를 대조)
@@ -396,6 +590,26 @@ select current_setting('server_version_num'), version();
   그 경우 **17 로 업그레이드한 뒤**에는 기존 표 ACL 에 `m` 이 없을 수 있다(업그레이드는 옛 ACL 을 옮긴다). 그래도 **새로** 만드는 표는 기본 권한으로 `m` 을 받는다 — 고친 게이트가 이름을 대며 잡는다. 그때 0019 를 다시 돌리면 된다(재실행 안전).
 - 자기검증 ⑤ 가 **버전 판정과 서버 능력**(`aclexplode(acldefault('r', …))` 에 MAINTAIN 이 있는가)을 대조한다. 어긋나면 멈춘다 — 버전 번호만 믿고 조용히 건너뛰지 않는다.
 - 위 0018 절의 **적용 직전 스냅샷(표 포함)**을 함께 뜬다 — 0019 롤백 판단에 필요하다.
+
+### 🔴 적용 직전 필수 — 이벤트 트리거 확인 (0017·0018·0019 공통, P5-15 astra R4)
+세 마이그레이션의 자기검증은 적용 중에 **일회용 객체**를 만든다(0017: 표 `p0017_probe_tbl` 과 그 위 트리거 · 0018: 시퀀스 `p0018_probe_seq` · 0019: 표 `p0019_probe_tbl` — 명령 태그 CREATE TABLE·CREATE TRIGGER·CREATE SEQUENCE). 끝에서 통째로 되돌리지만, **이벤트 트리거는 명령 태그로 분기할 수 있고 외부 부수효과는 되돌려지지 않는다.** "REVOKE 도 DDL 이니 같다" 는 틀린 논거였다(R3 에서 그렇게 적었다 — 정정). 원격 적용 **직전**에 아래 읽기 질의를 실행한다:
+```sql
+select evtname, evtevent, evttags, evtfoid::regproc, evtenabled, md5(pg_get_functiondef(evtfoid)) as body_md5
+  from pg_event_trigger order by evtname;
+```
+**로컬 기준 목록**(2026-09-17 · Supabase 기본 — 전부 소유자 supabase_admin · `evtenabled = O`):
+
+| evtname | evtevent | evttags | evtfoid | body_md5 |
+|---|---|---|---|---|
+| `issue_graphql_placeholder` | `sql_drop` | `{DROP EXTENSION}` | `set_graphql_placeholder` | `4f4a0b1162d1c629f29d40d8fd787e30` |
+| `issue_pg_cron_access` | `ddl_command_end` | `{CREATE EXTENSION}` | `grant_pg_cron_access` | `efa7df0e6a8d3588febef183c9146993` |
+| `issue_pg_graphql_access` | `ddl_command_end` | `{CREATE EXTENSION}` | `grant_pg_graphql_access` | `2be0ce49a11c5163eb837b1f21901124` |
+| `issue_pg_net_access` | `ddl_command_end` | `{CREATE EXTENSION}` | `grant_pg_net_access` | `397e5cbc06c307d43caf104cd97c2e22` |
+| `pgrst_ddl_watch` | `ddl_command_end` | (없음 — 모든 태그) | `pgrst_ddl_watch` | `c87f2ceb165e84c9f894808613facb4d` |
+| `pgrst_drop_watch` | `sql_drop` | (없음) | `pgrst_drop_watch` | `7d26bc43b1e03b4de5aa79cb5b8cb28a` |
+
+**멈추고 컨트롤러에게 보고할 조건**: ⓐ 위 목록에 **없는** 트리거가 있다 ⓑ 어떤 트리거의 `evttags` 가 `CREATE TABLE`·`CREATE SEQUENCE`·`CREATE TRIGGER` 를 포함한다 ⓒ 위 목록의 트리거가 다른 함수를 가리키거나 **함수 본문 md5 가 다르다**(원격은 Supabase 버전에 따라 다를 수 있다 — 다르면 본문을 읽고 판단을 받는다).
+**R3 논거가 틀렸다는 실례가 이 DB 에 있다**: `pgrst_ddl_watch` 는 트리거 수준 태그 필터가 없지만 **함수 안에서** `command_tag IN ('CREATE TABLE', …, 'CREATE TRIGGER', …)` 로 분기해 `NOTIFY pgrst, 'reload schema'` 를 낸다 — GRANT/REVOKE 에는 반응하지 않는다. 일회용 객체 생성에만 반응하는 것이다. 이 경우는 NOTIFY 가 트랜잭션에 묶여 있어 되돌려진 서브트랜잭션의 알림이 나가지 않으므로 무해하다(적용 트랜잭션이 커밋돼도 되돌려진 부분의 알림은 버려진다 — 로컬 실측: `listen pgrst` 세션에서 savepoint 안의 표 생성을 되돌리고 커밋 → 알림 없음 · 대조군으로 생성·삭제를 커밋 → `Asynchronous notification "pgrst" with payload "reload schema"` 수신).
 
 ### 로컬 실측 (2026-09-17, P5-15 구현 · PostgreSQL 17.6)
 | 표 | 롤 | 적용 전 | 적용 후 |
@@ -415,23 +629,49 @@ select current_setting('server_version_num'), version();
 | 3 | ① 행렬 | public **모든** 표·뷰(카탈로그)에서 `anon`·`authenticated` 의 MAINTAIN 이 true |
 | 4 | ② 서비스 롤 | `service_role`·`postgres` 의 MAINTAIN 이 적용 전과 다르다(업그레이드 DB 의 옛 ACL 을 이유로 막지 않도록 "true" 가 아니라 "불변" 을 본다) |
 | 5 | ④ 불변 | 적용 전후 ACL 전수(종류 불문 · 컬럼 포함)에서 공개 롤 MAINTAIN 외에 달라진 것이 있다 |
-| 6 | ⑥ 거동 | `set local role` 로 공개 롤이 되어, "강한 잠금을 허용할 수 있는 것이 MAINTAIN 뿐인" 조합 전부(로컬 14)에 `LOCK … ACCESS EXCLUSIVE MODE NOWAIT` 를 쳐서 42501 이 아니면 멈춘다. 대조군: MAINTAIN **하나만** 준 임시 표에서 같은 문장이 성공해야 한다(서브트랜잭션째 되돌림). 탐침 대상 0 도 멈춘다 |
+| 6 | ⑥ 거동 | **시도 직전** 그 롤이 그 표에 SELECT 외 권한(열거)을 하나라도 가지면 LOCK 없이 멈춘다. 통과하면 `set local role` 로 공개 롤이 되어, "강한 잠금을 허용할 수 있는 것이 MAINTAIN 뿐인" 조합 전부(로컬 14)에 `LOCK … ACCESS EXCLUSIVE MODE NOWAIT` 를 쳐서 42501 이 아니면 멈춘다. 대조군: MAINTAIN **하나만** 준 임시 표에서 같은 문장이 성공해야 한다(서브트랜잭션째 되돌림). 탐침 대상 0 도 멈춘다 |
 
 로컬에서 **10변형을 일부러 깨뜨려 전부 멈추는 것**을 확인했다(P5-15 보고서 ⑧). 기준선(원본)은 센티넬에서만 멈췄고 실행 뒤 사실 전수 diff 0.
 
 ### 적용 경로
 `supabase db push` 또는 SQL Editor. **`psql -f` 를 쓰지 마라**(리뷰 K1). 로컬 단건 적용은 `psql -1`.
-⚠️ ⑥ 이 `set local role` 로 롤을 바꾼다 — 적용 롤이 `anon`·`authenticated` 의 멤버여야 한다(0017·0018 과 같다). 복원은 `reset role` 이 아니라 **캡처한 적용 롤로 `set local role`**. 로컬 세 방식 모두 통과: postgres 로그인 · supabase_admin 로그인 + `set role postgres` · supabase_admin 로그인 그대로(각각 `after|<session>|<적용 롤>` 유지). `reset role` 로 바꾼 변형은 B 방식에서 `0019: 탐침 뒤 적용 롤(postgres)로 돌아오지 못했다 (current_user=supabase_admin)` 로 멈춘다(실측).
+⚠️ ⑥ 이 `set local role` 로 롤을 바꾼다 — 적용 롤이 `anon`·`authenticated` 의 멤버여야 한다(0017·0018 과 같다). 복원은 `reset role` 이 아니라 **캡처한 적용 롤로 `set local role`**. 로컬 세 방식 모두 통과: postgres 로그인 · supabase_admin 로그인 뒤 적용 롤을 postgres 로 전환 · supabase_admin 로그인 그대로(각각 `after|<session>|<적용 롤>` 유지). `reset role` 로 바꾼 변형은 B 방식에서 `0019: 탐침 뒤 적용 롤(postgres)로 돌아오지 못했다 (current_user=supabase_admin)` 로 멈춘다(실측).
 ⚠️ ⑥ 의 대조군은 `public.p0019_probe_tbl` 을 만들었다 되돌린다 — 적용 롤에 public 스키마 CREATE 가 필요하다. 탐침은 `NOWAIT` 이고 거부되는 시도는 잠금을 잡지 않는다(권한 검사가 먼저다).
 ⚠️ **0019 가 닫지 못하는 것**: `authenticated` 는 콘텐츠 여섯 표를 UPDATE·DELETE 권한으로 여전히 강하게 잠글 수 있다(후속 목록).
 
 ### 적용 전/후 확인
-`tests/write-privileges.test.ts` §18 의 행렬 SQL 을 SQL Editor 에 붙여 넣는다. 기대 문자열: `MAINTAIN_NONE` · `SERVICE_MAINTAIN_OK` · `MAINTAIN_PUBLIC_NONE` · `BASELINE_PRESENT 9`. (17 미만이면 이 질의는 `unrecognized privilege type` 으로 실패한다 — 버전부터 볼 것.)
+🔴 **원격에서는 카탈로그 질의만 실행한다** (astra R2 P1-A · 컨트롤러 결정 2026-09-17). 잠금·DDL·DML·롤 전환 문장은 원격 확인 절차에 **하나도 없다**. 로컬 검사가 0017·0018·0019 절의 모든 코드 블록(``` · ~~~ · 언어 무관)과 산문을 문장 모양으로 훑고, 저장소의 검사 파일·검사 절 번호를 붙이라는 안내도 잡는다. ⚠️ **그것은 회귀 방지 보조일 뿐 보증이 아니다** — 정규식 휴리스틱이라 문장을 쪼개거나 풀어 쓰면 빠진다. 원격에 붙이기 전에 사람이 블록을 읽는다(P5-15 astra R4). 적용 시점의 거동 확인(실제 LOCK 거부)은 0019 자기검증 ⑥ 이 이미 했다(시도 직전 사전 검사로 잠금 획득이 구조적으로 불가능한 조합만 친다 — 아래 근거).
+
+아래 행렬(카탈로그 질의뿐)을 SQL Editor 에 붙여 넣는다. 붙이는 원문은 **이 runbook 의 블록뿐**이다.
+(로컬 테스트도 이 표식 사이의 원문을 읽어 그대로 돌린다.) 기대 문자열: `MAINTAIN_NONE` · `SERVICE_MAINTAIN_OK` · `MAINTAIN_PUBLIC_NONE` · `BASELINE_PRESENT 9`. (17 미만이면 이 질의는 `unrecognized privilege type` 으로 실패한다 — 버전부터 볼 것.)
+<!-- P515:MAINTAIN_MATRIX_SQL:BEGIN -->
+```sql
+select
+  coalesce((select 'MAINTAIN_LEAK ' || string_agg(format('%s/%s', r.role, c.relname), ' ')
+     from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     cross join (values ('anon'),('authenticated')) r(role)
+    where n.nspname = 'public' and c.relkind in ('r','p','v','m','f')
+      and has_table_privilege(r.role, c.oid, 'MAINTAIN')), 'MAINTAIN_NONE') as leak,
+  coalesce((select 'SERVICE_MAINTAIN_LOST ' || string_agg(c.relname, ' ')
+     from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relkind = 'r'
+      and not has_table_privilege('service_role', c.oid, 'MAINTAIN')), 'SERVICE_MAINTAIN_OK') as svc,
+  coalesce((select 'MAINTAIN_PUBLIC_ACL ' || string_agg(c.relname, ' ')
+     from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     cross join lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+    where n.nspname = 'public' and c.relkind in ('r','p','v','m','f') and a.grantee = 0 and a.privilege_type = 'MAINTAIN'), 'MAINTAIN_PUBLIC_NONE') as pub,
+  (select 'BASELINE_PRESENT ' || count(*) from unnest(array['public.notices','public.popups','public.gallery','public.gallery_albums','public.showcase_routes','public.vehicles','public.places','public.reservations','public.notifications_log']) t(n) where to_regclass(t.n) is not null) as baseline;
+```
+<!-- P515:MAINTAIN_MATRIX_SQL:END -->
+
 ⚠️ **`SERVICE_MAINTAIN_LOST …` 가 나와도 곧바로 실패가 아니다**(astra P2-6). 원격이 16→17 업그레이드 DB 면 기존 표 ACL 에 `m` 이 원래 없을 수 있다 — 0019 는 service_role 을 건드리지 않는다(상행 ② 는 "불변" 을 본다). **적용 직전 스냅샷과 대조**해서, 스냅샷에 `service_role=…m…` 이 있던 표만 문제로 본다. 롤백의 같은 검사도 그래서 경고(`WARNING`)만 한다.
 
-**LOCK 거동 블록** — 같은 파일의 상수 `LOCK_PROBE_SQL` 원문을 붙인다. 오류 없이 `DO` 로 끝나야 한다.
-🔴 **원격에 붙여도 되는 이유 (astra P1-1 수정 뒤)**: 이 블록은 **실제 표에서는 거부(42501)만** 기대한다. 처음 판은 대조군이 `('service_role', 'reservations', true)` — 실제 예약 표에 `ACCESS EXCLUSIVE` 를 **잡는 데 성공**하는 탐침이었다. 성공하면 서브트랜잭션을 되돌릴 때까지 접수가 막히고, 앱 트랜잭션이 이미 잠금을 쥐고 있으면 `NOWAIT` 가 `55P03` 으로 **거짓 실패**한다. 지금 대조군은 블록 안에서 만들고 되돌리는 일회용 표 `public.p0515_probe_tbl`(MAINTAIN 만 부여)이다. 모든 시도는 서브트랜잭션 안에서 하고 **언제나** 되돌린다.
-거부 탐침이 실제 표를 잠그지 않는 근거 — PostgreSQL 17 `src/backend/commands/lockcmds.c`:
+⛔ **LOCK 거동 블록(`LOCK_PROBE_SQL`)은 로컬 테스트 전용이다 — 원격에 붙이지 마라.** (1라운드에서 이 절이 그것을 붙이라고 했다. 거부를 "기대" 할 뿐이라 권한이 예상과 달리 남아 있으면 실제 표 잠금이 **잡히고** 되돌릴 때까지 접수가 막힌다. 일회용 표 DDL 은 운영 이벤트 트리거를 태운다.)
+
+**0019 ⑥ 이 적용 중에 실제 표에 LOCK 을 시도해도 잠금을 얻을 수 없는 이유**: ① 이 ⑥ 보다 먼저 돌아 공개 롤의 MAINTAIN 이 남았으면 거기서 멈춘다. 그리고 ⑥ 은 **시도 직전에** 그 롤이 그 표에 SELECT 외의 권한(종류는 `acldefault` 에서 열거 — MAINTAIN·UPDATE·DELETE·TRUNCATE·INSERT…)을 하나라도 가지면 **LOCK 없이 멈춘다**(`… — 잠금을 시도하지 않고 멈춘다`). ACCESS EXCLUSIVE 는 아래 `LockTableAclCheck` 대로 MAINTAIN|UPDATE|DELETE|TRUNCATE 중 하나를 요구하므로, 사전 검사를 통과한 조합은 잠금을 얻을 수 없고 권한 검사에서 42501 로 끝난다. 사전 검사가 없던 판은 ① 을 가린 깨뜨리기 변형에서 `gallery` 의 잠금을 **실제로 잡았다가** 되돌렸다(P5-15 보고서 수정 라운드 2).
+⑥ 의 대조군(일회용 표 `p0019_probe_tbl`)은 적용 중의 DDL 이다 — 이벤트 트리거가 태그로 분기할 수 있으므로 위 "적용 직전 필수 — 이벤트 트리거 확인" 을 거친다(R3 의 "revoke 도 DDL 이니 같다" 는 틀렸다 — 정정). 대조군 표는 PUBLIC 까지 회수하고, LOCK 직전에 anon 의 MAINTAIN **하나만** 유효한지(열거) 단언한다(R4).
+⚠️ **수용한 한계(TOCTOU)**: ⑥ 의 사전 검사와 LOCK 은 별개의 문장이다. 그 사이에 다른 세션이 공개 롤의 멤버십(예: `pg_maintain`)을 바꾸면 사전 검사가 본 상태와 LOCK 의 권한 검사가 다를 수 있다 — 적용 중 동시 멤버십 변경이 전제이므로 수용한다(컨트롤러 2026-09-17).
+PostgreSQL 17 `src/backend/commands/lockcmds.c`:
 ```c
 reloid = RangeVarGetRelidExtended(rv, lockstmt->mode,
                                   lockstmt->nowait ? RVR_NOWAIT : 0,

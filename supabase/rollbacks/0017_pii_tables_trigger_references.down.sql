@@ -145,7 +145,7 @@ begin
       into extra
       from (
         select case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end as g
-          from pg_proc p cross join lateral aclexplode(p.proacl) a
+          from pg_proc p cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a  -- NULL = 기본 ACL(PUBLIC EXECUTE) · P5-15 R4
          where p.oid = fn_oid and a.privilege_type = 'EXECUTE'
       ) s
      where s.g <> 'service_role'
