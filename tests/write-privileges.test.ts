@@ -20,14 +20,26 @@
  * `places` 에 insert·update·delete·**truncate** 를 그대로 갖고 있었다(P5-9 독립 리뷰 M1). TRUNCATE 는
  * RLS 의 적용을 아예 받지 않으므로, 그 표들에서는 "RLS 가 막아 주고 있었다" 조차 사실이 아니었다.
  *
+ * **그리고 `0016_privileges_rls_cannot_protect.sql` 이 RLS 가 애초에 막지 못하는 것을 닫는다** (P5-12).
+ * 0012·0013 이 닫은 것은 **쓰기 네 동작**뿐이었다. 남은 `TRUNCATE`·`TRIGGER` 는 RLS 가 관여하는 종류의 권한이
+ * 아니다 — TRUNCATE 는 행을 하나씩 보지 않으므로 정책 평가가 일어나지 않고, TRIGGER 는 `CREATE TRIGGER` 를
+ * 허용한다(표의 TRIGGER 권한 + **이미 존재하는** 트리거 함수의 EXECUTE 면 충분하다 — 0012 헤더가 "스키마 CREATE 가
+ * 없어 쓸 수 없다" 고 적은 것은 **틀렸다**). 이 DB 에는 `supabase_functions.http_request` 가 있고 두 공개 롤이
+ * 그것을 실행할 수 있다 — 붙이면 행이 바뀔 때마다 외부로 HTTP 가 나간다.
+ * `places` 는 한 겹 더 나쁘다: 관리자 쓰기 **정책이 아예 없는데**(0009 는 여섯 표에만 달았다) 전권을 갖고 있었다.
+ *
  * 이 파일이 단언하는 것:
  *   1·2. 0012 SQL·롤백 — 회수 대상 2표만 · select 미회수 · 재실행 안전 · 데이터 미변경 ·
  *        롤백은 회수한 것만 되돌리고(0010 이 닫은 문은 되살리지 않는다) 승인 플래그를 **언제나** 요구한다
  *   3·4. 0013 SQL·롤백 — 7표 × 4동작을 `anon` 에서만 · `authenticated` 미접촉 · select 미회수 · 대칭 롤백
  *   5. DB 실증(로컬 스택) — 관리자·anon 세션의 쓰기가 4xx 로 **거부**된다(204 아님) · select 는 200 ·
  *      서비스 롤 경로(접수·enqueue·발송기·파기)와 0010 definer 함수 3종은 **그대로 동작한다** ·
- *      관리자의 콘텐츠 표 쓰기도 그대로다
+ *      **0016 뒤에도 관리자가 콘텐츠 표에 실제로 쓰고 지운다**(행렬이 아니라 2xx 로) · `places` 쓰기는 거부된다
  *   6. 권한 행렬 실측 — 행동이 아니라 권한 상태 자체를 `has_table_privilege` 로 읽는다
+ *   7·8. 0016 SQL·롤백 — 회수 목록이 정확히 TRUNCATE·TRIGGER·REFERENCES(+`places` 쓰기 셋)이고 select 는 살아 있으며,
+ *        함수 셋은 `create or replace`(drop 금지)로 `pg_temp` 만 더하고, 롤백이 대칭이며 승인 플래그를 요구한다
+ *   9. 0016 권한·함수 행렬 실측 — `anon` 은 select 만 · `authenticated` 에 truncate/trigger/references 0 ·
+ *      함수 셋의 `proconfig` 에 `pg_temp` · EXECUTE 보유자는 `service_role`(+소유자) 뿐
  *
  * tests/ 아래라 게이트 3종의 검사 대상이다 — 금지어·임시값 마커 리터럴을 그대로 쓰지 않는다.
  */
@@ -51,6 +63,8 @@ const UP_SQL = "supabase/migrations/0012_write_privileges.sql";
 const DOWN_SQL = "supabase/rollbacks/0012_write_privileges.down.sql";
 const UP13_SQL = "supabase/migrations/0013_anon_write_privileges.sql";
 const DOWN13_SQL = "supabase/rollbacks/0013_anon_write_privileges.down.sql";
+const UP16_SQL = "supabase/migrations/0016_privileges_rls_cannot_protect.sql";
+const DOWN16_SQL = "supabase/rollbacks/0016_privileges_rls_cannot_protect.down.sql";
 
 const stripSqlComments = (sql: string) => sql.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
 const compact = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
@@ -75,6 +89,30 @@ const ANON_REVOKE_TABLES = [...CONTENT_TABLES, "places"] as const;
 const OUT_OF_SCOPE_FOR_13 = ["reservations", "notifications_log", "admin_users"] as const;
 
 const WRITE_PRIVS = ["insert", "update", "delete", "truncate"] as const;
+
+/**
+ * 0016 이 `authenticated` 에게서 회수하는 것 — **RLS 가 막지 못하는 세 가지.**
+ * TRUNCATE 는 정책 평가 자체가 일어나지 않고, TRIGGER 는 `CREATE TRIGGER` 를 허용하며(이미 있는 트리거 함수의
+ * EXECUTE 만 더 있으면 된다 — 이 DB 에는 `supabase_functions.http_request` 가 있다), REFERENCES 는 오늘 실행
+ * 경로가 없지만 "만들 수 없으니 괜찮다" 는 논증이 TRIGGER 에서 이미 한 번 틀렸으므로 함께 닫는다.
+ */
+const RLS_BLIND_PRIVS = ["truncate", "trigger", "references"] as const;
+
+/** 0016 이 `anon` 에게서 회수하는 것. 네 동작은 0013 이 가져갔으므로 이 둘만 남았다. */
+const ANON_RLS_BLIND_PRIVS = ["trigger", "references"] as const;
+
+/** `places` 에서만 추가로 회수하는 쓰기 셋 — 관리자 쓰기 정책이 없고(0009 는 여섯 표) 코드 경로도 없다. */
+const PLACES_WRITE_PRIVS = ["insert", "update", "delete"] as const;
+
+/**
+ * 0016 이 `search_path` 에 `pg_temp` 를 더하는 definer 함수 **셋**.
+ *
+ * 후속 목록(runbook)과 브리프는 `0005:96` 의 `claim_pending_notifications(int)` 를 포함해 넷으로 적었는데
+ * **그 함수는 이미 존재하지 않는다** — 0014 가 `drop function if exists claim_pending_notifications(int)` 로
+ * 지우고 2-인자 판을 만들었고, 그쪽은 처음부터 `public, pg_temp` 다. 1-인자 형태를 되살리면 두 함수가 공존해
+ * `claim_pending_notifications(10)` 호출이 모호(42725)해지고 **발송기가 통째로 멈춘다**(0014 §4 ①).
+ */
+const PG_TEMP_FIXED_FNS = ["mark_notification_sent", "mark_notification_failed", "reap_stale_notifications"] as const;
 
 interface PrivStatement {
   verb: "revoke" | "grant";
@@ -745,6 +783,129 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
       madePopups.splice(madePopups.indexOf(popupId), 1);
     });
 
+    // -------------------------------------------------------------------------
+    // 5-4. 0016 — **관리자 화면이 죽지 않는다는 실행 증명**.
+    //
+    //      행렬 대조(§6·§9)는 "권한이 있다" 까지만 말한다. 이 블록은 **관리자 세션으로 실제 쓰고 지워** 2xx 를 본다.
+    //      0016 이 회수한 것 중 관리자 경로에 닿을 수 있는 둘을 특히 겨눈다:
+    //        · REFERENCES 회수 → 외래키가 있는 표에 쓸 수 있는가 (`gallery.album_id` → `gallery_albums`)
+    //        · TRIGGER   회수 → 트리거가 달린 표에서 지울 때 그 트리거가 발화하는가 (0015 의 before delete)
+    //      둘 다 "권한은 만들 때만 검사된다" 는 성질에 기대는데, 그 성질을 문서가 아니라 실행으로 확인한다.
+    // -------------------------------------------------------------------------
+    test("0016 실행 증명 — 관리자 세션이 gallery_albums·gallery 에 쓰고 지운다 (REFERENCES·TRIGGER 회수 뒤에도)", async () => {
+      // ① 앨범 insert — 비활성으로 만든다(다른 파일의 "공개는 활성만 본다" 단언과 겹치지 않게).
+      const albumSlug = `p512-${RUN}`;
+      const aIns = await asUser(
+        adminToken,
+        "POST",
+        "/gallery_albums",
+        { slug: albumSlug, title: `P5-12 ${RUN}`, sort: 910001, active: false },
+        "return=representation",
+      );
+      expect(aIns.status, `관리자 화면이 죽었다 — gallery_albums insert: ${JSON.stringify(aIns.body).slice(0, 300)}`).toBe(201);
+      const albumId = (aIns.body as { id: number }[])[0].id;
+
+      const aUpd = await asUser(adminToken, "PATCH", `/gallery_albums?id=eq.${albumId}`, { title: `P5-12 ${RUN} edit` });
+      expect(aUpd.status, `gallery_albums update: ${JSON.stringify(aUpd.body).slice(0, 300)}`).toBeLessThan(300);
+
+      // ② 사진 insert — **album_id 로 외래키를 탄다.** REFERENCES 를 회수했어도 무결성 검사는 내부 RI 트리거가
+      //    표 소유자 권한으로 돌므로 통과해야 한다. 여기가 4xx 면 0016 이 관리자 화면을 죽인 것이다.
+      const photoPath = `p512/${RUN}.webp`;
+      const gIns = await asUser(
+        adminToken,
+        "POST",
+        "/gallery",
+        { image_path: photoPath, original_path: `p512/${RUN}.orig`, sort: 910001, active: true, album_id: albumId },
+        "return=representation",
+      );
+      expect(gIns.status, `외래키가 있는 표에 관리자가 쓰지 못한다 — gallery insert: ${JSON.stringify(gIns.body).slice(0, 300)}`).toBe(201);
+      const photoId = (gIns.body as { id: number }[])[0].id;
+
+      const gUpd = await asUser(adminToken, "PATCH", `/gallery?id=eq.${photoId}`, { caption: "P5-12" });
+      expect(gUpd.status, `gallery update: ${JSON.stringify(gUpd.body).slice(0, 300)}`).toBeLessThan(300);
+
+      // ③ 앨범 delete — 0015 의 `before delete` 트리거가 달린 표다. TRIGGER 권한을 회수했어도
+      //    **발화에는 그 권한이 필요하지 않다**(CREATE TRIGGER 때만 검사된다). 발화했으면 비활성 앨범이었으므로
+      //    그 안의 사진이 active=false 로 내려간다 — 그 결과로 "트리거가 돌았다" 를 확인한다.
+      const aDel = await asUser(adminToken, "DELETE", `/gallery_albums?id=eq.${albumId}`);
+      expect(aDel.status, `트리거가 달린 표에서 관리자가 지우지 못한다 — gallery_albums delete: ${JSON.stringify(aDel.body).slice(0, 300)}`).toBeLessThan(300);
+
+      const after = await rest("GET", `/gallery?select=id,active,album_id&id=eq.${photoId}`);
+      const photo = (after.body as { id: number; active: boolean; album_id: number | null }[])[0];
+      expect(photo, "앨범을 지웠더니 사진 행까지 사라졌다 — Storage 고아 파일이 생긴다").toBeDefined();
+      expect(photo.album_id, "외래키의 on delete set null 이 돌지 않았다").toBeNull();
+      expect(photo.active, "0015 트리거가 발화하지 않았다 — TRIGGER 권한 회수가 발화까지 막았다면 숨긴 사진이 공개된다").toBe(false);
+
+      // ④ 사진 delete — 뒷정리도 관리자 세션으로 한다(그것도 증명의 일부다).
+      const gDel = await asUser(adminToken, "DELETE", `/gallery?id=eq.${photoId}`);
+      expect(gDel.status, `gallery delete: ${JSON.stringify(gDel.body).slice(0, 300)}`).toBeLessThan(300);
+      const gone = await rest("GET", `/gallery?select=id&id=eq.${photoId}`);
+      expect(gone.body, "관리자 delete 가 0행을 지웠다").toEqual([]);
+    });
+
+    /**
+     * `showcase_routes` · `vehicles` 는 **행을 늘리지 않는다.**
+     * 다른 파일이 이 두 표의 **전체 행 수**를 단언하기 때문이다(tests/admin-routes.test.ts 는 16행을 두 번 세고
+     * `rows[마지막]` 을 자기 대상으로 고른다 — 내가 행을 하나 넣으면 그 행이 남의 대상이 된다.
+     * tests/schema.test.ts 는 vehicles 를 5행으로 센다). vitest 는 파일을 병렬로 돌리므로 임시 행 하나가
+     * 남의 단언을 간헐적으로 깨뜨린다 — 간헐적 red 는 red 보다 나쁘다.
+     * 그래서 **실제 관리자 경로 그대로** 확인한다: 노선 관리 화면은 `updateRouteRow`·`setRouteActive` 두 개의
+     * **update** 뿐이고(lib/admin/routes.ts — 16행은 고정 집합이다), 차량은 관리 화면 자체가 없다.
+     * DELETE 는 **행을 지우지 않는 필터**로 권한 층만 확인한다 — 회수됐다면 401/403 이 오고, 살아 있으면 204 다.
+     */
+    test("0016 실행 증명 — 관리자 세션이 showcase_routes·vehicles 를 실제로 고치고 되돌린다 (행 수는 그대로)", async () => {
+      for (const [table, probe] of [
+        ["showcase_routes", "origin_code=eq.ICN&destination_code=eq.SEL"],
+        ["vehicles", "slug=eq.bus45"],
+      ] as const) {
+        const before = await rest("GET", `/${table}?select=id,sort&${probe}`);
+        const row = (before.body as { id: number; sort: number | null }[])[0];
+        expect(row, `${table} 의 시드 행을 찾지 못했다 — 이전 마이그레이션이 적용되지 않았다`).toBeDefined();
+        const original = row.sort;
+
+        const upd = await asUser(adminToken, "PATCH", `/${table}?id=eq.${row.id}`, { sort: 910002 });
+        expect(upd.status, `관리자 화면이 죽었다 — ${table} update: ${JSON.stringify(upd.body).slice(0, 300)}`).toBeLessThan(300);
+        const mid = await rest("GET", `/${table}?select=sort&id=eq.${row.id}`);
+        expect((mid.body as { sort: number | null }[])[0].sort, `${table} update 가 0행을 고쳤다(204 는 성공처럼 보인다)`).toBe(910002);
+
+        const back = await asUser(adminToken, "PATCH", `/${table}?id=eq.${row.id}`, { sort: original });
+        expect(back.status, `${table} 되돌리기: ${JSON.stringify(back.body).slice(0, 300)}`).toBeLessThan(300);
+        const end = await rest("GET", `/${table}?select=sort&id=eq.${row.id}`);
+        expect((end.body as { sort: number | null }[])[0].sort, `${table} 를 원래 값으로 되돌리지 못했다`).toBe(original);
+
+        // delete 권한 — 어느 행에도 맞지 않는 필터다. 권한이 없으면 401/403, 있으면 204.
+        const del = await asUser(adminToken, "DELETE", `/${table}?id=eq.0`);
+        expect(del.status, `${table} delete 권한이 사라졌다: ${JSON.stringify(del.body).slice(0, 300)}`).toBeLessThan(300);
+      }
+    });
+
+    test("0016 실행 증명 — `places` 는 관리자 세션도 쓰지 못하고(4xx) 읽기는 200 이다", async () => {
+      // places 에는 관리자 쓰기 정책이 아예 없다(0009 는 여섯 표에만 달았다). 0016 이전에는 권한이 있어
+      // 문장이 실행되고 RLS 가 0행을 내 PostgREST 가 **204(성공)** 를 돌려줬다 — 거부가 아니라 성공이었다.
+      const ins = await asUser(adminToken, "POST", "/places", {
+        code: "ZZT", name_ko: "P5-12", name_en: "P5-12", kind: "city", region_code: "SEL",
+        lat: 0, lng: 0, svg_x: 0, svg_y: 0, sort: 910003, active: false,
+      });
+      expect(ins.status, `places insert 가 거부되지 않았다: ${JSON.stringify(ins.body).slice(0, 300)}`).toBeGreaterThanOrEqual(400);
+
+      // 필터는 어느 시드 행에도 맞지 않는 값이다. 0016 이 적용됐으면 권한에서 먼저 막히고,
+      // 만에 하나 이 단언이 깨지더라도 시드 데이터는 바뀌지 않는다(0013 의 anon 단언과 같은 안전장치).
+      const upd = await asUser(adminToken, "PATCH", "/places?code=eq.ZZT", { sort: 910003 });
+      expect(upd.status, `places update 가 거부되지 않았다(204=0행 성공 포함): ${JSON.stringify(upd.body).slice(0, 300)}`).toBeGreaterThanOrEqual(400);
+
+      const del = await asUser(adminToken, "DELETE", "/places?code=eq.ZZT");
+      expect(del.status, `places delete 가 거부되지 않았다: ${JSON.stringify(del.body).slice(0, 300)}`).toBeGreaterThanOrEqual(400);
+
+      // 시드 17행은 그대로다 — 위 셋 중 어느 것도 표를 건드리지 못했다.
+      const rows = await rest("GET", "/places?select=code");
+      expect((rows.body as unknown[]).length, "places 의 시드 행이 바뀌었다").toBe(17);
+
+      // 읽기는 두 롤 모두 살아 있다 — 관리자 노선 편집 화면과 공개 지도 히어로가 이 표를 읽는다.
+      const adminRead = await asUser(adminToken, "GET", "/places?select=code&active=eq.true");
+      expect(adminRead.status, JSON.stringify(adminRead.body).slice(0, 300)).toBe(200);
+      expect((adminRead.body as unknown[]).length, "관리자가 places 를 읽지 못한다 — 노선 편집 화면의 도시 목록이 빈다").toBeGreaterThan(0);
+    });
+
     test("공개 사이트 읽기(anon)는 무영향 — 7표 전부 활성 행 조회가 그대로 200", async () => {
       const paths = [
         "/notices?select=id&active=eq.true",
@@ -847,5 +1008,353 @@ describe.skipIf(!gate.allowed)("6. DB — 권한 행렬 실측 (로컬 스택)",
 
   test("콘텐츠 6표의 authenticated CRUD 는 멀쩡하다 — 관리자 화면이 살아 있다", () => {
     expect(verdict, verdict).toContain("CONTENT_OK");
+  });
+});
+
+// =============================================================================
+// 7. supabase/migrations/0016_privileges_rls_cannot_protect.sql — 텍스트 (P5-12)
+//
+//    0012·0013 은 **쓰기 네 동작**만 닫았다. 남은 TRUNCATE·TRIGGER 는 RLS 가 관여하는 종류의 권한이 아니라서,
+//    그 둘에 대해서는 "RLS 가 유일한 방어선" 조차 아니고 **아무 방어선도 없었다.**
+// =============================================================================
+describe("7. 0016_privileges_rls_cannot_protect.sql", () => {
+  test("존재하고, 0016 번호는 이 파일 하나뿐이다. migrations/ 안에 롤백이 섞여 있지 않다", () => {
+    expect(exists(UP16_SQL), `${UP16_SQL} 이 없다`).toBe(true);
+    const files = readdirSync(path.join(ROOT, "supabase", "migrations"));
+    expect(files.filter((f) => f.startsWith("0016"))).toEqual(["0016_privileges_rls_cannot_protect.sql"]);
+    expect(files.filter((f) => f.endsWith(".down.sql"))).toEqual([]);
+  });
+
+  test("일곱 표 × authenticated 에서 truncate·trigger·references 를 회수한다", () => {
+    const revoked = triples(parsePrivStatements(UP16_SQL), "revoke");
+    for (const table of ANON_REVOKE_TABLES) {
+      for (const priv of RLS_BLIND_PRIVS) {
+        expect(revoked.has(`authenticated|${table}|${priv}`), `authenticated 의 ${table} ${priv} 가 남는다`).toBe(true);
+      }
+    }
+  });
+
+  test("같은 일곱 표 × anon 에서 trigger·references 를 회수한다 — 0013 은 네 동작만 가져갔다", () => {
+    const revoked = triples(parsePrivStatements(UP16_SQL), "revoke");
+    for (const table of ANON_REVOKE_TABLES) {
+      for (const priv of ANON_RLS_BLIND_PRIVS) {
+        expect(revoked.has(`anon|${table}|${priv}`), `anon 의 ${table} ${priv} 가 남는다`).toBe(true);
+      }
+    }
+    // anon 의 TRUNCATE 는 0013 소관이다. 여기서 다시 회수하면 **롤백이** 0013 이 닫은 문을 되살리게 된다
+    // (0012 §2 가 reservations update 에서 같은 이유로 피한 함정).
+    for (const table of ANON_REVOKE_TABLES) {
+      expect(revoked.has(`anon|${table}|truncate`), `0016 이 0013 의 회수를 중복 실행한다 — 롤백이 그것을 되살린다`).toBe(false);
+    }
+  });
+
+  test("`places` 에서만 authenticated 의 insert·update·delete 를 추가로 회수한다 (select 는 남긴다)", () => {
+    const revoked = triples(parsePrivStatements(UP16_SQL), "revoke");
+    for (const priv of PLACES_WRITE_PRIVS) {
+      expect(revoked.has(`authenticated|places|${priv}`), `places 의 ${priv} 가 남는다 — 관리자 쓰기 정책도 코드 경로도 없다`).toBe(true);
+    }
+    for (const table of CONTENT_TABLES) {
+      for (const priv of PLACES_WRITE_PRIVS) {
+        expect(revoked.has(`authenticated|${table}|${priv}`), `${table} 의 ${priv} 를 회수한다 — 관리자 화면이 죽는다`).toBe(false);
+      }
+      expect(revoked.has(`authenticated|${table}|select`), `${table} 의 select 를 회수한다`).toBe(false);
+    }
+  });
+
+  test("회수 목록이 정확히 그 셋이다 — 더도 덜도 아니다", () => {
+    const revoked = triples(parsePrivStatements(UP16_SQL), "revoke");
+    const expected = new Set<string>();
+    for (const table of ANON_REVOKE_TABLES) {
+      for (const priv of RLS_BLIND_PRIVS) expected.add(`authenticated|${table}|${priv}`);
+      for (const priv of ANON_RLS_BLIND_PRIVS) expected.add(`anon|${table}|${priv}`);
+    }
+    for (const priv of PLACES_WRITE_PRIVS) expected.add(`authenticated|places|${priv}`);
+    expect([...revoked].sort(), `회수 삼중항이 기대와 다르다`).toEqual([...expected].sort());
+  });
+
+  test("select 는 어디서도 회수하지 않고 `all` 로 뭉뚱그리지 않는다 · service_role 도 건드리지 않는다", () => {
+    for (const s of parsePrivStatements(UP16_SQL)) {
+      expect(s.privs, `${s.raw} 가 select 를 건드린다`).not.toContain("select");
+      expect(s.privs, `${s.raw} 가 all 로 뭉뚱그린다`).not.toContain("all");
+      expect(s.roles, `${s.raw} 가 service_role 을 건드린다 — 접수·enqueue·발송기·파기가 그것으로 돈다`).not.toContain("service_role");
+      expect(s.roles, `${s.raw} 가 public 롤을 건드린다 — 이 파일의 범위가 아니다`).not.toContain("public");
+    }
+    expect(sqlCode(UP16_SQL)).not.toMatch(/revoke\s+all\s+on\s+table/);
+  });
+
+  test("부여(grant)는 하나도 없다 — 이 마이그레이션은 닫기만 한다", () => {
+    expect(parsePrivStatements(UP16_SQL).filter((s) => s.verb === "grant")).toEqual([]);
+    // **문장 머리에서만** 찾는다 — 이 파일의 `hint` 문자열들이 다른 마이그레이션의 grant 문(0009 §6 의 시퀀스 usage,
+    // 0005 §6 의 service_role execute)을 인용해 "그것이 살아 있는지 확인할 것" 이라고 안내한다(실측).
+    expect(sqlCode(UP16_SQL)).not.toMatch(/(?:^|;)\s*grant\s+/);
+  });
+
+  test("개인정보 두 표와 admin_users 는 SQL 본문에서 건드리지 않는다 (0012·0009 소관)", () => {
+    const code = sqlCode(UP16_SQL);
+    for (const t of OUT_OF_SCOPE_FOR_13) {
+      expect(code, `0016 의 SQL 본문이 ${t} 를 건드린다`).not.toMatch(new RegExp(`on\\s+table\\s+[a-z_, ]*\\b${t}\\b`));
+    }
+  });
+
+  test("definer 함수는 **셋**을 `create or replace` 로만 고친다 — `drop function` 금지", () => {
+    const code = sqlCode(UP16_SQL);
+    // drop 하면 ACL 이 초기화되고 이 DB 의 기본 권한이 공개 롤에 EXECUTE 를 다시 부여한다(CLAUDE.md §3 · 0014 헤더).
+    // **문장 머리에서만** 찾는다 — 이 파일의 `hint` 문자열이 "drop function 이 섞여 들어갔다" 를 설명하고 있어서
+    // 단순 부분 문자열로 보면 그 설명에 걸린다(실측). compact() 가 문장을 `;` 로 갈라 두므로 앞뒤를 못박을 수 있다.
+    expect(code, "drop function 문장이 있다 — ACL 이 초기화돼 기본 권한이 공개 롤에 EXECUTE 를 다시 부여한다").not.toMatch(/(?:^|;)\s*drop\s+function\b/);
+    const created = [...code.matchAll(/create or replace function ([a-z_]+)\s*\(/g)].map((m) => m[1]);
+    expect(created.sort(), "고치는 함수 목록이 다르다").toEqual([...PG_TEMP_FIXED_FNS].sort());
+  });
+
+  test("claim_pending_notifications 는 건드리지 않는다 — 1-인자 판을 만들면 발송기가 42725 로 멈춘다", () => {
+    const code = sqlCode(UP16_SQL);
+    expect(code, "0016 이 claim 함수를 재정의한다 — 0014 가 2-인자로 바꿨고 이미 pg_temp 다").not.toMatch(
+      /create or replace function claim_pending_notifications/,
+    );
+    // 대신 자기검증이 "1-인자 판이 되살아나지 않았다" 를 확인한다.
+    expect(code).toContain("to_regprocedure('public.claim_pending_notifications(int)')");
+  });
+
+  test("고치는 것은 `search_path` 한 줄뿐이다 — 세 함수 전부 `public, pg_temp`", () => {
+    const code = sqlCode(UP16_SQL);
+    // 함수 **선언부**만 센다. `set search_path = public, pg_temp` 는 이 파일의 hint 문자열에도 나오므로
+    // 부분 문자열로 세면 4가 된다(실측) — 선언부의 앞뒤(`security definer` … `as $$`)로 못박는다.
+    expect(
+      [...code.matchAll(/security definer set search_path = public, pg_temp as \$\$/g)].length,
+      "세 함수 전부에 pg_temp 가 붙지 않았다",
+    ).toBe(PG_TEMP_FIXED_FNS.length);
+    expect(code, "pg_temp 없는 옛 형태가 남아 있다").not.toMatch(/set search_path = public as \$\$/);
+    // 본문 로직은 0005·0007 원문 그대로여야 한다 — 상태 전이의 핵심 조건을 그대로 담고 있는지 본다.
+    expect(code, "mark_notification_sent 의 where 조건이 바뀌었다").toContain("where id = p_id and status = 'pending'");
+    expect(code, "reap 의 대상 조건이 바뀌었다").toContain("where status = 'pending' and attempts >= 5 and next_attempt_at <= now()");
+    expect(code, "mark_notification_failed 의 백오프 계산이 바뀌었다").toContain("make_interval(secs => greatest(coalesce(p_retry_after_ms, 0), 0) / 1000.0)");
+    for (const fn of PG_TEMP_FIXED_FNS) {
+      expect(code, `${fn} 이 security definer 가 아니다`).toMatch(new RegExp(`${fn}\\s*\\([^)]*\\)[\\s\\S]{0,160}security definer`));
+    }
+  });
+
+  test("데이터·스키마를 바꾸지 않는다 — 권한 문장 · 함수 재정의 · 검증 블록뿐", () => {
+    const code = sqlCode(UP16_SQL);
+    for (const forbidden of ["create table", "alter table", "drop table", "create policy", "drop policy", "insert into", "delete from", "truncate table", "create trigger", "drop trigger"]) {
+      expect(code, `0016 이 "${forbidden}" 을 한다`).not.toContain(forbidden);
+    }
+  });
+
+  test("재실행 안전 — revoke 와 create or replace 는 둘 다 멱등이다", () => {
+    const code = sqlCode(UP16_SQL);
+    expect(code).toMatch(/revoke /);
+    expect(code, "or replace 없는 create 가 있다").not.toMatch(/create (?!or replace)/);
+  });
+
+  test("스스로 검증한다 — 다섯 항목을 실행 중에 못박고, 컬럼 단위 grant 까지 본다", () => {
+    const code = sqlCode(UP16_SQL);
+    expect(code, "has_table_privilege 로 표 권한을 확인하지 않는다").toContain("has_table_privilege");
+    // 표 단위 revoke 는 따로 부여된 컬럼 grant 를 지우지 않는다 — has_table_privilege 는 그것을 못 본다(runbook ⚠️).
+    expect(code, "컬럼 단위 grant 를 보지 않는다").toContain("has_any_column_privilege");
+    expect(code, "함수 권한을 확인하지 않는다").toContain("has_function_privilege");
+    expect(code, "시퀀스 권한을 확인하지 않는다 — insert 만 있고 nextval 이 막히면 관리자가 새 행을 못 만든다").toContain("has_sequence_privilege");
+    expect(code, "PUBLIC 까지 보는 아클 전수 검사가 없다").toContain("aclexplode");
+    expect(code, "proconfig 를 보지 않는다 — pg_temp 가 실제로 붙었는지 확인해야 한다").toContain("proconfig");
+    expect(code, "어긋나도 조용히 성공한다 — raise exception 이 없다").toContain("raise exception");
+    // 필터된 뷰를 증거로 쓰지 않는다 (CLAUDE.md §3 · runbook 의 ⚠️ 절).
+    expect(code, "information_schema.role_table_grants 를 증거로 쓴다 — 필터된 뷰라 PUBLIC 상속을 놓친다").not.toContain(
+      "from information_schema.role_table_grants",
+    );
+    // 관리자 화면 생존(⑤ 의 반대 방향 사고)을 확인하는지.
+    for (const t of CONTENT_TABLES) {
+      expect(code, `검증 블록이 ${t} 의 권한 생존을 확인하지 않는다`).toContain(t);
+    }
+  });
+
+  test("TRUNCATE·TRIGGER 가 왜 특별한지 파일에 적혀 있다 — 다음 사람이 되돌리지 않도록", () => {
+    const raw = read(UP16_SQL);
+    expect(raw).toMatch(/RLS[^\n]*TRUNCATE|TRUNCATE[^\n]*RLS/);
+    // TRIGGER 를 남겨 뒀던 **틀린 근거**와 그것이 왜 틀렸는지가 함께 적혀 있어야 한다.
+    expect(raw).toMatch(/CREATE TRIGGER/);
+    expect(raw).toContain("supabase_functions.http_request");
+  });
+
+  test("0001~0015 를 수정하지 않는다 — 0016 은 파일 하나를 더할 뿐이다", () => {
+    const five = sqlCode("supabase/migrations/0005_outbox.sql");
+    expect(five, "0005 의 EXECUTE 회수가 사라졌다").toContain("revoke all on function mark_notification_sent(bigint, text) from public, anon, authenticated");
+    const seven = sqlCode("supabase/migrations/0007_outbox_reaper.sql");
+    expect(seven, "0007 의 service_role grant 가 사라졌다").toContain("grant execute on function reap_stale_notifications() to service_role");
+    const fourteen = sqlCode("supabase/migrations/0014_claim_by_channel.sql");
+    expect(fourteen, "0014 의 1-인자 drop 이 사라졌다").toContain("drop function if exists claim_pending_notifications(int)");
+    const nine = sqlCode("supabase/migrations/0009_admin_rls.sql");
+    expect(nine).toContain("grant select, insert, update, delete on table notices, popups, gallery, gallery_albums, showcase_routes, vehicles to authenticated");
+  });
+
+  test("0012 헤더의 틀린 TRIGGER 근거가 **정정으로** 남아 있다 — 원문을 지우지 않는다", () => {
+    const raw = read(UP_SQL);
+    // 원문(왜 남겼는지)이 그대로 있어야 기록이 된다.
+    expect(raw, "0012 의 원래 근거가 지워졌다 — 무엇이 틀렸는지 알 수 없게 된다").toContain("has_schema_privilege");
+    // 그리고 그 아래에 정정이 붙어 있어야 한다.
+    expect(raw, "0012 헤더에 정정이 없다").toMatch(/0016/);
+    expect(raw).toContain("supabase_functions.http_request");
+  });
+});
+
+// =============================================================================
+// 8. supabase/rollbacks/0016_privileges_rls_cannot_protect.down.sql — 텍스트
+// =============================================================================
+describe("8. 0016 롤백", () => {
+  test("rollbacks/ 에만 있고, 수동 실행 절차를 헤더에 적는다", () => {
+    expect(exists(DOWN16_SQL), `${DOWN16_SQL} 이 없다`).toBe(true);
+    const raw = read(DOWN16_SQL);
+    expect(raw).toMatch(/migration repair --status reverted 0016/);
+    expect(raw).toMatch(/begin;/);
+    expect(raw).toMatch(/commit;/);
+  });
+
+  test("승인 플래그를 **언제나** 요구한다 — 행 수를 조건으로 걸지 않는다", () => {
+    const raw = read(DOWN16_SQL);
+    expect(raw, "승인 플래그가 없다").toContain("bestour.rollback_0016_ack");
+    const code = sqlCode(DOWN16_SQL);
+    expect(code).toContain("raise exception");
+    expect(code, "행 수가 승인 조건에 섞여 있다 — 빈 DB 에서 조용히 복원된다").not.toMatch(/[>)]\s*0\s+and\s+coalesce\s*\(\s*current_setting/);
+    expect(code, "승인 플래그 검사가 단독 조건이 아니다").toContain("if coalesce(current_setting('bestour.rollback_0016_ack', true), '') <> '1' then");
+  });
+
+  test("대칭 — 0016 이 회수한 것을 정확히 되돌린다(더도 덜도 아니게)", () => {
+    const revoked = triples(parsePrivStatements(UP16_SQL), "revoke");
+    const granted = triples(parsePrivStatements(DOWN16_SQL), "grant");
+    for (const t of revoked) expect(granted.has(t), `0016 이 회수한 ${t} 를 롤백이 되돌리지 않는다`).toBe(true);
+    for (const t of granted) expect(revoked.has(t), `롤백이 0016 이 회수하지 않은 ${t} 를 부여한다 — 이전 상태보다 넓어진다`).toBe(true);
+    expect(granted.size).toBe(revoked.size);
+  });
+
+  test("`search_path` 를 옛 형태로 되돌린다 — 되돌리지 않으면 0016 재적용에서 검사가 눈이 먼다", () => {
+    const code = sqlCode(DOWN16_SQL);
+    expect(code, "롤백이 pg_temp 를 그대로 남긴다").not.toMatch(/security definer set search_path = public, pg_temp as \$\$/);
+    expect(
+      [...code.matchAll(/security definer set search_path = public as \$\$/g)].length,
+      "세 함수 전부를 옛 형태로 되돌리지 않았다",
+    ).toBe(PG_TEMP_FIXED_FNS.length);
+  });
+
+  test("`drop function` 을 쓰지 않는다 — 롤백이 상행보다 넓은 문을 열면 안 된다", () => {
+    const code = sqlCode(DOWN16_SQL);
+    // 문장 머리에서만 찾는다 — 롤백의 hint 문자열이 "drop function 이 섞였는지 확인할 것" 을 설명한다(위 §7 과 같은 이유).
+    expect(code, "drop function 문장이 있다 — ACL 이 초기화돼 기본 권한이 공개 롤에 EXECUTE 를 다시 부여한다").not.toMatch(/(?:^|;)\s*drop\s+function\b/);
+    const created = [...code.matchAll(/create or replace function ([a-z_]+)\s*\(/g)].map((m) => m[1]);
+    expect(created.sort()).toEqual([...PG_TEMP_FIXED_FNS].sort());
+  });
+
+  test("롤백도 스스로 검증한다 — 그중 service_role 실행 가능 확인이 있다 (P4-5 리뷰 K4)", () => {
+    const code = sqlCode(DOWN16_SQL);
+    expect(code).toContain("raise exception");
+    expect(code, "표 권한이 실제로 돌아왔는지 보지 않는다").toContain("has_table_privilege");
+    expect(
+      code,
+      "service_role 실행 가능 확인이 없다 — 롤백이 성공했다고 말하면서 발송기를 죽일 수 있다(K4)",
+    ).toContain("has_function_privilege('service_role'");
+    expect(code, "공개 롤에 EXECUTE 가 붙었는지 보지 않는다").toContain("aclexplode");
+  });
+
+  test("데이터는 건드리지 않고, 표가 없으면 건너뛴다", () => {
+    const code = sqlCode(DOWN16_SQL);
+    for (const forbidden of ["delete from", "truncate table", "drop table", "insert into"]) {
+      expect(code, `롤백이 "${forbidden}" 을 한다`).not.toContain(forbidden);
+    }
+    expect(code, "표 존재 확인 없이 grant 하면 0001·0002·0008 롤백 뒤 재실행에서 죽는다").toContain("to_regclass");
+  });
+});
+
+// =============================================================================
+// 9. 0016 권한·함수 행렬 실측 — pg_catalog 를 직접 본다 (로컬 스택)
+//
+//    §5 의 실행 증명과 짝이다. 행동만 보면 "권한은 남았는데 RLS 가 막아 4xx" 를 구분하지 못하고,
+//    상태만 보면 "권한은 없는데 관리자 화면이 죽었다" 를 놓친다. TRUNCATE·TRIGGER 는 PostgREST 로
+//    호출할 방법이 아예 없으므로, 그 둘은 **여기서만** 확인할 수 있다.
+// =============================================================================
+describe.skipIf(!gate.allowed)("9. DB — 0016 권한·함수 행렬 실측 (로컬 스택)", { timeout: 300_000 }, () => {
+  let verdict = "";
+  const SEVEN =
+    "(values ('public.notices'),('public.popups'),('public.gallery'),('public.gallery_albums'),('public.showcase_routes'),('public.vehicles'),('public.places'))";
+
+  beforeAll(() => {
+    verdict = runLocalSql(
+      [
+        "select",
+        // ① RLS 가 막지 못하는 셋이 authenticated 에게 남았는가 (표 단위 + 컬럼 단위 references).
+        "  coalesce((select 'RLS_BLIND_LEAK ' || string_agg(format('%s/%s', t.tbl, p.priv), ' ')",
+        `     from ${SEVEN} t(tbl)`,
+        "     cross join (values ('truncate'),('trigger'),('references')) p(priv)",
+        "    where has_table_privilege('authenticated', t.tbl, p.priv)",
+        "       or (p.priv = 'references' and has_any_column_privilege('authenticated', t.tbl, 'references'))), 'RLS_BLIND_NONE') as blind,",
+        // ② anon 은 일곱 표에서 select 만 갖는다.
+        "  coalesce((select 'ANON_EXTRA ' || string_agg(format('%s/%s', t.tbl, p.priv), ' ')",
+        `     from ${SEVEN} t(tbl)`,
+        "     cross join (values ('insert'),('update'),('delete'),('truncate'),('trigger'),('references')) p(priv)",
+        "    where has_table_privilege('anon', t.tbl, p.priv)), 'ANON_SELECT_ONLY') as anon_extra,",
+        // ③ places 의 쓰기 셋은 authenticated 에게서 사라졌고 select 는 두 롤 모두 살아 있다.
+        "  coalesce((select 'PLACES_WRITE_LEAK ' || string_agg(p.priv, ' ')",
+        "     from (values ('insert'),('update'),('delete')) p(priv)",
+        "    where has_table_privilege('authenticated', 'public.places', p.priv)), 'PLACES_WRITE_NONE') as places_write,",
+        "  coalesce((select 'PLACES_READ_LOST ' || string_agg(r.role, ' ')",
+        "     from (values ('anon'),('authenticated')) r(role)",
+        "    where not has_table_privilege(r.role, 'public.places', 'select')), 'PLACES_READ_OK') as places_read,",
+        // ④ 함수 셋: proconfig 에 pg_temp 가 있는가.
+        "  coalesce((select 'PG_TEMP_MISSING ' || string_agg(p.proname, ' ')",
+        "     from pg_proc p join pg_namespace n on n.oid = p.pronamespace",
+        "    where n.nspname = 'public'",
+        "      and p.proname in ('mark_notification_sent','mark_notification_failed','reap_stale_notifications')",
+        "      and not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) c where c like '%pg_temp%')), 'PG_TEMP_OK') as pg_temp,",
+        // ⑤ 함수 셋의 EXECUTE 보유자가 service_role(과 소유자) 뿐인가 — create or replace 가 ACL 을 보존했는가.
+        "  coalesce((select 'FN_EXEC_EXTRA ' || string_agg(format('%s/%s', p.proname, g.who), ' ')",
+        "     from pg_proc p join pg_namespace n on n.oid = p.pronamespace",
+        "     cross join lateral (select case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end as who",
+        "                           from aclexplode(p.proacl) a where a.privilege_type = 'EXECUTE') g",
+        "    where n.nspname = 'public'",
+        "      and p.proname in ('mark_notification_sent','mark_notification_failed','reap_stale_notifications')",
+        "      and g.who <> 'service_role' and g.who <> pg_get_userbyid(p.proowner)), 'FN_EXEC_ONLY_SERVICE') as fn_exec,",
+        // ⑥ 그 셋을 service_role 이 여전히 실행할 수 있는가 — 못 하면 발송기가 멈춘다.
+        "  coalesce((select 'FN_SERVICE_LOST ' || string_agg(p.proname, ' ')",
+        "     from pg_proc p join pg_namespace n on n.oid = p.pronamespace",
+        "    where n.nspname = 'public'",
+        "      and p.proname in ('mark_notification_sent','mark_notification_failed','reap_stale_notifications')",
+        "      and not has_function_privilege('service_role', p.oid, 'execute')), 'FN_SERVICE_OK') as fn_service,",
+        // ⑦ 1-인자 claim 구버전이 되살아나지 않았는가(되살아나면 발송기가 42725 로 멈춘다).
+        "  case when to_regprocedure('public.claim_pending_notifications(int)') is not null",
+        "       then 'CLAIM_ONE_ARG_BACK' else 'CLAIM_ONE_ARG_GONE' end as claim_old,",
+        // ⑧ 콘텐츠 6표의 CRUD 와 시퀀스는 그대로인가 — 관리자 화면이 죽지 않았다는 상태 쪽 증거.
+        "  coalesce((select 'ADMIN_BROKEN ' || string_agg(format('%s/%s', t.tbl, p.priv), ' ')",
+        "     from (values ('public.notices'),('public.popups'),('public.gallery'),('public.gallery_albums'),('public.showcase_routes'),('public.vehicles')) t(tbl)",
+        "     cross join (values ('select'),('insert'),('update'),('delete')) p(priv)",
+        "    where not has_table_privilege('authenticated', t.tbl, p.priv)), 'ADMIN_OK') as admin_crud,",
+        "  coalesce((select 'SEQ_BROKEN ' || string_agg(s.seq, ' ')",
+        "     from (values ('public.notices_id_seq'),('public.popups_id_seq'),('public.gallery_id_seq'),('public.gallery_albums_id_seq'),('public.showcase_routes_id_seq'),('public.vehicles_id_seq')) s(seq)",
+        "    where not has_sequence_privilege('authenticated', s.seq, 'usage')), 'SEQ_OK') as seqs;",
+      ].join("\n"),
+    );
+  }, 300_000);
+
+  test("authenticated 에게 TRUNCATE·TRIGGER·REFERENCES 가 하나도 없다 — RLS 가 막지 못하던 것들이다", () => {
+    expect(verdict, verdict).toContain("RLS_BLIND_NONE");
+  });
+
+  test("anon 은 일곱 표에서 select 만 갖는다 (0013 이 네 동작 · 0016 이 trigger·references)", () => {
+    expect(verdict, verdict).toContain("ANON_SELECT_ONLY");
+  });
+
+  test("places — 쓰기 셋은 사라지고 두 롤의 읽기는 살아 있다", () => {
+    expect(verdict, verdict).toContain("PLACES_WRITE_NONE");
+    expect(verdict, verdict).toContain("PLACES_READ_OK");
+  });
+
+  test("definer 함수 셋에 pg_temp 가 붙었고 EXECUTE 보유자는 그대로다 — create or replace 가 ACL 을 보존했다", () => {
+    expect(verdict, verdict).toContain("PG_TEMP_OK");
+    expect(verdict, verdict).toContain("FN_EXEC_ONLY_SERVICE");
+    expect(verdict, verdict).toContain("FN_SERVICE_OK");
+  });
+
+  test("1-인자 claim 구버전이 되살아나지 않았다 — 되살아나면 호출이 모호해져 발송기가 멈춘다", () => {
+    expect(verdict, verdict).toContain("CLAIM_ONE_ARG_GONE");
+  });
+
+  test("관리자 화면은 살아 있다 — 콘텐츠 6표 CRUD 와 시퀀스 usage 가 그대로다", () => {
+    expect(verdict, verdict).toContain("ADMIN_OK");
+    expect(verdict, verdict).toContain("SEQ_OK");
   });
 });

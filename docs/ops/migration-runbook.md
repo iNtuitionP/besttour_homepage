@@ -12,7 +12,7 @@
 6. 결과를 이 파일에 날짜와 함께 적는다.
 
 **롤백 파일은 `supabase/rollbacks/` 에 있고 `migrations/` 밖이다** — CLI 가 `migrations/` 의 `^[0-9]+_.*\.sql$` 을 전부 마이그레이션으로 집기 때문이다. 롤백은 사람이 psql/SQL Editor 로 실행한 뒤 `supabase migration repair --status reverted <번호>`.
-0012·0013 롤백은 **승인 플래그를 조건 없이 요구**한다(`set bestour.rollback_00NN_ack = '1';`). 행이 0이어도 멈춘다 — 권한은 열린 채 남고 데이터는 나중에 들어오기 때문이다.
+0012·0013·0014·0015·0016 롤백은 **승인 플래그를 조건 없이 요구**한다(`set bestour.rollback_00NN_ack = '1';`). 행이 0이어도 멈춘다 — 권한은 열린 채 남고 데이터는 나중에 들어오기 때문이다.
 
 ---
 
@@ -109,14 +109,16 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENC
 **기본 권한 자체를 회수할 것인가?** 하지 않는다(지금은). Supabase 의 설계는 "새 표는 PostgREST 로 즉시 쓸 수 있고 RLS 가 문지기" 이고, 이 기본값을 건드리면 대시보드·PostgREST 의 기대와 어긋날 수 있다. 우리는 **개인정보 표에 한해 RLS 를 유일 방어선으로 두지 않기로** 결정했고, 그래서 표 단위로 명시 회수한다.
 대신 **재발을 기계로 잡는다** → 아래 후속 태스크.
 
-### 후속 (미착수)
-- **DB 권한 게이트**: `anon` 이 public 스키마의 어느 표에도 쓰기 권한을 갖지 않는지(허용 목록 외) 단언하는 테스트. 지금은 표가 늘 때마다 사람이 기억해야 한다 — **네 번 놓쳤다.** 시퀀스·함수도 같이 본다.
-- ④⑤ 질의에 `has_any_column_privilege` 추가, ② 질의를 `pg_class.relacl` + `aclexplode` 로 교체.
-- `0012:34` 의 TRIGGER 관련 주석 정정.
-- `authenticated` 의 콘텐츠 7표 **TRUNCATE 회수** — 관리자 CRUD 에 TRUNCATE 는 필요 없고 `is_admin()` 은 TRUNCATE 를 막지 못한다(RLS 적용 대상이 아니다). anon 에 적용한 논리가 그대로 적용된다.
-- **`places` 는 애초에 관리자가 쓰지 않는다** — `0002:58` 은 select 정책만 주고 0009 의 관리자 쓰기 정책 6표에 `places` 가 없다. 그 표의 `authenticated` CRUD 는 **쓰이지 않는 권한**이다.
-- `0005:96`·`0007:31` 의 definer 함수가 `set search_path = public` 만 하고 **`pg_temp` 를 빠뜨렸다**(0009·0010 은 제대로 한다). 임시 릴레이션이 먼저 검색되어 정규화되지 않은 `notifications_log` 참조가 가려질 수 있다. 현재 EXECUTE 가 `service_role` 로 제한돼 공개 exploit 은 없다.
-- `tests/write-privileges.test.ts` 가 **상태코드 ≥400 이면 통과**로 본다 — 500 이나 무관한 검증 실패도 "보안 성공" 으로 읽힌다. 권한 거부(`42501`)를 명시 단언해야 한다.
+### 후속
+- **DB 권한 게이트**: `anon` 이 public 스키마의 어느 표에도 쓰기 권한을 갖지 않는지(허용 목록 외) 단언하는 테스트. 지금은 표가 늘 때마다 사람이 기억해야 한다 — **네 번 놓쳤다.** 시퀀스·함수도 같이 본다. *(미착수)*
+- ④⑤ 질의에 `has_any_column_privilege` 추가, ② 질의를 `pg_class.relacl` + `aclexplode` 로 교체. → **0016 이 자기검증·테스트 §9 에서 그렇게 한다**(질의 자체는 아래 0016 절에 있다). ✅
+- ~~`0012:34` 의 TRIGGER 관련 주석 정정.~~ → **0016 (P5-12) 에서 완료.** `0012` 헤더에 원문을 남긴 채 정정을 덧붙였다. ✅
+- ~~`authenticated` 의 콘텐츠 7표 **TRUNCATE 회수**~~ → **0016 에서 완료** (TRIGGER·REFERENCES 도 함께). ✅
+- ~~**`places` 는 애초에 관리자가 쓰지 않는다**~~ → **0016 에서 `authenticated` 의 insert/update/delete 회수 완료**(`select` 는 남겼다). ✅
+- ~~`0005:96`·`0007:31` 의 definer 함수가 `pg_temp` 를 빠뜨렸다~~ → **0016 에서 완료.** 단 **함수는 넷이 아니라 셋**이었다 — `0005:96` 의 `claim_pending_notifications(int)` 는 `0014` 가 이미 지웠고 2-인자 판은 처음부터 `public, pg_temp` 다. ✅
+- `tests/write-privileges.test.ts` 가 **상태코드 ≥400 이면 통과**로 본다 — 500 이나 무관한 검증 실패도 "보안 성공" 으로 읽힌다. 권한 거부(`42501`)를 명시 단언해야 한다. *(미착수 · P4-5 리뷰 K3 과 같은 결)*
+- 🔴 **`reservations`·`notifications_log` 에도 `TRIGGER`·`REFERENCES` 가 남아 있다** (2026-09-16 실측: `anon`·`authenticated` 둘 다 `references, select, trigger`). 콘텐츠 표보다 **위험이 크다** — `supabase_functions.http_request` 트리거를 붙이면 고객 이름·전화번호가 행이 바뀔 때마다 외부로 나간다. 0016 은 브리프가 못박은 일곱 콘텐츠 표만 다뤘다. **0017 후보.** *(미착수)*
+- `anon` 이 `reservations`·`notifications_log` 에 **`select`** 를 갖고 있다(정책이 없어 RLS 가 0행을 낸다). 0012 는 "select 는 회수하지 않는다" 를 관리자 화면 근거로 정했는데 그 근거는 `authenticated` 에만 해당한다. 위 항목과 함께 볼 것. *(미착수)*
 
 ### 적용 후 확인 (원격)
 같은 질의 다섯 개를 원격에서 돌려 **위 표와 같은 결과**인지 대조하고, 아래에 날짜·결과를 적는다.
@@ -155,3 +157,62 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENC
 - **K4**: 롤백 검증 블록에 `service_role` 실행 가능 확인이 빠졌다(상행에는 있다).
 - **K7**: Resend 가 `Idempotency-Key` 를 지원한다 — `WorkerReport.sentUnmarked` 의 중복 수신 창을 메일 채널에서 한 줄로 닫을 수 있다.
 - 보고서 §4 를 "가정" → "문서 확인" 으로 갱신(리뷰어가 Resend 공개 문서로 엔드포인트·인증·본문 필드·성공 `id` 4건을 대조해 전부 정확함을 확인했다).
+
+---
+
+## 0016 — RLS 가 막지 못하는 권한 회수 (작성 완료, 원격 적용 대기)
+
+**무엇을 하나**: 0012·0013 이 닫은 것은 **쓰기 네 동작**뿐이었다. 남은 `TRUNCATE`·`TRIGGER` 는 RLS 가 관여하는 종류의 권한이 아니다 — TRUNCATE 는 행을 하나씩 보지 않아 정책 평가가 일어나지 않고, TRIGGER 는 `CREATE TRIGGER` 를 허용한다. 즉 그 둘에 대해서는 **"RLS 가 유일한 방어선" 조차 아니고 아무 방어선도 없었다.**
+
+1. 콘텐츠 7표에서 `authenticated` 의 **TRUNCATE·TRIGGER·REFERENCES** 회수
+2. 같은 7표에서 `anon` 의 **TRIGGER·REFERENCES** 회수 (네 동작은 0013 이 가져갔다)
+3. `places` 에서 `authenticated` 의 **insert·update·delete** 회수 — 관리자 쓰기 정책이 없고(0009 는 여섯 표) 코드 경로도 없다. **`select` 는 남긴다.**
+4. definer 함수 **셋**(`mark_notification_sent`·`mark_notification_failed`·`reap_stale_notifications`)의 `search_path` 를 `public, pg_temp` 로. **`create or replace`** 만 쓴다(drop 하면 기본 권한이 EXECUTE 를 공개 롤에 다시 부여한다).
+
+### 🔴 `claim_pending_notifications` 는 **건드리지 않는다**
+후속 목록이 `0005:96` 을 포함해 "함수 넷" 으로 적었는데 **그 함수는 이미 없다.** `0014` 가 1-인자 판을 `drop` 하고 2-인자 판을 만들었으며 그쪽은 처음부터 `public, pg_temp` 다. 0016 에서 1-인자 형태를 `create or replace` 하면 **없던 함수를 새로 만드는 것**이 되어 두 판이 공존하고, `claim_pending_notifications(10)` 호출이 **모호(42725)** 해져 발송기가 통째로 멈춘다(0014 §4 ①). 0016 의 자기검증 ⑥ 이 그 상태를 매번 다시 확인한다.
+
+### TRIGGER 가 무력하지 않다는 근거 (0012 헤더 정정의 실측)
+`CREATE TRIGGER` 는 ⓐ 표의 TRIGGER 권한과 ⓑ **이미 존재하는** 트리거 반환 함수의 EXECUTE 만 요구한다. ⓑ 가 이 DB 에 실재한다:
+```sql
+select n.nspname||'.'||p.proname, has_function_privilege('anon', p.oid, 'execute'), has_function_privilege('authenticated', p.oid, 'execute')
+from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+where p.prorettype = 'pg_catalog.trigger'::regtype
+  and (has_function_privilege('anon', p.oid,'execute') or has_function_privilege('authenticated', p.oid,'execute'));
+```
+로컬 실측 22건 — 그중 **`supabase_functions.http_request`**(행이 바뀔 때마다 외부 URL 로 HTTP 호출)가 `anon`·`authenticated` 모두 `execute=true`.
+
+### 적용 전 확인 질의 (0016 판 — 컬럼 단위 grant 와 PUBLIC 까지 본다)
+`information_schema.role_table_grants` 를 **증거로 쓰지 않는다**(필터된 뷰). 아래 여덟 가지를 한 문장으로 묻는 질의가 `tests/write-privileges.test.ts` §9 에 그대로 들어 있다 — 원격에서는 그 SQL 을 SQL Editor 에 붙여넣어 같은 결과인지 대조한다.
+
+| # | 기대 문자열 | 뜻 |
+|---|---|---|
+| ① | `RLS_BLIND_NONE` | 7표에 `authenticated` 의 truncate/trigger/references 0 (컬럼 단위 references 포함) |
+| ② | `ANON_SELECT_ONLY` | 7표에서 `anon` 은 select 만 |
+| ③ | `PLACES_WRITE_NONE` · `PLACES_READ_OK` | places 쓰기 0 · 두 롤의 읽기 생존 |
+| ④ | `PG_TEMP_OK` | 함수 셋의 `proconfig` 에 `pg_temp` |
+| ⑤ | `FN_EXEC_ONLY_SERVICE` | 그 셋의 EXECUTE 보유자는 `service_role`(+소유자) 뿐 |
+| ⑥ | `FN_SERVICE_OK` | `service_role` 이 여전히 실행할 수 있다(발송기) |
+| ⑦ | `CLAIM_ONE_ARG_GONE` | 1-인자 claim 이 되살아나지 않았다 |
+| ⑧ | `ADMIN_OK` · `SEQ_OK` | 콘텐츠 6표 CRUD 와 시퀀스 usage 생존 = **관리자 화면이 살아 있다** |
+
+### 로컬 실측 (2026-09-16, P5-12 구현)
+적용 전 → 후, `has_table_privilege` 전수:
+
+| 표 | 롤 | 적용 전 | 적용 후 |
+|---|---|---|---|
+| 콘텐츠 6표 | `authenticated` | delete, insert, references, select, trigger, truncate, update | **delete, insert, select, update** |
+| 콘텐츠 6표 | `anon` | references, select, trigger | **select** |
+| `places` | `authenticated` | (위와 같음 7종) | **select** |
+| `places` | `anon` | references, select, trigger | **select** |
+| 9표 | `service_role`·`postgres` | 7종 전부 | **변화 없음** |
+
+함수 셋: `{search_path=public}` → `{"search_path=public, pg_temp"}`, EXECUTE 보유자 `postgres,service_role` **불변**.
+
+### 적용 경로
+`supabase db push` 또는 SQL Editor. **`psql -f` 를 쓰지 마라**(리뷰 K1 — 파일이 원자적이지 않아 자기검증이 `raise` 해도 앞 문장이 남는다). 실제로 0016 을 만들면서 `supabase db reset` 이 **문장 단위로** 적용하다 6번째 문장에서 멈추는 것을 봤다(그 시점에 §1~§4 는 이미 적용돼 있었다) — 같은 성질이다.
+
+### 롤백
+`supabase/rollbacks/0016_privileges_rls_cannot_protect.down.sql` · **승인 플래그 요구**(`set bestour.rollback_0016_ack = '1';`). 근거: 되돌린 뒤의 세계가 **조용히** 위험하다(TRUNCATE 는 RLS 밖, TRIGGER 는 외부 유출, `pg_temp` 없는 `search_path` 는 엉뚱한 표를 고치고 성공을 돌려준다). 되돌린 것을 필요로 하는 정상 경로는 하나도 없다.
+
+> **원격 적용: 아직 하지 않았다 (2026-09-16).** 0012~0016 이 함께 대기 중이다(원격은 0011 상태).

@@ -35,6 +35,21 @@
 -- `anon`·`authenticated` 에게는 public 스키마 CREATE 권한이 없다(로컬 실측: has_schema_privilege → false).
 -- 만들 수 없는 것을 위한 권한이라 실행 경로가 없다. 좁게 가는 이 태스크의 원칙에 따라 이번 회수 대상에서 뺀다.
 --
+-- 🔴 **위 문단의 TRIGGER 부분은 틀렸다 — 정정 (2026-09-16 · P5-12 / 0016).**
+-- 원문을 지우지 않고 남긴다. 무엇을 어떤 근거로 남겼는지가 기록이어야 하고, 그래야 같은 논증이 다시 나왔을 때 알아본다.
+-- **틀린 곳**: TRIGGER 는 "다른 객체를 만들 수 있어야 쓸모가 있는" 권한이 **아니다.** `CREATE TRIGGER` 가 요구하는 것은
+-- ⓐ 그 표의 TRIGGER 권한과 ⓑ **이미 존재하는** 트리거 반환 함수의 EXECUTE **둘뿐**이다 — 새 함수도, 새 표도,
+-- 스키마 CREATE 도 필요 없고, 표 소유자가 아니어도 된다. 그리고 ⓑ 가 이 DB 에 실제로 있다(2026-09-16 실측):
+--   `supabase_functions.http_request` — 행이 바뀔 때마다 **외부 URL 로 HTTP 호출**. `anon`·`authenticated` 모두 execute=true.
+--   (그 밖에 storage.protect_delete · storage.update_updated_at_column · realtime.subscription_check_filters 등)
+-- 즉 "만들 수 없으니 실행 경로가 없다" 는 TRIGGER 에 대해서는 성립하지 않는다. 외부 모델 크로스체크가 지적했고
+-- 컨트롤러가 실측으로 확인했다(docs/ops/migration-runbook.md 의 ⚠️ 절).
+-- **REFERENCES 부분은 여전히 맞다**(영구 표를 만들 수 없고, 임시 표에서 영구 표로 가는 외래키는 Postgres 가 거부하며,
+-- 남의 표에 제약을 더하려면 소유자여야 한다). 그래도 0016 이 함께 회수한다 — 쓰이지 않는 권한이고, 무엇보다
+-- **"만들 수 없으니 괜찮다" 는 논증이 바로 여기서 한 번 틀렸기 때문이다.** 같은 논증에 두 번째로 기대지 않는다.
+-- **조치**: `supabase/migrations/0016_privileges_rls_cannot_protect.sql` 이 일곱 콘텐츠 표에서 TRUNCATE·TRIGGER·
+-- REFERENCES 를 회수한다(0012 는 파일을 바꾸지 않는다 — 원격에 적용될 순서가 이미 정해져 있다).
+--
 -- 기존 행 영향: 권한만 회수한다. 표·컬럼·CHECK·인덱스·정책 변경 0, 데이터 변경 0.
 -- 재실행 안전: `revoke` 는 없는 권한을 회수해도 오류가 아니다. 조건 분기가 필요 없다.
 -- 롤백: supabase/rollbacks/0012_write_privileges.down.sql (수동 실행 전용 — 0005·0007·0009·0010 롤백 헤더 참조).
