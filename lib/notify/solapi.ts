@@ -67,6 +67,14 @@ export const SOLAPI_SALT_BYTES = 16;
 /** 알림톡 거부 사유 코드. P4-0(채널 인증·템플릿 심사) 완료 전까지 이 어댑터는 알림톡을 보내지 않는다. */
 export const ALIMTALK_REFUSED_CODE = "alimtalk_not_enabled";
 
+/**
+ * 이 어댑터가 보낼 수 있는 채널(P4-5 · sender.ts `NotificationSender.channels`). **문자 하나뿐이다.**
+ * 알림톡은 P4-0 대기라 아래 send 가 명시적으로 거부하므로 여기 넣지 않는다 — 넣으면 worker 가 알림톡 행을 claim 해
+ * 보낼 수도 없는 행의 attempts 를 태운다. 메일은 lib/notify/mail.ts 의 몫이다.
+ * (타입 대조는 아래 solapiSender 의 반환 타입이 한다 — 이 파일은 `../types` 를 import 하지 않는다.)
+ */
+export const SOLAPI_CHANNELS = ["sms"] as const;
+
 /** 결과·로그에 실어도 되는 제공자 코드의 형태. 통과하지 못하면 'unknown' 으로 갈음한다(사람이 읽는 문구 유입 차단). */
 const CODE_SHAPE = /^[A-Za-z0-9_.-]{1,40}$/;
 
@@ -248,6 +256,8 @@ export function solapiSender(deps: SolapiDeps): SolapiSender {
   return {
     name: SOLAPI_SENDER_NAME,
     configured: missing.length === 0,
+    // 문자뿐이다(P4-5). 알림톡·메일 행을 worker 가 claim 하지 않게 하는 값이며, 아래 send 의 거부 분기와 짝을 이룬다.
+    channels: SOLAPI_CHANNELS,
     missing,
     timeoutMs,
 

@@ -44,7 +44,7 @@ import {
   type WorkerLogEntry,
   type WorkerReport,
 } from "@/lib/notify/worker";
-import type { OutboxRow } from "@/lib/types";
+import type { NotifyChannel, OutboxRow } from "@/lib/types";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const MINUTE = 60_000;
@@ -88,10 +88,14 @@ function fakeDb(opts: { claim?: OutboxRow[]; reap?: OutboxRow[]; stats?: Partial
   } satisfies WorkerDb;
 }
 
-function spySender(script?: (req: SendRequest) => SendOutcome | Promise<SendOutcome>) {
+/** spy sender 가 보낼 수 있다고 밝히는 채널 — worker 가 claim 에 그대로 넘긴다(P4-5). */
+const SPY_CHANNELS: NotifyChannel[] = ["sms", "alimtalk", "email"];
+
+function spySender(script?: (req: SendRequest) => SendOutcome | Promise<SendOutcome>, channels: NotifyChannel[] = SPY_CHANNELS) {
   return {
     name: "spy",
     configured: true,
+    channels,
     send: vi.fn(async (req: SendRequest): Promise<SendOutcome> => (script ? script(req) : { ok: true, providerMessageId: `pm-${req.id}` })),
   };
 }
@@ -221,6 +225,63 @@ describe("runNotificationWorker — 미구성 sender", () => {
 });
 
 // =============================================================================
+// 1-B. 보낼 수 있는 채널이 없으면 claim 하지 않는다 (P4-5 — 대원칙을 채널까지 내린 것)
+// =============================================================================
+describe("runNotificationWorker — sender.channels", () => {
+  test("channels=[] 이면 configured 여도 claimPending 0회 · skipped:'sender_has_no_channels' · reap 은 그대로 1회", async () => {
+    const db = fakeDb({ claim: [row()], reap: [row({ id: 98, status: "failed", attempts: 5 })] });
+    const sender = spySender(undefined, []);
+    const { deps: d, log } = deps(db, sender);
+
+    const report = await runNotificationWorker({ dryRun: false }, d);
+
+    expect(db.claimPending).not.toHaveBeenCalled();
+    expect(sender.send).not.toHaveBeenCalled();
+    expect(report.skipped).toBe("sender_has_no_channels");
+    expect(report.channels).toEqual([]);
+    expect(report.claimed).toBe(0);
+    expect(db.reapStale).toHaveBeenCalledTimes(1);
+    // 이유가 보고서·로그에 드러난다 — "왜 아무것도 안 보냈는가" 를 사람이 읽을 수 있어야 한다.
+    expect(log.mock.calls[0][0]).toMatchObject({ level: "warn", event: "notify.worker_run", skipped: "sender_has_no_channels" });
+  });
+
+  test("channels 를 아예 주지 않는 sender 도 같게 본다 (방어)", async () => {
+    const db = fakeDb({ claim: [row()] });
+    const sender = { name: "odd", configured: true, send: vi.fn() } as unknown as NotificationSender;
+    const { deps: d } = deps(db, sender);
+    const report = await runNotificationWorker({ dryRun: false }, d);
+    expect(db.claimPending).not.toHaveBeenCalled();
+    expect(report.skipped).toBe("sender_has_no_channels");
+  });
+
+  test("sender 의 채널이 claim 에 **그대로** 전달된다 — 문자만 켜지면 메일 행은 집히지 않는다(0014 p_channels)", async () => {
+    const db = fakeDb({ claim: [row()] });
+    const sender = spySender(undefined, ["sms"]);
+    const { deps: d } = deps(db, sender);
+    const report = await runNotificationWorker({ dryRun: false, limit: 5 }, d);
+    expect(db.claimPending).toHaveBeenCalledWith(5, ["sms"]);
+    expect(report.channels).toEqual(["sms"]);
+    expect(report.skipped).toBeUndefined();
+  });
+
+  test("dry-run 도 보고서에 채널을 싣는다 — 무엇이 켜졌는지 발송 없이 확인한다", async () => {
+    const { deps: d } = deps(fakeDb(), spySender(undefined, ["email"]));
+    const report = await runNotificationWorker({}, d);
+    expect(report.channels).toEqual(["email"]);
+    expect(report.dryRun).toBe(true);
+  });
+
+  test("미구성이 채널 없음보다 먼저다 — 두 조건이 다 걸리면 'sender_not_configured'", async () => {
+    const db = fakeDb({ claim: [row()] });
+    const { deps: d } = deps(db, unconfiguredSender());
+    const report = await runNotificationWorker({ dryRun: false }, d);
+    expect(report.skipped).toBe("sender_not_configured");
+    expect(report.channels).toEqual([]);
+    expect(db.claimPending).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
 // 2. dry-run — 부작용 0 (회수도 부작용이다)
 // =============================================================================
 describe("runNotificationWorker — dry-run 은 reap 도 하지 않는다 (부작용 0 — 회수는 dry 에서 wouldReap 개수로만 보고)", () => {
@@ -277,7 +338,7 @@ describe("runNotificationWorker — 정상", () => {
 
     const report = await runNotificationWorker({ dryRun: false, limit: 10 }, d);
 
-    expect(db.claimPending).toHaveBeenCalledWith(10);
+    expect(db.claimPending).toHaveBeenCalledWith(10, SPY_CHANNELS);
     expect(sender.send).toHaveBeenCalledTimes(3);
     expect(sender.send.mock.calls.map((c) => c[0])).toEqual([
       { id: 1, channel: "sms", to: PHONE, template: "created.customer.sms", reservationId: RID },
@@ -307,7 +368,7 @@ describe("runNotificationWorker — 정상", () => {
     const { deps: d } = deps(db, spySender());
     const report = await runNotificationWorker({ dryRun: false }, d);
     expect(report.limit).toBe(DEFAULT_WORKER_LIMIT);
-    expect(db.claimPending).toHaveBeenCalledWith(DEFAULT_WORKER_LIMIT);
+    expect(db.claimPending).toHaveBeenCalledWith(DEFAULT_WORKER_LIMIT, SPY_CHANNELS);
     expect(DEFAULT_WORKER_LIMIT).toBeGreaterThanOrEqual(1);
 
     for (const bad of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
@@ -623,6 +684,8 @@ describe("runNotificationWorker — 보고서·로그에 개인정보 0", () => 
     const report = await runNotificationWorker({ dryRun: false }, d);
     expect(Object.keys(report).sort()).toEqual(
       [
+        // P4-5 — claim 대상 채널(개인정보 아님: 'sms'·'email' 같은 낱말뿐)
+        "channels",
         "claimed",
         "dryRun",
         "duplicate",
@@ -717,14 +780,14 @@ describe("supabaseWorkerDb — 0005·0007 어댑터 연결 + pendingStats 쿼리
     const { client, calls } = fakeSupabase({ rpc: { claim_pending_notifications: [dbRow], reap_stale_notifications: [], mark_notification_sent: true } });
     const db = supabaseWorkerDb(client);
     expect(await db.reapStale()).toEqual([]);
-    const claimed = await db.claimPending(7);
+    const claimed = await db.claimPending(7, ["sms"]);
     expect(claimed).toHaveLength(1);
     expect(claimed[0]).toMatchObject({ id: 5, to: PHONE });
     expect(await db.markSent(5, "pm")).toBe(true);
     await db.markFailed({ id: 5, attempts: 1 }, "timeout");
     const rpcs = calls.filter((c): c is Extract<SbCall, { kind: "rpc" }> => c.kind === "rpc");
     expect(rpcs.map((c) => c.fn)).toEqual(["reap_stale_notifications", "claim_pending_notifications", "mark_notification_sent", "mark_notification_failed"]);
-    expect(rpcs[1].args).toEqual({ p_limit: 7 });
+    expect(rpcs[1].args).toEqual({ p_limit: 7, p_channels: ["sms"] });
     expect(rpcs[2].args).toEqual({ p_id: 5, p_provider_message_id: "pm" });
     expect(rpcs[3].args).toEqual({ p_id: 5, p_error: "timeout", p_give_up: false, p_retry_after_ms: 1 * MINUTE });
   });

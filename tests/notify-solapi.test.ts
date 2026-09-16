@@ -587,18 +587,22 @@ describe("8. selectSender() — 키가 있으면 solapi", () => {
     vi.mocked(structuredLog).mockClear();
   });
 
-  async function report(query = ""): Promise<{ sender: string; skipped?: string }> {
+  async function report(query = ""): Promise<{ sender: string; skipped?: string; channels?: string[] }> {
     process.env.CRON_SECRET = SECRET;
     const { GET } = await import("@/app/api/cron/notify/route");
     const res = await GET(new Request(`http://localhost/api/cron/notify${query}`, { headers: AUTH }));
-    return (await res.json()) as { sender: string; skipped?: string };
+    return (await res.json()) as { sender: string; skipped?: string; channels?: string[] };
   }
 
-  test("키 3종이 있으면 sender 는 solapi", async () => {
+  // P4-5 로 바뀐 단언이다. selectSender 는 이제 채널별 어댑터를 routingSender 로 감싼다 — 보고서의 sender 이름이
+  // 어느 채널이 켜졌는지까지 말한다(메일 키가 없으므로 sms 만). 발송 경로(문자는 solapi 가 보낸다)는 그대로다.
+  test("문자 키 3종이 있으면 문자 채널이 켜진다 — routing(sms=solapi)", async () => {
     process.env.SOLAPI_API_KEY = API_KEY;
     process.env.SOLAPI_API_SECRET = API_SECRET;
     process.env.SMS_SENDER = FROM;
-    expect((await report()).sender).toBe(SOLAPI_SENDER_NAME);
+    const r = await report();
+    expect(r.sender).toBe(`routing(sms=${SOLAPI_SENDER_NAME})`);
+    expect(r.channels).toEqual(["sms"]);
   });
 
   test("키가 없으면 unconfigured — 발송기는 claim 조차 하지 않는다", async () => {
@@ -621,7 +625,7 @@ describe("8. selectSender() — 키가 있으면 solapi", () => {
     process.env.SOLAPI_API_SECRET = API_SECRET;
     process.env.SMS_SENDER = FROM;
     const r = await report("?dry=0");
-    expect(r.sender).toBe(SOLAPI_SENDER_NAME);
+    expect(r.sender).toBe(`routing(sms=${SOLAPI_SENDER_NAME})`);
     expect(r.skipped).toBeUndefined();
     expect(routeRpcs).toEqual(["reap_stale_notifications", "claim_pending_notifications"]);
   });
@@ -655,7 +659,7 @@ describe("8. selectSender() — 키가 있으면 solapi", () => {
     process.env.NOTIFY_SENDER = "memory";
     process.env.VERCEL_ENV = "production";
     const r = await report("?dry=0");
-    expect(r.sender).toBe(SOLAPI_SENDER_NAME);
+    expect(r.sender).toBe(`routing(sms=${SOLAPI_SENDER_NAME})`);
     expect(vi.mocked(structuredLog).mock.calls.map((c) => c[0])).toContainEqual(
       expect.objectContaining({ level: "warn", event: "notify.memory_sender_refused" }),
     );

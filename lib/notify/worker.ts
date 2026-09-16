@@ -9,6 +9,12 @@
  * 그래서 `configured === true` 가 아니면 보고서에 skipped:'sender_not_configured' 를 적고 warn 한 줄만 남긴다.
  * 회수(reap)는 발송이 아니므로 구성 여부와 무관하게 매 실행 시작 시 먼저 돈다.
  *
+ * **그 규칙을 채널까지 내린 것이 P4-5 다.** 위 규칙은 sender **전체**에만 걸려 있었다 — sender 하나가 구성돼 있으면
+ * 그 sender 가 보낼 수 없는 채널의 행까지 claim 됐다. 실제로 문자 어댑터가 사장님 메일 행(`channel='email'`)을 집어가
+ * `unsupported_channel:email` 로 다섯 번을 확정 실패시키고 죽였다. 이제 worker 는 `sender.channels` 를 claim 에 넘기고
+ * (0014 `claim_pending_notifications(p_limit, p_channels)`), 채널이 비어 있으면 **configured 와 무관하게** claim 하지 않는다
+ * (skipped:'sender_has_no_channels'). 보낼 수 없는 행은 큐에 pending 으로 남아 attempts 가 보존된다 — 키가 온 날 그대로 나간다.
+ *
  * dry-run 은 부작용 0 — claim 도, reap 도 하지 않는다(둘 다 행을 바꾼다). pending 개수·가장 오래된 행 나이·회수 대상 개수·sender 이름만 보고한다.
  *
  * 실행 순서 (dryRun=false, configured): reapStale → claimPending(limit) → 행마다 [claimedDecision → send → markSent | markFailed] → pendingStats
@@ -65,7 +71,12 @@ export interface PendingStats {
 /** DB 포트 — 테스트는 이것을 mock 한다. 실제 구현은 supabaseWorkerDb (0005·0007 어댑터 연결). */
 export interface WorkerDb {
   reapStale(): Promise<OutboxRow[]>;
-  claimPending(limit: number): Promise<OutboxRow[]>;
+  /**
+   * 최대 limit 개를 잠그고 lease 를 찍는다. `channels` 는 **보낼 수 있는 채널의 화이트리스트**이며 그대로
+   * 0014 `claim_pending_notifications(p_limit, p_channels)` 로 간다 — 목록에 없는 채널의 행은 집히지 않고 attempts 도 오르지 않는다.
+   * 빈 배열이면 0행이다(전 채널이 아니다). worker 는 애초에 빈 배열로 부르지 않는다(아래 skipped 참조).
+   */
+  claimPending(limit: number, channels: readonly NotifyChannel[]): Promise<OutboxRow[]>;
   markSent(id: number, providerMessageId: string | null): Promise<boolean>;
   markFailed(row: Pick<OutboxRow, "id" | "attempts">, error: string): Promise<void>;
   pendingStats(now: Date): Promise<PendingStats>;
@@ -81,13 +92,23 @@ export interface WorkerOptions {
 /** 실행 보고서 — 개인정보 0. 행 id·카운트·시각뿐이다. */
 export interface WorkerReport {
   dryRun: boolean;
-  /** sender 이름 (unconfigured / memory / P4-2 제공자). */
+  /** sender 이름 (unconfigured / memory / P4-2 제공자 / routing(…)). */
   sender: string;
+  /**
+   * 이 실행에서 claim 대상이 된 채널 — sender 가 보낼 수 있다고 밝힌 목록 그대로다(P4-5).
+   * 비어 있으면 아무것도 claim 하지 않았다는 뜻이고, 여기 없는 채널의 행은 큐에 그대로 남아 있다(attempts 보존).
+   */
+  channels: NotifyChannel[];
   /** 실행 시작 인스턴트(ISO UTC). */
   nowIso: string;
   limit: number;
-  /** sender 미구성 — claim 을 하지 않았다. dry-run 이어도 sender 가 미구성이면 표시한다. */
-  skipped?: "sender_not_configured";
+  /**
+   * claim 을 하지 않은 이유. dry-run 이어도 표시한다.
+   *   - sender_not_configured  제공자 키 등이 비어 있다(sender.configured !== true)
+   *   - sender_has_no_channels 구성은 됐는데 **보낼 수 있는 채널이 하나도 없다**(P4-5). 보낼 곳이 없으면 집지 않는다 —
+   *     집는 순간 attempts 가 타고, 그것은 되돌릴 수 없다.
+   */
+  skipped?: "sender_not_configured" | "sender_has_no_channels";
   /** reapStale 이 failed 로 바꾼 행 수(dry-run 이면 0). */
   reaped: number;
   claimed: number;
@@ -218,7 +239,9 @@ export async function runNotificationWorker(opts: WorkerOptions, deps: WorkerDep
   const { db, sender, log } = deps;
   const startedAt = deps.now();
   const configured = sender.configured === true;
-  const skipped = configured ? undefined : ("sender_not_configured" as const);
+  // 채널이 비면 claim 하지 않는다 — configured 와 무관하다(P4-5). 이상한 sender 가 channels 를 아예 안 주는 경우도 같게 본다.
+  const channels = [...(sender.channels ?? [])];
+  const skipped = !configured ? ("sender_not_configured" as const) : channels.length === 0 ? ("sender_has_no_channels" as const) : undefined;
 
   const ids: WorkerReport["ids"] = { reaped: [], sent: [], failed: [], duplicate: [], leaseExpired: [], sentUnmarked: [] };
   let claimed = 0;
@@ -257,9 +280,9 @@ export async function runNotificationWorker(opts: WorkerOptions, deps: WorkerDep
     ids.reaped = (await db.reapStale()).map((r) => r.id);
   }
 
-  // 2. 발송 — 구성된 sender 가 있을 때만 claim 한다.
-  if (!dryRun && configured) {
-    const rows = await db.claimPending(limit);
+  // 2. 발송 — 구성된 sender 가 있고, 보낼 수 있는 채널이 있을 때만 claim 한다.
+  if (!dryRun && skipped === undefined) {
+    const rows = await db.claimPending(limit, channels);
     claimed = rows.length;
 
     for (const row of rows) {
@@ -318,6 +341,7 @@ export async function runNotificationWorker(opts: WorkerOptions, deps: WorkerDep
   const report: WorkerReport = {
     dryRun,
     sender: sender.name,
+    channels,
     nowIso: startedAt.toISOString(),
     limit,
     ...(skipped === undefined ? {} : { skipped }),
@@ -358,7 +382,8 @@ interface PendingStatsRow {
 export function supabaseWorkerDb(client: SupabaseClient): WorkerDb {
   return {
     reapStale: () => reapStale(client),
-    claimPending: (limit) => claimPending(limit, client),
+    // 채널 화이트리스트를 0014 RPC 로 그대로 넘긴다(p_channels). 구버전 DB 에는 이 인자가 없다 — 0014 를 먼저 적용해야 한다.
+    claimPending: (limit, channels) => claimPending(limit, client, channels),
     markSent: (id, providerMessageId) => markSent(id, providerMessageId, client),
     markFailed: (row, error) => markFailed(row, error, client),
     async pendingStats(now) {

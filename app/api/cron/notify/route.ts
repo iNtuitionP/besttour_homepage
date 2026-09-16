@@ -20,6 +20,8 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 
 import { structuredLog, type StructuredLogEntry } from "@/lib/log";
+import { resendSender } from "@/lib/notify/mail";
+import { routingSender } from "@/lib/notify/router";
 import { memorySender, unconfiguredSender, type NotificationSender } from "@/lib/notify/sender";
 import { solapiSender, type TemplateVarsPort } from "@/lib/notify/solapi";
 import { templateVars } from "@/lib/notify/vars";
@@ -58,10 +60,15 @@ function json(body: unknown, status: number): Response {
  * 행은 sent 가 된다(ADR-7 이 막으려던 "조용히 사라짐"). 그래서 VERCEL_ENV=production 이면 **그 지시만 무시하고**(warn 한 줄)
  * 아래 선택을 계속한다 — 운영에서 memory 오설정이 발송 자체를 멈추게 하지는 않는다.
  *
- * SOLAPI 키 3종(키·시크릿·발신번호)이 전부 있으면 제공자 어댑터를, 하나라도 비면 unconfigured 를 돌려준다 — 발송기는 claim 하지
- * 않고 attempts 를 태우지 않는다. 어댑터 자신도 같은 규칙을 한 겹 더 건다: 문안 변수 포트(solapi.ts TemplateVarsPort)가 비면
- * 키가 다 있어도 `configured`=false 다. **P4-2b 가 그 포트를 구현했으므로(lib/notify/vars.ts) 이제 남은 전제는 키 3종뿐이다** —
- * 키를 넣는 순간 문자가 나간다(vercel.json 의 `?dry=0` 전환은 별개의 오픈 게이트 항목이다).
+ * SOLAPI 키 3종(키·시크릿·발신번호)이 전부 있으면 문자 어댑터를, RESEND 키 2종(API 키·발신주소)이 있으면 메일 어댑터를 만들고
+ * **둘을 routingSender 로 묶는다**(P4-5). 하나도 없으면 unconfigured — 발송기는 claim 하지 않고 attempts 를 태우지 않는다.
+ * 어댑터 자신도 같은 규칙을 한 겹 더 건다: 문안 변수 포트(solapi.ts TemplateVarsPort)가 비면 키가 다 있어도 `configured`=false 다.
+ * **P4-2b 가 그 포트를 구현했으므로(lib/notify/vars.ts) 이제 남은 전제는 키뿐이다** — 키를 넣는 순간 나간다
+ * (vercel.json 의 `?dry=0` 전환은 별개의 오픈 게이트 항목이다).
+ *
+ * **채널별로 따로 켜진다는 점이 P4-5 의 요점이다.** 문자 키만 있으면 라우터의 channels 는 ['sms'] 이고, 발송기는 claim 에
+ * 그 목록을 넘긴다(0014). 메일 행은 **집히지 않은 채 큐에 남아** attempts 가 보존된다 — 메일 키가 온 날 그대로 나간다.
+ * 예전에는 문자 어댑터가 메일 행까지 집어가 다섯 번 만에 죽였다.
  */
 function selectSender(vars: TemplateVarsPort): NotificationSender {
   if (process.env.NOTIFY_SENDER === "memory") {
@@ -69,21 +76,31 @@ function selectSender(vars: TemplateVarsPort): NotificationSender {
     // 운영에서는 이 지시를 무시하고 아래 선택을 계속한다(키가 있으면 제공자, 없으면 unconfigured).
     structuredLog({ level: "warn", event: "notify.memory_sender_refused" });
   }
-  const { SOLAPI_API_KEY, SOLAPI_API_SECRET, SMS_SENDER } = process.env;
-  if (SOLAPI_API_KEY && SOLAPI_API_SECRET && SMS_SENDER) {
-    return solapiSender({
-      apiKey: SOLAPI_API_KEY,
-      apiSecret: SOLAPI_API_SECRET,
-      from: SMS_SENDER,
-      fetch: globalThis.fetch,
-      now: () => new Date(),
-      randomBytes: (n) => randomBytes(n),
-      log: structuredLog,
-      // 문안 변수 조회 포트(P4-2b). 없으면 configured=false 라 claim 이 일어나지 않는다 — 이제는 있다.
-      vars,
-    });
-  }
-  return unconfiguredSender();
+  const { SOLAPI_API_KEY, SOLAPI_API_SECRET, SMS_SENDER, RESEND_API_KEY, MAIL_FROM } = process.env;
+
+  const sms =
+    SOLAPI_API_KEY && SOLAPI_API_SECRET && SMS_SENDER
+      ? solapiSender({
+          apiKey: SOLAPI_API_KEY,
+          apiSecret: SOLAPI_API_SECRET,
+          from: SMS_SENDER,
+          fetch: globalThis.fetch,
+          now: () => new Date(),
+          randomBytes: (n) => randomBytes(n),
+          log: structuredLog,
+          // 문안 변수 조회 포트(P4-2b). 없으면 configured=false 라 claim 이 일어나지 않는다 — 이제는 있다.
+          vars,
+        })
+      : undefined;
+
+  const email =
+    RESEND_API_KEY && MAIL_FROM
+      ? resendSender({ apiKey: RESEND_API_KEY, from: MAIL_FROM, fetch: globalThis.fetch, log: structuredLog, vars })
+      : undefined;
+
+  // 아무 제공자도 없으면 라우터로 감싸지 않는다 — 보고서에 'unconfigured' 라는 기존 낱말을 그대로 남긴다(P4-1 의 계약).
+  if (sms === undefined && email === undefined) return unconfiguredSender();
+  return routingSender({ sms, email });
 }
 
 interface WorkerErrorLogEntry extends StructuredLogEntry {

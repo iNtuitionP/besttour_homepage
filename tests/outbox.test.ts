@@ -430,7 +430,7 @@ describe("DB 어댑터 (가짜 클라이언트)", () => {
     await expect(enqueue(rows, client)).rejects.toThrow(/boom/);
   });
 
-  test("claimPending — RPC claim_pending_notifications(p_limit), 행은 OutboxRow(to) 로 변환", async () => {
+  test("claimPending — RPC claim_pending_notifications(p_limit, p_channels), 행은 OutboxRow(to) 로 변환", async () => {
     const dbRow = {
       id: 5,
       reservation_id: RID,
@@ -449,7 +449,8 @@ describe("DB 어댑터 (가짜 클라이언트)", () => {
     };
     const { client, calls } = fakeClient([{ data: [dbRow], error: null }]);
     const claimed = await claimPending(3, client);
-    expect(calls[0]).toEqual({ kind: "rpc", fn: "claim_pending_notifications", args: { p_limit: 3 } });
+    // P4-5(0014): 채널을 생략하면 p_channels=null 로 나간다 — 0005 와 같은 전 채널 동작이다.
+    expect(calls[0]).toEqual({ kind: "rpc", fn: "claim_pending_notifications", args: { p_limit: 3, p_channels: null } });
     expect(claimed).toEqual<OutboxRow[]>([
       {
         id: 5,
@@ -465,6 +466,15 @@ describe("DB 어댑터 (가짜 클라이언트)", () => {
         next_attempt_at: "2026-09-11T00:05:00+00:00",
       },
     ]);
+
+    // 채널을 주면 그대로 배열로 실어 보낸다. 빈 배열은 "전 채널" 이 아니라 **0행** 이다(0014 §2).
+    const withChannels = fakeClient([{ data: [], error: null }]);
+    await claimPending(3, withChannels.client, ["sms"]);
+    expect(withChannels.calls[0]).toEqual({ kind: "rpc", fn: "claim_pending_notifications", args: { p_limit: 3, p_channels: ["sms"] } });
+
+    const empty = fakeClient([{ data: [], error: null }]);
+    await claimPending(3, empty.client, []);
+    expect(empty.calls[0]).toEqual({ kind: "rpc", fn: "claim_pending_notifications", args: { p_limit: 3, p_channels: [] } });
   });
 
   test("markSent — RPC mark_notification_sent, boolean 반환(false = 이미 다른 행이 sent → duplicate_sent 로 처리됨)", async () => {

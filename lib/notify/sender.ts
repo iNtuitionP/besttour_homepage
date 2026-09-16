@@ -17,6 +17,16 @@
 import type { NotifyChannel } from "../types";
 import type { TemplateKey } from "./outbox";
 
+/**
+ * 통지 채널 전부(lib/types.ts `NotifyChannel` 의 런타임 목록). 전 채널을 다루는 구현(memorySender)과 테스트가 쓴다.
+ * 아래 잠금이 타입과 목록을 컴파일 타임에 맞춰 둔다 — 채널이 하나 늘면 여기서 컴파일이 깨진다.
+ */
+export const ALL_NOTIFY_CHANNELS = ["sms", "alimtalk", "email"] as const satisfies readonly NotifyChannel[];
+
+type MissingChannel = Exclude<NotifyChannel, (typeof ALL_NOTIFY_CHANNELS)[number]>;
+/** keyof 잠금 — ALL_NOTIFY_CHANNELS 가 NotifyChannel 을 빠짐없이 덮는다(lib/notify/vars.ts 와 같은 방식). */
+export const ALL_NOTIFY_CHANNELS_EXHAUSTIVE: MissingChannel extends never ? true : never = true;
+
 export interface SendRequest {
   /** notifications_log.id — 로그·보고서에 쓰는 유일한 식별자. */
   id: number;
@@ -40,6 +50,15 @@ export interface NotificationSender {
   readonly name: string;
   /** 정확히 true 일 때만 worker 가 claim 한다. 그 외(undefined 포함)는 전부 미구성으로 본다. */
   readonly configured: boolean;
+  /**
+   * 이 sender 가 **실제로 보낼 수 있는** 채널. worker 가 claim(0014 p_channels)에 그대로 넘긴다.
+   *
+   * 비어 있으면 worker 는 `configured` 와 무관하게 claim 하지 않는다 — 보낼 곳이 없는데 claim 하면 attempts 만 탄다.
+   * 여러 어댑터를 묶는 routingSender(./router.ts)는 **구성된 구성원의 채널만** 여기 싣는다: 그래야 키가 없는 채널의 행이
+   * 큐에 그대로 남아, 키가 온 뒤에 보내진다. 2026-09-15 실측으로 드러난 결함이 정확히 이것이었다 —
+   * claim 이 채널을 가리지 않아 사장님 메일 행을 문자 어댑터가 집어가 5회를 태우고 죽였다(P4-5).
+   */
+  readonly channels: readonly NotifyChannel[];
   send(req: SendRequest): Promise<SendOutcome>;
 }
 
@@ -51,6 +70,8 @@ export function unconfiguredSender(): NotificationSender {
   return {
     name: UNCONFIGURED_SENDER_NAME,
     configured: false,
+    // 보낼 수 있는 채널이 하나도 없다 — worker 는 이것만 보고도 claim 을 멈춘다.
+    channels: [],
     async send(req) {
       throw new Error(
         `unconfiguredSender.send: 미구성 sender 로 send 가 호출됐다 (id=${req.id}) — worker 는 configured 를 확인하고 claim 전에 멈춰야 한다`,
@@ -73,6 +94,8 @@ export function memorySender(script?: MemoryScript): MemorySender {
   return {
     name: MEMORY_SENDER_NAME,
     configured: true,
+    // 실제 발송이 없으므로 전 채널을 받는다 — 로컬 실증에서 메일 행까지 흘려 볼 수 있어야 한다.
+    channels: ALL_NOTIFY_CHANNELS,
     calls,
     async send(req) {
       const index = calls.length;

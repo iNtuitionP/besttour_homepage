@@ -239,9 +239,17 @@ export async function enqueue(rows: NewOutboxRow[], client: SupabaseClient): Pro
  * 보낼 행을 최대 limit 개 잠그고(lease) 돌려준다. 0005 claim_pending_notifications — for update skip locked.
  * 돌려받은 행은 attempts 가 이미 +1 된 상태다. 발송기는 결과를 markSent / markFailed 로 반드시 되돌려야 하며,
  * 되돌리지 못하고 죽으면 CLAIM_LEASE_MS 뒤에 다시 잡힌다(at-least-once).
+ *
+ * `channels` (0014 p_channels): **보낼 수 있는 채널의 화이트리스트.**
+ *   - 생략·null  전 채널(0005 와 같은 구 동작). 롤백·구버전 워커가 살아 있게 하는 값이다.
+ *   - 목록       그 채널의 행만 집는다. 목록에 없는 채널의 행은 **attempts 가 오르지 않는다** — 이것이 P4-5 의 핵심이다.
+ *   - 빈 배열    0행. "전 채널" 이 아니다.
  */
-export async function claimPending(limit: number, client: SupabaseClient): Promise<OutboxRow[]> {
-  const { data, error } = await client.rpc("claim_pending_notifications", { p_limit: limit });
+export async function claimPending(limit: number, client: SupabaseClient, channels?: readonly NotifyChannel[] | null): Promise<OutboxRow[]> {
+  const { data, error } = await client.rpc("claim_pending_notifications", {
+    p_limit: limit,
+    p_channels: channels === undefined || channels === null ? null : [...channels],
+  });
   if (error) fail("claimPending", error);
   return ((data ?? []) as DbRow[]).map(toOutboxRow);
 }
