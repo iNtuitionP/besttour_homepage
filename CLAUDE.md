@@ -35,8 +35,14 @@ bash scripts/check-mockup-drift.sh       # 목업 커밋 해시 고정 + public/
   - Top-5 고지: "대표 노선 예시 견적 · 45인승 당일왕복 기준 · 실제 견적은 상담 후 확정"
 - 운행 일시는 **KST 벽시계**로 수신(예: `2026-09-01T08:00`, `Z` UTC 입력 금지)하고 서버에서 `Asia/Seoul`로 해석한다. 장소·여행구분은 `lib/codes.ts`의 canonical code로 저장 — 번역 문자열을 저장하지 않는다.
 - Supabase **service role 키는 서버 전용**(클라이언트 노출 금지). 공개 뮤테이션(예약 접수 등)은 반드시 **zod 검증 + Upstash RateLimit + Cloudflare Turnstile + 허니팟** 전부 통과 후 처리한다.
-- 🔴 **새로 만드는 표·함수·시퀀스는 기본으로 `anon`·`authenticated` 에게 전권이 부여된다.** 막연한 경향이 아니라 원격에 실재하는 설정 세 줄이다(2026-09-16 실측):
-  `ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES|FUNCTIONS|SEQUENCES TO anon, authenticated;`
+- 🔴 **새로 만드는 표·함수·시퀀스는 기본으로 공개 롤에 전권이 부여된다.** 막연한 경향이 아니라 실재하는 설정이다. **`pg_default_acl` 전수 실측(2026-09-16, 컨트롤러)**:
+
+  | 객체 | 부여자(grantor) | 대상(grantee) |
+  |---|---|---|
+  | 표(`r`) · 시퀀스(`S`) · 함수(`f`) | **`postgres` 와 `supabase_admin` 둘 다** | **`anon` · `authenticated` · `postgres` · `service_role` 넷** |
+
+  즉 회수 목록에서 **`service_role` 을 빼먹기 쉽다**(P6-9 의 0015 가 자기검증에서 그것에 걸려 멈췄다). 그리고 **부여자가 둘이라** 한쪽만 보고 "없다" 고 판단하면 틀린다.
+  확인 질의: `select … from pg_default_acl d join pg_roles r on r.oid=d.defaclrole join pg_namespace n on n.oid=d.defaclnamespace where n.nspname='public'` + `aclexplode(d.defaclacl)`.
   **따라서 마이그레이션이 명시적으로 회수하지 않으면 RLS 가 유일한 방어선이 된다.** 이 뿌리로 **네 번 재발**했다(admin_users → reservations UPDATE → notifications_log 전부 → 콘텐츠 7표).
   - 새 표를 만들면 같은 마이그레이션에서 **의도하지 않은 동작을 회수**한다. 공개 읽기 전용 표면은 `select` 만 남긴다.
   - **`drop function` 후 `create function` 은 EXECUTE 를 다시 열어 준다.** 재생성과 **같은 트랜잭션 안에서** `revoke execute from public, anon, authenticated` + 필요한 롤에만 `grant` 를 다시 기술한다. 빠뜨리면 definer 함수가 공개 롤에 열린다.
