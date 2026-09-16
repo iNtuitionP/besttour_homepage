@@ -152,6 +152,42 @@ function errorCode(body: unknown, status: number): string {
   return `http_${status}`;
 }
 
+/** 예약 id 의 형태(Postgres uuid 출력형). 이 모양이 아니면 키에 싣지 않는다 — 이 자리로 무엇이 흘러들어도 새지 않게. */
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const NIL_UUID = "00000000-0000-0000-0000-000000000000";
+
+/**
+ * Resend `Idempotency-Key` (P4-6 · 리뷰 P4-5 K7). **보냈는데 `markSent` 가 실패한 행**(worker `sentUnmarked`)이 lease 뒤 다시
+ * 집혀도, 같은 키면 Resend 가 "원래 응답을 돌려주고 메일을 다시 보내지 않는다"(docs/dashboard/emails/idempotency-keys).
+ *
+ * - **막는 것은 "같은 행"이지 "같은 논리적 알림"이 아니다.** 입력이 행의 불변 값뿐이라(시계·난수·시도 횟수 없음)
+ *   재시도·재claim·다른 크론 호출에서 같은 값이다. 그러나 행이 failed 로 끝난 뒤 새로 넣은 대체 행은 새 id·새 키라 막지 않는다.
+ * - **서로 다른 행은 서로 다른 키**: `notifications_log.id` 가 마지막 마디다. (실패 알림이 사고마다 새 행을 받는다는 뜻은
+ *   아니다 — 알림의 정체성은 (예약, event) 라서 이미 pending/sent 인 알림이 있으면 enqueue 단계에서 합쳐진다. P4-4 설계.)
+ * - **환경 간 충돌 — 조건부로만 막는다**: 로컬·프리뷰·운영 DB 의 id 시퀀스는 각자 1 부터다. Resend 문서는 키의 범위를 밝히지
+ *   않으므로(미확인) 같은 팀이면 충돌할 수 있다. 그래서 예약 id(`gen_random_uuid()`)를 넣어 **독립적으로 만든** 행끼리는 갈라 놓는다.
+ *   **운영 DB 를 복제한** 환경은 예약 id·행 id 가 둘 다 보존돼 키가 겹친다 — 본문까지 같으면 Resend 가 캐시된 2xx 를 돌려주어
+ *   진짜 발송이 억제될 수 있다. 그래서 **운영 규칙: 프리뷰·로컬은 운영과 다른 Resend 키(또는 키 없음)를 쓴다**(보고서 P4-6).
+ * - **원문 연락처 필드가 키에 없다**: 문안 키(짧은 코드) · 예약 uuid · 행 번호뿐이다. 수신처·이름·전화·문안은 넣지 않는다.
+ *   단 예약 uuid 는 그 예약 행(이름·연락처가 든)과 **연결되는 간접 식별자**다 — "식별 불가"를 주장하지 않는다. 사장님 메일
+ *   본문의 관리자 링크에도 이미 실려 제공자에게 가는 값이다. uuid 모양이 아니면 고정값으로 갈음하고, 문안 키도 CODE_SHAPE 만 싣는다.
+ * - **행 id 가 안전 정수가 아니면 throw** 한다. 뭉개면(예: "0") 서로 다른 행이 같은 키가 되어 뒤의 행이 조용히 억제된다.
+ *   이 층에 오는 id 는 이미 JS number 라 2^53 을 넘으면 원문 자릿수를 되찾을 수 없다 — 그러니 보내지 않는 것이 정직하다.
+ * - 형태는 문서 권장 `<event-type>/<entity-id>` 를 따르고 길이는 최대 ~100자(한도 256자).
+ * - **한계**: 문서상 키는 24시간 뒤 잊힌다. 정상 처리량에서의 재시도 간격 합은 24시간보다 짧지만, 적체(FIFO·배치 상한·
+ *   순차 처리)나 장애로 다음 시도가 24시간 뒤가 되면 **보장하지 않는다**(보고서 P4-6 §③).
+ */
+export function idempotencyKey(req: Pick<SendRequest, "id" | "template" | "reservationId">): string {
+  if (!Number.isSafeInteger(req.id) || req.id < 0) {
+    throw new RangeError("idempotencyKey: 행 id 가 안전 정수가 아니다");
+  }
+  const reservation = typeof req.reservationId === "string" && UUID_SHAPE.test(req.reservationId) ? req.reservationId : NIL_UUID;
+  return `notify/${safeCode(req.template)}/${reservation}/${String(req.id)}`;
+}
+
+/** 키를 만들 수 없는 행(안전 정수가 아닌 id). 다시 시도해도 같으므로 비재시도 — 보내지 않는다. */
+export const UNSAFE_ROW_ID_CODE = "unsafe_row_id";
+
 /** 사장님 문안인가(solapi.ts TEMPLATE_AUDIENCE 와 같은 표를 본다 — 표를 두 벌 두지 않는다). */
 function isOwnerTemplate(key: TemplateKey): key is "created.owner.sms" | "created.owner.email" {
   return TEMPLATE_AUDIENCE[key] === "owner";
@@ -244,11 +280,22 @@ export function resendSender(deps: ResendDeps): ResendSender {
 
       // ── 요청 ────────────────────────────────────────────────────────────
       // 한 건씩 보낸다(SendRequest 가 한 건이다). 본문은 평문 네 항목뿐 — html 을 만들지 않는다.
+      let key: string;
+      try {
+        key = idempotencyKey(req);
+      } catch {
+        return fail(UNSAFE_ROW_ID_CODE, false);
+      }
       let res: Response;
       try {
         res = await deps.fetch(RESEND_SEND_URL, {
           method: "POST",
-          headers: { authorization: `Bearer ${deps.apiKey}`, "content-type": "application/json" },
+          headers: {
+            authorization: `Bearer ${deps.apiKey}`,
+            "content-type": "application/json",
+            // 같은 행이면 언제 보내도 같은 값 — 보냈는데 못 적은 행이 키 보존 기간(24시간) 안에 다시 나가면 한 통만 도착한다(P4-6).
+            "idempotency-key": key,
+          },
           body: JSON.stringify({ from, to, subject, text: rendered.text }),
           signal: AbortSignal.timeout(timeoutMs),
         });
