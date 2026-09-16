@@ -26,7 +26,7 @@ vi.mock("next/headers", () => ({
 }));
 vi.mock("@/lib/supabase/ssr", () => ({ createSsrClient: vi.fn() }));
 
-import { MAX_ATTEMPTS, TEMPLATE_KEYS } from "@/lib/notify/outbox";
+import { ALL_TEMPLATE_KEYS, FAILURE_TEMPLATE_KEYS, MAX_ATTEMPTS, TEMPLATE_KEYS } from "@/lib/notify/outbox";
 import {
   ADMIN_NOTIFICATIONS_PATH,
   CHANNEL_FILTERS,
@@ -555,13 +555,81 @@ describe("7. 정적 규약", () => {
     }
   });
 
-  test("템플릿 키 라벨은 outbox.ts 의 키 집합과 1:1 이다", () => {
+  /**
+   * **라벨 1:1 게이트** (P6-9 에서 확장).
+   *
+   * 무엇을 잠그는가: 화면이 `t(\`template.${row.template}\`)` 로 라벨을 찾는 키 집합과 카탈로그가 **정확히 같다.**
+   *   · 라벨 없는 키가 있으면 → 번역 조회가 없는 키를 찾는다(그래서 P5-8 이 애초에 이 게이트를 세웠다).
+   *   · 카탈로그에만 있는 라벨이 있으면 → 아무도 안 쓰는 한글이 남아 조용히 낡는다.
+   *
+   * **왜 `TEMPLATE_KEYS`(4) 가 아니라 `ALL_TEMPLATE_KEYS`(6) 인가.** P4-4 가 실패 알림 키를 따로 둔 판단은 옳았다 —
+   * 그때 이 게이트를 깨지 않으려던 것이 이유였다. 대가로 화면의 `isTemplateKey` 가 좁은 목록을 보는 바람에
+   * 실패 알림 행이 키 원문(`created.owner.failure.email`)으로 나왔다. 고칠 곳은 게이트가 아니라 **판정 집합**이다:
+   * 화면이 라벨을 찾는 집합이 곧 카탈로그가 덮어야 할 집합이므로, 둘 다 `ALL_TEMPLATE_KEYS` 로 맞춘다.
+   *
+   * **두 집합을 따로 잠그지 않는 이유**: 따로 잠그면 "어느 목록에 있든 라벨이 있어야 한다"가 아니라
+   * "이 목록에는 이 라벨"이 되어, 키가 한쪽 목록에서 다른 쪽으로 옮겨갈 때 **라벨이 멀쩡한데도** 깨진다.
+   * 지켜야 할 것은 소속이 아니라 **덮임(coverage)** 이다. 다만 두 집합이 실제로 섞여 들어갔는지는
+   * 아래에서 각각 확인한다 — 합집합이 빈 목록으로 접히는 사고(양쪽이 동시에 비는)를 막는다.
+   */
+  test("템플릿 키 라벨은 outbox.ts 의 키 집합(ALL_TEMPLATE_KEYS)과 1:1 이다", () => {
     const ko = JSON.parse(read("messages/ko.json")) as { admin: { notifications: { template: Record<string, unknown> } } };
     const flatten = (o: Record<string, unknown>, prefix = ""): string[] =>
       Object.entries(o).flatMap(([k, v]) =>
         typeof v === "object" && v !== null ? flatten(v as Record<string, unknown>, `${prefix}${k}.`) : [`${prefix}${k}`],
       );
-    expect(flatten(ko.admin.notifications.template).sort()).toEqual([...TEMPLATE_KEYS].sort());
+    const labels = flatten(ko.admin.notifications.template);
+    expect(labels.sort()).toEqual([...ALL_TEMPLATE_KEYS].sort());
+    // 합집합이 한쪽만으로 접히지 않았다 — 예약 통지 4종·실패 알림 2종이 **둘 다** 덮여 있다.
+    for (const key of TEMPLATE_KEYS) expect(labels, key).toContain(key);
+    for (const key of FAILURE_TEMPLATE_KEYS) expect(labels, key).toContain(key);
+    expect(labels).toHaveLength(TEMPLATE_KEYS.length + FAILURE_TEMPLATE_KEYS.length);
+  });
+
+  /**
+   * 게이트와 화면이 **같은 집합**을 봐야 1:1 이 의미가 있다. 카탈로그를 여섯으로 늘려도 화면이 넷만 보면
+   * 실패 알림은 그대로 키 원문으로 나온다(고치기 전의 상태가 정확히 그것이었다).
+   */
+  test("화면의 라벨 판정이 ALL_TEMPLATE_KEYS 다 — 좁은 목록으로 되돌아가지 않았다", () => {
+    const src = codeOf(PAGE);
+    expect(src).toMatch(/ALL_TEMPLATE_KEYS as readonly string\[\]/);
+    // `\b` 는 밑줄을 단어 문자로 보므로 `ALL_TEMPLATE_KEYS` 안의 `TEMPLATE_KEYS` 에는 걸리지 않는다 — 좁은 목록만 잡힌다.
+    expect(src, "좁은 목록(TEMPLATE_KEYS)을 다시 쓰고 있다").not.toMatch(/\bTEMPLATE_KEYS\b/);
+  });
+
+  /**
+   * 카탈로그에 키가 있다는 것과 **번역기가 그 경로를 찾아 준다**는 것은 다르다. 화면은 중첩 카탈로그를
+   * `t(\`template.${row.template}\`)` 라는 **점 경로 한 줄**로 판다 — `created.owner` 처럼 문자열 자식(`sms`·`email`)과
+   * 객체 자식(`failure`)이 **섞인 마디**를 그 조회가 통과하는지는 실제 번역기로 확인해야 안다.
+   * 여기서 깨지면 화면에는 다시 키 원문이 뜬다(이 태스크가 고친 증상 그대로다).
+   */
+  test("실제 번역기가 여섯 키를 전부 사람이 읽는 라벨로 풀어 준다 (문자열·객체가 섞인 마디 포함)", async () => {
+    const { createTranslator } = await import("next-intl");
+    const { loadMessages } = await import("@/i18n/messages");
+    // createTranslator 의 타입은 카탈로그 리터럴에서 키를 유도한다(IntlMessages 선언이 없는 이 저장소에서는 never 로 좁혀진다).
+    // 여기서 확인하려는 것은 타입이 아니라 **런타임 조회**이므로 호출 모양만 명시하고 넘어간다.
+    const createT = createTranslator as unknown as (opts: {
+      locale: string;
+      messages: Record<string, unknown>;
+      namespace: string;
+    }) => (key: string) => string;
+    const t = createT({ locale: "ko", messages: loadMessages("ko"), namespace: "admin.notifications" });
+    for (const key of ALL_TEMPLATE_KEYS) {
+      const label = t(`template.${key}`);
+      expect(typeof label, key).toBe("string");
+      expect(label, `${key} 가 라벨로 풀리지 않았다`).not.toContain(key);
+      expect(HANGUL.test(label), `${key} → ${label}`).toBe(true);
+    }
+  });
+
+  test("라벨이 사람이 읽는 문장이다 — 키 원문을 그대로 라벨로 넣지 않았다", () => {
+    const ko = JSON.parse(read("messages/ko.json")) as { admin: { notifications: { template: Record<string, unknown> } } };
+    const values = (o: Record<string, unknown>): string[] =>
+      Object.values(o).flatMap((v) => (typeof v === "object" && v !== null ? values(v as Record<string, unknown>) : [String(v)]));
+    for (const label of values(ko.admin.notifications.template)) {
+      expect(HANGUL.test(label), label).toBe(true);
+      expect(label, label).not.toMatch(/\.(sms|email)\b/);
+    }
   });
 });
 

@@ -15,7 +15,7 @@ import {
   parsePeriodFilter,
 } from "@/lib/admin/notifications";
 import { requireAdmin } from "@/lib/auth/requireAdmin";
-import { TEMPLATE_KEYS } from "@/lib/notify/outbox";
+import { ALL_TEMPLATE_KEYS } from "@/lib/notify/outbox";
 import { kstWallClock } from "@/lib/reservation-check/view";
 
 import a from "@/components/admin/admin.module.css";
@@ -40,7 +40,17 @@ import q from "@/components/quote/quote.module.css";
  */
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-const isTemplateKey = (t: string): boolean => (TEMPLATE_KEYS as readonly string[]).includes(t);
+/**
+ * 라벨을 찾을 수 있는 키인가. **`ALL_TEMPLATE_KEYS`** 다 — 예약 통지 4종 + 발송 실패 알림 2종(P4-4).
+ *
+ * P4-4 가 실패 알림 키를 `TEMPLATE_KEYS` 에 섞지 않은 판단은 옳았지만(라벨 1:1 게이트를 깨지 않으려던 것),
+ * 여기가 그 좁은 목록을 그대로 보는 바람에 실패 알림 행의 템플릿 칸이 `created.owner.failure.email` 처럼
+ * **키 원문**으로 나왔다. 사장님께 가장 중요한 행이 가장 읽기 어려웠다.
+ * 이제 아웃박스가 받아들이는 키 전부에 라벨이 있고(messages/ko.json admin.notifications.template),
+ * tests/admin-notifications.test.ts 의 1:1 게이트가 **그 합집합**을 잠근다.
+ * 그 밖의 값(옛 행·손으로 넣은 행)은 여전히 원문 그대로 보여 준다 — 없는 번역 키를 조회하면 화면이 죽는다.
+ */
+const isTemplateKey = (t: string): boolean => (ALL_TEMPLATE_KEYS as readonly string[]).includes(t);
 
 export default async function AdminNotificationsPage({ searchParams }: { searchParams: SearchParams }) {
   await requireAdmin();
