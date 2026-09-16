@@ -25,16 +25,21 @@ import { requireAdmin } from "@/lib/auth/requireAdmin";
  * 탭 네비게이션(P5-3): 항목은 components/admin/tabs.ts 가 정의하고, 라벨만 여기서 기본 로케일 카탈로그로 풀어 내린다
  * (관리자 영역은 로케일 밖이라 NextIntlClientProvider 가 없다 — 클라이언트에서 useTranslations 를 쓸 수 없다).
  * 아직 만들지 않은 탭도 자리를 지킨다(aria-disabled) — 지우면 다음 태스크가 자리를 잊는다.
+ *
+ * 로그아웃(P5-11 · D5)도 같은 줄에 있다. 라벨만 여기서 풀어 내리고, 실제 동작은 AdminTabs 안의 form 제출이
+ * actions/admin/session.ts 로 POST 한다 — 그 액션이 자기 첫 문장에서 다시 게이트를 탄다. 이 레이아웃의
+ * `await requireAdmin();` 은 그것과 무관하게 **무조건** 이다(위 문단).
  */
 export default async function AdminProtectedLayout({ children }: { children: React.ReactNode }) {
   await requireAdmin();
   const t = await getTranslations({ locale: routing.defaultLocale, namespace: "admin.tabs" });
+  const session = await getTranslations({ locale: routing.defaultLocale, namespace: "admin.session" });
 
   const items = ADMIN_TABS.map((tab) => ({ ...tab, label: t(tab.key) }));
 
   return (
     <>
-      <AdminTabs items={items} navLabel={t("navLabel")} comingSoonLabel={t("comingSoon")} />
+      <AdminTabs items={items} navLabel={t("navLabel")} comingSoonLabel={t("comingSoon")} signOutLabel={session("signOut")} />
       {children}
     </>
   );

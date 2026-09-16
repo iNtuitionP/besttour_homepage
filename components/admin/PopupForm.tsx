@@ -9,7 +9,10 @@
  * 검증은 서버가 한다. 여기서 막지 않는 이유: 이 컴포넌트를 거치지 않고 액션을 직접 부를 수 있기 때문이다(ADR-3).
  * 브라우저 기본 검사(required·maxLength)는 오타를 줄이는 편의일 뿐이고, 판정은 zod 의 결과(fieldErrors)로 표시한다.
  *
- * 삭제는 되돌릴 수 없어 한 번 더 묻는다. 성공하면 목록으로 돌아간다 — 지워진 행의 수정 화면에 남아 있을 이유가 없다.
+ * **삭제는 두 단계다**(P5-11 — 공지·사진의 선례를 팝업에도 맞췄다). 같은 사이트에서 같은 무게의 동작이
+ * 화면마다 다른 문턱을 갖고 있으면 사장님이 "이 화면은 한 번만 누르면 되던가?" 를 매번 기억해야 한다.
+ * 무장 체크박스를 켠 뒤에야 삭제 버튼이 눌리고, 누르면 브라우저가 한 번 더 묻는다.
+ * 성공하면 목록으로 돌아간다 — 지워진 행의 수정 화면에 남아 있을 이유가 없다.
  */
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition, type FormEvent } from "react";
@@ -35,6 +38,7 @@ export interface PopupFormLabels {
   submit: string;
   processing: string;
   delete: string;
+  deleteArm: string;
   deleteConfirm: string;
   results: Record<PopupActionCode, string>;
 }
@@ -57,6 +61,7 @@ export function PopupForm({
   const [pending, startTransition] = useTransition();
   const [notice, setNotice] = useState("");
   const [invalid, setInvalid] = useState<Partial<Record<PopupField, true>>>({});
+  const [armed, setArmed] = useState(false);
 
   const mark = (field: PopupField): "true" | undefined => (invalid[field] ? "true" : undefined);
 
@@ -76,7 +81,7 @@ export function PopupForm({
   };
 
   const onDelete = () => {
-    if (id === undefined) return;
+    if (id === undefined || !armed) return;
     if (!window.confirm(labels.deleteConfirm)) return;
     setNotice("");
     startTransition(async () => {
@@ -214,12 +219,33 @@ export function PopupForm({
         <button type="submit" className={s.btnPrimary} disabled={pending} data-testid="admin-popup-submit">
           {pending ? labels.processing : labels.submit}
         </button>
-        {mode === "edit" ? (
-          <button type="button" className={s.btnSecondary} disabled={pending} onClick={onDelete} data-testid="admin-popup-delete">
+      </div>
+
+      {mode === "edit" && id !== undefined ? (
+        <div className={s.dangerZone} data-testid="admin-popup-danger">
+          <div className={s.checkRow}>
+            <input
+              id="popup-delete-arm"
+              type="checkbox"
+              checked={armed}
+              disabled={pending}
+              onChange={(e) => setArmed(e.currentTarget.checked)}
+            />
+            <label className={s.label} htmlFor="popup-delete-arm">
+              {labels.deleteArm}
+            </label>
+          </div>
+          <button
+            type="button"
+            className={s.btnSecondary}
+            disabled={pending || !armed}
+            onClick={onDelete}
+            data-testid="admin-popup-delete"
+          >
             {labels.delete}
           </button>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       <p className={s.notice} role="status" data-testid="admin-popup-notice">
         {notice}

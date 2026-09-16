@@ -137,6 +137,7 @@ export default async function AdminGalleryPage({ searchParams }: { searchParams:
               albumCreate: t("albumCreate"),
               albumSave: t("albumSave"),
               albumDelete: t("albumDelete"),
+              albumDeleteArm: t("albumDeleteArm"),
               albumDeleteNote: t("albumDeleteNote"),
               albumDeleteConfirm: t("albumDeleteConfirm"),
               turnOn: t("turnOn"),

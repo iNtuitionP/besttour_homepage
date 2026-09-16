@@ -5,9 +5,16 @@
  *
  * 아직 만들지 않은 탭은 링크가 아니라 `aria-disabled` 인 span 이다 — 링크하면 404 이고, 지우면 자리가 사라진다
  * (components/admin/tabs.ts 헤더). 스크린리더에는 `준비 중`이 함께 읽힌다.
+ *
+ * **로그아웃이 여기 있다** (P5-11 · D5). 보호 구역의 모든 화면이 이 줄을 공유하므로, 사장님이 어느 탭에 계시든
+ * 나갈 수 있는 자리는 여기 하나면 된다. 형태는 반드시 **form 제출(POST)** 이다 — `<a href>` 로 만들면
+ * 브라우저·크롤러의 프리페치가 사장님을 로그아웃시킨다. 서버액션(actions/admin/session.ts)이 첫 문장에서
+ * 게이트를 타므로 이 버튼은 인가를 스스로 판단하지 않는다.
  */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+
+import { signOutAdmin } from "@/actions/admin/session";
 
 import type { AdminTabKey } from "./tabs";
 
@@ -24,10 +31,12 @@ export function AdminTabs({
   items,
   navLabel,
   comingSoonLabel,
+  signOutLabel,
 }: {
   items: readonly AdminTabItem[];
   navLabel: string;
   comingSoonLabel: string;
+  signOutLabel: string;
 }) {
   const pathname = usePathname();
 
@@ -56,6 +65,13 @@ export function AdminTabs({
             </li>
           );
         })}
+        <li className={s.tabTail}>
+          <form action={signOutAdmin} data-testid="admin-signout-form">
+            <button type="submit" className={s.signOut} data-testid="admin-signout">
+              {signOutLabel}
+            </button>
+          </form>
+        </li>
       </ul>
     </nav>
   );

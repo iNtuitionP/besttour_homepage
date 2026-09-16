@@ -54,6 +54,30 @@
   font-size: 11.5px;
   font-weight: 600;
 }
+/* 로그아웃(P5-11) — 탭 줄의 오른쪽 끝. 좁은 화면에서는 탭과 함께 줄바꿈된다. */
+.tabTail {
+  margin-inline-start: auto;
+}
+.signOut {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  border: 1px solid var(--action-secondary-border);
+  border-radius: var(--radius-control);
+  background: var(--action-secondary-bg);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--action-secondary-fg);
+  cursor: pointer;
+}
+.signOut:hover {
+  background: var(--action-secondary-bg-hover);
+}
+.signOut:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
 
 /* ── 필터 ───────────────────────────────────────────────────────────────── */
 .filters {

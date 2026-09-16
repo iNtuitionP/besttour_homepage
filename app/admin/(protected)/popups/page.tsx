@@ -79,6 +79,7 @@ export default async function AdminPopupsPage() {
                 submit: t("create"),
                 processing: t("processing"),
                 delete: t("delete"),
+                deleteArm: t("deleteArm"),
                 deleteConfirm: t("deleteConfirm"),
                 results,
               }}

@@ -102,6 +102,7 @@ export default async function AdminPopupEditPage({ params }: { params: Params })
               submit: t("save"),
               processing: t("processing"),
               delete: t("delete"),
+              deleteArm: t("deleteArm"),
               deleteConfirm: t("deleteConfirm"),
               results,
             }}

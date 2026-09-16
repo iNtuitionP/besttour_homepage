@@ -544,6 +544,9 @@
       "notifications": "발송 내역",
       "comingSoon": "준비 중"
     },
+    "session": {
+      "signOut": "로그아웃"
+    },
     "reservations": {
       "title": "예약 현황",
       "sub": "접수된 내용을 확인하고 확정하실 수 있습니다. 확정하시면 고객에게 보낼 문자가 발송 대기열에 쌓입니다.",
@@ -685,6 +688,7 @@
       "create": "등록하기",
       "save": "저장하기",
       "delete": "삭제하기",
+      "deleteArm": "삭제하겠습니다 (되돌릴 수 없습니다)",
       "deleteConfirm": "이 팝업을 삭제할까요? 되돌릴 수 없습니다.",
       "turnOn": "노출하기",
       "turnOff": "중지하기",
@@ -847,6 +851,7 @@
       "albumCreate": "앨범 만들기",
       "albumSave": "저장하기",
       "albumDelete": "앨범 삭제",
+      "albumDeleteArm": "삭제하겠습니다 (되돌릴 수 없습니다)",
       "albumDeleteNote": "앨범을 지워도 사진은 지워지지 않습니다. 그 앨범에 있던 사진은 '미분류'로 남습니다.",
       "albumDeleteConfirm": "이 앨범을 지울까요? 사진은 지워지지 않고 미분류로 남습니다.",
       "caption": "설명",

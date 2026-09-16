@@ -6,6 +6,11 @@
  * 사장님이 "앨범을 지우면 사진도 사라지나?" 하고 멈추지 않도록 그 사실을 삭제 버튼 옆에 **미리** 적어 둔다
  * (messages/ko.json admin.gallery.albumDeleteNote) — 지운 뒤에 알려 주는 것은 늦다.
  *
+ * **삭제는 두 단계다**(P5-11 — 사진 카드·공지의 선례를 앨범에도 맞췄다). 무장 체크박스를 켠 뒤에야 버튼이 눌리고,
+ * 누르면 브라우저가 한 번 더 묻는다. 사진이 남는다고 해서 가벼운 동작은 아니다: 0008 의 공개 정책이
+ * `album_id is null or (소속 앨범이 active)` 이므로, **노출을 꺼 둔 앨범을 지우면 그 안의 사진이 미분류가 되어
+ * 방문자에게 다시 보인다.** 감추는 것이 목적이면 삭제가 아니라 앨범 노출 중지가 맞는 도구다.
+ *
  * slug 는 URL 세그먼트(/gallery/<slug>)로 그대로 쓰이므로 0008 의 CHECK 와 같은 규칙으로 먼저 거른다
  * (lib/admin/galleryInput.ts ALBUM_SLUG_RE). 형식이 틀리면 서버가 DB 를 부르지 않고 validation 으로 돌려준다.
  */
@@ -29,6 +34,7 @@ export interface GalleryAlbumsLabels {
   albumCreate: string;
   albumSave: string;
   albumDelete: string;
+  albumDeleteArm: string;
   albumDeleteNote: string;
   albumDeleteConfirm: string;
   turnOn: string;
@@ -56,6 +62,7 @@ function AlbumRow({ album, labels, onDone }: { album: AdminAlbumView; labels: Ga
   const [title, setTitle] = useState(album.title);
   const [slug, setSlug] = useState(album.slug);
   const [sort, setSort] = useState(String(album.sort));
+  const [armed, setArmed] = useState(false);
 
   const run = (action: () => Promise<{ code: GalleryActionCode }>): void => {
     startTransition(async () => {
@@ -131,11 +138,25 @@ function AlbumRow({ album, labels, onDone }: { album: AdminAlbumView; labels: Ga
         >
           {album.active ? labels.turnOff : labels.turnOn}
         </button>
+      </div>
+
+      <div className={s.dangerZone} data-testid="admin-gallery-album-danger">
+        <label className={s.checkRow} htmlFor={`album-arm-${album.id}`}>
+          <input
+            id={`album-arm-${album.id}`}
+            type="checkbox"
+            checked={armed}
+            disabled={pending}
+            onChange={(e) => setArmed(e.currentTarget.checked)}
+          />
+          {labels.albumDeleteArm}
+        </label>
         <button
           type="button"
           className={s.btnSecondary}
-          disabled={pending}
+          disabled={pending || !armed}
           onClick={() => {
+            if (!armed) return;
             if (!window.confirm(labels.albumDeleteConfirm)) return;
             run(() => deleteGalleryAlbum({ id: album.id }));
           }}
