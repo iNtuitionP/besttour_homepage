@@ -19,7 +19,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { acquireDbLock, listHeldLocks, GALLERY_LOCK, NOTIFICATIONS_LOCK, type DbLock } from "./helpers/db-lock";
+import { acquireDbLock, listHeldLocks, GALLERY_LOCK, NOTIFICATIONS_LOCK, SHOWCASE_ROUTES_LOCK, type DbLock } from "./helpers/db-lock";
 
 const LOCK_ROOT = path.join(tmpdir(), "besttour-test-db-locks");
 const names: string[] = [];
@@ -162,9 +162,10 @@ describe("2. 남의 잠금은 절대 건드리지 않는다 (회수를 다시 �
  * 실제 상수를 쓰되 **잡지는 않는다** — 스위트가 도는 중에 진짜 잠금을 잡으면 그 블록들을 세운다.
  */
 describe("3. 두 잠금 (P6-3b)", () => {
-  test("이름이 서로 다르다 — 같은 이름이면 갤러리와 아웃박스가 한 줄에 선다", () => {
+  test("이름이 서로 다르다 — 같은 이름이면 갤러리와 아웃박스가 한 줄에 선다 (P6-13: 대표 노선 잠금까지 셋)", () => {
     expect(NOTIFICATIONS_LOCK).not.toBe(GALLERY_LOCK);
-    for (const n of [NOTIFICATIONS_LOCK, GALLERY_LOCK]) {
+    expect(new Set([NOTIFICATIONS_LOCK, GALLERY_LOCK, SHOWCASE_ROUTES_LOCK]).size, "세 잠금 중 이름이 겹치는 것이 있다").toBe(3);
+    for (const n of [NOTIFICATIONS_LOCK, GALLERY_LOCK, SHOWCASE_ROUTES_LOCK]) {
       expect(n, `잠금 이름이 파일명으로 쓰이므로 경로 문자가 들어가면 안 된다: ${n}`).toMatch(/^[a-z0-9-]+$/);
     }
   });

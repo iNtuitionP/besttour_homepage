@@ -66,7 +66,8 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, test } from "vitest";
 
-import { withGalleryLock, withNotificationsLock } from "./helpers/db-lock";
+import { withGalleryLock, withNotificationsLock, withShowcaseRoutesLock } from "./helpers/db-lock";
+import { expectPermissionDenied } from "./helpers/expect-denied";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
 import { runLocalSql } from "./helpers/local-stack-sql";
 import { type SqlDataMode, sqlView, stripComments } from "./helpers/strip-comments";
@@ -647,6 +648,9 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
     // 블록(home 4-DB)과도 줄 세운다. **순서 고정**: notifications → gallery. 모두가 같은 순서로 잡아야
     // 순환 대기가 생기지 않는다(tests/helpers/db-lock.ts GALLERY_LOCK 주석, 게이트가 강제한다).
     withGalleryLock();
+    // 아래 "0016 실행 증명" 이 ICN→SEL 시드 행의 sort 를 바꿨다 되돌린다 — 16행 전체를 대조하는 블록(places·queries)과 줄 세운다.
+    // **순서 고정**: notifications → gallery → showcase-routes (tests/helpers/db-lock.ts SHOWCASE_ROUTES_LOCK 주석).
+    withShowcaseRoutesLock();
 
     const baseUrl = () => process.env.NEXT_PUBLIC_SUPABASE_URL as string;
     const serviceHeaders = {
@@ -690,23 +694,8 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
     const asAnon = (method: string, pathAndQuery: string, json?: unknown) =>
       call(method, `${dbEnv.restRoot}${pathAndQuery}`, { apikey: dbEnv.anonKey as string, "Content-Type": "application/json" }, json);
 
-    /**
-     * **권한 거부를 명시적으로** 단언한다 (P4-5 리뷰 K3 · runbook 후속 · P5-13).
-     *
-     * 이 파일의 거부 단언은 원래 `expect(status).toBeGreaterThanOrEqual(400)` 이었다. 그러면 다음이 전부
-     * "보안 성공" 으로 읽힌다: 500(서버가 고장 났다) · 400(입력 검증에서 걸렸다) · 404(표 이름을 잘못 썼다).
-     * 셋 중 어느 것도 **"권한이 회수됐다"** 를 증명하지 않는다 — 특히 404 는 오타 하나로 언제든 나오고,
-     * 그 상태에서는 권한이 그대로 남아 있어도 테스트가 green 이다.
-     *
-     * 그래서 둘을 함께 요구한다: PostgREST 의 **상태코드**(권한 거부는 401 또는 403)와 PostgreSQL 의
-     * **SQLSTATE `42501`**(insufficient_privilege). 대조군은 아래 "거부와 부재는 구분된다" 테스트가 둔다.
-     */
-    function expectPermissionDenied(res: Res, what: string): void {
-      const body = res.body as { code?: string } | null;
-      const shown = JSON.stringify(res.body).slice(0, 300);
-      expect([401, 403], `${what}: 권한 거부가 아니다 (status=${res.status} body=${shown})`).toContain(res.status);
-      expect(body?.code, `${what}: PostgreSQL 권한 거부 코드(42501)가 아니다 (status=${res.status} body=${shown})`).toBe("42501");
-    }
+    // 권한 거부 판정(401/403 + 42501)은 tests/helpers/expect-denied.ts 의 `expectPermissionDenied` 다 (P6-13 에서 이 자리에서 옮겼다 —
+    // 판정 로직은 그대로다). 대조군은 아래 "거부와 부재는 구분된다" 테스트가 둔다.
 
     async function createUser(email: string): Promise<string> {
       const r = await call("POST", `${baseUrl()}/auth/v1/admin/users`, serviceHeaders, { email, password: PASSWORD, email_confirm: true });

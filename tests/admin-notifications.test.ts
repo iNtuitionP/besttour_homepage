@@ -18,6 +18,7 @@ import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
 
 import { withNotificationsLock } from "./helpers/db-lock";
+import { expectTablePrivilegeDenied } from "./helpers/expect-denied";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
 
 vi.mock("server-only", () => ({}));
@@ -805,10 +806,12 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)(
     });
 
     test("관리자도 쓸 수는 없다 — insert·update·delete 전부 거부(정책은 select 뿐)", async () => {
+      // P6-13 실측: 둘 다 403 · 42501 · "permission denied for table notifications_log" — 0012 가 GRANT 층에서 닫았다.
+      // (0012 이전에는 PATCH 가 204 = 0행 "성공" 이었다 — 거부가 아니라 성공이었다.)
       const up = await asUser(adminToken, "PATCH", `/notifications_log?id=eq.${logId}`, { status: "sent" });
-      expect(up.status, "관리자가 status 를 고칠 수 있으면 '보내지 않은 것을 보냈다' 고 적을 수 있다").toBeGreaterThanOrEqual(400);
+      expectTablePrivilegeDenied(up, "notifications_log", "관리자가 status 를 고칠 수 있으면 '보내지 않은 것을 보냈다' 고 적을 수 있다 — PATCH");
       const del = await asUser(adminToken, "DELETE", `/notifications_log?id=eq.${logId}`);
-      expect(del.status).toBeGreaterThanOrEqual(400);
+      expectTablePrivilegeDenied(del, "notifications_log", "관리자 세션의 notifications_log DELETE");
       const still = await rest("GET", `/notifications_log?select=status&id=eq.${logId}`);
       expect((still.body as { status: string }[])[0].status).toBe("pending");
     });

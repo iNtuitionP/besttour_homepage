@@ -9,6 +9,7 @@ import {
   REGION_POINTS,
   projectLatLng,
 } from "@/lib/map-coords";
+import { withShowcaseRoutesLock } from "./helpers/db-lock";
 import { dbSmokeEnv } from "./helpers/load-env-local";
 
 const VIEWBOX_W = 524;
@@ -512,6 +513,10 @@ if (env.hasServiceRole && !applied0002 && !requireDb) {
 describe.skipIf(!env.hasServiceRole || (!applied0002 && !requireDb))(
   "DB smoke — places / showcase_routes (0002 적용 후)",
   () => {
+  // 아래 16행 대조는 표 전체를 본다 — 시드 행을 잠시 바꾸는 블록(admin-routes · write-privileges §5)과 겹치면
+  // 되돌리기 전 값(WJU price_from=null 등)을 읽는다(P6-12 전량 실행에서 관측 · P6-13 재현). 같은 잠금으로 줄 세운다.
+  withShowcaseRoutesLock();
+
   // 전제조건: 0002 가 적용돼 places 테이블이 있어야 한다. 없으면(PostgREST 404) 아래 세
   // 테스트가 알아보기 어려운 diff 로 실패하는 대신, 여기서 원인을 명시하고 실패한다.
   // (위 skipIf 때문에 여기 도달하는 미적용 상황은 REQUIRE_DB_TESTS=1 뿐이다.)

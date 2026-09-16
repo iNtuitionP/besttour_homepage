@@ -19,6 +19,13 @@ import path from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { withGalleryLock } from "./helpers/db-lock";
+import {
+  STORAGE_DELETE_DENIED_MESSAGE,
+  STORAGE_RLS_MESSAGE,
+  expectRlsInsertDenied,
+  expectStorageDenied,
+  expectStorageNotFound,
+} from "./helpers/expect-denied";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
 
 vi.mock("server-only", () => ({}));
@@ -1077,50 +1084,56 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("8. DB — 0011 스토리�
       prefer,
     );
 
+  /**
+   * 스토리지 요청 — 상태와 **본문**을 함께 돌려준다 (P6-13).
+   * 거부 판정은 본문(`statusCode`·`code`)을 봐야 한다: 로컬 storage-api 는 거부·부재·중복을 **전부 HTTP 400** 으로 싸서 보낸다
+   * (tests/helpers/expect-denied.ts 머리 주석). 상태만 돌려주던 옛 판은 그 셋을 구분할 수 없었다.
+   */
+  async function storageFetch(method: string, url: string, headers: Record<string, string>, body?: typeof PIXEL): Promise<Res> {
+    const res = await fetch(url, { method, headers, body });
+    const text = await res.text();
+    let parsed: unknown = text;
+    try {
+      parsed = text ? JSON.parse(text) : null;
+    } catch {
+      // 객체 바이트 등 JSON 이 아니면 문자열 그대로
+    }
+    return { status: res.status, body: parsed };
+  }
+
+  const objectUrl = (bucket: string, key: string) => `${baseUrl()}/storage/v1/object/${bucket}/${key}`;
+
   /** 스토리지 업로드 — 토큰이 없으면 anon 키로. */
-  async function upload(token: string | null, bucket: string, key: string): Promise<number> {
-    const res = await fetch(`${baseUrl()}/storage/v1/object/${bucket}/${key}`, {
-      method: "POST",
-      headers: {
-        apikey: env.anonKey as string,
-        Authorization: `Bearer ${token ?? env.anonKey}`,
-        "Content-Type": "image/webp",
-      },
-      body: PIXEL,
-    });
-    return res.status;
+  async function upload(token: string | null, bucket: string, key: string): Promise<Res> {
+    return storageFetch(
+      "POST",
+      objectUrl(bucket, key),
+      { apikey: env.anonKey as string, Authorization: `Bearer ${token ?? env.anonKey}`, "Content-Type": "image/webp" },
+      PIXEL,
+    );
   }
 
-  async function download(token: string | null, bucket: string, key: string, publicPath = false): Promise<number> {
-    const url = publicPath
-      ? `${baseUrl()}/storage/v1/object/public/${bucket}/${key}`
-      : `${baseUrl()}/storage/v1/object/${bucket}/${key}`;
-    const res = await fetch(url, {
-      headers: token ? { apikey: env.anonKey as string, Authorization: `Bearer ${token}` } : { apikey: env.anonKey as string },
-    });
-    return res.status;
+  async function download(token: string | null, bucket: string, key: string, publicPath = false): Promise<Res> {
+    const url = publicPath ? `${baseUrl()}/storage/v1/object/public/${bucket}/${key}` : objectUrl(bucket, key);
+    return storageFetch(
+      "GET",
+      url,
+      token ? { apikey: env.anonKey as string, Authorization: `Bearer ${token}` } : { apikey: env.anonKey as string },
+    );
   }
 
-  async function removeObject(token: string, bucket: string, key: string): Promise<number> {
-    const res = await fetch(`${baseUrl()}/storage/v1/object/${bucket}/${key}`, {
-      method: "DELETE",
-      headers: { apikey: env.anonKey as string, Authorization: `Bearer ${token}` },
-    });
-    return res.status;
+  async function removeObject(token: string, bucket: string, key: string): Promise<Res> {
+    return storageFetch("DELETE", objectUrl(bucket, key), { apikey: env.anonKey as string, Authorization: `Bearer ${token}` });
   }
 
   /** 덮어쓰기(PUT) — storage 의 update 동작. 정책이 없으면 남의 사진을 갈아 끼울 수 있다(리뷰 M4). */
-  async function overwrite(token: string | null, bucket: string, key: string): Promise<number> {
-    const res = await fetch(`${baseUrl()}/storage/v1/object/${bucket}/${key}`, {
-      method: "PUT",
-      headers: {
-        apikey: env.anonKey as string,
-        Authorization: `Bearer ${token ?? env.anonKey}`,
-        "Content-Type": "image/webp",
-      },
-      body: PIXEL,
-    });
-    return res.status;
+  async function overwrite(token: string | null, bucket: string, key: string): Promise<Res> {
+    return storageFetch(
+      "PUT",
+      objectUrl(bucket, key),
+      { apikey: env.anonKey as string, Authorization: `Bearer ${token ?? env.anonKey}`, "Content-Type": "image/webp" },
+      PIXEL,
+    );
   }
 
   /** 객체 열거 — select 정책이 지키는 동작. 토큰이 없으면 anon 키로(리뷰 M1·M4). */
@@ -1198,20 +1211,45 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("8. DB — 0011 스토리�
   });
 
   test("스토리지 — 관리자 세션만 두 버킷에 올릴 수 있다", async () => {
-    expect(await upload(adminToken, "gallery", KEY("pub"))).toBeLessThan(300);
-    expect(await upload(adminToken, "gallery-originals", KEY("orig"))).toBeLessThan(300);
-    expect(await upload(plainToken, "gallery", KEY("intruder"))).toBeGreaterThanOrEqual(400);
-    expect(await upload(plainToken, "gallery-originals", KEY("intruder"))).toBeGreaterThanOrEqual(400);
-    expect(await upload(null, "gallery", KEY("anon"))).toBeGreaterThanOrEqual(400);
+    expect((await upload(adminToken, "gallery", KEY("pub"))).status).toBeLessThan(300);
+    expect((await upload(adminToken, "gallery-originals", KEY("orig"))).status).toBeLessThan(300);
+    // P6-13 실측: 셋 다 HTTP 400 · 본문 statusCode "403" · AccessDenied · "new row violates row-level security policy" (0011 insert 정책)
+    expectStorageDenied(await upload(plainToken, "gallery", KEY("intruder")), "명단 밖 세션의 gallery 업로드", STORAGE_RLS_MESSAGE);
+    expectStorageDenied(await upload(plainToken, "gallery-originals", KEY("intruder")), "명단 밖 세션의 원본 업로드", STORAGE_RLS_MESSAGE);
+    expectStorageDenied(await upload(null, "gallery", KEY("anon")), "anon 의 gallery 업로드", STORAGE_RLS_MESSAGE);
+  });
+
+  /**
+   * 대조군 (P6-13) — Storage 의 "거부" 와 "부재" 는 **본문으로만** 갈린다(HTTP 는 둘 다 400).
+   * 없는 버킷·없는 객체는 statusCode "404"(NoSuchBucket·NoSuchKey), 권한 없는 쓰기는 "403"(AccessDenied) 이다.
+   * 이것이 없으면 `expectStorageDenied` 가 무엇을 걸러 내는지 알 수 없다 — 옛 `>= 400` 은 버킷 이름 오타도 "보안 성공" 으로 읽었다.
+   */
+  test("스토리지 대조군 — 거부(403 AccessDenied)와 부재(404 NoSuchBucket·NoSuchKey)는 구분된다", async () => {
+    const missingBucket = await upload(adminToken, "p613-no-such-bucket", KEY("x"));
+    expectStorageNotFound(missingBucket, "NoSuchBucket", "관리자의 없는 버킷 업로드");
+    expect(() => expectStorageDenied(missingBucket, "대조"), "거부 판정이 '없는 버킷' 을 거부로 받아들였다").toThrow();
+
+    const missingKey = await download(adminToken, "gallery-originals", KEY("never-uploaded"));
+    expectStorageNotFound(missingKey, "NoSuchKey", "관리자의 없는 객체 내려받기");
+    expect(() => expectStorageDenied(missingKey, "대조"), "거부 판정이 '없는 객체' 를 거부로 받아들였다").toThrow();
+
+    const denied = await upload(plainToken, "gallery", KEY("intruder-control"));
+    expectStorageDenied(denied, "명단 밖 세션의 gallery 업로드");
+    expect(() => expectStorageNotFound(denied, "NoSuchBucket", "대조"), "부재 판정이 거부를 부재로 받아들였다").toThrow();
   });
 
   test("스토리지 — 공개 라우트는 누구나 읽고, 원본 버킷은 관리자만 읽는다", async () => {
     // 정책은 anon 에게 select 를 주지 않는다(리뷰 M1). 그래도 방문자의 사진이 보이는 것은 이 경로가
     // storage-api 에서 asSuperUser 로 처리되기 때문이다 — 그 사실을 여기서 실제로 확인한다.
-    expect(await download(null, "gallery", KEY("pub"), true), "공개 라우트가 막히면 홈 갤러리가 통째로 깨진다").toBe(200);
-    expect(await download(null, "gallery-originals", KEY("orig"), true)).toBeGreaterThanOrEqual(400);
-    expect(await download(plainToken, "gallery-originals", KEY("orig"))).toBeGreaterThanOrEqual(400);
-    expect(await download(adminToken, "gallery-originals", KEY("orig"))).toBe(200);
+    expect((await download(null, "gallery", KEY("pub"), true)).status, "공개 라우트가 막히면 홈 갤러리가 통째로 깨진다").toBe(200);
+    // Storage 는 **읽기 거부를 "없음" 으로 숨긴다** (P6-13 실측 — 둘 다 HTTP 400):
+    //   · 공개 라우트는 비공개 버킷을 "없는 버킷" 이라 답한다 — statusCode "404" · NoSuchBucket. 버킷이 공개로 뒤집히면 200 이 된다.
+    //   · 명단 밖 세션은 RLS 가 행을 가려 "없는 객체" — statusCode "404" · NoSuchKey.
+    // 이 모양만으로는 부재와 구분되지 않는다. 그래서 **같은 키를 관리자가 200 으로 읽는 줄(아래)** 이 이 두 단언의 짝이다 —
+    // 키가 실제로 있다는 것을 그 줄이 증명한다.
+    expectStorageNotFound(await download(null, "gallery-originals", KEY("orig"), true), "NoSuchBucket", "공개 라우트의 원본 버킷 내려받기");
+    expectStorageNotFound(await download(plainToken, "gallery-originals", KEY("orig")), "NoSuchKey", "명단 밖 세션의 원본 내려받기");
+    expect((await download(adminToken, "gallery-originals", KEY("orig"))).status, "대조 — 같은 키가 실제로 있다").toBe(200);
   });
 
   // 리뷰 M1·M4 — select 정책이 지키는 것은 내려받기가 아니라 **열거**다. 열려 있으면 내려 둔 사진의 키까지 샌다.
@@ -1236,17 +1274,20 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("8. DB — 0011 스토리�
 
   // 리뷰 M4 — update 정책이 없으면 남의 사진을 같은 키로 갈아 끼울 수 있다(주소는 그대로, 내용만 바뀐다).
   test("스토리지 — 명단 밖 세션·anon 은 덮어쓰지 못한다", async () => {
-    expect(await overwrite(plainToken, "gallery", KEY("pub"))).toBeGreaterThanOrEqual(400);
-    expect(await overwrite(null, "gallery", KEY("pub"))).toBeGreaterThanOrEqual(400);
-    expect(await overwrite(plainToken, "gallery-originals", KEY("orig"))).toBeGreaterThanOrEqual(400);
+    // P6-13 실측: 셋 다 HTTP 400 · 본문 statusCode "403" · AccessDenied · "new row violates row-level security policy" (0011 update 정책)
+    expectStorageDenied(await overwrite(plainToken, "gallery", KEY("pub")), "명단 밖 세션의 gallery 덮어쓰기", STORAGE_RLS_MESSAGE);
+    expectStorageDenied(await overwrite(null, "gallery", KEY("pub")), "anon 의 gallery 덮어쓰기", STORAGE_RLS_MESSAGE);
+    expectStorageDenied(await overwrite(plainToken, "gallery-originals", KEY("orig")), "명단 밖 세션의 원본 덮어쓰기", STORAGE_RLS_MESSAGE);
     // 관리자는 덮어쓸 수 있다(정책이 update 를 관리자에게 열어 둔 이유)
-    expect(await overwrite(adminToken, "gallery", KEY("pub"))).toBeLessThan(300);
+    expect((await overwrite(adminToken, "gallery", KEY("pub"))).status).toBeLessThan(300);
   });
 
   test("스토리지 — 관리자만 지운다", async () => {
-    expect(await removeObject(plainToken, "gallery", KEY("pub"))).toBeGreaterThanOrEqual(400);
-    expect(await removeObject(adminToken, "gallery", KEY("pub"))).toBeLessThan(300);
-    expect(await removeObject(adminToken, "gallery-originals", KEY("orig"))).toBeLessThan(300);
+    // P6-13 실측: HTTP 400 · 본문 statusCode "403" · AccessDenied · "Access denied" (0011 delete 정책이 행을 가린다).
+    // 다음 줄의 관리자 삭제 성공이 "키가 실제로 있었다" 의 대조다(없는 키면 관리자도 404 NoSuchKey 를 받는다).
+    expectStorageDenied(await removeObject(plainToken, "gallery", KEY("pub")), "명단 밖 세션의 gallery 삭제", STORAGE_DELETE_DENIED_MESSAGE);
+    expect((await removeObject(adminToken, "gallery", KEY("pub"))).status).toBeLessThan(300);
+    expect((await removeObject(adminToken, "gallery-originals", KEY("orig"))).status).toBeLessThan(300);
   });
 
   test("표 — 관리자 세션이 사진 행을 만들고 고치고 지운다 (0009 gallery_admin_all)", async () => {
@@ -1285,7 +1326,8 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("8. DB — 0011 스토리�
 
   test("표 — 명단에 없는 로그인 세션은 사진을 만들지도 고치지도 못한다", async () => {
     const ins = await asUser(plainToken, "POST", "/gallery", { image_path: `gallery/p62-${RUN}/x.webp`, sort: 1, active: true });
-    expect(ins.status, `insert 가 통과했다: ${JSON.stringify(ins.body).slice(0, 200)}`).toBeGreaterThanOrEqual(400);
+    // P6-13 실측: 403 · 42501 · `new row violates row-level security policy for table "gallery"` — 0009 gallery_admin_all 의 with check.
+    expectRlsInsertDenied(ins, "gallery", "명단 밖 세션의 gallery INSERT");
     await asUser(plainToken, "PATCH", `/gallery?id=eq.${photoId}`, { caption: "hijacked" });
     await asUser(plainToken, "DELETE", `/gallery?id=eq.${photoId}`);
     const still = await rest("GET", `/gallery?select=caption&id=eq.${photoId}`);

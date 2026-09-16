@@ -350,15 +350,17 @@ describe("6. 제거기는 하나뿐이다", () => {
 // 6-S. SQL 제자리 제거기도 하나뿐이다 (P6-11)
 // =============================================================================
 /**
- * **축소 전용 재고 목록** — 빼는 것은 자유, 더하는 것은 실패. 목록의 항목이 더는 탐지되지 않으면 그것도 실패(죽은 예외 금지).
+ * **재고 목록은 P6-13 에서 0 이 됐다** (2026-09-17).
  *
- * `admin-reservations.test.ts` 가 남은 이유: P6-11 브리프가 SQL 제거기 8곳(`admin-auth · consent · gallery-albums ·
- * kst-dates · outbox · outbox-claim-channel · outbox-reaper · write-privileges`)만 세었고, **`tests/admin-*.test.ts` 는
- * `admin-auth` 한 곳만 고치라**고 못박았다(다음 태스크가 나머지 admin 테스트를 쓴다). 그런데 탐지식을 돌리자
- * 아홉 번째가 나왔다 — 같은 한 줄짜리 정규식 제거기다. 브리프 경계를 넘지 않고 **여기 적어 봉쇄**한다.
- * 그 파일이 읽는 SQL(`0010`·`0010 down`·`0009`)은 옛/새 제거기가 **한 줄도 다르게 보지 않는다**(P6-11 보고서 §③ 측정).
+ * P6-11 이 SQL 제거기 8곳을 헬퍼로 옮기다 아홉 번째(`admin-reservations.test.ts`)를 찾았고, 브리프 경계 때문에
+ * 고치지 않고 이 목록(1건)에 올려 봉쇄했다. P6-13 이 그 파일을 헬퍼 호출로 옮겼으므로 목록은 비었고,
+ * 규칙은 **축소 전용 목록**에서 **0건**으로 조인다: `tests/**` 어디에도 SQL 제자리 제거기가 있으면 안 된다.
+ *
+ * 목록이 비면 "목록의 항목이 아직 탐지된다" 단언이 탐지식의 신선도를 더는 증명하지 못한다(정답이 0 이라
+ * 탐지식이 썩어도 0 이 나온다). P6-8 이 TS 쪽을 비울 때와 같이, 그 증거는 아래 **픽스처 네 변종**이 맡는다 —
+ * 옛 제거기를 런타임에 조립해 탐지식에 먹이고 true 가 나오는지 본다.
  */
-const LEGACY_SQL_IN_PLACE = ["admin-reservations.test.ts"];
+const LEGACY_SQL_IN_PLACE: string[] = [];
 
 /** 옛 SQL 제거기를 **런타임에 조립**한다 — 그대로 적으면 이 파일 자신이 탐지된다. */
 const LEGACY_SQL_SAMPLE = [
@@ -375,23 +377,18 @@ describe("6-S. SQL 제거기도 하나뿐이다 (P6-11)", () => {
   const files = listTestSources().filter((f) => f !== "helpers/strip-comments.ts");
   const detected = files.filter((f) => definesInPlaceSqlStripper(readFileSync(path.join(TESTS_DIR, f), "utf-8")));
 
-  test("새 SQL 제자리 제거기 0건 — 재고 목록 밖에서 탐지되면 실패", () => {
-    const fresh = detected.filter((f) => !LEGACY_SQL_IN_PLACE.includes(f));
+  test("SQL 제자리 제거기 0건 — tests/** 전체 (재고 목록은 P6-13 에서 비었다)", () => {
+    expect(LEGACY_SQL_IN_PLACE, "재고 목록은 비어 있어야 한다 — 다시 채우지 말고 헬퍼로 옮길 것").toEqual([]);
     expect(
-      fresh,
+      detected,
       "SQL 주석 제거기를 제자리에 만들었다. stripComments(sql, '<경로>.sql') 을 쓸 것 — 정규식은 문자열·달러 인용 속 " +
         "`--`·`/*` 를 주석으로 읽어 권한 회수 마이그레이션의 텍스트 단언을 가린다(known-defects D7 C-3).",
     ).toEqual([]);
   });
 
-  test("재고 목록은 줄어들기만 한다 — 목록의 항목이 실제로 아직 탐지된다(고쳤으면 목록에서 뺄 것)", () => {
-    const dead = LEGACY_SQL_IN_PLACE.filter((f) => !detected.includes(f));
-    expect(dead, "이미 고쳐진 파일이 재고 목록에 남아 있다 — 목록에서 지울 것").toEqual([]);
-    expect(LEGACY_SQL_IN_PLACE.length, "재고 목록은 늘릴 수 없다(P6-11 시점 1건)").toBeLessThanOrEqual(1);
-  });
-
-  test("P6-11 이 옮긴 8개 파일은 제자리 정의 0 · 헬퍼 import", () => {
+  test("P6-11 이 옮긴 8개 파일 + P6-13 이 옮긴 아홉 번째는 제자리 정의 0 · 헬퍼 import", () => {
     for (const f of [
+      "admin-reservations.test.ts",
       "admin-auth.test.ts",
       "consent.test.ts",
       "gallery-albums.test.ts",

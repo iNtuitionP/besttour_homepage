@@ -24,6 +24,7 @@ import path from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { withNotificationsLock } from "./helpers/db-lock";
+import { expectFunctionPrivilegeDenied, expectRaisedDenied, expectTablePrivilegeDenied } from "./helpers/expect-denied";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
 
 // server-only 는 vitest(node) 에서 import 즉시 throw 한다 — 빈 모듈로 바꿔치기(tests/admin-auth.test.ts 선례).
@@ -97,9 +98,9 @@ const TABS_UI = "components/admin/AdminTabs.tsx";
 const ACTIONS_UI = "components/admin/ReservationActions.tsx";
 const ADMIN_CSS = "components/admin/admin.module.css";
 
-const stripSqlComments = (sql: string) => sql.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
 const compact = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
-const sqlCode = (rel: string) => compact(stripSqlComments(read(rel)));
+/** SQL 도 같은 헬퍼의 `.sql` 분기(문자 스캐너)로 주석을 걷는다 — 제자리 정규식 제거기는 두지 않는다 (P6-11 §6-S · P6-13). */
+const sqlCode = (rel: string) => compact(stripComments(read(rel), rel));
 
 /** 주석을 걷어낸 코드. 제거기는 저장소에 하나뿐이다(`tests/helpers/strip-comments.ts` · P6-7/P6-8 · D7). */
 const codeOf = (rel: string) => stripComments(read(rel), rel);
@@ -131,6 +132,12 @@ function fnBody(name: string): string {
 
 const FN_NAMES = ["admin_confirm_reservation", "admin_cancel_reservation", "admin_complete_reservation", "admin_update_memo"] as const;
 
+/**
+ * 0010 의 네 definer 함수가 명단 밖 호출자에게 던지는 메시지 — `raise exception '<함수>: 관리자 명단에 없는 호출자다' using errcode = '42501'`.
+ * §1 의 가드 단언이 이 문장이 SQLSTATE 42501 과 함께 함수 본문에 있는지 보고, §7 DB 실증이 PostgREST 응답의 message 로 같은 문장을 받는지 본다 (P6-13).
+ */
+const guardMessage = (fn: string) => `${fn}: 관리자 명단에 없는 호출자다`;
+
 // =============================================================================
 // 1. supabase/migrations/0010_admin_reservation_actions.sql — 텍스트
 // =============================================================================
@@ -156,6 +163,10 @@ describe("1. 0010_admin_reservation_actions.sql", () => {
     for (const fn of FN_NAMES) {
       const body = fnBody(fn);
       expect(body, fn).toMatch(/if not is_admin\(\) then raise exception/);
+      // 거부의 모양 — PostgREST 가 403·42501 로 옮기는 것은 이 errcode 때문이다(§7 이 응답으로 확인한다)
+      expect(body, `${fn}: 가드의 메시지·SQLSTATE 가 DB 실증의 기대와 다르다`).toContain(
+        `if not is_admin() then raise exception '${guardMessage(fn)}' using errcode = '42501';`,
+      );
       // 가드가 첫 문장인가 — begin 과 raise 사이에 update/insert/select 가 없다
       const begin = body.indexOf("begin");
       const guard = body.indexOf("if not is_admin()");
@@ -1027,7 +1038,9 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
     test("비관리자 세션은 확정할 수 없다 — definer 함수가 스스로 막는다", async () => {
       const id = await seed("new", `A${RUN.slice(0, 4).toUpperCase()}`);
       const r = await confirmed(plainToken, id);
-      expect(r.status, JSON.stringify(r.body).slice(0, 200)).toBeGreaterThanOrEqual(400);
+      // 로그인 세션은 EXECUTE 를 갖는다(0010 §5) — 막는 것은 함수 첫 줄의 is_admin() 가드다(0010:47 `using errcode = '42501'`).
+      // P6-13 실측: 403 · 42501 · "admin_confirm_reservation: 관리자 명단에 없는 호출자다". 메시지까지 맞춰야 "가드가 막았다" 가 증명된다.
+      expectRaisedDenied(r, guardMessage("admin_confirm_reservation"), "명단 밖 세션의 admin_confirm_reservation");
       const row = await rest("GET", `/reservations?select=status&id=eq.${id}`);
       expect((row.body as { status: string }[])[0].status).toBe("new");
       expect(await notifyCount(id)).toBe(0);
@@ -1036,7 +1049,31 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
     test("anon 은 함수를 실행조차 할 수 없다", async () => {
       const id = made[0];
       const r = await asAnon("POST", "/rpc/admin_confirm_reservation", { p_id: id, p_memo: null });
-      expect(r.status).toBeGreaterThanOrEqual(400);
+      // P6-13 실측: 401 · 42501 · "permission denied for function admin_confirm_reservation" — 본문은 한 줄도 돌지 않았다(0010 §5 revoke).
+      expectFunctionPrivilegeDenied(r, "admin_confirm_reservation", "anon 의 admin_confirm_reservation");
+    });
+
+    /**
+     * 대조군 (P6-13) — 함수 호출의 "거부" 두 갈래(EXECUTE 없음 · 함수 가드)와 "부재"(404 PGRST202)는 서로 다른 응답이다.
+     * 옛 `>= 400` 은 함수 이름 오타(404)도 "보안 성공" 으로 읽었다.
+     */
+    test("대조군 — 없는 함수는 404(PGRST202)이고, EXECUTE 거부와 가드 거부는 메시지로 갈린다", async () => {
+      const id = made[0];
+      const missing = await asUser(plainToken, "POST", "/rpc/p613_no_such_function", { p_id: id, p_memo: null });
+      expect(missing.status, JSON.stringify(missing.body).slice(0, 200)).toBe(404);
+      expect((missing.body as { code?: string } | null)?.code).toBe("PGRST202");
+      expect(() => expectFunctionPrivilegeDenied(missing, "p613_no_such_function", "대조"), "거부 판정이 '없는 함수' 를 받아들였다").toThrow();
+
+      const guard = await confirmed(plainToken, id);
+      expectRaisedDenied(guard, guardMessage("admin_confirm_reservation"), "명단 밖 세션의 admin_confirm_reservation");
+      expect(() => expectFunctionPrivilegeDenied(guard, "admin_confirm_reservation", "대조"), "EXECUTE 판정이 가드 거부를 받아들였다").toThrow();
+
+      const noExecute = await asAnon("POST", "/rpc/admin_confirm_reservation", { p_id: id, p_memo: null });
+      expectFunctionPrivilegeDenied(noExecute, "admin_confirm_reservation", "anon 의 admin_confirm_reservation");
+      expect(() => expectRaisedDenied(noExecute, guardMessage("admin_confirm_reservation"), "대조"), "가드 판정이 EXECUTE 거부를 받아들였다").toThrow();
+
+      const row = await rest("GET", `/reservations?select=status&id=eq.${id}`);
+      expect((row.body as { status: string }[])[0].status, "대조군 호출이 예약을 바꿨다").toBe("new");
     });
 
     test("관리자 확정 — status·confirmed_at·메모가 바뀌고 통지 1건이 큐에 쌓인다", async () => {
@@ -1110,10 +1147,11 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
 
     test("비관리자·anon 은 완료도 부를 수 없다 (M1)", async () => {
       const id = made[made.length - 1];
+      // P6-13 실측: 명단 밖 세션 403 · 42501 · 함수 가드 메시지(0010:127) / anon 401 · 42501 · EXECUTE 거부
       const plain = await asUser(plainToken, "POST", "/rpc/admin_complete_reservation", { p_id: id, p_memo: null });
-      expect(plain.status).toBeGreaterThanOrEqual(400);
+      expectRaisedDenied(plain, guardMessage("admin_complete_reservation"), "명단 밖 세션의 admin_complete_reservation");
       const anon = await asAnon("POST", "/rpc/admin_complete_reservation", { p_id: id, p_memo: null });
-      expect(anon.status).toBeGreaterThanOrEqual(400);
+      expectFunctionPrivilegeDenied(anon, "admin_complete_reservation", "anon 의 admin_complete_reservation");
     });
 
     test("메모는 상태를 건드리지 않는다", async () => {
@@ -1128,7 +1166,8 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
     test("관리자도 이제 reservations 를 직접 UPDATE 할 수 없다 — 쓰기는 네 함수뿐이다 (리뷰 N5)", async () => {
       const id = made[made.length - 1];
       const patch = await asUser(adminToken, "PATCH", `/reservations?id=eq.${id}`, { retention_until: "2099-01-01T00:00:00Z" });
-      expect(patch.status, `직접 UPDATE 가 통과했다: ${JSON.stringify(patch.body).slice(0, 200)}`).toBeGreaterThanOrEqual(400);
+      // P6-13 실측: 403 · 42501 · "permission denied for table reservations" — 0010 §6 이 GRANT 층에서 닫았다.
+      expectTablePrivilegeDenied(patch, "reservations", "관리자 세션의 reservations 직접 UPDATE");
       const row = await rest("GET", `/reservations?select=retention_until&id=eq.${id}`);
       expect(String((row.body as { retention_until: string }[])[0].retention_until)).not.toContain("2099");
     });

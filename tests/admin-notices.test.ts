@@ -23,6 +23,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
+import { expectRlsInsertDenied } from "./helpers/expect-denied";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
 
 vi.mock("server-only", () => ({}));
@@ -686,7 +687,8 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("5. DB — notices RLS 실
   test("명단에 없는 로그인 세션 — insert·update·delete 전부 거부된다", async () => {
     const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
     const ins = await asUser(plainToken, "POST", "/notices", { title: `${TITLE} intruder`, body: "x", category: "info", published_at: today });
-    expect(ins.status, `insert 가 통과했다: ${JSON.stringify(ins.body).slice(0, 200)}`).toBeGreaterThanOrEqual(400);
+    // P6-13 실측: 403 · 42501 · `new row violates row-level security policy for table "notices"` — 0009 notices_admin_all 의 with check.
+    expectRlsInsertDenied(ins, "notices", "명단 밖 세션의 notices INSERT");
 
     await asUser(plainToken, "PATCH", `/notices?id=eq.${noticeId}`, { title: "hijacked" });
     await asUser(plainToken, "DELETE", `/notices?id=eq.${noticeId}`);

@@ -19,6 +19,8 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
+import { withShowcaseRoutesLock } from "./helpers/db-lock";
+import { expectRlsInsertDenied } from "./helpers/expect-denied";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
 
 vi.mock("server-only", () => ({}));
@@ -579,6 +581,10 @@ test("DB 쓰기 가드 — 원격 URL 이면 REQUIRE_DB_TESTS=1 을 강제해도
 });
 
 describe.skipIf(!gate.allowed || !env.hasServiceRole)("5. DB — showcase_routes RLS 실증 (로컬 스택 + REQUIRE_DB_TESTS=1)", { timeout: 60_000 }, () => {
+  // 이 블록은 마지막 시드 행(SEL→WJU)의 가격·정렬·노출을 바꿨다 되돌린다 — 그 사이 16행 전체를 대조하는 블록
+  // (places·queries)이 되돌리기 전 값을 읽는다(P6-12 관측 · P6-13 재현). 같은 잠금으로 줄 세운다 (tests/helpers/db-lock.ts).
+  withShowcaseRoutesLock();
+
   const baseUrl = () => process.env.NEXT_PUBLIC_SUPABASE_URL as string;
   const serviceHeaders = {
     apikey: env.serviceRoleKey,
@@ -698,7 +704,8 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("5. DB — showcase_routes
     expect((still.body as RouteRow[])[0].price_from, "명단 밖 세션이 가격을 바꿨다").toBeNull();
 
     const ins = await asUser(plainToken, "POST", "/showcase_routes", { origin_code: "SEL", destination_code: "PHG" });
-    expect(ins.status, `insert 가 통과했다: ${JSON.stringify(ins.body).slice(0, 200)}`).toBeGreaterThanOrEqual(400);
+    // P6-13 실측: 403 · 42501 · `new row violates row-level security policy for table "showcase_routes"` — 0009 의 with check.
+    expectRlsInsertDenied(ins, "showcase_routes", "명단 밖 세션의 showcase_routes INSERT");
   });
 
   test("같은 쌍은 두 번 쓸 수 없다 — 23505 (앱이 duplicate 로 읽는 오류)", async () => {
@@ -709,8 +716,20 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("5. DB — showcase_routes
       origin_code: other.origin_code,
       destination_code: other.destination_code,
     });
-    expect(dup.status).toBeGreaterThanOrEqual(400);
-    expect(JSON.stringify(dup.body)).toContain("23505");
+    // **권한 문제가 아니다** — 관리자는 이 행을 고칠 권한이 있고, 막는 것은 (origin_code, destination_code) unique 제약이다.
+    // 그래서 권한 판정을 쓰지 않는다(쓰면 테스트의 뜻이 "관리자가 거부된다" 로 바뀐다).
+    // P6-13 실측: 409 · 23505 · `duplicate key value violates unique constraint "showcase_routes_origin_code_destination_code_key"`.
+    // 옛 단언은 상태를 `>= 400` 로만 보고 본문 어딘가에 "23505" 가 있으면 통과했다 — 500 의 설명문이 그 글자를 인용해도 통과한다.
+    const body = dup.body as { code?: string; message?: string } | null;
+    expect(dup.status, `중복이 409 가 아니다: ${JSON.stringify(dup.body).slice(0, 300)}`).toBe(409);
+    expect(body?.code, "PostgreSQL unique_violation(23505) 이 아니다 — 앱은 이 코드로 duplicate 를 읽는다").toBe("23505");
+    expect(body?.message, "막은 것이 (출발, 도착) unique 제약이 아니다").toContain("showcase_routes_origin_code_destination_code_key");
+    // 대상 행은 그대로다 — 거절이 실제로 쓰기를 막았다
+    const still = await rest("GET", `/showcase_routes?select=origin_code,destination_code&id=eq.${(target as RouteRow).id}`);
+    expect((still.body as RouteRow[])[0]).toEqual({
+      origin_code: (target as RouteRow).origin_code,
+      destination_code: (target as RouteRow).destination_code,
+    });
   });
 
   test("정리 — 고친 행을 원래 값으로 되돌리고 16행을 유지한다", async () => {

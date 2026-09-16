@@ -14,6 +14,7 @@ import {
   isActiveOn,
   mapShowcaseRouteRows,
 } from "@/lib/queries";
+import { withShowcaseRoutesLock } from "./helpers/db-lock";
 import { loadDotEnvLocal } from "./helpers/load-env-local";
 
 loadDotEnvLocal();
@@ -283,6 +284,9 @@ if (requireDb && !hasAnon) {
 }
 
 describe.skipIf(!hasAnon)("DB 읽기 — anon 키 + RLS (원격, 읽기 전용)", () => {
+  // getShowcaseRoutes 는 활성 16행 전체를 시드와 대조한다 — 시드 행을 잠시 바꾸는 블록(admin-routes · write-privileges §5)과
+  // 겹치면 15행(비활성으로 내려 둔 순간)이나 틀린 sort 를 읽는다(P6-13 재현: 84회 중 2회). 같은 잠금으로 줄 세운다.
+  withShowcaseRoutesLock();
   const SERVICE_KEY_NAME = "SUPABASE_SERVICE_ROLE_KEY";
   let savedServiceKey: string | undefined;
   const anonHeaders = { apikey: anonKey as string, Authorization: `Bearer ${anonKey}` };

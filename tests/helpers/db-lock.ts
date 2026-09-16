@@ -19,10 +19,11 @@ import { afterAll, beforeAll, expect } from "vitest";
  * "그런 블록이 전부 이 잠금을 쓴다" 를 grep 으로 강제한다. 둘이 합쳐져야 불변식이 성립한다 —
  * 잠금만으로는 새 파일이 빠져나가고, 게이트만으로는 배타성이 없다.
  *
- * ## 잠금은 둘이다 (P6-3b)
+ * ## 잠금은 셋이다 (P6-3b · P6-13)
  * 같은 모양의 경합이 **갤러리 표**에도 있다(`GALLERY_LOCK` 주석 참고): 0008 정책이 표 전체에 걸리고
  * 공개 읽기에 소유자 조건이 없어서, 전체 결과 집합을 단언하는 블록이 남의 픽스처에 깨진다.
- * 두 잠금은 이름만 다르고 구현은 같다. **한 파일이 둘 다 쓰면 `withNotificationsLock()` 을 먼저 부른다** —
+ * **대표 노선 표**도 같다(`SHOWCASE_ROUTES_LOCK` 주석 참고): 시드 행을 잠시 바꾸는 블록과 16행 전체를 대조하는 블록.
+ * 세 잠금은 이름만 다르고 구현은 같다. **여럿을 쓰면 notifications → gallery → showcase-routes 순서로 부른다** —
  * 모두가 같은 순서로 잡아야 순환 대기(교착)가 생기지 않는다. 그 순서도 완전성 게이트가 강제한다.
  *
  * 성립 근거(스케줄링과 무관): 잠금은 `beforeAll` 에서 잡혀 `afterAll` 에서 풀리고, describe 본문 맨 위에서
@@ -95,6 +96,25 @@ export const NOTIFICATIONS_LOCK = "notifications-log";
  * `tests/write-privileges.test.ts` 하나이고, 이 규약은 tests/db-test-preconditions.test.ts 의 게이트가 강제한다.
  */
 export const GALLERY_LOCK = "gallery-tables";
+
+/**
+ * `showcase_routes` 를 **잠시 바꾸는** 블록과 **표 전체의 결과 집합**을 단언하는 블록이 공유하는 잠금 이름 (P6-13).
+ *
+ * 같은 부류의 세 번째 경합이다. 16행은 0002 가 시드한 고정 집합이라 쓰는 쪽은 행을 만들지 않고 **값을 바꿨다 되돌린다**:
+ *   tests/admin-routes.test.ts 는 마지막 시드 행(SEL→WJU)의 `price_from`·`sort`·`active` 를 바꿨다 되돌리고,
+ *   tests/write-privileges.test.ts §5 는 ICN→SEL 의 `sort` 를 바꿨다 되돌린다.
+ * 읽는 쪽은 **16행 전체**를 시드와 대조한다: tests/places.test.ts(서비스 롤 · 값·순서까지) · tests/queries.test.ts(anon · 16행 · sort 연번).
+ * 그 사이에 읽으면 되돌리기 전 값을 본다. 실측(2026-09-17): 쓰는 쪽 한 번에 약 180ms 동안 WJU 행이
+ * `price_from=null · sort=99` 이고 그중 일부 구간은 `active=false`(anon 에게 15행)였다. 두 쓰기 파일과 두 읽기 파일을 겹쳐 돌리자
+ * queries 가 84회 중 2회 "16행이 아니라 15행" 으로 깨졌다(P6-12 전량 실행의 places "원주 price_from null" 과 같은 뿌리).
+ *
+ * 임시 행을 쓰는 길(쓰는 쪽이 시드 행을 건드리지 않는다)은 이 경합을 풀지 못한다 — 읽는 쪽이 **표 전체**를 세고 대조하므로
+ * 임시 행 자체가 같은 순간에 보인다. 그래서 잠금이다.
+ *
+ * **잠금 순서 규약**: `withNotificationsLock()` → `withGalleryLock()` → `withShowcaseRoutesLock()`. 지금 셋을 다 쓰는 파일은
+ * `tests/write-privileges.test.ts` 하나다. 순서는 tests/db-test-preconditions.test.ts 의 게이트가 강제한다.
+ */
+export const SHOWCASE_ROUTES_LOCK = "showcase-routes";
 
 const POLL_MS = 20;
 /** 잠금을 기다리는 최대 시간. 줄을 서는 모든 DB 블록의 합보다 넉넉해야 한다. */
@@ -231,6 +251,14 @@ export function withNotificationsLock(): void {
  */
 export function withGalleryLock(): void {
   withDbLock(GALLERY_LOCK);
+}
+
+/**
+ * describe 블록 전체를 `showcase_routes` 잠금 안에서 돌린다 (P6-13).
+ * 다른 잠금과 함께 쓰면 **맨 나중에** 부른다(notifications → gallery → showcase-routes · SHOWCASE_ROUTES_LOCK 주석).
+ */
+export function withShowcaseRoutesLock(): void {
+  withDbLock(SHOWCASE_ROUTES_LOCK);
 }
 
 /**

@@ -284,6 +284,7 @@ PUBLIC 롤 grant 0 · 따로 부여된 컬럼 ACL 0(`pg_class.relacl`·`pg_attri
 ### 적용 경로
 `supabase db push` 또는 SQL Editor. **`psql -f` 를 쓰지 마라**(리뷰 K1).
 ⚠️ 자기검증 ⑦ 이 `set local role` 로 롤을 바꿔 `CREATE TRIGGER` 를 시도한다 — **적용하는 롤이 `anon`·`authenticated`·`service_role` 의 멤버여야 한다**(`postgres`/`supabase_admin` 은 멤버다). 아니면 마이그레이션이 "롤 전환 실패" 로 **명시적으로 멈춘다**(조용히 건너뛰지 않는다).
+✅ 탐침 뒤 복원은 `reset role` 이 아니라 **캡처한 적용 롤로 `set local role`** 한다(2026-09-17 수정, GPT 검증 P2 — 0018 과 같은 형태). 로컬 실측 세 방식 통과: postgres 로그인 · supabase_admin 로그인 + `set role postgres` · supabase_admin 로그인 그대로. 수정 전 파일은 두 번째 방식에서 멈췄다.
 
 ### 롤백
 `supabase/rollbacks/0017_pii_tables_trigger_references.down.sql` · **승인 플래그 요구**(`set bestour.rollback_0017_ack = '1';`). 근거: 되돌리면 `http_request` 트리거로 **접수마다 고객 개인정보가 외부로 나가는** 경로가 오류·로그·화면 변화 없이 다시 열린다. 되돌린 것을 필요로 하는 정상 경로는 하나도 없다.
@@ -331,12 +332,23 @@ PUBLIC 롤 grant 0 · 따로 부여된 컬럼 ACL 0(`pg_class.relacl`·`pg_attri
 `supabase db push` 또는 SQL Editor. **`psql -f` 를 쓰지 마라**(리뷰 K1). 로컬 단건 적용은 `psql -1`(단일 트랜잭션).
 ⚠️ 자기검증 ⑤ 가 `set local role` 로 롤을 바꾼다 — **적용하는 롤이 `anon`·`authenticated` 의 멤버여야 한다**(0017 과 같다). 아니면 "롤 전환 실패" 로 명시적으로 멈춘다.
 ⚠️ ⑤ 의 대조군은 `public.p0018_probe_seq` 를 **만들었다 되돌린다**(커밋되지 않는다). 적용 롤에 public 스키마 CREATE 가 필요하다(`postgres` 는 있다).
+⚠️ 탐침 뒤 롤 복원은 `reset role` 이 아니라 **캡처한 적용 롤로 `set local role`** 한다(GPT 검증 P2). 로컬 실측 세 방식 모두 통과: postgres 로그인 · supabase_admin 로그인 + `set role postgres` · supabase_admin 로그인 그대로.
+~~🔴 **0017 에는 같은 결함이 남아 있다**~~ → **0017 도 같은 두 줄로 고쳤다 (2026-09-17, P5-14 후속).** 수정 전에는 supabase_admin 로그인 + `set role postgres` 로 적용하면 `0017: 탐침이 롤을 되돌리지 못했다 (current_user=supabase_admin · 기대=postgres)` 로 멈췄다(로컬 재현). `db push` 가 0012~0018 을 한 번에 미므로 0017 이 멈추면 0018 까지 막혔을 것이다. 수정 후 세 방식 모두 통과. ✅
+
+**🔴 적용 직전 스냅샷 (필수 절차)** — 0018 롤백은 이전 ACL 이 아니라 **기본 기준선**(anon·authenticated 전권)으로 복원한다(롤백 헤더). 원격 적용 **직전** 아래를 실행해 결과를 이 절에 날짜와 함께 붙여 둔다:
+```sql
+select c.relname, c.relacl
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+ where n.nspname = 'public' and c.relkind = 'S' order by 1;
+```
+기대(기준선): 일곱 개 모두 `anon=rwU`·`authenticated=rwU` 를 포함. **다르면**(이미 좁혀진 권한이 있으면) 롤백 파일의 부여 목록을 스냅샷에 맞게 고쳐 둔다 — 아니면 롤백이 0018 이 지운 적 없는 권한까지 연다.
+부여자(`/postgres`)도 함께 본다 — `supabase_admin` 부여가 섞여 있으면 0018 의 자기검증 ① 이 적용을 멈춘다(위 "부여자" 경고).
 
 ### 적용 전/후 확인
 `tests/write-privileges.test.ts` §15 의 SQL 을 SQL Editor 에 붙여 넣는다. 기대 문자열: `SEQ_NONE` · `ADMIN_SEQ_OK` · `SERVICE_SEQ_OK` · `SEQ_PUBLIC_NONE` · `SEQ_COUNT 7`. 같은 절의 거동 DO 블록이 오류 없이 `DO` 로 끝나야 한다.
 
 ### 롤백
-`supabase/rollbacks/0018_sequence_privileges.down.sql` · **승인 플래그 요구**(`set bestour.rollback_0018_ack = '1';`). 근거: 되돌리면 공개 롤이 `setval` 로 통지 시퀀스를 되감는 문이 오류·로그·화면 변화 없이 다시 열린다. 되돌린 것을 필요로 하는 정상 경로는 없다(앱 코드는 시퀀스를 직접 부르지 않는다).
+`supabase/rollbacks/0018_sequence_privileges.down.sql` · **승인 플래그 요구**(`set bestour.rollback_0018_ack = '1';`). **복원 대상은 기본 기준선이다 — 실행 전에 위 스냅샷과 대조할 것.** 0012~0017 롤백도 같은 방식(상행이 회수한 고정 목록을 조건 없이 부여)이다. 근거: 되돌리면 공개 롤이 `setval` 로 통지 시퀀스를 되감는 문이 오류·로그·화면 변화 없이 다시 열린다. 되돌린 것을 필요로 하는 정상 경로는 없다(앱 코드는 시퀀스를 직접 부르지 않는다).
 로컬 실측: 플래그 없이 실행 → 멈춤(exit 3, 권한 불변). 플래그와 함께 실행 → 적용 전 실효 권한으로 복원되고 **게이트가 다시 36건으로 빨개졌다**. 0018 재적용 뒤 사실 전수 diff 동일.
 ⚠️ 관리자 "새 글 저장" 이 죽어서 롤백을 생각한다면 원인은 0018 이 아닐 가능성이 높다 — 0018 은 콘텐츠 여섯의 `authenticated` usage 를 남긴다. 먼저 `has_sequence_privilege('authenticated', 'public.notices_id_seq', 'usage')` 를 볼 것.
 

@@ -200,6 +200,23 @@ describe("갤러리 표 잠금 — 완전성 게이트 (P6-3b)", () => {
     }
   });
 
+  test("잠금을 여럿 쓰는 파일은 notifications → gallery → showcase-routes 순서로 잡는다 (순환 대기 = 교착 방지)", () => {
+    const ORDER = ["withNotificationsLock()", "withGalleryLock()", "withShowcaseRoutesLock()"];
+    let checked = 0;
+    for (const f of files) {
+      const code = stripComments(readFileSync(path.join(TESTS_DIR, f), "utf-8"), f);
+      const at = ORDER.map((call) => code.indexOf(call)).filter((i) => i !== -1);
+      if (at.length < 2) continue;
+      checked++;
+      expect(
+        at,
+        `${f} — 잠금을 여럿 쓰는 파일은 ${ORDER.join(" → ")} 순서로 불러야 한다. ` +
+          "모두가 같은 순서로 잡아야 순환 대기가 생기지 않는다(tests/helpers/db-lock.ts SHOWCASE_ROUTES_LOCK 주석).",
+      ).toEqual([...at].sort((a, b) => a - b));
+    }
+    expect(checked, "잠금을 여럿 쓰는 파일이 하나도 탐지되지 않았다 — write-privileges.test.ts 가 셋을 다 쓴다").toBeGreaterThanOrEqual(1);
+  });
+
   test("두 잠금을 다 쓰는 파일은 notifications → gallery 순서로 잡는다 (순환 대기 = 교착 방지)", () => {
     for (const f of files) {
       const code = stripComments(readFileSync(path.join(TESTS_DIR, f), "utf-8"), f);
@@ -211,6 +228,76 @@ describe("갤러리 표 잠금 — 완전성 게이트 (P6-3b)", () => {
         `${f} — 두 잠금을 다 쓰는 파일은 withNotificationsLock() 을 먼저 불러야 한다. ` +
           "모두가 같은 순서로 잡아야 순환 대기가 생기지 않는다(tests/helpers/db-lock.ts GALLERY_LOCK 주석).",
       ).toBeLessThan(g);
+    }
+  });
+});
+
+// =============================================================================
+// 대표 노선 표 잠금의 **완전성** (P6-13 — P6-12 전량 실행이 관측한 경합)
+// =============================================================================
+/**
+ * 뿌리: `showcase_routes` 16행은 0002 가 시드한 **고정 집합**이다. 쓰는 쪽은 행을 만들지 않고 시드 행의 값을 **바꿨다 되돌리고**
+ * (admin-routes 는 SEL→WJU 의 price_from·sort·active, write-privileges §5 는 ICN→SEL 의 sort),
+ * 읽는 쪽은 **16행 전체**를 시드와 대조한다(places 는 서비스 롤로 값·순서까지, queries 는 anon 으로 16행·sort 연번).
+ * 그래서 다음 둘은 서로 배타적이어야 한다:
+ *   (A) `showcase_routes` **표 전체의 결과 집합**(행 수·순서·값)을 단언하는 블록
+ *   (B) 그 표의 행을 잠시라도 바꾸는 블록
+ * 실측(2026-09-17): 쓰는 쪽 한 번에 약 180ms 동안 WJU 행이 `price_from=null · sort=99`, 일부 구간은 `active=false` 였고,
+ * 겹쳐 돌리자 queries 가 84회 중 2회 "15행" 으로 깨졌다.
+ *
+ * 탐지가 앞의 두 게이트와 다른 점: DB 블록의 형태가 셋이다 — `!gate.allowed`(admin-routes·write-privileges) ·
+ * `!hasAnon`(queries) · **`!env.hasServiceRole`**(places — 로컬 원격 겸용 스모크라 쓰기 가드를 쓰지 않는다).
+ * 셋 중 하나라도 빼면 정작 깨지는 파일이 탐지에서 빠진다.
+ */
+const ROUTES_DB_BLOCK_RE = /describe\.skipIf\(\s*!(gate\.allowed|hasAnon|env\.hasServiceRole)\b/;
+const ROUTES_MARKERS: [label: string, re: RegExp][] = [
+  // REST 경로로 표를 직접 만진다. 따옴표로 시작하는 경로와 `${env.restRoot}/showcase_routes?…` 형태(places)를 둘 다 잡는다.
+  // SQL 속 `public.showcase_routes` · 제약 이름 `showcase_routes_…` 는 잡지 않는다(앞뒤 글자가 다르다).
+  ["showcase_routes REST 경로", /[}"'`]\/showcase_routes[?"'`]/],
+  // 공개 읽기 계층을 실 DB 로 부른다(= 활성 행 전체를 본다).
+  ["공개 읽기 호출", /\bgetShowcaseRoutes\(/],
+];
+
+describe("대표 노선 표 잠금 — 완전성 게이트 (P6-13)", () => {
+  const SELF = path.basename(import.meta.filename);
+  const files = readdirSync(TESTS_DIR).filter((f) => f.endsWith(".test.ts") && f !== SELF);
+
+  const needsLock = files
+    .map((f) => ({ file: f, raw: readFileSync(path.join(TESTS_DIR, f), "utf-8") }))
+    .map((f) => ({ ...f, code: stripComments(f.raw, f.file) }))
+    .filter(({ code }) => ROUTES_DB_BLOCK_RE.test(code))
+    .map((f) => ({ ...f, hits: ROUTES_MARKERS.filter(([, re]) => re.test(f.code)).map(([label]) => label) }))
+    .filter(({ hits }) => hits.length > 0);
+
+  test("showcase_routes 를 바꾸거나 전체를 대조하는 DB 블록은 전부 withShowcaseRoutesLock() 을 쓴다", () => {
+    const missing = needsLock
+      .filter(({ code }) => !/withShowcaseRoutesLock\(\s*\)/.test(code))
+      .map(({ file, hits }) => `${file} (${hits.join(", ")})`);
+    expect(
+      missing,
+      "이 파일들의 DB 블록은 showcase_routes 의 시드 행을 바꾸거나 16행 전체를 대조한다 — " +
+        "describe 본문 맨 위에서 `withShowcaseRoutesLock()` 을 부르고 `./helpers/db-lock` 에서 import 할 것 " +
+        "(안 그러면 places·queries 가 되돌리기 전 값을 읽어 간헐적으로 깨진다)",
+    ).toEqual([]);
+  });
+
+  test("마커가 낡지 않았다 — 쓰는 파일 둘과 읽는 파일 둘을 모두 고른다", () => {
+    const picked = needsLock.map((n) => n.file);
+    for (const f of ["admin-routes.test.ts", "write-privileges.test.ts", "places.test.ts", "queries.test.ts"]) {
+      expect(picked, `탐지된 파일: ${picked.join(", ") || "(없음)"}`).toContain(f);
+    }
+  });
+
+  test("세 형태의 DB 블록(쓰기 가드 · anon 전용 · 서비스 롤 스모크)이 모두 탐지된다", () => {
+    const shapes = new Set(needsLock.flatMap(({ code }) => [...code.matchAll(new RegExp(ROUTES_DB_BLOCK_RE, "g"))].map((m) => m[1])));
+    expect([...shapes].sort()).toEqual(["env.hasServiceRole", "gate.allowed", "hasAnon"]);
+  });
+
+  test("잠금을 쓰는 파일은 helpers/db-lock 에서 가져온다 (제자리 정의 금지)", () => {
+    for (const f of files) {
+      const src = readFileSync(path.join(TESTS_DIR, f), "utf-8");
+      if (!src.includes("withShowcaseRoutesLock")) continue;
+      expect(src, f).toMatch(/import\s*\{[^}]*withShowcaseRoutesLock[^}]*\}\s*from\s*["']\.\/helpers\/db-lock["']/);
     }
   });
 });

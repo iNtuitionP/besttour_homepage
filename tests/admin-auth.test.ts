@@ -37,6 +37,7 @@ import {
   type AdminLoginResult,
 } from "@/lib/auth/adminLogin";
 import { withNotificationsLock } from "./helpers/db-lock";
+import { expectFunctionPrivilegeDenied, expectRlsInsertDenied, expectTablePrivilegeDenied } from "./helpers/expect-denied";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
 
 // server-only 는 vitest(node) 에서 import 즉시 throw 한다 — 빈 모듈로 바꿔치기(guard.test.ts·reservation-check.test.ts 선례).
@@ -1076,7 +1077,8 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("7. DB — is_admin() RLS 
       privacy_policy_version: "2026-09-11",
       retention_until: new Date().toISOString(),
     });
-    expect(ins.status).toBeGreaterThanOrEqual(400);
+    // P6-13 실측: 403 · 42501 · "permission denied for table reservations" — 0012 가 authenticated 의 insert 를 회수했다(GRANT 층).
+    expectTablePrivilegeDenied(ins, "reservations", "관리자 세션의 reservations INSERT");
   });
 
   /**
@@ -1089,9 +1091,9 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("7. DB — is_admin() RLS 
   test("관리자도 reservations 를 직접 UPDATE 할 수 없다 — 0010 이 정책을 회수했다 (P5-3 · 리뷰 N5·M3)", async () => {
     const up = await asUser(adminToken, "PATCH", `/reservations?id=eq.${reservationId}`, { status: "confirmed" });
     // M3: "행이 안 바뀌었다" 만 보면 네트워크 오류로도 통과한다. 요청이 **표까지 도달해 거절당했는지**를 먼저 단언한다.
-    // GRANT 회수 + 정책 부재라 PostgREST 는 4xx 를 준다(권한 오류). 5xx·2xx 는 둘 다 이 단언을 깬다.
-    expect(up.status, `PostgREST 응답: ${JSON.stringify(up.body).slice(0, 200)}`).toBeGreaterThanOrEqual(400);
-    expect(up.status, `PostgREST 응답: ${JSON.stringify(up.body).slice(0, 200)}`).toBeLessThan(500);
+    // GRANT 회수 + 정책 부재라 PostgREST 는 권한 오류를 준다. P6-13 실측: 403 · 42501 · "permission denied for table reservations".
+    // 5xx·2xx 는 물론 400(검증 실패)·404(표 이름 오타)도 이 단언을 깬다.
+    expectTablePrivilegeDenied(up, "reservations", "관리자 세션의 reservations 직접 UPDATE");
     const row = await rest("GET", `/reservations?select=status&id=eq.${reservationId}`);
     expect((row.body as { status: string }[])[0].status, `직접 UPDATE 가 통과했다 (HTTP ${up.status})`).toBe("new");
   });
@@ -1116,13 +1118,14 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("7. DB — is_admin() RLS 
     expect(seedPopup.status, JSON.stringify(seedPopup.body).slice(0, 200)).toBe(201);
     const popupId = (seedPopup.body as { id: number }[])[0].id;
 
-    // insert — with check (is_admin()) 위반이라 명시적 오류여야 한다
+    // insert — with check (is_admin()) 위반이라 명시적 오류여야 한다.
+    // P6-13 실측: 403 · 42501 · `new row violates row-level security policy for table "<표>"` — 권한(GRANT)은 있고 **정책**이 막는다.
     for (const [table, row] of [
       ["notices", { title: `P51 ${RUN} intruder`, body: "x" }],
       ["popups", { title: `P51 ${RUN} intruder`, body: "x", starts_at: today, ends_at: today }],
     ] as const) {
       const r = await asUser(plainToken, "POST", `/${table}`, row);
-      expect(r.status, `${table} insert 가 통과했다: ${JSON.stringify(r.body).slice(0, 200)}`).toBeGreaterThanOrEqual(400);
+      expectRlsInsertDenied(r, table, `명단 밖 세션의 ${table} INSERT`);
     }
 
     // update·delete — using (is_admin()) 이 행을 아예 안 보여 주므로 0행 처리된다(오류가 아닐 수 있다).
@@ -1147,10 +1150,31 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("7. DB — is_admin() RLS 
     await rest("DELETE", `/popups?id=eq.${popupId}`);
   });
 
+  /**
+   * 대조군 (P6-13) — 같은 42501 이라도 **무엇이 막았는지**는 메시지로 갈리고, 부재는 아예 다른 응답이다.
+   * GRANT 거부(`permission denied for table …`) · RLS 거부(`new row violates row-level security policy …`) · 없는 표(404 PGRST205).
+   * 판정 헬퍼가 셋을 서로 받아들이지 않는지 실제 응답으로 보인다 — 옛 `>= 400` 은 셋 모두를 "보안 성공" 으로 읽었다.
+   */
+  test("대조군 — GRANT 거부·RLS 거부·부재는 서로 다른 응답이고 판정이 섞이지 않는다", async () => {
+    const grantDenied = await asUser(adminToken, "POST", "/reservations", { public_code: `P51Y${RUN.slice(0, 4).toUpperCase()}` });
+    expectTablePrivilegeDenied(grantDenied, "reservations", "관리자 세션의 reservations INSERT");
+    expect(() => expectRlsInsertDenied(grantDenied, "reservations", "대조"), "RLS 판정이 GRANT 거부를 받아들였다").toThrow();
+
+    const rlsDenied = await asUser(plainToken, "POST", "/notices", { title: `P51 ${RUN} control`, body: "x" });
+    expectRlsInsertDenied(rlsDenied, "notices", "명단 밖 세션의 notices INSERT");
+    expect(() => expectTablePrivilegeDenied(rlsDenied, "notices", "대조"), "GRANT 판정이 RLS 거부를 받아들였다").toThrow();
+
+    const missing = await asUser(plainToken, "POST", "/p613_no_such_table", { x: 1 });
+    expect(missing.status, JSON.stringify(missing.body).slice(0, 200)).toBe(404);
+    expect((missing.body as { code?: string } | null)?.code).toBe("PGRST205");
+    expect(() => expectRlsInsertDenied(missing, "p613_no_such_table", "대조"), "거부 판정이 '없는 표' 를 받아들였다").toThrow();
+  });
+
   test("관리자도 admin_users 는 못 읽는다 — 명단 자체가 권한 상승 경로다", async () => {
     const r = await asUser(adminToken, "GET", "/admin_users?select=user_id,email");
-    if (r.status === 200) expect(r.body).toEqual([]);
-    else expect(r.status).toBeGreaterThanOrEqual(400);
+    // 0009 가 `revoke all on table admin_users from anon, authenticated` 를 했으므로 "200 + 빈 배열" 갈래는 더 이상 정답이 아니다
+    // (그 갈래는 권한이 살아 있고 RLS 만 막는 상태도 통과시켰다). P6-13 실측: 403 · 42501 · "permission denied for table admin_users".
+    expectTablePrivilegeDenied(r, "admin_users", "관리자 세션의 admin_users SELECT");
   });
 
   test("anon 은 is_admin() 을 실행조차 할 수 없다", async () => {
@@ -1159,7 +1183,8 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("7. DB — is_admin() RLS 
       Authorization: `Bearer ${env.anonKey}`,
       "Content-Type": "application/json",
     }, {});
-    expect(anon.status, `anon 이 is_admin() 을 실행했다: ${JSON.stringify(anon.body).slice(0, 200)}`).toBeGreaterThanOrEqual(400);
+    // P6-13 실측: 401 · 42501 · "permission denied for function is_admin" — 0009 가 anon 의 EXECUTE 를 회수했다.
+    expectFunctionPrivilegeDenied(anon, "is_admin", "anon 의 is_admin() 호출");
 
     // 로그인한 사용자는 실행할 수 있고, 명단에 따라 답이 갈린다
     const yes = await call("POST", `${baseUrl()}/rest/v1/rpc/is_admin`, {
