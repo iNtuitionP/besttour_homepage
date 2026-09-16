@@ -783,9 +783,15 @@ describe("6. messages/ko.json — reservation.errors", () => {
     }
   });
 
-  test("ratelimit·infra 문구에 원장 COMPANY.tel 이 들어 있다 (리터럴이 원장과 어긋나지 않는다)", () => {
-    expect(errors?.ratelimit).toContain(COMPANY.tel);
-    expect(errors?.infra).toContain(COMPANY.tel);
+  // P6-6: 예전에는 이 두 문구에 대표전화가 **리터럴**로 박혀 있었고, 이 테스트가 그 리터럴이 원장과 같은지를 봤다.
+  // 그래도 번호가 바뀌면 카탈로그를 손으로 고쳐야 했다(감사 R-6 — 이 네임스페이스는 어떤 카피 게이트도 보지 않았다).
+  // 이제 카탈로그는 `{tel}` 보간만 두고 값은 렌더 시점에 원장에서 온다(QuoteWizard 가 tel prop 을 넘긴다).
+  // 리터럴 0건은 tests/copy-rules.test.ts §4 가 messages/** 전체에 대해 단언한다.
+  test("ratelimit·infra 문구는 리터럴이 아니라 원장 보간 {tel} 을 쓴다", () => {
+    expect(errors?.ratelimit).toContain("{tel}");
+    expect(errors?.infra).toContain("{tel}");
+    expect(errors?.ratelimit).not.toContain(COMPANY.tel);
+    expect(errors?.infra).not.toContain(COMPANY.tel);
   });
 
   test("server 는 infra 와 같은 문구, bot 은 validation 과 다른 문구(봇에게 이유를 알리지 않되 사람은 구분되게)", () => {
