@@ -14,6 +14,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 
+import { normalizeForCopyMatch } from "@/lib/copy/normalize";
 import { INSURANCE } from "@/lib/legal/disclosures";
 import {
   COMPARATIVE_CLAIMS,
@@ -189,6 +190,25 @@ describe("2. ko.json 전 네임스페이스 — 금지어 · 실증 불가 · �
       .filter((l) => re.test(l.value) && !isAllowed(l.path, label))
       .map((l) => `${l.path} :: ${l.value}`);
     expect(hits, `${label}\n${hits.join("\n")}`).toEqual([]);
+  });
+
+  // P6-12 GPT 검증 후속 — 사장님 글 대조는 lib/copy/normalize.ts 로 정규화한 사본에 규칙을 건다(전각·폭 없는 문자·공백).
+  // 카탈로그에도 같은 정규화를 걸었을 때 **판정이 하나도 바뀌지 않는다**는 것을 잠근다. 바뀌면 카탈로그에
+  // 보이지 않는 문자나 전각 문자가 섞였다는 뜻이다 — 원문 검사가 놓친 주장일 수 있으니 고치기 전에 보고한다.
+  test("정규화 사본(NFKC·보이지 않는 문자 제거·공백 일관화)에도 판정이 같다 — 금지어 · 실증 불가 · 비교", () => {
+    const verdict = (text: string) => [
+      ...FORBIDDEN_WORDS.filter((w) => text.includes(w)),
+      ...KO_RULES.filter(([, re]) => re.test(text)).map(([label]) => label),
+    ];
+    const changed = koLeaves
+      .map((l) => ({ path: l.path, raw: verdict(l.value), norm: verdict(normalizeForCopyMatch(l.value)) }))
+      .filter((v) => v.raw.join("|") !== v.norm.join("|"))
+      .map((v) => `${v.path} :: 원문[${v.raw.join(", ")}] → 정규화[${v.norm.join(", ")}]`);
+    expect(changed, changed.join("\n")).toEqual([]);
+    // 자가 검사 — 정규화가 판정을 바꿀 수 있는 입력에서는 실제로 바꾼다(위 단언이 빈 통과가 아니다)
+    const probe = "업계 １위";
+    expect(verdict(probe)).toEqual([]);
+    expect(verdict(normalizeForCopyMatch(probe)).length).toBeGreaterThan(0);
   });
 });
 

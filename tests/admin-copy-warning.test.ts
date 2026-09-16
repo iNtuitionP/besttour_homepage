@@ -35,13 +35,12 @@ import { revalidatePath } from "next/cache";
 import { createGalleryAlbum, recordGalleryUpload, updateGalleryAlbum, updateGalleryPhoto } from "@/actions/admin/gallery";
 import { createNotice, updateNotice } from "@/actions/admin/notice";
 import { createPopup, updatePopup } from "@/actions/admin/popup";
-import { findCopyWarnings, holdForCopy } from "@/lib/admin/copyCheck";
+import { copyAckKey, findCopyWarnings, holdForCopy } from "@/lib/admin/copyCheck";
 import {
   COPY_ACK_FIELD,
   COPY_FIELDS,
   COPY_WARNING_MAX,
   copyHold,
-  copyWarningKey,
   fillCopyWarningItem,
   mergeCopyAck,
   readCopyAckForm,
@@ -53,6 +52,7 @@ import { NOTICE_FIELDS } from "@/lib/admin/noticeInput";
 import { POPUP_FIELDS } from "@/lib/admin/popupInput";
 import { requireAdmin } from "@/lib/auth/requireAdmin";
 import { OWNER_COPY_KINDS } from "@/lib/copy/kinds";
+import { normalizeForCopyMatch } from "@/lib/copy/normalize";
 import * as rules from "@/lib/copy/rules";
 import {
   COMPARATIVE_CLAIMS,
@@ -118,6 +118,10 @@ const W_RIVAL = wordOf("rival");
 const W_BM = [0, 1, 2, 3].map((i) => wordOf("internal", i));
 /** "운전" — 금지어의 좁힘 대상. 목록의 좁힘 표에서 꺼낸다. */
 const DRIVING = rules.OWNER_WORD_NOT_AFTER[0][1];
+
+/** 서버가 만드는 확인 키 그대로 — (칸, 원문 글, 걸린 표현). 글은 서버처럼 정규화해서 넣는다. */
+const ackKey = (field: (typeof COPY_FIELDS)[number], rawText: string, hit: string) =>
+  copyAckKey(field, normalizeForCopyMatch(rawText), hit);
 
 const kindsOf = (text: string, field: (typeof COPY_FIELDS)[number] = "body") => findCopyWarnings({ [field]: text }).map((w) => w.kind);
 
@@ -325,7 +329,7 @@ describe("4. 경고가 나온다 — 분류까지 맞게", () => {
     for (const field of COPY_FIELDS) {
       const w = findCopyWarnings({ [field]: "업계 1위" });
       expect(w, field).toHaveLength(1);
-      expect(w[0]).toEqual({ key: copyWarningKey(field, "업계 1위"), field, kind: "comparative", text: "업계 1위" });
+      expect(w[0]).toEqual({ key: ackKey(field, "업계 1위", "업계 1위"), field, kind: "comparative", text: "업계 1위" });
     }
   });
 
@@ -418,17 +422,17 @@ describe("6. holdForCopy · 확인 키", () => {
 
   test("일부만 확인했으면 다시 멈추고, 확인하지 않은 것을 앞에 싣는다", () => {
     const fields = { title: "업계 1위", body: "무사고 운행" };
-    const held = holdForCopy(fields, new Set([copyWarningKey("title", "업계 1위")]));
+    const held = holdForCopy(fields, new Set([ackKey("title", "업계 1위", "업계 1위")]));
     expect(held?.copyWarnings.map((w) => w.text)).toEqual(["무사고", "업계 1위"]);
   });
 
-  test("확인한 뒤 **다른** 표현을 새로 쓰면 다시 묻는다", () => {
-    const ack = new Set([copyWarningKey("title", "업계 1위")]);
-    expect(holdForCopy({ title: "업계 1위 · 국내 최대" }, ack)?.copyWarnings[0].text).toBe("국내 최대");
+  test("확인한 뒤 글을 고쳐 **다른** 표현을 쓰면 다시 묻는다 — 확인은 옛 글에 묶여 있어 둘 다 다시 보인다", () => {
+    const ack = new Set([ackKey("title", "업계 1위", "업계 1위")]);
+    expect(holdForCopy({ title: "업계 1위 · 국내 최대" }, ack)?.copyWarnings.map((w) => w.text)).toEqual(["업계 1위", "국내 최대"]);
   });
 
   test("화면 상한(20) 뒤에 숨은 표현도 확인 없이는 저장되지 않는다", () => {
-    // 규칙은 칸마다 첫 일치만 본다 — 상한은 여러 칸·여러 규칙으로 채운다.
+    // 여러 칸·여러 규칙으로 상한을 넘긴다(한 칸·한 규칙으로 넘기는 경우는 §10 R5).
     const fields = {
       title: "업계 1위 최다 반값 저렴 싸게 최적 무사고 누적 연식 년식",
       body: "업계 2위 국내 최대 가격 경쟁력 연중무휴 운행 경력 큰 사고 종합보험 수십 년 70만 17건 오랜 세월 완비",
@@ -445,18 +449,25 @@ describe("6. holdForCopy · 확인 키", () => {
     expect(holdForCopy(fields, acked)).toBeNull();
   });
 
-  test("확인 키 읽기 — 형식이 틀리면 빈 집합(= 다시 묻는다)", () => {
+  test("확인 키 읽기 — 모양이 맞는 항목만 받는다 · 개수가 넘치면 빈 집합(= 다시 묻는다)", () => {
+    const k1 = ackKey("title", "업계 1위", "업계 1위");
+    const k2 = ackKey("body", "무사고", "무사고");
+    expect(k1).toMatch(/^title:[0-9a-f]{16}:[0-9a-f]{16}$/);
     const fd = new FormData();
-    fd.append(COPY_ACK_FIELD, "title:업계 1위");
-    fd.append(COPY_ACK_FIELD, "body:무사고");
-    expect([...readCopyAckForm(fd)]).toEqual(["title:업계 1위", "body:무사고"]);
-    const long = new FormData();
-    long.append(COPY_ACK_FIELD, "x".repeat(500));
-    expect(readCopyAckForm(long).size).toBe(0);
+    fd.append(COPY_ACK_FIELD, k1);
+    fd.append(COPY_ACK_FIELD, "title:업계 1위"); // 옛 모양 — 버린다
+    fd.append(COPY_ACK_FIELD, "x".repeat(500)); // 버린다
+    fd.append(COPY_ACK_FIELD, k2);
+    expect([...readCopyAckForm(fd)]).toEqual([k1, k2]);
     expect(readCopyAckForm(new FormData()).size).toBe(0);
+    const flood = new FormData();
+    for (let i = 0; i < 1001; i++) flood.append(COPY_ACK_FIELD, k1);
+    expect(readCopyAckForm(flood).size).toBe(0);
+    // 모르는 칸 이름은 버린다
+    expect(readCopyAckForm((() => { const f = new FormData(); f.append(COPY_ACK_FIELD, k1.replace("title", "slug")); return f; })()).size).toBe(0);
 
-    expect([...readCopyAckValue({ [COPY_ACK_FIELD]: ["caption:완비"] })]).toEqual(["caption:완비"]);
-    for (const bad of [null, undefined, 1, "x", {}, { [COPY_ACK_FIELD]: "caption:완비" }, { [COPY_ACK_FIELD]: [1] }]) {
+    expect([...readCopyAckValue({ [COPY_ACK_FIELD]: [k2, 1, "caption:완비"] })]).toEqual([k2]);
+    for (const bad of [null, undefined, 1, "x", {}, { [COPY_ACK_FIELD]: k1 }, { [COPY_ACK_FIELD]: [1] }]) {
       expect(readCopyAckValue(bad).size, JSON.stringify(bad)).toBe(0);
     }
   });
@@ -523,7 +534,7 @@ const popupForm = (over: Record<string, string | string[]> = {}) =>
     ...over,
   });
 
-const ACK_BOTH = [copyWarningKey("title", "업계 1위"), copyWarningKey("body", W_LICENSE)];
+const ACK_BOTH = [ackKey("title", RISKY_TITLE, "업계 1위"), ackKey("body", RISKY_BODY, W_LICENSE)];
 
 describe("7. 서버액션 — 저장 전 확인, 확인하면 저장", () => {
   beforeEach(() => {
@@ -605,7 +616,7 @@ describe("7. 서버액션 — 저장 전 확인, 확인하면 저장", () => {
     expectNothingWritten(from);
     expectLogHasNoText();
 
-    const saved = await updateGalleryPhoto({ ...input, [COPY_ACK_FIELD]: [copyWarningKey("caption", "완비")] });
+    const saved = await updateGalleryPhoto({ ...input, [COPY_ACK_FIELD]: [ackKey("caption", input.caption, "완비")] });
     expect(saved).toMatchObject({ ok: true, changed: true, code: "updated" });
     const written = chain.update.mock.calls[0][0] as Record<string, unknown>;
     expect(written.caption).toBe("DVD·노래방 시스템 완비");
@@ -616,7 +627,7 @@ describe("7. 서버액션 — 저장 전 확인, 확인하면 저장", () => {
     const { client, from, chain } = dbStub({ data: [{ id: 1 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
     const album = { title: "업계 1위 단체여행", slug: "trip", sort: 0, active: true };
-    const key = copyWarningKey("albumTitle", "업계 1위");
+    const key = ackKey("albumTitle", album.title, "업계 1위");
 
     expect((await createGalleryAlbum(album)).code).toBe("copyWarning");
     expect((await updateGalleryAlbum({ id: 1, ...album })).code).toBe("copyWarning");
@@ -776,5 +787,189 @@ describe("9. 카피 2건 (P6-10 잔여) — 빼기만, 새 주장 0", () => {
     const hit = (s: string) => UNPROVEN_CLAIMS.filter(([, re]) => re.test(s)).map(([l]) => l);
     expect(hit(OLD_HEADING)).toEqual(["다져온 / 쌓아 온 (경험·기간 암시)"]);
     expect(hit(OLD_BUS45)).toEqual(["완비 (전칭 — 모든 차량에 갖췄다는 주장)"]);
+  });
+});
+
+// =============================================================================
+// 10. GPT 독립 검증(Codex) 재현 입력 — 회귀 픽스처
+// 확인 키는 **서버가 돌려준 결과에서만** 꺼낸다(화면이 하는 그대로). 그래서 키 모양이 바뀌어도 이 절은 그대로다.
+// =============================================================================
+describe("10. Codex 재현 — 보지 못한 것을 승인하지 않는다", () => {
+  const keysOf = (fields: Parameters<typeof holdForCopy>[0], ack: ReadonlySet<string> = new Set()) =>
+    new Set((holdForCopy(fields, ack)?.copyWarnings ?? []).map((w) => w.key));
+  const textsOf = (fields: Parameters<typeof holdForCopy>[0], ack: ReadonlySet<string> = new Set()) =>
+    (holdForCopy(fields, ack)?.copyWarnings ?? []).map((w) => w.text);
+  /** 폼이 실제로 보내는 길 그대로 — FormData 에 싣고 파서로 읽는다. */
+  const viaForm = (keys: Iterable<string>) => {
+    const fd = new FormData();
+    for (const k of keys) fd.append(COPY_ACK_FIELD, k);
+    return readCopyAckForm(fd);
+  };
+
+  test("R1 — '10대 보유' 를 확인한 뒤 ' / 20대 보유' 를 덧붙이면 다시 묻고, 두 번째 주장이 목록에 보인다", () => {
+    const first = { body: "10대 보유" };
+    const ack = viaForm(keysOf(first));
+    expect(ack.size).toBe(1);
+    const second = { body: "10대 보유 / 20대 보유" };
+    const held = holdForCopy(second, ack);
+    expect(held, "두 번째 주장이 확인 없이 저장된다").not.toBeNull();
+    expect(held!.copyWarnings.map((w) => w.text)).toContain("20대 보유");
+  });
+
+  test("R1b — 같은 규칙의 서로 다른 일치는 처음부터 전부 보인다", () => {
+    expect(textsOf({ body: "10대 보유 / 20대 보유" })).toEqual(["10대 보유", "20대 보유"]);
+    expect(textsOf({ title: "업계 1위 · 업계 2위" })).toEqual(["업계 1위", "업계 2위"]);
+    // 같은 글자의 반복은 여전히 한 줄
+    expect(textsOf({ body: "무사고 · 무사고" })).toEqual(["무사고"]);
+  });
+
+  test("R1c — 두 일치를 모두 확인해야 저장된다 (UI 누적 흐름)", () => {
+    const fields = { body: "10대 보유 / 20대 보유" };
+    const ack = viaForm(keysOf(fields));
+    expect(holdForCopy(fields, ack)).toBeNull();
+  });
+
+  test.for([
+    ["업계 １위", "comparative"], // 전각 숫자
+    ["업계　1위", "comparative"], // 전각 공백(U+3000)
+    ["무​사고", "unproven"], // 폭 없는 공백
+    ["무‍사고", "unproven"], // 폭 없는 결합자
+    ["무﻿사고", "unproven"], // BOM
+    ["무­사고", "unproven"], // 소프트 하이픈
+    ["무⁠사고", "unproven"], // 단어 결합자
+    ["운행  경력", "unproven"], // 공백 둘
+    ["운행 경력", "unproven"], // 줄바꿈 없는 공백
+    ["ｏｏ 최저가", "comparative"], // 전각 라틴 옆의 주장
+  ] as const)("R2 — 보기엔 같은 주장 %s → %s", ([text, kind]) => {
+    expect(kindsOf(text)).toContain(kind);
+  });
+
+  test("R2b — 금지어도 폭 없는 문자로 쪼개지지 않는다", () => {
+    const split = W_LICENSE.split("").join("​");
+    expect(kindsOf(`${split} 보유`)).toContain("license");
+  });
+
+  test("R2c — 대조용 사본만 바뀐다: 저장되는 값(액션이 DB 에 쓰는 글자)은 입력 그대로", async () => {
+    vi.clearAllMocks();
+    const { client, chain } = dbStub({ data: [{ id: 3 }], error: null });
+    vi.mocked(createSsrClient).mockReturnValue(client as never);
+    const title = "업계 １위​ 안내";
+    const fields = { title, body: "안내드립니다." };
+    const ack = [...keysOf(fields)];
+    expect(ack.length).toBe(1);
+    const r = await createNotice(noticeForm({ [NOTICE_FIELDS.title]: title, [NOTICE_FIELDS.body]: "안내드립니다.", [COPY_ACK_FIELD]: ack }));
+    expect(r.changed).toBe(true);
+    expect((chain.insert.mock.calls[0][0] as Record<string, unknown>).title).toBe(title);
+  });
+
+  test("R3 — '업계' + 공백 201개 + '1위' 도 확인하면 저장된다 (키 길이가 고정)", () => {
+    const fields = { body: `업계${" ".repeat(201)}1위` };
+    const keys = keysOf(fields);
+    expect(keys.size).toBe(1);
+    for (const k of keys) expect(k.length).toBeLessThanOrEqual(64);
+    expect(holdForCopy(fields, viaForm(keys)), "확인해도 계속 경고만 돈다").toBeNull();
+  });
+
+  test("R3b — 아주 긴 일치(숫자 1000자리)도 키는 짧다", () => {
+    const fields = { body: `${"9".repeat(1000)}대 보유` };
+    const keys = keysOf(fields);
+    for (const k of keys) expect(k.length).toBeLessThanOrEqual(64);
+    expect(holdForCopy(fields, viaForm(keys))).toBeNull();
+  });
+
+  test("R4 — 확인은 그 칸의 **그 글**에 묶인다: 글이 바뀌면 같은 표현이라도 다시 묻는다", () => {
+    const ack = viaForm(keysOf({ title: "업계 1위 안내" }));
+    expect(holdForCopy({ title: "업계 1위 안내" }, ack)).toBeNull();
+    expect(holdForCopy({ title: "업계 1위 공지" }, ack), "A 에 대한 확인이 B 에 쓰인다").not.toBeNull();
+    // 다른 칸으로 옮겨도 무효
+    expect(holdForCopy({ body: "업계 1위 안내" }, ack)).not.toBeNull();
+  });
+
+  test("R4b — 공백·보이지 않는 문자만 다른 글은 같은 글로 본다 (확인이 유지된다)", () => {
+    const ack = viaForm(keysOf({ title: "업계 1위 안내" }));
+    expect(holdForCopy({ title: "업계  1위​ 안내" }, ack)).toBeNull();
+  });
+
+  test("R4c — 누적 확인은 글이 바뀐 칸의 낡은 키를 버린다 (편집을 거듭해도 키가 쌓이지 않는다)", () => {
+    let ack: string[] = [];
+    let text = "업계 1위";
+    for (let i = 0; i < 200; i++) {
+      text = `업계 1위 ${i}번째 고침`;
+      const held = holdForCopy({ title: text }, new Set(ack))!;
+      ack = mergeCopyAck(ack, held.copyWarnings);
+    }
+    expect(ack.length).toBe(1);
+    expect(holdForCopy({ title: text }, viaForm(ack))).toBeNull();
+  });
+
+  test("R5 — 화면 상한 20 을 넘는 한 칸의 일치도 몇 번 누르면 끝난다 (누적 확인)", () => {
+    const body = Array.from({ length: 45 }, (_, i) => `${i + 1}대 보유`).join(" / ");
+    let ack: string[] = [];
+    let rounds = 0;
+    for (; rounds < 10; rounds++) {
+      const held = holdForCopy({ body }, viaForm(ack));
+      if (!held) break;
+      expect(held.copyWarnings.length).toBeLessThanOrEqual(COPY_WARNING_MAX);
+      ack = mergeCopyAck(ack, held.copyWarnings);
+    }
+    expect(rounds).toBe(3);
+  });
+});
+
+// =============================================================================
+// 11. 위조 확인 — **막지 않는 것**을 있는 그대로 고정한다 (컨트롤러 판단 P2 · lib/admin/copyWarning.ts 헤더)
+// =============================================================================
+describe("11. 확인 위조는 막지 않는다 — 실수 방지 장치이지 권한 통제가 아니다", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(requireAdmin).mockResolvedValue({ userId: "admin-uuid", email: "owner@example.test" });
+  });
+
+  test("관리자가 키 계산법대로 첫 요청에 확인을 실어 보내면 저장된다 (알려진 한계)", async () => {
+    const { client, chain } = dbStub({ data: [{ id: 3 }], error: null });
+    vi.mocked(createSsrClient).mockReturnValue(client as never);
+    const r = await createNotice(noticeForm({ [COPY_ACK_FIELD]: [...ACK_BOTH] }));
+    expect(r.changed).toBe(true);
+    expect(chain.insert).toHaveBeenCalledTimes(1);
+    // 그래도 게이트는 먼저 돈다 — 이 경로의 주체는 requireAdmin() 을 통과한 관리자뿐이다
+    expect(vi.mocked(requireAdmin)).toHaveBeenCalledTimes(1);
+  });
+
+  test("옛 모양 키(`칸:글자`)를 지어내도 통하지 않는다 — 키는 글 전체의 해시에 묶인다", async () => {
+    const { client, from } = dbStub({ data: [{ id: 3 }], error: null });
+    vi.mocked(createSsrClient).mockReturnValue(client as never);
+    const r = await createNotice(noticeForm({ [COPY_ACK_FIELD]: ["title:업계 1위", `body:${W_LICENSE}`] }));
+    expect(r.code).toBe("copyWarning");
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  test("다른 글에 대해 받은 진짜 확인 키도 이 글에는 통하지 않는다", async () => {
+    const { client, from } = dbStub({ data: [{ id: 3 }], error: null });
+    vi.mocked(createSsrClient).mockReturnValue(client as never);
+    const other = [ackKey("title", "업계 1위 다른 글", "업계 1위"), ackKey("body", `${W_LICENSE} 다른 글`, W_LICENSE)];
+    const r = await createNotice(noticeForm({ [COPY_ACK_FIELD]: other }));
+    expect(r.code).toBe("copyWarning");
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  test("헤더가 이 판단을 적어 두었다", () => {
+    const header = read("lib/admin/copyWarning.ts");
+    expect(header).toContain("막지 않는 것");
+    expect(header).toContain("확인 위조");
+    expect(header).toContain("requireAdmin()");
+  });
+
+  test("정규화 모듈은 낱말이 없고 순수하다 (클라이언트에 실려도 목록이 새지 않는다)", () => {
+    const code = codeOf("lib/copy/normalize.ts");
+    expect(code).not.toMatch(/[가-힣]/);
+    expect(code).not.toMatch(/import\s/);
+    expect(code).toMatch(/Default_Ignorable_Code_Point/);
+    expect(code).toMatch(/normalize\("NFKC"\)/);
+  });
+
+  test("정규화는 줄바꿈을 남긴다 — 한 줄 규칙(`[^\\n]{0,8}`)이 줄 너머로 번지지 않게", () => {
+    expect(normalizeForCopyMatch("투명하게\r\n\r\n   요금")).toBe("투명하게\n요금");
+    expect(kindsOf("절차를 투명하게 공개합니다\n\n요금 안내")).toEqual([]);
+    expect(normalizeForCopyMatch("업계　１​위")).toBe("업계 1위");
   });
 });
