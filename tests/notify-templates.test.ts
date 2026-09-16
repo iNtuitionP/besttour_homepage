@@ -16,7 +16,7 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 
 import { COMPANY, PAYMENT, VERBATIM } from "@/lib/legal/disclosures";
-import { TEMPLATE_KEYS, type TemplateKey } from "@/lib/notify/outbox";
+import { ALL_TEMPLATE_KEYS, FAILURE_TEMPLATE_KEYS, TEMPLATE_KEYS, type TemplateKey } from "@/lib/notify/outbox";
 import {
   ADMIN_RESERVATIONS_PATH,
   ALIMTALK_TEMPLATES,
@@ -75,17 +75,27 @@ const OWNER: OwnerVars = {
 const OWNER_KEYS = ["created.owner.sms", "created.owner.email"] as const;
 const CUSTOMER_KEYS = ["created.customer.sms", "confirmed.customer.sms"] as const;
 
-/** 키마다 알맞은 vars 로 렌더한다 — 호출부가 키별 분기를 반복하지 않게. */
+/**
+ * 규약 루프가 도는 키 — **아웃박스가 받아들이는 키 전부**다(P4-4 독립 리뷰 경미-5).
+ *
+ * P4-4 가 실패 알림 문안 2종을 `FAILURE_TEMPLATE_KEYS` 로 따로 두면서(관리자 라벨 1:1 게이트를 깨지 않기 위해)
+ * 이 파일의 §5 규약 루프가 `TEMPLATE_KEYS`(4종)만 돌아 **새 문안을 렌더 단위로 검사하지 않는 구멍**이 생겼다.
+ * 광고 표현·**BM 금지어**(CLAUDE.md §3 절대 규칙)·브랜드 접두는 사장님께 나가는 문안에도 똑같이 걸려야 한다.
+ * 그래서 규약 루프는 `ALL_TEMPLATE_KEYS` 를 돈다. **키 집합 자체의 잠금(§3)은 여전히 두 목록을 따로 단언한다** —
+ * 그 둘은 뜻이 다르고(예약 통지 / 아웃박스 전체) 섞이면 관리자 라벨 게이트가 무의미해진다.
+ */
+const CONTRACT_KEYS = ALL_TEMPLATE_KEYS;
+
+const isOwnerVarsKey = (key: TemplateKey): key is (typeof OWNER_KEYS)[number] =>
+  key === "created.owner.sms" || key === "created.owner.email";
+
+/** 키마다 알맞은 vars 로 렌더한다 — 호출부가 키별 분기를 반복하지 않게. 실패 알림 2종은 고객 변수를 받는다(P4-4). */
 function renderAny(key: TemplateKey) {
-  return key === "created.owner.sms" || key === "created.owner.email"
-    ? renderTemplate(key, OWNER)
-    : renderTemplate(key, CUSTOMER);
+  return isOwnerVarsKey(key) ? renderTemplate(key, OWNER) : renderTemplate(key, CUSTOMER);
 }
 
 function variantsAny(key: TemplateKey) {
-  return key === "created.owner.sms" || key === "created.owner.email"
-    ? renderVariants(key, OWNER)
-    : renderVariants(key, CUSTOMER);
+  return isOwnerVarsKey(key) ? renderVariants(key, OWNER) : renderVariants(key, CUSTOMER);
 }
 
 // =============================================================================
@@ -159,7 +169,7 @@ describe("1. verbatim 보존", () => {
   });
 
   test("Top-5 고지 verbatim 은 문자에 들어가지 않는다 (그 문구는 홈 노선 라벨용이다)", () => {
-    for (const key of TEMPLATE_KEYS) {
+    for (const key of CONTRACT_KEYS) {
       expect(renderAny(key).text, key).not.toContain(VERBATIM.showcaseNotice);
     }
   });
@@ -207,7 +217,7 @@ describe("2. SMS/LMS 선택", () => {
   });
 
   test("렌더 결과의 format 은 sms 본문의 실제 바이트로 정해진다", () => {
-    for (const key of TEMPLATE_KEYS) {
+    for (const key of CONTRACT_KEYS) {
       const v = variantsAny(key);
       const r = renderAny(key);
       const expected = utf8ByteLength(v.sms) <= SMS_BYTE_LIMIT ? "sms" : "lms";
@@ -222,6 +232,7 @@ describe("2. SMS/LMS 선택", () => {
     const long: OwnerVars = { ...OWNER, name: "가".repeat(30), vehicleLabel: "가".repeat(40), passengers: 900, busCount: 20 };
     for (const key of OWNER_KEYS) expect(utf8ByteLength(renderTemplate(key, long).text), key).toBeLessThanOrEqual(LMS_BYTE_LIMIT);
     for (const key of CUSTOMER_KEYS) expect(utf8ByteLength(renderTemplate(key, CUSTOMER).text), key).toBeLessThanOrEqual(LMS_BYTE_LIMIT);
+    for (const key of FAILURE_TEMPLATE_KEYS) expect(utf8ByteLength(renderTemplate(key, CUSTOMER).text), key).toBeLessThanOrEqual(LMS_BYTE_LIMIT);
   });
 
   test("LMS 상한을 넘기면 조용히 자르지 않고 throw 한다 — verbatim 을 잘라 보내는 일은 없다", () => {
@@ -233,9 +244,24 @@ describe("2. SMS/LMS 선택", () => {
 // 3. 키 — TEMPLATE_KEYS 그대로. 새 키 0
 // =============================================================================
 describe("3. 템플릿 키", () => {
-  test("네 키 전부 렌더된다 — 그리고 그 넷뿐이다", () => {
+  test("예약 통지는 네 키뿐이다 — 관리자 라벨(messages/ko.json)이 이 집합과 1:1 이다", () => {
     expect([...TEMPLATE_KEYS]).toEqual(["created.owner.sms", "created.owner.email", "created.customer.sms", "confirmed.customer.sms"]);
-    for (const key of TEMPLATE_KEYS) {
+  });
+
+  /**
+   * P4-4 가 **발송 실패 알림** 2종을 더했다. 예약 통지와 **섞지 않은** 이유는 위 1:1 잠금과 관리자 화면의 번역 조회다
+   * (`app/admin/(protected)/notifications/page.tsx` 가 `TEMPLATE_KEYS` 로 라벨을 찾는다 — 라벨 없는 키를 넣으면 화면이 조회에 실패한다).
+   * 대신 **렌더·규약 검사는 두 집합을 합친 `ALL_TEMPLATE_KEYS`(= CONTRACT_KEYS)로 돈다** — 사장님께 나가는 문안도
+   * 광고 표현·BM 금지어·브랜드 접두 규약을 똑같이 지켜야 하기 때문이다(독립 리뷰 경미-5).
+   */
+  test("실패 알림 2종이 따로 있고, 아웃박스가 받아들이는 키는 그 둘을 합친 여섯이다", () => {
+    expect([...FAILURE_TEMPLATE_KEYS]).toEqual(["created.owner.failure.email", "confirmed.owner.failure.email"]);
+    expect([...ALL_TEMPLATE_KEYS]).toEqual([...TEMPLATE_KEYS, ...FAILURE_TEMPLATE_KEYS]);
+  });
+
+  test("여섯 키 전부 렌더된다 — 그리고 그 여섯뿐이다", () => {
+    expect(CONTRACT_KEYS).toHaveLength(6);
+    for (const key of CONTRACT_KEYS) {
       const r = renderAny(key);
       expect(r.key, key).toBe(key);
       expect(r.text.trim().length, key).toBeGreaterThan(0);
@@ -246,11 +272,17 @@ describe("3. 템플릿 키", () => {
     expect(() => renderTemplate("created.owner.kakao" as TemplateKey, OWNER as never)).toThrow();
   });
 
-  test("메일 폴백 키만 제목을 갖는다 — 문자 3종에는 제목이 없다", () => {
-    expect(renderTemplate("created.owner.email", OWNER).subject).toBeTruthy();
-    for (const key of ["created.owner.sms", ...CUSTOMER_KEYS] as const) {
-      expect(renderAny(key).subject, key).toBeUndefined();
+  test("메일 키만 제목을 갖는다 — 문자 키에는 제목이 없다 (키 이름의 채널과 1:1)", () => {
+    for (const key of CONTRACT_KEYS) {
+      const subject = renderAny(key).subject;
+      if (key.endsWith(".email")) {
+        expect(subject, `${key} 는 메일 키인데 제목이 없다`).toBeTruthy();
+      } else {
+        expect(subject, `${key} 는 문자 키인데 제목이 있다`).toBeUndefined();
+      }
     }
+    // 메일 키가 실제로 셋이다(사장님 접수 폴백 1 + 실패 알림 2) — 조건이 비어 통과하는 일이 없게
+    expect(CONTRACT_KEYS.filter((k) => k.endsWith(".email"))).toHaveLength(3);
   });
 });
 
@@ -321,7 +353,7 @@ describe("5. 문구 규약", () => {
   const CLAIM_NUMBERS = /[0-9][0-9,]*\s*(건|명|년|대|원|%|만\s*원|만\s*명)/;
 
   test("렌더 결과에 광고 표현 0", () => {
-    for (const key of TEMPLATE_KEYS) {
+    for (const key of CONTRACT_KEYS) {
       const v = variantsAny(key);
       expect(v.sms, `${key}.sms`).not.toMatch(AD_WORDS);
       expect(v.lms, `${key}.lms`).not.toMatch(AD_WORDS);
@@ -330,7 +362,7 @@ describe("5. 문구 규약", () => {
   });
 
   test("렌더 결과에 BM 금지어 0", () => {
-    for (const key of TEMPLATE_KEYS) {
+    for (const key of CONTRACT_KEYS) {
       const v = variantsAny(key);
       expect(v.sms, `${key}.sms`).not.toMatch(BM_WORDS);
       expect(v.lms, `${key}.lms`).not.toMatch(BM_WORDS);
@@ -367,7 +399,7 @@ describe("5. 문구 규약", () => {
   });
 
   test("(광고) 표기·수신거부 안내가 없다 — 정보성 문자이므로 붙이면 오히려 광고로 읽힌다", () => {
-    for (const key of TEMPLATE_KEYS) {
+    for (const key of CONTRACT_KEYS) {
       expect(renderAny(key).text, key).not.toContain("(광고)");
       expect(renderAny(key).text, key).not.toMatch(/수신\s*거부|무료거부/);
     }
@@ -415,7 +447,7 @@ describe("6. 원장 단일 출처", () => {
   });
 
   test("브랜드 접두는 원장 COMPANY.brandName 에서 만든다", () => {
-    for (const key of TEMPLATE_KEYS) expect(renderAny(key).text, key).toContain(`[${COMPANY.brandName}]`);
+    for (const key of CONTRACT_KEYS) expect(renderAny(key).text, key).toContain(`[${COMPANY.brandName}]`);
   });
 });
 

@@ -21,7 +21,7 @@ import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { structuredLog } from "@/lib/log";
-import { TEMPLATE_KEYS } from "@/lib/notify/outbox";
+import { ALL_TEMPLATE_KEYS, TEMPLATE_KEYS } from "@/lib/notify/outbox";
 import { UNCONFIGURED_SENDER_NAME } from "@/lib/notify/sender";
 import type { SendOutcome, SendRequest } from "@/lib/notify/sender";
 import {
@@ -302,8 +302,11 @@ describe("3. 성공", () => {
     expect(ownerBody.messages[0].text).toBe(renderTemplate("created.owner.sms", OWNER_VARS).text);
   });
 
-  test("TEMPLATE_AUDIENCE 는 TEMPLATE_KEYS 를 빠짐없이 덮는다", () => {
-    expect(Object.keys(TEMPLATE_AUDIENCE).sort()).toEqual([...TEMPLATE_KEYS].sort());
+  // P4-4 가 실패 알림 키 2종을 더했다 — 표는 **아웃박스가 받아들이는 키 전부**(ALL_TEMPLATE_KEYS)를 덮어야 한다.
+  // 예약 통지 키(TEMPLATE_KEYS)만 덮으면 실패 알림 행에서 audience 조회가 undefined 가 된다.
+  test("TEMPLATE_AUDIENCE 는 ALL_TEMPLATE_KEYS 를 빠짐없이 덮는다", () => {
+    expect(Object.keys(TEMPLATE_AUDIENCE).sort()).toEqual([...ALL_TEMPLATE_KEYS].sort());
+    for (const key of TEMPLATE_KEYS) expect(TEMPLATE_AUDIENCE[key], key).toMatch(/^(owner|customer)$/);
   });
 });
 

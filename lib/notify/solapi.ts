@@ -84,6 +84,11 @@ export const TEMPLATE_AUDIENCE: Record<TemplateKey, "owner" | "customer"> = {
   "created.owner.email": "owner",
   "created.customer.sms": "customer",
   "confirmed.customer.sms": "customer",
+  // 발송 실패 알림(P4-4)은 **사장님께 가지만 값은 'customer'** 다. 이 표가 가르는 것은 수신자가 아니라
+  // **어느 변수 집합을 싣는가**이고(아래 isOwnerTemplate → ownerVars / customerVars), 실패 알림에 고객 이름·전화를
+  // 다시 실을 이유가 없다. `CustomerVars` 에는 그 필드가 타입에 없어 구조적으로 샐 수 없다(templates.ts TemplateVarsByKey).
+  "created.owner.failure.email": "customer",
+  "confirmed.owner.failure.email": "customer",
 };
 
 /**

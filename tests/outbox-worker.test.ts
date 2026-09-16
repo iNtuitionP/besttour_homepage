@@ -77,13 +77,24 @@ function row(overrides: Partial<OutboxRow> = {}): OutboxRow {
 
 const emptyStats: PendingStats = { pending: 0, truncated: false, oldestCreatedAt: null, wouldReap: 0 };
 
-function fakeDb(opts: { claim?: OutboxRow[]; reap?: OutboxRow[]; stats?: Partial<PendingStats>; markSent?: (id: number) => boolean } = {}) {
+function fakeDb(
+  opts: {
+    claim?: OutboxRow[];
+    reap?: OutboxRow[];
+    stats?: Partial<PendingStats>;
+    markSent?: (id: number) => boolean;
+    /** P4-4 — 실패 알림 insert 의 결과. 기본은 새 id 하나(= 넣었다). [] 를 주면 "이미 있었다"(묶임). */
+    enqueueFailureNotice?: number[];
+  } = {},
+) {
   const batches = [opts.claim ?? []];
+  let noticeId = 900;
   return {
     reapStale: vi.fn<WorkerDb["reapStale"]>(async () => opts.reap ?? []),
     claimPending: vi.fn<WorkerDb["claimPending"]>(async () => batches.shift() ?? []),
     markSent: vi.fn<WorkerDb["markSent"]>(async (id) => (opts.markSent ? opts.markSent(id) : true)),
     markFailed: vi.fn<WorkerDb["markFailed"]>(async () => {}),
+    enqueueFailureNotice: vi.fn<WorkerDb["enqueueFailureNotice"]>(async () => opts.enqueueFailureNotice ?? [(noticeId += 1)]),
     pendingStats: vi.fn<WorkerDb["pendingStats"]>(async () => ({ ...emptyStats, ...opts.stats })),
   } satisfies WorkerDb;
 }
@@ -206,10 +217,13 @@ describe("runNotificationWorker — 미구성 sender", () => {
       pending: 3,
     });
     expect(report.ids.reaped).toEqual([99]);
-    const warns = log.mock.calls.filter((c) => (c[0] as WorkerLogEntry).level === "warn");
-    expect(warns).toHaveLength(1);
-    expect(warns[0][0]).toMatchObject({ level: "warn", event: "notify.worker_run", skipped: "sender_not_configured" });
-    expect(log).toHaveBeenCalledTimes(1);
+    // P4-4: 회수도 **종착**이라 회수된 행마다 실패 알림 판정이 한 줄 남는다(여기서는 ownerEmail 미주입이라 no_owner_email).
+    // 그 한 줄이 늘어난 것 말고는 예전과 같다 — worker_run 요약은 여전히 정확히 한 줄이다.
+    const entries = log.mock.calls.map((c) => c[0] as WorkerLogEntry);
+    expect(entries.map((e) => e.event)).toEqual(["notify.failure_notice", "notify.worker_run"]);
+    expect(entries[0]).toMatchObject({ level: "warn", event: "notify.failure_notice", id: 99, outcome: "no_owner_email" });
+    expect(entries[1]).toMatchObject({ level: "warn", event: "notify.worker_run", skipped: "sender_not_configured" });
+    expect(report.failureNotices).toMatchObject({ enqueued: 0, no_owner_email: 1 });
   });
 
   test("configured 가 명시적으로 true 가 아니면 미구성으로 본다 (undefined·문자열 'true' 도 claim 하지 않는다)", async () => {
@@ -242,7 +256,9 @@ describe("runNotificationWorker — sender.channels", () => {
     expect(report.claimed).toBe(0);
     expect(db.reapStale).toHaveBeenCalledTimes(1);
     // 이유가 보고서·로그에 드러난다 — "왜 아무것도 안 보냈는가" 를 사람이 읽을 수 있어야 한다.
-    expect(log.mock.calls[0][0]).toMatchObject({ level: "warn", event: "notify.worker_run", skipped: "sender_has_no_channels" });
+    // (P4-4 로 회수 행의 실패 알림 판정이 한 줄 앞에 붙으므로 event 로 찾는다 — 순서에 기대지 않는다.)
+    const runEntry = log.mock.calls.map((c) => c[0] as WorkerLogEntry).find((e) => e.event === "notify.worker_run");
+    expect(runEntry).toMatchObject({ level: "warn", event: "notify.worker_run", skipped: "sender_has_no_channels" });
   });
 
   test("channels 를 아예 주지 않는 sender 도 같게 본다 (방어)", async () => {
@@ -690,6 +706,8 @@ describe("runNotificationWorker — 보고서·로그에 개인정보 0", () => 
         "dryRun",
         "duplicate",
         "failed",
+        // P4-4 — give_up 뒤 사장님 실패 알림의 결과별 개수(개인정보 아님: 낱말과 수뿐)
+        "failureNotices",
         "gaveUp",
         "ids",
         "leaseExpired",

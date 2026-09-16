@@ -44,14 +44,41 @@ export const CLAIM_LEASE_MS = 5 * 60_000;
 /** last_error 저장 상한 — 제공자 응답 덤프가 통째로 들어오지 않게. */
 const LAST_ERROR_MAX_CHARS = 2000;
 
-/** 템플릿 키 — 문안이 아니다. P4-3 이 이 키로 문안을 찾는다. `${event}.${audience}.${channel}`. */
+/**
+ * **예약 통지** 문안 키 — 문안이 아니다. P4-3 이 이 키로 문안을 찾는다. `${event}.${audience}.${channel}`.
+ *
+ * planNotifications 가 만드는 행은 전부 이 넷 중 하나다. 관리자 발송 내역의 한글 라벨
+ * (`messages/ko.json` `admin.notifications.template`)이 **이 집합과 1:1** 이며 tests/admin-notifications.test.ts 가 그것을 잠근다.
+ * 그래서 아래 실패 알림 키를 여기 섞지 않는다 — 섞으면 라벨 없는 키가 화면의 번역 조회로 들어간다.
+ */
 export const TEMPLATE_KEYS = [
   "created.owner.sms",
   "created.owner.email",
   "created.customer.sms",
   "confirmed.customer.sms",
 ] as const;
-export type TemplateKey = (typeof TEMPLATE_KEYS)[number];
+
+/**
+ * **발송 실패 알림** 문안 키 (P4-4). 예약 통지가 5회를 다 태우고 죽었을 때 사장님께 그 사실만 알리는 메일이다.
+ *
+ * event 는 죽은 행의 것을 그대로 쓴다 — `failed` 라는 event 를 새로 만들지 않는다. 근거 둘:
+ *   ① `0001_init.sql:115` 의 `check (event in ('created','confirmed'))` 를 건드려야 해서 마이그레이션이 필요해진다.
+ *   ② 부분 유니크 `notifications_log_sent_once (reservation_id, event, channel, template) where status='sent'`(0005:70) 덕에
+ *      event 를 유지하면 알림이 **"예약 하나 · event 하나당 한 번"** 으로 자연히 묶인다. 접수 통지 두 건이 모두 죽어도
+ *      알림은 한 번, 나중에 확정 통지가 죽으면 그때 또 한 번. `event='failed'` 로 만들면 예약당 평생 한 번이 되어
+ *      **두 번째 사고를 놓친다.**
+ * `template` 컬럼에는 CHECK 가 없으므로(0001:118 `template text not null`) 새 키에 마이그레이션이 필요하지 않다.
+ */
+export const FAILURE_TEMPLATE_KEYS = ["created.owner.failure.email", "confirmed.owner.failure.email"] as const;
+
+/**
+ * 아웃박스가 받아들이는 문안 키 **전부**. 발송기(worker.ts)·어댑터(solapi.ts·mail.ts)·렌더러(templates.ts)는
+ * 이것을 본다 — 여기 없는 template 의 행은 `unknown_template` 으로 닫힌다.
+ */
+export const ALL_TEMPLATE_KEYS = [...TEMPLATE_KEYS, ...FAILURE_TEMPLATE_KEYS] as const;
+
+export type TemplateKey = (typeof ALL_TEMPLATE_KEYS)[number];
+export type FailureTemplateKey = (typeof FAILURE_TEMPLATE_KEYS)[number];
 
 // =============================================================================
 // 순수 — 무엇을 보낼지

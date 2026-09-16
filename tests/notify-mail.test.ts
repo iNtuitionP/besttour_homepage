@@ -455,8 +455,14 @@ describe("8. 정적", () => {
     }
   });
 
-  test("OWNER_EMAIL 은 이 태스크에서 읽지 않는다 — 자리만 만든다(P4-4 폴백의 몫)", () => {
-    expect(route).not.toContain("OWNER_EMAIL");
+  /**
+   * P4-5 는 이 값을 읽지 않고 자리만 만들었고, **P4-4 가 읽는다**(발송이 끝내 실패했을 때의 수신처).
+   * 그래서 단언을 "읽지 않는다" 에서 "**수신처로만** 읽는다" 로 옮긴다 — 어댑터는 여전히 이 값을 모르고,
+   * 발신(`from`)은 언제나 MAIL_FROM 이다(수신 전용 주소를 From 으로 쓰지 않는다).
+   */
+  test("OWNER_EMAIL 은 라우트가 **수신처로만** 읽는다 — 어댑터는 모르고, 발신 주소로도 쓰지 않는다", () => {
+    expect(route).toMatch(/ownerEmail:\s*process\.env\.OWNER_EMAIL/);
+    expect(route).not.toMatch(/from:\s*\w*OWNER_EMAIL/);
     expect(src).not.toContain("OWNER_EMAIL");
   });
 });

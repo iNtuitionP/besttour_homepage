@@ -17,7 +17,16 @@
  *
  * dry-run 은 부작용 0 — claim 도, reap 도 하지 않는다(둘 다 행을 바꾼다). pending 개수·가장 오래된 행 나이·회수 대상 개수·sender 이름만 보고한다.
  *
- * 실행 순서 (dryRun=false, configured): reapStale → claimPending(limit) → 행마다 [claimedDecision → send → markSent | markFailed] → pendingStats
+ * **끝내 실패하면 사장님께 알린다 (P4-4).** 행이 failed 로 끝나는 경로는 **둘**이고 둘 다 알린다:
+ * ① `recordFailure` 의 give_up(5회 소진) ② `reapStale` 의 회수(5회째 claim 뒤 mark 없이 죽어 다시 잡히지 못하는 행).
+ * 둘 다 같은 `planFailureNotice` 를 타므로 재귀 차단·묶임 입도·OWNER_EMAIL 부재 처리가 하나다.
+ * 죽은 행은 화면에만 남았다 — 아무도 모른다.
+ * 그래서 그 자리에서 사장님 앞으로 **새 pending 행 하나**를 넣고(직접 보내지 않는다 — 아웃박스를 그대로 탄다) 다음 크론에 나가게 한다.
+ * 판정은 전부 fallback.ts `planFailureNotice` 이고 그 **첫 줄이 재귀 차단**이다: 죽은 행 자체가 실패 알림이면 아무것도 넣지 않는다.
+ * 그 한 줄이 없으면 알림이 실패 → 또 알림 → … 무한이다(사장님 번호가 없어 메일 폴백이 생기고 메일이 거절되는 형태가 실제로 그렇다).
+ * give_up 여부는 `retryPlanAfterFailure` 가 이미 낸 값을 그대로 쓴다 — 매 실패마다 넣으면 한 건에 알림이 다섯 번 간다.
+ *
+ * 실행 순서 (dryRun=false, configured): reapStale → claimPending(limit) → 행마다 [claimedDecision → send → markSent | markFailed(→ give_up 이면 실패 알림)] → pendingStats
  *
  * claim 이후 행의 판정은 outbox.ts nextAttemptDecision 이 아니라 claimedDecision 이다. claim 이 next_attempt_at 을 lease 만큼 미래로
  * 찍어 두므로(0005 :109) nextAttemptDecision 은 모든 행에 wait 를, 5회째 행에는 give_up 을 내 — 아무것도 보내지 못한다.
@@ -30,8 +39,19 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import type { NotifyChannel, OutboxRow } from "../types";
-import { MAX_ATTEMPTS, TEMPLATE_KEYS, claimPending, markFailed, markSent, reapStale, retryPlanAfterFailure, type TemplateKey } from "./outbox";
+import type { NewOutboxRow, NotifyChannel, OutboxRow } from "../types";
+import { planFailureNotice, type FailureNoticeSkipReason } from "./fallback";
+import {
+  ALL_TEMPLATE_KEYS,
+  MAX_ATTEMPTS,
+  claimPending,
+  enqueue,
+  markFailed,
+  markSent,
+  reapStale,
+  retryPlanAfterFailure,
+  type TemplateKey,
+} from "./outbox";
 import type { NotificationSender, SendOutcome } from "./sender";
 
 // =============================================================================
@@ -56,6 +76,29 @@ const TABLE = "notifications_log";
 // 포트
 // =============================================================================
 
+/**
+ * give_up 한 행 하나에 대한 실패 알림 처리 결과 (P4-4).
+ *   - enqueued        새 pending 행을 넣었다.
+ *   - duplicate       같은 키에 이미 pending/sent 가 있어 넣지 않았다 = **묶였다**(정상).
+ *   - enqueue_failed  insert 자체가 실패했다(DB 오류). 실행은 계속한다 — 알림을 못 넣었다고 나머지 행을 멈추지 않는다.
+ *   - 그 밖            fallback.ts 의 판정 사유(재귀 차단 포함).
+ */
+export type FailureNoticeOutcome = "enqueued" | "duplicate" | "enqueue_failed" | FailureNoticeSkipReason;
+
+export type FailureNoticeCounts = Record<FailureNoticeOutcome, number>;
+
+/** 모든 결과를 0 으로 — 키가 조용히 사라지지 않게 매 실행 이 모양에서 시작한다. */
+const emptyFailureNoticeCounts = (): FailureNoticeCounts => ({
+  enqueued: 0,
+  duplicate: 0,
+  enqueue_failed: 0,
+  recursion: 0,
+  not_given_up: 0,
+  unknown_event: 0,
+  no_reservation: 0,
+  no_owner_email: 0,
+});
+
 /** pending 큐 통계 — 읽기 전용. dry-run 의 유일한 DB 접근. */
 export interface PendingStats {
   /** status = 'pending' 행 수(scan 상한까지). */
@@ -79,6 +122,12 @@ export interface WorkerDb {
   claimPending(limit: number, channels: readonly NotifyChannel[]): Promise<OutboxRow[]>;
   markSent(id: number, providerMessageId: string | null): Promise<boolean>;
   markFailed(row: Pick<OutboxRow, "id" | "attempts">, error: string): Promise<void>;
+  /**
+   * 사장님 실패 알림 행 하나를 pending 으로 넣는다(P4-4). 반환은 새로 생긴 id 들 — **빈 배열이면 이미 있었다는 뜻**이다
+   * (outbox.ts `enqueue` 의 사전 확인: 같은 `(reservation_id, event, channel, template)` 에 pending/sent 가 있으면 넣지 않는다).
+   * 그 빈 배열이 곧 "한 예약·한 event 에 알림은 한 번" 이라는 이 태스크의 묶임이다 — 오류가 아니라 정상이다.
+   */
+  enqueueFailureNotice(row: NewOutboxRow): Promise<number[]>;
   pendingStats(now: Date): Promise<PendingStats>;
 }
 
@@ -130,6 +179,13 @@ export interface WorkerReport {
    * (markFailed 실패 = 백오프 없이 조기 재시도, 무해)과 심각도가 달라 따로 센다. ADR-7 이 신경 쓰는 바로 그 창이다.
    */
   sentUnmarked: number;
+  /**
+   * **종착한 행마다**(give_up 5회 소진 · reapStale 회수 — 둘 다) 사장님 실패 알림을 어떻게 처리했는지 — 결과별 개수 (P4-4).
+   * `enqueued` 가 실제로 넣은 행 수이고, 나머지는 넣지 않은 이유다. 전부 0 이어도 키는 남는다 —
+   * 조용히 사라지는 값이 없어야 사람이 "왜 안 왔는가" 를 보고서만 보고 답할 수 있다.
+   * 특히 `no_owner_email` 은 OWNER_EMAIL 미설정을 그대로 드러낸다(지어낸 주소로 보내지 않는다).
+   */
+  failureNotices: FailureNoticeCounts;
   /** 실행 뒤 남은 pending 행 수(scan 상한까지). */
   pending: number;
   pendingTruncated: boolean;
@@ -158,6 +214,20 @@ export type WorkerLogEntry =
       /** send 가 throw 한 경우 예외의 name 만(message 는 버린다). */
       errorName?: string;
     }
+  | {
+      /** enqueue_failed 만 error — 나머지는 "예상 가능한 결과" 다(재귀 차단·묶임·OWNER_EMAIL 미설정). */
+      level: "warn" | "error";
+      event: "notify.failure_notice";
+      /** 죽은 행의 id. */
+      id: number;
+      /** 죽은 행의 문안 **키**(개인정보 아님) — 재귀 차단이 걸렸을 때 무엇이 걸렸는지 사람이 읽는다. */
+      template: string;
+      outcome: FailureNoticeOutcome;
+      /** 새로 넣은 알림 행의 id. enqueued 일 때만. */
+      noticeId?: number;
+      /** enqueue_failed 일 때만 — 수신처를 지우고 200자로 자른 DB 오류 문구. */
+      error?: string;
+    }
   | { level: "warn"; event: "notify.lease_expired"; id: number; attempts: number }
   | { level: "warn"; event: "notify.duplicate_sent"; id: number; template: string }
   | {
@@ -173,6 +243,12 @@ export type WorkerLogEntry =
 export interface WorkerDeps {
   db: WorkerDb;
   sender: NotificationSender;
+  /**
+   * OWNER_EMAIL — 발송이 끝내 실패했을 때 사장님이 그 사실을 받을 주소 (P4-4).
+   * env 를 읽는 곳은 app/api/cron/notify/route.ts 뿐이므로 여기로 주입받는다(P4-1 경계).
+   * 비어 있으면 실패 알림을 **넣지 않고** 보고서 `failureNotices.no_owner_email` 로 드러낸다 — 주소를 지어내지 않는다.
+   */
+  ownerEmail?: string;
   /** 시계 — 행마다 다시 읽는다(lease 판정). 테스트는 고정 시각을 준다. */
   now: () => Date;
   /** 구조화 로그 — 운영은 lib/log.ts structuredLog. */
@@ -216,7 +292,7 @@ export function scrubError(error: string, to: string): string {
   return out.slice(0, ERROR_MAX_CHARS);
 }
 
-const isTemplateKey = (t: string): t is TemplateKey => (TEMPLATE_KEYS as readonly string[]).includes(t);
+const isTemplateKey = (t: string): t is TemplateKey => (ALL_TEMPLATE_KEYS as readonly string[]).includes(t);
 
 /** DB 오류 → 로그용 문자열. outbox.* 오류는 코드·메시지뿐이지만 그래도 수신처를 지운다(scrubError 가 200자 컷까지 한다). */
 const errorSummary = (err: unknown, to: string): string => scrubError(err instanceof Error ? err.message : String(err), to);
@@ -247,6 +323,52 @@ export async function runNotificationWorker(opts: WorkerOptions, deps: WorkerDep
   let claimed = 0;
   let gaveUp = 0;
   let markErrors = 0;
+  const failureNotices = emptyFailureNoticeCounts();
+
+  /**
+   * 🔴 발송이 **끝내** 실패한 행 하나를 사장님께 알린다 (P4-4).
+   * 부르는 자리는 둘 — ① give_up 이 확정되고 markFailed 가 성공한 뒤 ② reapStale 이 회수한 행(둘 다 이미 종착이다).
+   *
+   * 무엇을 넣을지는 전부 순수 판정(fallback.ts `planFailureNotice`)이 정한다 — 그 안의 **첫 줄이 재귀 차단**이고,
+   * 죽은 행 자체가 실패 알림이면 여기서 아무것도 만들지 않는다. give_up 여부도 다시 계산하지 않고
+   * 호출부가 이미 가진 `retryPlanAfterFailure` 의 결과를 그대로 넘긴다.
+   *
+   * 실패 알림을 넣다가 나는 오류는 **이 행에서 끝난다** — 알림을 못 넣었다고 나머지 행의 lease 를 태우지 않는다.
+   */
+  async function noticeAfterGiveUp(row: OutboxRow, giveUp: boolean): Promise<void> {
+    const plan = planFailureNotice(row, { gaveUp: giveUp, ownerEmail: deps.ownerEmail });
+    if (!plan.enqueue) {
+      failureNotices[plan.reason] += 1;
+      log({ level: "warn", event: "notify.failure_notice", id: row.id, template: row.template, outcome: plan.reason });
+      return;
+    }
+
+    let inserted: number[];
+    try {
+      inserted = await db.enqueueFailureNotice(plan.row);
+    } catch (err) {
+      failureNotices.enqueue_failed += 1;
+      // 오류 문구는 수신처를 지운 뒤 200자로 자른 것만 싣는다(다른 실패 경로와 같은 규약).
+      log({
+        level: "error",
+        event: "notify.failure_notice",
+        id: row.id,
+        template: row.template,
+        outcome: "enqueue_failed",
+        error: errorSummary(err, row.to),
+      });
+      return;
+    }
+
+    if (inserted.length === 0) {
+      // 같은 예약·같은 event 의 다른 통지가 이미 알림을 남겼다 — 한 번만 간다(부분 유니크와 enqueue 의 사전 확인).
+      failureNotices.duplicate += 1;
+      log({ level: "warn", event: "notify.failure_notice", id: row.id, template: row.template, outcome: "duplicate" });
+      return;
+    }
+    failureNotices.enqueued += 1;
+    log({ level: "warn", event: "notify.failure_notice", id: row.id, template: row.template, outcome: "enqueued", noticeId: inserted[0] });
+  }
 
   /** 실패 기록 — markFailed 로 되돌리고 send_failed 를 남긴다. give_up 여부는 0005 와 같은 계산(retryPlanAfterFailure)으로 보고서에 적는다. */
   async function recordFailure(row: OutboxRow, error: string, meta: { retryable: boolean; errorName?: string }): Promise<void> {
@@ -273,11 +395,33 @@ export async function runNotificationWorker(opts: WorkerOptions, deps: WorkerDep
       gaveUp: plan.giveUp,
       ...(meta.errorName === undefined ? {} : { errorName: meta.errorName }),
     });
+    // 종착한 행만 사장님께 알린다 — 매 실패마다 넣으면 한 건에 알림이 다섯 번 간다(P4-4).
+    // 값은 위에서 이미 계산한 plan 그대로다.
+    //
+    // markFailed 가 throw 한 경로는 위에서 return 했으므로 여기 오지 않는다. **그 행이 어떻게 되는지는 attempts 에 달렸다**
+    // (2026-09-16 독립 리뷰 중대-1 이 잡은 자리 — 이전 주석은 "lease 만료 뒤 다시 잡힌다" 라고만 적어 사실과 반대였다):
+    //   · attempts < MAX_ATTEMPTS  lease 만료 뒤 다시 claim 된다(백오프 없이 조기 재시도, 무해).
+    //   · attempts = MAX_ATTEMPTS  claim 의 where 절이 `attempts < 5`(0005·0014)라 **다시 잡히지 않는다.**
+    //                              그 행은 reapStale 이 failed 로 종착시키고, 알림은 **회수 경로**가 넣는다(아래 1번 단계).
+    if (plan.giveUp) await noticeAfterGiveUp(row, plan.giveUp);
   }
 
   // 1. 회수 — 발송이 아니므로 sender 구성과 무관. dry-run 은 부작용 0 이라 건너뛴다(wouldReap 로 보고).
+  //
+  // **회수도 종착이다 — 그래서 여기서도 사장님께 알린다** (2026-09-16 독립 리뷰 중대-1).
+  // 이 아웃박스에서 행이 failed 로 끝나는 경로는 둘이고, P4-4 는 처음에 하나(recordFailure → give_up)만 닫았다.
+  // 나머지 하나가 이것이다: 5회째 claim 뒤 워커가 mark 없이 죽으면(markSent/markFailed throw, 함수 타임아웃)
+  // 행은 `attempts=5 · pending` 으로 남고 claim 의 `attempts < 5` 때문에 **다시 잡히지 않는다.**
+  // 0007 reap_stale_notifications 가 그 행을 `failed/lease_expired_after_max_attempts` 로 회수한다 —
+  // 즉 통지는 끝내 못 나갔는데 아무도 모른다. **P4-4 가 막으려던 바로 그 상황이다.**
+  //
+  // 판정은 give_up 경로와 **완전히 같은 함수**(planFailureNotice)를 탄다 — 재귀 차단·유니크 입도·OWNER_EMAIL 부재 처리가
+  // 저절로 같아진다. 회수된 행은 이미 종착이므로 gaveUp:true 로 넘긴다(재시도 계획을 다시 계산할 것이 없다).
+  // 같은 실행에서 claim 경로도 같은 (예약·event)를 종착시키면 enqueue 의 사전 확인이 두 번째를 duplicate 로 흡수한다.
   if (!dryRun) {
-    ids.reaped = (await db.reapStale()).map((r) => r.id);
+    const reaped = await db.reapStale();
+    ids.reaped = reaped.map((r) => r.id);
+    for (const r of reaped) await noticeAfterGiveUp(r, true);
   }
 
   // 2. 발송 — 구성된 sender 가 있고, 보낼 수 있는 채널이 있을 때만 claim 한다.
@@ -354,6 +498,7 @@ export async function runNotificationWorker(opts: WorkerOptions, deps: WorkerDep
     leaseExpired: ids.leaseExpired.length,
     markErrors,
     sentUnmarked: ids.sentUnmarked.length,
+    failureNotices,
     pending: stats.pending,
     pendingTruncated: stats.truncated,
     wouldReap: stats.wouldReap,
@@ -386,6 +531,8 @@ export function supabaseWorkerDb(client: SupabaseClient): WorkerDb {
     claimPending: (limit, channels) => claimPending(limit, client, channels),
     markSent: (id, providerMessageId) => markSent(id, providerMessageId, client),
     markFailed: (row, error) => markFailed(row, error, client),
+    // 기존 enqueue 를 그대로 쓴다 — 사전 중복 확인(pending/sent 가 있으면 넣지 않음)이 곧 알림의 묶임이다(P4-4).
+    enqueueFailureNotice: (row) => enqueue([row], client),
     async pendingStats(now) {
       const { data, error } = await client
         .from(TABLE)

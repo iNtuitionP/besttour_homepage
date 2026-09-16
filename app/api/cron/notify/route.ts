@@ -120,7 +120,13 @@ export async function GET(request: Request): Promise<Response> {
     const client = createServiceClient();
     const db = supabaseWorkerDb(client);
     const vars = templateVars({ client, origin: siteOrigin() });
-    const report = await runNotificationWorker({ dryRun }, { db, sender: selectSender(vars), now: () => new Date(), log: structuredLog });
+    // OWNER_EMAIL 은 발송이 끝내 실패했을 때 사장님이 그 사실을 받을 주소다(P4-4). env 를 보는 곳은 이 파일뿐이라
+    // 여기서 읽어 주입한다. 비어 있으면 발송기가 실패 알림을 **넣지 않고** 보고서에 그 이유를 남긴다 — 주소를 지어내지 않는다.
+    // 발신 주소는 MAIL_FROM 하나뿐이고 이 값은 **수신처로만** 쓴다 — 사장님의 포털 주소는 외부 발신이 금지돼 수신 전용이다(.env.example).
+    const report = await runNotificationWorker(
+      { dryRun },
+      { db, sender: selectSender(vars), ownerEmail: process.env.OWNER_EMAIL, now: () => new Date(), log: structuredLog },
+    );
     return json(report, 200);
   } catch (err) {
     // 개인정보가 섞일 수 있는 원문 대신 메시지만(outbox.* 오류는 코드·메시지뿐이다). 실패는 크론 로그로 확인한다.

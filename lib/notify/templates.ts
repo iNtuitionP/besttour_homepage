@@ -34,7 +34,7 @@
  */
 import { COMPANY, PAYMENT, VERBATIM } from "../legal/disclosures";
 import type { NotifyEvent } from "../types";
-import { TEMPLATE_KEYS, type TemplateKey } from "./outbox";
+import { ALL_TEMPLATE_KEYS, MAX_ATTEMPTS, type TemplateKey } from "./outbox";
 
 // =============================================================================
 // 상수
@@ -51,6 +51,14 @@ export const RESERVATION_CHECK_PATH = "/reservation/check";
 
 /** 관리자 예약 목록 경로 — app/admin/(protected)/reservations. 상세는 `${…}/{reservationId}`. */
 export const ADMIN_RESERVATIONS_PATH = "/admin/reservations";
+
+/**
+ * 관리자 발송 내역 경로 — app/admin/(protected)/notifications. 실패한 통지의 사유(`last_error`)가 있는 유일한 화면이라
+ * 실패 알림(P4-4)이 여기를 가리킨다. `lib/admin/notifications.ts` 의 같은 이름 상수와 값이 같아야 하며
+ * tests/notify-fallback.test.ts 가 그 일치를 잠근다 — 저쪽은 세션 클라이언트를 쓰는 서버 모듈이라
+ * 순수 모듈인 이 파일이 import 할 수 없다(lib/notify/vars.ts 가 `labelOf` 를 다시 적은 것과 같은 이유).
+ */
+export const ADMIN_NOTIFICATIONS_PATH = "/admin/notifications";
 
 /** 발신 브랜드 표기. 원장의 브랜드명으로 만든다 — 상호를 여기 다시 적지 않는다. */
 const BRAND = `[${COMPANY.brandName}]`;
@@ -114,12 +122,21 @@ export interface OwnerVars extends CustomerVars {
   passengers: number | null;
 }
 
-/** 키 → 그 키가 요구하는 입력. 고객 키에 OwnerVars 를 넘길 수는 있어도 그 반대는 컴파일이 막는다. */
+/**
+ * 키 → 그 키가 요구하는 입력. 고객 키에 OwnerVars 를 넘길 수는 있어도 그 반대는 컴파일이 막는다.
+ *
+ * 실패 알림 2종(P4-4)이 `OwnerVars` 가 아니라 **`CustomerVars`** 인 것은 실수가 아니라 이 태스크의 핵심이다:
+ * 그 문안은 사장님께 가지만 *"무엇이 실패했는지"* 만 말하므로 고객 이름·전화를 다시 실을 이유가 없고,
+ * `CustomerVars` 에는 그 필드가 **타입에 없어** 실릴 자리 자체가 없다(lib/notify/vars.ts 와 같은 수법 —
+ * 규율이 아니라 구조로 막는다). 부수 효과로 어댑터가 사장님 조회(9컬럼)를 하지 않고 `public_code` 한 컬럼만 읽는다.
+ */
 export interface TemplateVarsByKey {
   "created.owner.sms": OwnerVars;
   "created.owner.email": OwnerVars;
   "created.customer.sms": CustomerVars;
   "confirmed.customer.sms": CustomerVars;
+  "created.owner.failure.email": CustomerVars;
+  "confirmed.owner.failure.email": CustomerVars;
 }
 
 /** 두 벌 + (메일 키에만) 제목. */
@@ -242,7 +259,45 @@ function confirmedCustomerVariants(v: CustomerVars): MessageVariants {
   };
 }
 
-/** 키 → 두 벌을 만드는 함수. 키는 TEMPLATE_KEYS 그대로다 — 새 키를 만들지 않는다. */
+/**
+ * 실패 알림이 가리키는 통지의 종류. **키의 event 부분으로 정해진다** — 죽은 행을 다시 읽지 않는다.
+ * 그럴 수도 없다: 알림은 부분 유니크 때문에 "예약 하나 · event 하나당 한 번" 으로 묶여서(outbox.ts
+ * `FAILURE_TEMPLATE_KEYS`) 접수 통지 두 건이 함께 죽어도 한 통이다 — 특정 행을 지목하는 문장은 애초에 쓸 수 없다.
+ */
+const FAILURE_KIND_LABEL: Record<NotifyEvent, string> = { created: "접수", confirmed: "확정" };
+
+/**
+ * 사장님 발송 실패 알림 (P4-4) — 접수번호 · 어떤 통지가 못 나갔는지 · 다음에 할 일 · 발송 내역 링크.
+ *
+ * **고객 이름·전화·메일·문의내용을 넣지 않는다.** 입력 타입이 `CustomerVars` 라 넣을 자리도 없다(TemplateVarsByKey 주석).
+ * 사장님은 접수번호로 관리자 화면에서 전부 볼 수 있고, 통지가 못 나간 채널로 개인정보를 다시 흘릴 이유가 없다.
+ *
+ * verbatim 은 넣지 않는다 — "사장님 확정 후 연락드리며" 는 **고객에게 하는 약속**이지 사장님께 하는 보고가 아니다
+ * (사장님 접수 알림 `ownerVariants` 가 같은 이유로 넣지 않는다).
+ * 시각도 넣지 않는다: 이 모듈에는 시계가 없고(순수), 메일 자체의 수신 시각과 발송 내역의 시각이 그 역할을 한다.
+ *
+ * 시도 횟수는 `MAX_ATTEMPTS` 에서 온다 — 문안에 숫자를 적어 두면 재시도 정책을 바꿀 때 한쪽만 바뀐다.
+ */
+function failureVariants(event: NotifyEvent): (v: CustomerVars) => MessageVariants {
+  const kind = FAILURE_KIND_LABEL[event];
+  return (v) => {
+    const where = link(v.origin, ADMIN_NOTIFICATIONS_PATH);
+    return {
+      sms: `${BRAND} ${kind} 통지 발송 실패 ${v.publicCode} ${where}`,
+      lms: lines(
+        `${BRAND} ${kind} 통지가 발송되지 않았습니다.`,
+        "",
+        `접수번호 ${v.publicCode}`,
+        `${MAX_ATTEMPTS}번 시도했으나 모두 실패했습니다. 고객에게 직접 연락해 주세요.`,
+        "",
+        `실패 사유는 ${where} 에서 확인하실 수 있습니다.`,
+      ),
+      subject: `${BRAND} ${kind} 통지 발송 실패 ${v.publicCode}`,
+    };
+  };
+}
+
+/** 키 → 두 벌을 만드는 함수. 키는 ALL_TEMPLATE_KEYS 그대로다 — 여기서 새 키를 만들지 않는다. */
 type BuilderMap = { [K in TemplateKey]: (vars: TemplateVarsByKey[K]) => MessageVariants };
 
 const BUILDERS: BuilderMap = {
@@ -251,14 +306,17 @@ const BUILDERS: BuilderMap = {
   "created.owner.email": (v) => ({ ...ownerVariants(v), subject: `${BRAND} 새 예약 접수 ${v.publicCode}` }),
   "created.customer.sms": createdCustomerVariants,
   "confirmed.customer.sms": confirmedCustomerVariants,
+  // 발송 실패 알림(P4-4). 본문은 같은 틀이고 event 만 다르다 — 사장님께 가지만 고객 변수만 받는다(위 주석).
+  "created.owner.failure.email": failureVariants("created"),
+  "confirmed.owner.failure.email": failureVariants("confirmed"),
 };
 
-const isTemplateKey = (key: string): key is TemplateKey => (TEMPLATE_KEYS as readonly string[]).includes(key);
+const isTemplateKey = (key: string): key is TemplateKey => (ALL_TEMPLATE_KEYS as readonly string[]).includes(key);
 
 /** 두 벌을 그대로 돌려준다 — 바이트 표를 만들거나 두 판을 나란히 검사할 때. */
 export function renderVariants<K extends TemplateKey>(key: K, vars: TemplateVarsByKey[K]): MessageVariants {
   if (!isTemplateKey(key)) {
-    throw new Error(`renderVariants: 알 수 없는 템플릿 키다 (${String(key)}) — 키는 outbox.ts TEMPLATE_KEYS 뿐이다`);
+    throw new Error(`renderVariants: 알 수 없는 템플릿 키다 (${String(key)}) — 키는 outbox.ts ALL_TEMPLATE_KEYS 뿐이다`);
   }
   // BUILDERS[key] 는 키별로 다른 매개변수 타입을 갖는 함수의 합집합이라 (반공변) 직접 호출할 수 없다.
   // 키와 vars 의 짝은 위 시그니처가 이미 보장했으므로 여기서 한 번만 좁힌다.
