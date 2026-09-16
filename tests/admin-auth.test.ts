@@ -58,6 +58,8 @@ import { createSsrClient } from "@/lib/supabase/ssr";
 import { requestAdminLoginLink } from "@/actions/admin/auth";
 import { requireAdmin, resolveAdminSession } from "@/lib/auth/requireAdmin";
 
+import { stripComments } from "./helpers/strip-comments";
+
 /** next/navigation redirect() 는 실제로 throw 한다 — mock 도 같은 모양이어야 뒤 코드가 실행되지 않는다. */
 class RedirectSignal extends Error {
   constructor(readonly to: string) {
@@ -96,25 +98,8 @@ const compact = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
 const commentLines = (sql: string) => sql.split("\n").filter((l) => /^\s*--/.test(l)).join("\n");
 const sqlCode = (rel: string) => compact(stripSqlComments(read(rel)));
 
-/** 주석(`//` 줄 끝, 블록)을 걷어낸 코드만 남긴다 — tests/reservation-check.test.ts 와 같은 구현. */
-function stripComments(src: string): string {
-  const noBlock = src.replace(/\/\*[\s\S]*?\*\//g, "");
-  return noBlock
-    .split("\n")
-    .map((line) => {
-      let inStr: string | null = null;
-      for (let i = 0; i < line.length; i++) {
-        const ch = line[i];
-        if (inStr) {
-          if (ch === "\\") i++;
-          else if (ch === inStr) inStr = null;
-        } else if (ch === '"' || ch === "'" || ch === "`") inStr = ch;
-        else if (ch === "/" && line[i + 1] === "/") return line.slice(0, i);
-      }
-      return line;
-    })
-    .join("\n");
-}
+/** 주석을 걷어낸 코드. 제거기는 저장소에 하나뿐이다(`tests/helpers/strip-comments.ts` · P6-7/P6-8 · D7). */
+const codeOf = (rel: string) => stripComments(read(rel), rel);
 
 function walk(absDir: string): string[] {
   if (!existsSync(absDir)) return [];
@@ -702,7 +687,7 @@ describe("6. 정적 규약", () => {
   test("액션 파일 — 'use server' 첫 줄 · export 1개 · async 함수", () => {
     const src = read(ACTION);
     expect(src.split("\n")[0].trim()).toMatch(/^["']use server["'];?$/);
-    const exports = [...stripComments(src).matchAll(/^export\s/gm)];
+    const exports = [...codeOf(ACTION).matchAll(/^export\s/gm)];
     expect(exports.length, "'use server' 파일의 export 는 전부 공개 POST 엔드포인트가 된다 (ADR-3)").toBe(1);
     expect(src).toMatch(/export async function requestAdminLoginLink/);
   });
@@ -719,7 +704,7 @@ describe("6. 정적 규약", () => {
       ADMIN_LOGIN_LIB,
     ];
     for (const rel of targets) {
-      const offenders = stripComments(read(rel))
+      const offenders = codeOf(rel)
         .split("\n")
         .map((l, i) => [i + 1, l] as const)
         .filter(([, l]) => HANGUL.test(l));
@@ -728,17 +713,17 @@ describe("6. 정적 규약", () => {
   });
 
   test("레이아웃 구조 — 인증 게이트는 (protected) 세그먼트에 있고 로그인 화면은 그 밖이다", () => {
-    const shell = stripComments(read(ADMIN_SHELL_LAYOUT));
+    const shell = codeOf(ADMIN_SHELL_LAYOUT);
     expect(shell, "셸 레이아웃이 requireAdmin 을 부르면 로그인 화면이 자기 자신으로 무한 리다이렉트한다").not.toMatch(/requireAdmin/);
     expect(shell).toMatch(/export\s+const\s+dynamic\s*=\s*["']force-dynamic["']/);
-    const protectedLayout = stripComments(read(PROTECTED_LAYOUT));
+    const protectedLayout = codeOf(PROTECTED_LAYOUT);
     expect(protectedLayout).toMatch(/await\s+requireAdmin\(\)/);
     expect(exists("app/admin/page.tsx"), "보호 대상 페이지는 (protected) 안으로 옮겨야 한다").toBe(false);
     expect(exists("app/admin/(protected)/login")).toBe(false);
   });
 
   test("미들웨어 — 세션 쿠키 갱신만 한다. 인가 판단(is_admin·requireAdmin·리다이렉트)은 없다", () => {
-    const src = stripComments(read("middleware.ts"));
+    const src = codeOf("middleware.ts");
     expect(src).toMatch(/startsWith\(\s*["'`]\/admin["'`]\s*\)/);
     expect(src).toMatch(/createSsrClient|createServerClient/);
     expect(src).toMatch(/getUser\(\)/);

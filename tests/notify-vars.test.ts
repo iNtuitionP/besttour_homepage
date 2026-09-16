@@ -41,6 +41,7 @@ import {
 } from "@/lib/notify/vars";
 import { consentFields } from "@/lib/reservations/consent";
 import { dbSmokeEnv, dbWriteGate, isLocalStack } from "./helpers/load-env-local";
+import { stripComments } from "./helpers/strip-comments";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const VARS_SRC = readFileSync(path.join(ROOT, "lib", "notify", "vars.ts"), "utf-8");
@@ -547,16 +548,22 @@ describe("7. 정적 경계", () => {
    * `skipped:undefined` 와 `claim_pending_notifications` RPC 를 확인한다. 정적 검사는 그것의 보조다.
    */
   test("route.ts — templateVars 를 만들어 solapiSender 의 vars 로 넘긴다 (배선; 진짜 방어는 notify-solapi.test.ts §8)", () => {
-    const route = readFileSync(path.join(ROOT, "app", "api", "cron", "notify", "route.ts"), "utf-8");
-    const stripComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    const routeRel = "app/api/cron/notify/route.ts";
+    // 주석 제거기는 저장소에 하나뿐이다(`tests/helpers/strip-comments.ts` · P6-7/P6-8 · D7).
+    // 그 헬퍼는 주석 자리를 **같은 길이의 공백으로** 바꾸므로 문자 오프셋이 원문과 같다 —
+    // 그래서 잘라낸 구간을 따로 파싱할 필요 없이(조각은 유효한 TS 가 아니다) 제거 **후** 문자열을 그대로 자른다.
+    const routeCode = stripComments(
+      readFileSync(path.join(ROOT, "app", "api", "cron", "notify", "route.ts"), "utf-8"),
+      routeRel,
+    );
 
     // ① 로더를 만든다 — 클라이언트 주입 + 원점은 siteOrigin()
-    expect(stripComments(route)).toMatch(/templateVars\(\{[^}]*client[^}]*origin:\s*siteOrigin\(\)[^}]*\}\)/);
+    expect(routeCode).toMatch(/templateVars\(\{[^}]*client[^}]*origin:\s*siteOrigin\(\)[^}]*\}\)/);
 
     // ② 그 포트가 solapiSender 호출 인자로 들어간다 — 호출 범위를 잘라 그 안에서만 찾는다
-    const callStart = route.indexOf("solapiSender({");
+    const callStart = routeCode.indexOf("solapiSender({");
     expect(callStart, "route.ts 에 solapiSender({ 호출이 없다").toBeGreaterThan(-1);
-    const callArgs = stripComments(route.slice(callStart, route.indexOf("});", callStart)));
+    const callArgs = routeCode.slice(callStart, routeCode.indexOf("});", callStart));
     expect(callArgs, "solapiSender 인자에 vars 프로퍼티가 없다 — 배선이 끊겼다").toMatch(/(^|[\s{,])vars\s*[,:]/);
   });
 });

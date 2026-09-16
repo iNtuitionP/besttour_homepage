@@ -75,6 +75,8 @@ import {
 } from "@/lib/admin/reservations";
 import { QUERY_TAGS } from "@/lib/queries/tags";
 
+import { stripComments } from "./helpers/strip-comments";
+
 // =============================================================================
 // 공통 헬퍼 (tests/admin-auth.test.ts 와 같은 구현)
 // =============================================================================
@@ -99,25 +101,10 @@ const stripSqlComments = (sql: string) => sql.replace(/\/\*[\s\S]*?\*\//g, "").r
 const compact = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
 const sqlCode = (rel: string) => compact(stripSqlComments(read(rel)));
 
-/** 주석(`//` 줄 끝, 블록)을 걷어낸 코드만 — tests/admin-auth.test.ts 와 같은 구현. */
-function stripComments(src: string): string {
-  const noBlock = src.replace(/\/\*[\s\S]*?\*\//g, "");
-  return noBlock
-    .split("\n")
-    .map((line) => {
-      let inStr: string | null = null;
-      for (let i = 0; i < line.length; i++) {
-        const ch = line[i];
-        if (inStr) {
-          if (ch === "\\") i++;
-          else if (ch === inStr) inStr = null;
-        } else if (ch === '"' || ch === "'" || ch === "`") inStr = ch;
-        else if (ch === "/" && line[i + 1] === "/") return line.slice(0, i);
-      }
-      return line;
-    })
-    .join("\n");
-}
+/** 주석을 걷어낸 코드. 제거기는 저장소에 하나뿐이다(`tests/helpers/strip-comments.ts` · P6-7/P6-8 · D7). */
+const codeOf = (rel: string) => stripComments(read(rel), rel);
+/** 절대 경로판 — 디렉터리 순회로 얻은 경로를 그대로 넘긴다(확장자로 문법을 고른다). */
+const codeAt = (abs: string) => stripComments(readFileSync(abs, "utf-8"), abs);
 
 function walk(absDir: string): string[] {
   if (!existsSync(absDir)) return [];
@@ -705,7 +692,7 @@ describe("6. 정적 규약", () => {
   test("액션 파일 — 'use server' 첫 줄 · export 4개 · 전부 async", () => {
     const src = read(ACTION);
     expect(src.split("\n")[0].trim()).toMatch(/^["']use server["'];?$/);
-    const exports = [...stripComments(src).matchAll(/^export\s+.*$/gm)].map((m) => m[0]);
+    const exports = [...codeOf(ACTION).matchAll(/^export\s+.*$/gm)].map((m) => m[0]);
     expect(exports.length, "'use server' 파일의 export 는 전부 공개 POST 엔드포인트가 된다 (ADR-3)").toBe(4);
     for (const e of exports) expect(e, e).toMatch(/^export async function/);
     expect(src).toMatch(/export async function confirmReservation/);
@@ -716,12 +703,12 @@ describe("6. 정적 규약", () => {
 
   test("관리자 화면은 캐시하지 않는다 — unstable_cache 0건 (주석의 설명은 제외)", () => {
     for (const f of [...walk(path.join(ROOT, "app", "admin")), ...walk(path.join(ROOT, "lib", "admin"))]) {
-      expect(stripComments(readFileSync(f, "utf-8")), f).not.toMatch(/unstable_cache/);
+      expect(codeAt(f), f).not.toMatch(/unstable_cache/);
     }
   });
 
   test("읽기는 세션 클라이언트 하나로만 — createSsrClient 외의 경로가 없다", () => {
-    const src = stripComments(read(LIB_READ));
+    const src = codeOf(LIB_READ);
     expect(src).toMatch(/createSsrClient/);
     expect(src).toMatch(/^import "server-only";$/m);
   });
@@ -732,7 +719,7 @@ describe("6. 정적 규약", () => {
    */
   test("한글 리터럴 0 — 문구는 messages/ko.json admin.* 에서만 온다", () => {
     for (const rel of TS_TARGETS.filter((f) => f !== LIB_READ)) {
-      const offenders = stripComments(read(rel))
+      const offenders = codeOf(rel)
         .split("\n")
         .map((l, i) => [i + 1, l] as const)
         .filter(([, l]) => HANGUL.test(l));
@@ -764,17 +751,17 @@ describe("6. 정적 규약", () => {
       "/admin/notifications",
     ]);
     expect(ADMIN_TABS.filter((t) => !t.ready).map((t) => t.key)).toEqual([]);
-    const ui = stripComments(read(TABS_UI));
+    const ui = codeOf(TABS_UI);
     expect(ui.split("\n")[0].trim()).toMatch(/^["']use client["'];?$/);
     expect(ui).toMatch(/aria-disabled/);
     expect(ui).toMatch(/aria-current/);
     // 레이아웃이 탭을 렌더한다
-    expect(stripComments(read(PROTECTED_LAYOUT))).toMatch(/AdminTabs/);
-    expect(stripComments(read(PROTECTED_LAYOUT))).toMatch(/await\s+requireAdmin\(\)/);
+    expect(codeOf(PROTECTED_LAYOUT)).toMatch(/AdminTabs/);
+    expect(codeOf(PROTECTED_LAYOUT)).toMatch(/await\s+requireAdmin\(\)/);
   });
 
   test("확정 버튼은 status='new' 일 때만 — 존재하지 않는 전이를 화면이 만들지 않는다", () => {
-    const src = stripComments(read(ACTIONS_UI));
+    const src = codeOf(ACTIONS_UI);
     expect(src.split("\n")[0].trim()).toMatch(/^["']use client["'];?$/);
     expect(src).toMatch(/status === "new"/);
     expect(src, "완료 버튼은 confirmed 에서만 보인다 (M1)").toMatch(/status === "confirmed"/);
@@ -804,7 +791,7 @@ describe("6. 정적 규약", () => {
     let calls = 0;
     for (const f of files) {
       const rel = path.relative(ROOT, f);
-      for (const [i, line] of stripComments(readFileSync(f, "utf-8")).split("\n").entries()) {
+      for (const [i, line] of codeAt(f).split("\n").entries()) {
         if (!/\brequireAdmin\s*\(/.test(line)) continue; // import 줄은 `(` 가 없어 걸리지 않는다
         calls += 1;
         if (!UNCONDITIONAL_CALL.test(line)) offenders.push(`${rel}:${i + 1} ${line.trim()}`);
@@ -818,7 +805,7 @@ describe("6. 정적 규약", () => {
     const entries = walk(PROTECTED_DIR).filter((f) => /[\\/](page|layout)\.tsx$/.test(f));
     expect(entries.length).toBeGreaterThanOrEqual(4);
     for (const f of entries) {
-      const lines = stripComments(readFileSync(f, "utf-8")).split("\n");
+      const lines = codeAt(f).split("\n");
       const hit = lines.some((l) => UNCONDITIONAL_CALL.test(l));
       expect(hit, `${path.relative(ROOT, f)} 가 requireAdmin() 을 무조건 부르지 않는다`).toBe(true);
     }
@@ -881,7 +868,7 @@ describe("6. 정적 규약", () => {
   });
 
   test("CSS — 색은 역할 토큰만(HEX·rgb 0). 간격 px 리터럴 0 (tests/layout.test.ts §4 와 같은 규약)", () => {
-    const css = read(ADMIN_CSS).replace(/\/\*[\s\S]*?\*\//g, "");
+    const css = codeOf(ADMIN_CSS);
     expect(css.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).toEqual([]);
     expect(/\b(rgba?|hsla?)\(/.test(css)).toBe(false);
     const spacing = /^(margin|padding|gap|row-gap|column-gap|inset|top|right|bottom|left)(-(top|right|bottom|left|block|inline)(-(start|end))?)?$/;

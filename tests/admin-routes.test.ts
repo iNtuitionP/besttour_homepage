@@ -64,6 +64,8 @@ import { revalidate } from "@/lib/ports/revalidate";
 import { QUERY_TAGS } from "@/lib/queries/tags";
 import { createSsrClient } from "@/lib/supabase/ssr";
 
+import { stripComments } from "./helpers/strip-comments";
+
 // =============================================================================
 // 공통 헬퍼 (tests/admin-popups.test.ts 와 같은 구현)
 // =============================================================================
@@ -72,9 +74,8 @@ const read = (rel: string): string => readFileSync(path.join(ROOT, rel), "utf-8"
 const exists = (rel: string): boolean => existsSync(path.join(ROOT, rel));
 const HANGUL = /[가-힣]/;
 
-function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
-}
+/** 주석을 걷어낸 코드. 제거기는 저장소에 하나뿐이다(`tests/helpers/strip-comments.ts` · P6-7/P6-8 · D7). */
+const codeOf = (rel: string) => stripComments(read(rel), rel);
 
 const ACTION = "actions/admin/route.ts";
 const LIB_INPUT = "lib/admin/routeInput.ts";
@@ -214,7 +215,7 @@ describe("1. 입력 검증", () => {
   });
 
   test("가격을 만드는 코드가 없다 — 입력 모듈에 산술 0 (CLAUDE.md §3)", () => {
-    const src = stripComments(read(LIB_INPUT));
+    const src = codeOf(LIB_INPUT);
     // 배율·나눗셈·거리당 단가처럼 숫자를 **유도**하는 연산자가 없다. 상한 비교(<=)만 있다.
     expect(src, "가격을 곱하거나 나누는 코드").not.toMatch(/[*/%]\s*\d|\d\s*[*/%]/);
   });
@@ -292,7 +293,7 @@ describe("2. 쿼리 계층", () => {
     const mod = (await import("@/lib/admin/routes")) as Record<string, unknown>;
     const names = Object.keys(mod).filter((k) => typeof mod[k] === "function");
     expect(names.sort()).toEqual(["getAdminRoute", "listAdminRoutes", "setRouteActive", "updateRouteRow"]);
-    const src = stripComments(read(LIB_DB));
+    const src = codeOf(LIB_DB);
     expect(src, "쿼리 모듈에 insert 가 있다").not.toMatch(/\.insert\(/);
     expect(src, "쿼리 모듈에 delete 가 있다").not.toMatch(/\.delete\(/);
     expect(SHOWCASE_ROUTE_SEED.length, "스펙 §13.2 대표 노선은 16개다").toBe(16);
@@ -426,12 +427,12 @@ describe("4. 정적 규약", () => {
   test("액션 — 'use server' 첫 줄 · export 2개뿐(추가·삭제 없음) · 전부 async · 첫 문장이 게이트", () => {
     const src = read(ACTION);
     expect(src.split("\n")[0].trim()).toMatch(/^["']use server["'];?$/);
-    const exports = [...stripComments(src).matchAll(/^export\s+.*$/gm)].map((m) => m[0]);
+    const exports = [...codeOf(ACTION).matchAll(/^export\s+.*$/gm)].map((m) => m[0]);
     expect(exports.length, "'use server' 파일의 export 는 전부 공개 POST 엔드포인트가 된다 (ADR-3)").toBe(2);
     for (const e of exports) expect(e, e).toMatch(/^export async function/);
     for (const name of ["updateRoute", "toggleRouteActive"]) {
       const body = new RegExp(`export async function ${name}\\([^)]*\\)[^{]*\\{\\s*await requireAdmin\\(\\);`);
-      expect(stripComments(src), `${name} 의 첫 문장이 게이트가 아니다`).toMatch(body);
+      expect(codeOf(ACTION), `${name} 의 첫 문장이 게이트가 아니다`).toMatch(body);
     }
     expect(src).toMatch(/import \{ requireAdmin \} from "@\/lib\/auth\/requireAdmin"/);
     expect(src).not.toMatch(/as requireAdmin/);
@@ -439,7 +440,7 @@ describe("4. 정적 규약", () => {
 
   test("노선을 만들거나 지우는 엔드포인트가 없다 — 어떤 파일에도", () => {
     for (const rel of TS_TARGETS) {
-      const src = stripComments(read(rel));
+      const src = codeOf(rel);
       expect(src, `${rel} 에 노선 추가 경로`).not.toMatch(/createRoute|insertRoute|addRoute/);
       expect(src, `${rel} 에 노선 삭제 경로`).not.toMatch(/deleteRoute|removeRoute/);
     }
@@ -448,13 +449,13 @@ describe("4. 정적 규약", () => {
   test("서비스 롤 0 · unstable_cache 0 — 관리자 경로 규약 (ADR-2)", () => {
     for (const rel of TS_TARGETS) {
       expect(read(rel), rel).not.toMatch(/createServiceClient|SUPABASE_SERVICE_ROLE_KEY|supabase\/server/);
-      expect(stripComments(read(rel)), rel).not.toMatch(/unstable_cache/);
+      expect(codeOf(rel), rel).not.toMatch(/unstable_cache/);
     }
   });
 
   test("한글 리터럴 0 — 문구는 messages/ko.json admin.routes.* 와 원장에서만 온다", () => {
     for (const rel of TS_TARGETS) {
-      const offenders = stripComments(read(rel))
+      const offenders = codeOf(rel)
         .split("\n")
         .map((l, i) => [i + 1, l] as const)
         .filter(([, l]) => HANGUL.test(l));
@@ -469,11 +470,11 @@ describe("4. 정적 규약", () => {
 
   test("가격에 산술이 없다 — 값은 사장님이 넣은 그대로 오가고, 표시 포맷은 홈과 같은 함수다", () => {
     for (const rel of TS_TARGETS) {
-      const src = stripComments(read(rel));
+      const src = codeOf(rel);
       expect(src, `${rel} 에 숫자 산술이 있다 (가격을 유도하는 코드 금지)`).not.toMatch(/[*/%]\s*\d|\d\s*[*/%]/);
     }
     // 만원 단위 표기는 components/KrMap/format.ts 하나뿐이다 — 관리자가 두 번째 포맷을 만들지 않는다
-    expect(stripComments(read(LIST_PAGE)) + stripComments(read(EDIT_PAGE))).toMatch(/formatPriceKrw/);
+    expect(codeOf(LIST_PAGE) + codeOf(EDIT_PAGE)).toMatch(/formatPriceKrw/);
     expect(read("components/KrMap/format.ts")).toMatch(/export function formatPriceKrw/);
     expect(exists("lib/pricing.ts"), "lib/pricing.ts 는 만들지 않는다").toBe(false);
   });
@@ -494,7 +495,7 @@ describe("4. 정적 규약", () => {
     expect(hint.priceFrom, "admin.routes.hint.priceFrom — 비웠을 때 어떻게 보이는지").toBeTruthy();
     expect(hint.active, "admin.routes.hint.active — 내렸을 때 어떻게 보이는지").toBeTruthy();
     // 폼이 그 안내를 실제로 렌더한다
-    expect(stripComments(read(FORM_UI))).toMatch(/hint\.priceFrom|hint:/);
+    expect(codeOf(FORM_UI)).toMatch(/hint\.priceFrom|hint:/);
   });
 
   test("공개 읽기 계층은 이 태스크가 고치지 않는다", () => {
@@ -539,7 +540,7 @@ describe("4. 정적 규약", () => {
 
   test("화면 — 두 페이지 모두 첫 문장이 게이트다", () => {
     for (const rel of [LIST_PAGE, EDIT_PAGE]) {
-      expect(stripComments(read(rel)), rel).toMatch(/export default async function \w+\([^)]*\)[^{]*\{\s*await requireAdmin\(\);/);
+      expect(codeOf(rel), rel).toMatch(/export default async function \w+\([^)]*\)[^{]*\{\s*await requireAdmin\(\);/);
     }
   });
 
@@ -550,10 +551,10 @@ describe("4. 정적 규약", () => {
   });
 
   test("장소 라벨은 lib/codes.ts 에서 온다 — 번역 문자열을 저장하지 않는다 (CLAUDE.md §3)", () => {
-    const screens = `${stripComments(read(LIST_PAGE))}${stripComments(read(EDIT_PAGE))}${stripComments(read(FORM_UI))}`;
+    const screens = `${codeOf(LIST_PAGE)}${codeOf(EDIT_PAGE)}${codeOf(FORM_UI)}`;
     expect(screens).toMatch(/locationLabelKo|ROUTE_PLACE_CODES/);
     // 폼이 보내는 값은 코드다
-    expect(stripComments(read(FORM_UI))).toMatch(/ROUTE_FIELDS\.originCode/);
+    expect(codeOf(FORM_UI)).toMatch(/ROUTE_FIELDS\.originCode/);
   });
 });
 

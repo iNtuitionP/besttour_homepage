@@ -32,6 +32,8 @@ import type { SendRequest } from "@/lib/notify/sender";
 import type { TemplateVarsPort } from "@/lib/notify/solapi";
 import { renderTemplate, type CustomerVars, type OwnerVars } from "@/lib/notify/templates";
 
+import { stripComments } from "./helpers/strip-comments";
+
 const ROOT = path.resolve(import.meta.dirname, "..");
 
 // =============================================================================
@@ -436,7 +438,7 @@ describe("8. 정적", () => {
   });
 
   test("mail.ts — 광고를 보내지 않는다: (광고) 표기·수신거부 안내·HTML 본문을 만들지 않는다", () => {
-    const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+    const code = stripComments(src, "lib/notify/mail.ts");
     for (const banned of ["(광고)", "수신거부", "무료수신거부", "<html", "<p>"]) {
       expect(code, banned).not.toContain(banned);
     }

@@ -31,6 +31,8 @@ import {
 import { contactPhone } from "@/lib/reservations/phone";
 import { ReservationInput } from "@/lib/types";
 
+import { stripComments } from "./helpers/strip-comments";
+
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string) => readFileSync(path.join(ROOT, rel), "utf8").replace(/\r\n/g, "\n");
 
@@ -61,25 +63,8 @@ const validInput = {
   privacyConsent: true as const,
 };
 
-/** 주석을 걷어낸 코드만 남긴다 — tests/layout.test.ts 와 같은 구현 */
-function stripComments(src: string): string {
-  const noBlock = src.replace(/\/\*[\s\S]*?\*\//g, "");
-  return noBlock
-    .split("\n")
-    .map((line) => {
-      let inStr: string | null = null;
-      for (let i = 0; i < line.length; i++) {
-        const ch = line[i];
-        if (inStr) {
-          if (ch === "\\") i++;
-          else if (ch === inStr) inStr = null;
-        } else if (ch === '"' || ch === "'" || ch === "`") inStr = ch;
-        else if (ch === "/" && line[i + 1] === "/") return line.slice(0, i);
-      }
-      return line;
-    })
-    .join("\n");
-}
+/** 주석을 걷어낸 코드. 제거기는 저장소에 하나뿐이다(`tests/helpers/strip-comments.ts` · P6-7/P6-8 · D7). */
+const codeOf = (rel: string) => stripComments(read(rel), rel);
 
 const HANGUL = /[ᄀ-ᇿ㄰-㆏가-힯]/;
 
@@ -229,7 +214,7 @@ describe("M6 — phone XOR phoneIntl (로케일 무관)", () => {
   });
 
   test("옛 refine 의 자취가 없다 — locale 로 전화번호를 강제하지 않는다", () => {
-    const src = stripComments(read("lib/types.ts"));
+    const src = codeOf("lib/types.ts");
     expect(src).not.toMatch(/locale\s*!==\s*["']en["']/);
     expect(src).toMatch(/superRefine|\.check\(/);
   });
@@ -309,7 +294,7 @@ describe("M1 — 전역 404 · (site) 404 · (site) error 바운더리", () => {
     const src = read(SITE_ERROR);
     expect(src.trimStart()).toMatch(/^["']use client["']/);
     expect(src).toMatch(/onClick=\{\s*\(\)\s*=>\s*reset\(\)\s*\}|onClick=\{reset\}/);
-    const code = stripComments(src);
+    const code = codeOf(SITE_ERROR);
     expect(code).not.toMatch(/error\.message/);
     expect(code).not.toMatch(/error\.stack/);
     expect(code).not.toMatch(/error\.toString/);
@@ -331,7 +316,7 @@ describe("M1 — 전역 404 · (site) 404 · (site) error 바운더리", () => {
 
   test("세 파일에 한글 리터럴 0건 — 문구는 i18n(errors) 과 원장에서만", () => {
     for (const rel of [ROOT_NOT_FOUND, SITE_NOT_FOUND, SITE_ERROR]) {
-      const offenders = stripComments(read(rel))
+      const offenders = codeOf(rel)
         .split("\n")
         .map((l, i) => [i + 1, l] as const)
         .filter(([, l]) => HANGUL.test(l));
@@ -345,7 +330,7 @@ describe("M1 — 전역 404 · (site) 404 · (site) error 바운더리", () => {
 // ═════════════════════════════════════════════════════════════════════════
 describe("M8 — /admin 은 요청마다 렌더한다", () => {
   test('app/admin/layout.tsx 에 export const dynamic = "force-dynamic"', () => {
-    const src = stripComments(read(ADMIN_LAYOUT));
+    const src = codeOf(ADMIN_LAYOUT);
     expect(src).toMatch(/export\s+const\s+dynamic\s*=\s*["']force-dynamic["']/);
   });
 });

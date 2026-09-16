@@ -78,6 +78,8 @@ import { requireAdmin } from "@/lib/auth/requireAdmin";
 import { ALBUM_SLUG_PATTERN, parseAlbumSlug } from "@/lib/queries/albums";
 import { createSsrClient } from "@/lib/supabase/ssr";
 
+import { stripComments } from "./helpers/strip-comments";
+
 // =============================================================================
 // 공통 헬퍼 (tests/admin-routes.test.ts 와 같은 구현)
 // =============================================================================
@@ -86,9 +88,8 @@ const read = (rel: string): string => readFileSync(path.join(ROOT, rel), "utf-8"
 const exists = (rel: string): boolean => existsSync(path.join(ROOT, rel));
 const HANGUL = /[가-힣]/;
 
-function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
-}
+/** 주석을 걷어낸 코드. 제거기는 저장소에 하나뿐이다(`tests/helpers/strip-comments.ts` · P6-7/P6-8 · D7). */
+const codeOf = (rel: string) => stripComments(read(rel), rel);
 
 /** SQL 의 주석(`--`)을 뺀 실행 코드만. */
 function sqlCode(src: string): string {
@@ -317,7 +318,7 @@ describe("2. 경로 규약", () => {
     }
     // 업로드 경로를 만드는 함수는 앨범을 아예 인자로 받지 않는다
     expect(buildUploadPaths.length).toBeLessThanOrEqual(3);
-    expect(stripComments(read(LIB_INPUT))).not.toMatch(/albumId[^\n]*\/[^\n]*(yyyy|mm)/);
+    expect(codeOf(LIB_INPUT)).not.toMatch(/albumId[^\n]*\/[^\n]*(yyyy|mm)/);
   });
 
   test("확장자 화이트리스트 — 스펙 §13.9 (4)의 5종(+heif)", () => {
@@ -429,7 +430,7 @@ describe("4. 서버액션", () => {
   test("'use server' 첫 줄 · export 8개 전부 async · 전부 첫 문장이 게이트", () => {
     const src = read(ACTION);
     expect(src.split("\n")[0].trim()).toMatch(/^["']use server["'];?$/);
-    const exports = [...stripComments(src).matchAll(/^export\s+.*$/gm)].map((m) => m[0]);
+    const exports = [...codeOf(ACTION).matchAll(/^export\s+.*$/gm)].map((m) => m[0]);
     expect(exports.length, "'use server' 파일의 export 는 전부 공개 POST 엔드포인트가 된다 (ADR-3)").toBe(8);
     for (const e of exports) expect(e, e).toMatch(/^export async function/);
     for (const name of [
@@ -443,7 +444,7 @@ describe("4. 서버액션", () => {
       "deleteGalleryAlbum",
     ]) {
       const body = new RegExp(`export async function ${name}\\([^)]*\\)[^{]*\\{\\s*await requireAdmin\\(\\);`);
-      expect(stripComments(src), `${name} 의 첫 문장이 게이트가 아니다`).toMatch(body);
+      expect(codeOf(ACTION), `${name} 의 첫 문장이 게이트가 아니다`).toMatch(body);
     }
     expect(src).toMatch(/import \{ requireAdmin \} from "@\/lib\/auth\/requireAdmin"/);
     expect(src).not.toMatch(/as requireAdmin/);
@@ -696,7 +697,7 @@ describe("4-B. 업로드 커밋과 되돌리기", () => {
   });
 
   test("업로더는 이 규칙을 자기 안에 다시 적지 않는다 — commitUpload 에 진짜 서버액션을 물린다", () => {
-    const src = stripComments(read(UPLOADER_UI));
+    const src = codeOf(UPLOADER_UI);
     expect(src).toMatch(/commitUpload\(/);
     expect(src).toMatch(/record: recordGalleryUpload/);
     // 잠금 해제는 finally 안에 있어야 한다(F1) — try 를 빠져나가는 어떤 경로에서도 화면이 잠기지 않는다
@@ -851,25 +852,25 @@ describe("7. 정적 규약", () => {
   test("서비스 롤 0 · unstable_cache 0 (ADR-2·ADR-3)", () => {
     for (const rel of TS_TARGETS) {
       expect(read(rel), rel).not.toMatch(/createServiceClient|SUPABASE_SERVICE_ROLE_KEY|supabase\/server/);
-      expect(stripComments(read(rel)), rel).not.toMatch(/unstable_cache/);
+      expect(codeOf(rel), rel).not.toMatch(/unstable_cache/);
     }
   });
 
   test("signed URL 0 — 만들려면 서비스 롤이 필요하다(ADR-9 수단 변경의 이유)", () => {
     for (const rel of TS_TARGETS) {
-      expect(stripComments(read(rel)), rel).not.toMatch(/createSignedUrl|createSignedUploadUrl/);
+      expect(codeOf(rel), rel).not.toMatch(/createSignedUrl|createSignedUploadUrl/);
     }
   });
 
   test("관리자 경로에 process.env 분기 0 (check-admin-gate 규칙 6)", () => {
     for (const rel of TS_TARGETS) {
-      expect(stripComments(read(rel)), rel).not.toMatch(/process\s*\.\s*env|NODE_ENV/);
+      expect(codeOf(rel), rel).not.toMatch(/process\s*\.\s*env|NODE_ENV/);
     }
   });
 
   test("한글 리터럴 0 — 문구는 messages/ko.json admin.gallery.* 에서만 온다", () => {
     for (const rel of TS_TARGETS) {
-      const code = stripComments(read(rel));
+      const code = codeOf(rel);
       const lines = code.split("\n").filter((l) => HANGUL.test(l));
       expect(lines, `${rel} 에 한글 리터럴: ${lines.join(" / ")}`).toEqual([]);
     }
@@ -883,7 +884,7 @@ describe("7. 정적 규약", () => {
 
   test("공개 읽기 계층은 그대로다 — bytes·original_path 가 새지 않는다 (P6-1 규약)", () => {
     for (const rel of ["lib/queries/gallery.ts", "lib/queries/albums.ts"]) {
-      const code = stripComments(read(rel));
+      const code = codeOf(rel);
       expect(code, rel).not.toMatch(/\bbytes\b/);
       expect(code, rel).not.toMatch(/original_path|originalPath/);
     }
@@ -895,7 +896,7 @@ describe("7. 정적 규약", () => {
   });
 
   test("화면 — 첫 문장이 게이트다", () => {
-    expect(stripComments(read(LIST_PAGE))).toMatch(/export default async function \w+\([^)]*\)[^{]*\{\s*await requireAdmin\(\);/);
+    expect(codeOf(LIST_PAGE)).toMatch(/export default async function \w+\([^)]*\)[^{]*\{\s*await requireAdmin\(\);/);
   });
 
   test("클라이언트 컴포넌트 3종은 'use client' 로 시작한다 — 업로더만 브라우저 코드를 갖는다", () => {
@@ -903,11 +904,11 @@ describe("7. 정적 규약", () => {
       expect(read(rel).split("\n")[0].trim(), rel).toMatch(/^["']use client["'];?$/);
     }
     // 서버 컴포넌트에 canvas·File API 가 새지 않는다
-    expect(stripComments(read(LIST_PAGE))).not.toMatch(/createImageBitmap|canvas|FileReader/i);
+    expect(codeOf(LIST_PAGE)).not.toMatch(/createImageBitmap|canvas|FileReader/i);
   });
 
   test("업로더는 브라우저 세션으로 직접 올린다 — 서버액션에 파일 본문을 넘기지 않는다 (ADR-9)", () => {
-    const src = stripComments(read(UPLOADER_UI));
+    const src = codeOf(UPLOADER_UI);
     expect(src).toMatch(/createBrowserSupabase/);
     expect(src).toMatch(/\.storage\s*\.from\(/);
     expect(src).toMatch(/createImageBitmap/);
@@ -918,7 +919,7 @@ describe("7. 정적 규약", () => {
   });
 
   test("HEIC — 디코드에 실패하면 업로드하지 않고 안내한다(서버 변환 없음)", () => {
-    const src = stripComments(read(UPLOADER_UI));
+    const src = codeOf(UPLOADER_UI);
     expect(src).toMatch(/isHeicExtension/);
     expect(src).toMatch(/heic/i);
     const ko = JSON.parse(read("messages/ko.json")) as Record<string, never>;

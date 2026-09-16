@@ -68,6 +68,8 @@ import { PUBLIC_CODE_PATTERN } from "@/lib/reservations/publicCode";
 import { RESERVATION_ERROR_KEYS } from "@/lib/reservations/submitResult";
 import { PHONE_INTL_PATTERN, PHONE_KR_PATTERN } from "@/lib/types";
 
+import { stripComments } from "./helpers/strip-comments";
+
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const QUOTE_DIR = "components/quote";
 const PAGE = "app/[locale]/(site)/quote/page.tsx";
@@ -91,25 +93,8 @@ function walk(absDir: string): string[] {
 }
 const toPosix = (p: string) => p.split(path.sep).join("/");
 
-/** 주석 제거 — 블록 주석 전체, 줄 주석은 문자열 밖의 // 부터 (tests/layout.test.ts 와 같은 규칙) */
-function stripComments(src: string): string {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .map((line) => {
-      let inStr: string | null = null;
-      for (let i = 0; i < line.length; i++) {
-        const ch = line[i];
-        if (inStr) {
-          if (ch === "\\") i++;
-          else if (ch === inStr) inStr = null;
-        } else if (ch === '"' || ch === "'" || ch === "`") inStr = ch;
-        else if (ch === "/" && line[i + 1] === "/") return line.slice(0, i);
-      }
-      return line;
-    })
-    .join("\n");
-}
+/** 주석을 걷어낸 코드. 제거기는 저장소에 하나뿐이다(`tests/helpers/strip-comments.ts` · P6-7/P6-8 · D7). */
+const codeOf = (rel: string) => stripComments(read(rel), rel);
 
 function ledgerImports(src: string): string[] {
   const names: string[] = [];
@@ -126,7 +111,7 @@ function ledgerImports(src: string): string[] {
 const quoteFiles = walk(path.join(ROOT, QUOTE_DIR)).map((p) => toPosix(path.relative(ROOT, p)));
 const quoteTsx = quoteFiles.filter((f) => f.endsWith(".tsx"));
 const quoteCodeFiles = [...quoteFiles.filter((f) => /\.(tsx?|css)$/.test(f)), PAGE, DONE_PAGE];
-const quoteSources = quoteCodeFiles.map((file) => ({ file, text: read(file), code: stripComments(read(file)) }));
+const quoteSources = quoteCodeFiles.map((file) => ({ file, text: read(file), code: codeOf(file) }));
 
 const ko = JSON.parse(read(MESSAGES_KO)) as Record<string, unknown>;
 const quoteKo = JSON.stringify(ko.quote ?? null);
@@ -666,7 +651,7 @@ describe("7. 폼 토큰 — env 없이도 페이지는 죽지 않는다", () => 
   });
 
   test("deps.ts — defaultGuardDeps 가 guardSecret() 을 쓰고 GUARD_SECRET 을 읽는 곳은 한 곳", () => {
-    const src = stripComments(read(DEPS));
+    const src = codeOf(DEPS);
     expect(src).toMatch(/export function guardSecret\(\): string/);
     expect((src.match(/process\.env\.GUARD_SECRET/g) ?? []).length).toBe(1);
     const body = src.slice(src.indexOf("export function defaultGuardDeps"));
@@ -756,7 +741,7 @@ describe("8. 정적 검사", () => {
   });
 
   test("useActionState — submitReservation 을 직접 넘기지 않고 (_prev, fd) 래퍼로 감싼다", () => {
-    const src = stripComments(read(WIZARD));
+    const src = codeOf(WIZARD);
     expect(src).not.toMatch(/useActionState\(\s*submitReservation/);
     expect(src).not.toMatch(/useActionState<[^>]*>\(\s*submitReservation/);
     expect(src).toMatch(/useActionState/);
@@ -765,7 +750,7 @@ describe("8. 정적 검사", () => {
   });
 
   test("/quote 는 force-dynamic — 폼 토큰이 요청마다 새로 나온다", () => {
-    const src = stripComments(read(PAGE));
+    const src = codeOf(PAGE);
     expect(src).toMatch(/^export const dynamic = ["']force-dynamic["'];?$/m);
     expect(src).not.toMatch(/export const revalidate/);
     expect(src).not.toMatch(/defaultGuardDeps/);
@@ -774,7 +759,7 @@ describe("8. 정적 검사", () => {
   });
 
   test("폼 토큰 모듈은 guardSecret() 만 부르고 try/catch 로 감싼다", () => {
-    const src = stripComments(read(`${QUOTE_DIR}/form-token.ts`));
+    const src = codeOf(`${QUOTE_DIR}/form-token.ts`);
     expect(src).toMatch(/guardSecret\(\)/);
     expect(src).not.toMatch(/defaultGuardDeps/);
     expect(src).toMatch(/try\s*\{[\s\S]*issueFormToken\([\s\S]*\}\s*catch/);
@@ -783,7 +768,7 @@ describe("8. 정적 검사", () => {
   // P6-6: reservation.errors.* 의 ratelimit·infra·server 가 `{tel}` 보간을 쓰게 됐다(감사 R-6 — 리터럴 대표전화 제거).
   // 값을 넘기지 않으면 next-intl 이 렌더 시점에 던지므로, 카탈로그 쪽 단언과 짝이 되는 소스 쪽 단언을 둔다.
   test("서버 오류 문구를 풀 때 원장 tel 을 보간 인자로 넘긴다 ({tel} 자리가 비지 않게)", () => {
-    const wiz = stripComments(read(WIZARD));
+    const wiz = codeOf(WIZARD);
     expect(wiz).toMatch(/tRoot\(\s*key\s*,\s*\{\s*tel\s*\}\s*\)/);
   });
 
@@ -801,7 +786,7 @@ describe("8. 정적 검사", () => {
     const ts = read(TURNSTILE);
     expect(ts).toMatch(/challenges\.cloudflare\.com\/turnstile\/v0\/api\.js/);
     expect(ts).not.toMatch(/response-field-name/);
-    const wiz = stripComments(read(WIZARD));
+    const wiz = codeOf(WIZARD);
     const hp = wiz.match(/<input[^>]*name=\{G\.website\}[^>]*\/>/)?.[0] ?? "";
     expect(hp, "허니팟 input 이 있어야 한다").not.toBe("");
     expect(hp).toMatch(/tabIndex=\{-1\}/);
@@ -810,7 +795,7 @@ describe("8. 정적 검사", () => {
   });
 
   test("페이지는 개인정보를 서버 컴포넌트 props 로 넘기지 않는다 (P3-5 리뷰 N-2) — 프리뷰는 mode 문자열만", () => {
-    const src = stripComments(read(PAGE));
+    const src = codeOf(PAGE);
     expect(src).toMatch(/previewSubmit=\{/);
     expect(src).not.toMatch(/PREVIEW_RECENT_ROWS|name:\s*["']|phone:\s*["']/);
   });
@@ -830,7 +815,7 @@ describe("8. 정적 검사", () => {
 // 9. 폼 필드명 1:1 — name={F.xxx} / name={G.xxx} 만 쓰고, 계약표와 집합이 같다
 // =============================================================================
 describe("9. 폼 필드명 1:1", () => {
-  const code = quoteTsx.map((f) => stripComments(read(f))).join("\n");
+  const code = quoteTsx.map((f) => codeOf(f)).join("\n");
 
   test("RESERVATION_FORM_FIELDS 의 키를 전부, 그것만 name= 으로 쓴다", () => {
     const used = new Set([...code.matchAll(/name=\{F\.([A-Za-z]+)\}/g)].map((m) => m[1]));
@@ -852,7 +837,7 @@ describe("9. 폼 필드명 1:1", () => {
     expect(F).toEqual(RESERVATION_FORM_FIELDS);
     expect(G).toEqual({ website: GUARD_FORM_FIELDS.website, formToken: GUARD_FORM_FIELDS.formToken });
     for (const f of quoteTsx) {
-      const src = stripComments(read(f));
+      const src = codeOf(f);
       if (/\b[FG]\.[A-Za-z]+/.test(src)) expect(src, f).toMatch(/from\s+["']\.\/fields["']/);
     }
   });
@@ -861,7 +846,7 @@ describe("9. 폼 필드명 1:1", () => {
     const HEAVY = /^import\s+(?!type\s)[^;]*from\s+["']@\/lib\/(types|guard(\/[a-z]+)?|reservations\/formData|reservations\/create|reservations\/db|supabase\/[a-z]+)["']/m;
     for (const f of quoteFiles.filter((x) => /\.tsx?$/.test(x))) {
       if (f === `${QUOTE_DIR}/form-token.ts`) continue;
-      expect(HEAVY.test(stripComments(read(f))), f).toBe(false);
+      expect(HEAVY.test(codeOf(f)), f).toBe(false);
     }
     // 휴대폰 패턴은 lib/types(zod) 를 피해 복제했다 — 원본과 소스가 같아야 한다
     expect(PHONE_KR_INPUT_PATTERN.source).toBe(PHONE_KR_PATTERN.source);

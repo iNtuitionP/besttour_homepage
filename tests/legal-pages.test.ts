@@ -32,6 +32,8 @@ import {
   TERMS,
 } from "@/lib/legal/disclosures";
 
+import { stripComments } from "./helpers/strip-comments";
+
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const LEDGER_REL = "lib/legal/disclosures.ts";
 const ALLOWLIST_REL = "scripts/gates/temp-allowlist.txt";
@@ -63,25 +65,8 @@ function read(rel: string): string {
   return readFileSync(path.join(ROOT, rel), "utf8").replace(/\r\n/g, "\n");
 }
 
-/** 주석(// 줄 끝, /* … *\/)을 걷어낸 코드만 남긴다. URL 의 `//` 는 문자열 안이므로 따옴표 안 `//` 는 건드리지 않는다. */
-function stripComments(src: string): string {
-  const noBlock = src.replace(/\/\*[\s\S]*?\*\//g, "");
-  return noBlock
-    .split("\n")
-    .map((line) => {
-      let inStr: string | null = null;
-      for (let i = 0; i < line.length; i++) {
-        const ch = line[i];
-        if (inStr) {
-          if (ch === "\\") i++;
-          else if (ch === inStr) inStr = null;
-        } else if (ch === '"' || ch === "'" || ch === "`") inStr = ch;
-        else if (ch === "/" && line[i + 1] === "/") return line.slice(0, i);
-      }
-      return line;
-    })
-    .join("\n");
-}
+/** 주석을 걷어낸 코드. 제거기는 저장소에 하나뿐이다(`tests/helpers/strip-comments.ts` · P6-7/P6-8 · D7). */
+const codeOf = (rel: string) => stripComments(read(rel), rel);
 
 const HANGUL = /[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]/;
 
@@ -327,7 +312,7 @@ describe("2. 조문 ↔ 원장 키 ↔ 페이지 경로 매핑표", () => {
 describe("3. 페이지·레이아웃·컴포넌트 소스에 한글 리터럴 0건 (주석 제외)", () => {
   const files = [...Object.values(PAGE_FILES), ...COMPONENT_FILES];
   test.for(files.map((f) => [f] as const))("%s", ([rel]) => {
-    const code = stripComments(read(rel));
+    const code = codeOf(rel);
     const hits = code
       .split("\n")
       .map((l, i) => [i + 1, l] as const)
@@ -359,7 +344,7 @@ describe("3. 페이지·레이아웃·컴포넌트 소스에 한글 리터럴 0�
   });
 
   test("레이아웃은 (site) 셸을 상속하지 않고 LEGAL_LINKS 3개 + 홈 링크를 i18n Link 로 렌더한다", () => {
-    const src = stripComments(read(PAGE_FILES.layout));
+    const src = codeOf(PAGE_FILES.layout);
     expect(src).toMatch(/from ["']@\/i18n\/navigation["']/);
     expect(src).not.toMatch(/\(site\)/);
     for (const k of ["privacy", "terms", "guide"]) expect(src).toMatch(new RegExp(`LEGAL_LINKS\\.${k}`));
@@ -373,8 +358,8 @@ describe("3. 페이지·레이아웃·컴포넌트 소스에 한글 리터럴 0�
   });
 
   test("legal.module.css 는 semantic 토큰만 쓴다 (HEX·rgba·--brand-N 0건, 모든 var 가 semantic.css 에 정의)", () => {
-    const css = read("components/legal/legal.module.css").replace(/\/\*[\s\S]*?\*\//g, "");
-    const semantic = read("styles/semantic.css").replace(/\/\*[\s\S]*?\*\//g, "");
+    const css = codeOf("components/legal/legal.module.css");
+    const semantic = codeOf("styles/semantic.css");
     expect(css.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).toEqual([]);
     expect(/--brand-\d/.test(css)).toBe(false);
     expect(/\b(rgba?|hsla?)\(/.test(css)).toBe(false);

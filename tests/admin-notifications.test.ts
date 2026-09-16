@@ -50,6 +50,8 @@ import {
   type AdminNotificationsClient,
 } from "@/lib/admin/notifications";
 
+import { stripComments } from "./helpers/strip-comments";
+
 // =============================================================================
 // 공통 헬퍼
 // =============================================================================
@@ -66,9 +68,8 @@ const FORBIDDEN_WORDS = new RegExp(
   ["면" + "허", "전세버스" + "하나", "나가는 " + "버스", "태우고 " + "나가", "공" + "차", "회" + "송"].join("|"),
 );
 
-function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
-}
+/** 주석을 걷어낸 코드. 제거기는 저장소에 하나뿐이다(`tests/helpers/strip-comments.ts` · P6-7/P6-8 · D7). */
+const codeOf = (rel: string) => stripComments(read(rel), rel);
 
 const LIB = "lib/admin/notifications.ts";
 const PAGE = "app/admin/(protected)/notifications/page.tsx";
@@ -150,7 +151,7 @@ describe("1. 인가 게이트", () => {
   });
 
   test("기본 export 의 **첫 문장**이 무조건적인 await requireAdmin() 이다", () => {
-    const src = stripComments(read(PAGE));
+    const src = codeOf(PAGE);
     // 매개변수의 `{ searchParams }` 도 중괄호라 "첫 `{`" 로 찾으면 안 된다 — 매치 끝(= 본문 여는 중괄호)부터 읽는다.
     const m = /export\s+default\s+async\s+function\s+\w+\s*\([\s\S]*?\)\s*\{/.exec(src);
     expect(m, "기본 export 를 찾지 못했다").not.toBeNull();
@@ -164,7 +165,7 @@ describe("1. 인가 게이트", () => {
 
   test("게이트에 조건이 붙지 않았다 — if·try·삼항 어디에도 감싸이지 않는다", () => {
     for (const rel of [PAGE, LIB]) {
-      for (const line of stripComments(read(rel)).split("\n")) {
+      for (const line of codeOf(rel).split("\n")) {
         if (!/\brequireAdmin\s*\(/.test(line)) continue;
         expect(line.trim(), `${rel}: ${line.trim()}`).toMatch(/^(?:const\s+\w+\s*=\s*)?await\s+requireAdmin\(\)\s*;$/);
       }
@@ -172,7 +173,7 @@ describe("1. 인가 게이트", () => {
   });
 
   test("정본 게이트 모듈에서만 가져온다 — 같은 이름의 다른 모듈이 아니다", () => {
-    expect(stripComments(read(PAGE))).toMatch(/import\s*\{\s*requireAdmin\s*\}\s*from\s*"@\/lib\/auth\/requireAdmin"/);
+    expect(codeOf(PAGE)).toMatch(/import\s*\{\s*requireAdmin\s*\}\s*from\s*"@\/lib\/auth\/requireAdmin"/);
   });
 
   test("개발용 우회 심볼 0 — 주석에도 남기지 않는다", () => {
@@ -269,8 +270,8 @@ describe("3. 수신처 마스킹", () => {
   });
 
   test("마스킹 구현은 lib/mask.ts 하나뿐이다 — 두 화면이 같은 함수를 부른다 (사본 금지)", () => {
-    const admin = stripComments(read(LIB));
-    const check = stripComments(read("lib/reservation-check/view.ts"));
+    const admin = codeOf(LIB);
+    const check = codeOf("lib/reservation-check/view.ts");
     for (const [rel, src] of [
       [LIB, admin],
       ["lib/reservation-check/view.ts", check],
@@ -493,13 +494,13 @@ describe("5. 요약 집계", () => {
 describe("6. 읽기 전용", () => {
   test("insert · update · delete · upsert · rpc 가 한 군데도 없다", () => {
     for (const rel of [LIB, PAGE]) {
-      const src = stripComments(read(rel));
+      const src = codeOf(rel);
       expect(src, rel).not.toMatch(/\.(insert|update|delete|upsert|rpc)\s*\(/);
     }
   });
 
   test("서버액션도, 폼도, 버튼도 없다 — 재발송은 P4-2 이후 별도 태스크다", () => {
-    const src = stripComments(read(PAGE));
+    const src = codeOf(PAGE);
     expect(src).not.toMatch(/"use server"|'use server'/);
     expect(src).not.toMatch(/<form|<button|formAction/);
     expect(exists("actions/admin/notification.ts"), "액션 파일을 만들지 않았다").toBe(false);
@@ -526,17 +527,17 @@ describe("7. 정적 규약", () => {
   });
 
   test("읽기는 세션 클라이언트 하나로만 — createSsrClient · server-only", () => {
-    const src = stripComments(read(LIB));
+    const src = codeOf(LIB);
     expect(src).toMatch(/createSsrClient/);
     expect(src).toMatch(/^import "server-only";$/m);
   });
 
   test("unstable_cache 0 (ADR-3) — 개인정보가 실린 응답을 태그 캐시에 올리지 않는다", () => {
-    for (const rel of [LIB, PAGE]) expect(stripComments(read(rel)), rel).not.toMatch(/unstable_cache/);
+    for (const rel of [LIB, PAGE]) expect(codeOf(rel), rel).not.toMatch(/unstable_cache/);
   });
 
   test("페이지에 한글 리터럴 0 — 문구는 messages/ko.json admin.notifications.* 에서만 온다", () => {
-    const offenders = stripComments(read(PAGE))
+    const offenders = codeOf(PAGE)
       .split("\n")
       .map((l, i) => [i + 1, l] as const)
       .filter(([, l]) => HANGUL.test(l));
@@ -550,7 +551,7 @@ describe("7. 정적 규약", () => {
 
   test("BM 금지어·타사 상호 0", () => {
     for (const rel of [LIB, PAGE]) {
-      expect(stripComments(read(rel)), rel).not.toMatch(FORBIDDEN_WORDS);
+      expect(codeOf(rel), rel).not.toMatch(FORBIDDEN_WORDS);
     }
   });
 

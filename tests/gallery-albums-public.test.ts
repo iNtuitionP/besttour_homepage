@@ -40,6 +40,8 @@ import type { GalleryAlbum, GalleryItem } from "@/lib/types";
 import { withGalleryLock } from "./helpers/db-lock";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
 
+import { stripComments } from "./helpers/strip-comments";
+
 const ROOT = path.resolve(import.meta.dirname, "..");
 const SITE = "app/[locale]/(site)";
 const INDEX_PAGE = `${SITE}/gallery/page.tsx`;
@@ -52,25 +54,8 @@ const CI_YML = ".github/workflows/ci.yml";
 const read = (rel: string) => readFileSync(path.join(ROOT, rel), "utf8").replace(/\r\n/g, "\n");
 const exists = (rel: string) => existsSync(path.join(ROOT, rel));
 
-/** 주석 제거 — 블록 주석 전체, 줄 주석은 문자열 밖의 // 부터 (tests/pages.test.ts 와 같은 규칙) */
-function stripComments(src: string): string {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .map((line) => {
-      let inStr: string | null = null;
-      for (let i = 0; i < line.length; i++) {
-        const ch = line[i];
-        if (inStr) {
-          if (ch === "\\") i++;
-          else if (ch === inStr) inStr = null;
-        } else if (ch === '"' || ch === "'" || ch === "`") inStr = ch;
-        else if (ch === "/" && line[i + 1] === "/") return line.slice(0, i);
-      }
-      return line;
-    })
-    .join("\n");
-}
+/** 주석을 걷어낸 코드. 제거기는 저장소에 하나뿐이다(`tests/helpers/strip-comments.ts` · P6-7/P6-8 · D7). */
+const codeOf = (rel: string) => stripComments(read(rel), rel);
 
 const squish = (s: string) => s.replace(/\s+/g, " ").trim();
 const HANGUL = /[ᄀ-ᇿ㄰-㆏가-힯]/;
@@ -109,7 +94,7 @@ describe("0. 산출물", () => {
 // 1. 앨범 0개 = 현상 유지 — 기존 화면을 한 픽셀도 바꾸지 않는다 (브리프 §검증 1)
 // =============================================================================
 describe("1. /gallery — 앨범 0개면 지금과 같다", () => {
-  const code = stripComments(read(INDEX_PAGE));
+  const code = codeOf(INDEX_PAGE);
 
   test("기존 평면 그리드 블록이 글자 그대로 남아 있다 (빈 상태 · GalleryGrid · 홈 링크)", () => {
     const original = squish(`
@@ -160,7 +145,7 @@ describe("1. /gallery — 앨범 0개면 지금과 같다", () => {
 // 2. /gallery 색인 — 앨범 목록 + 표지 조회 배선
 // =============================================================================
 describe("2. /gallery — 앨범 색인 배선", () => {
-  const code = stripComments(read(INDEX_PAGE));
+  const code = codeOf(INDEX_PAGE);
 
   test("getAlbums() 로 활성 앨범을 읽고, 표지는 그 앨범의 첫 사진 1장(getGalleryPage limit 1)", () => {
     expect(code).toMatch(/getAlbums\(\s*\)/);
@@ -231,7 +216,7 @@ describe("3. buildAlbumCards", () => {
 // 4. /gallery/[album] — 라우트 계약 (브리프 §만들 것 (2))
 // =============================================================================
 describe("4. /gallery/[album] 라우트", () => {
-  const code = stripComments(read(ALBUM_PAGE));
+  const code = codeOf(ALBUM_PAGE);
 
   test("ISR 600 · dynamicParams true · generateStaticParams 없음 (관리자가 새로 만든 앨범이 404 가 되면 안 된다)", () => {
     expect(code).toMatch(/export\s+const\s+revalidate\s*=\s*600\b/);
@@ -279,7 +264,7 @@ describe("4. /gallery/[album] 라우트", () => {
 // 5. generateMetadata — canonical · 앨범 제목 (브리프 §검증 8)
 // =============================================================================
 describe("5. /gallery/[album] generateMetadata", () => {
-  const code = stripComments(read(ALBUM_PAGE));
+  const code = codeOf(ALBUM_PAGE);
 
   test("canonical 은 canonicalUrl('/gallery/<slug>') 한 번뿐이고 원점을 하드코딩하지 않는다", () => {
     const args = [...code.matchAll(/canonicalUrl\(\s*([^)]*?)\s*\)/g)].map((m) => m[1]);
@@ -435,7 +420,7 @@ describe("7. normalizeAlbumPage · albumPageOffset", () => {
   });
 
   test("상세 페이지가 그 정규화를 실제로 쓴다 — 범위 밖이면 첫 페이지로 물러난다", () => {
-    const code = stripComments(read(ALBUM_PAGE));
+    const code = codeOf(ALBUM_PAGE);
     expect(code).toMatch(/normalizeAlbumPage\(/);
     expect(code).toMatch(/albumPageOffset\(/);
     // 빈 페이지(데이터 끝을 넘긴 page)는 첫 페이지를 다시 읽는다
@@ -499,7 +484,7 @@ describe("8. messages · 카피 규칙", () => {
   test("컴포넌트·헬퍼에 한글 리터럴 0 · 조회 0 · next/link 0", () => {
     for (const rel of [ALBUM_CARDS, ALBUM_HELPERS]) {
       const raw = read(rel);
-      const code = stripComments(raw);
+      const code = codeOf(rel);
       expect(code.split("\n").filter((l) => HANGUL.test(l)), `${rel} 에 한글 리터럴`).toEqual([]);
       expect(/@\/lib\/queries|createAnonClient|@\/lib\/supabase/.test(code), `${rel} 가 직접 조회한다`).toBe(false);
       expect(/from\s+["']next\/link["']/.test(raw), rel).toBe(false);
@@ -508,7 +493,7 @@ describe("8. messages · 카피 규칙", () => {
   });
 
   test("새 CSS 는 pages.module.css 안에만 — 색은 역할 토큰, HEX·원시 토큰 0", () => {
-    const css = read(PAGES_CSS).replace(/\/\*[\s\S]*?\*\//g, "");
+    const css = codeOf(PAGES_CSS);
     expect(css).toContain(".albumGrid");
     expect(css.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).toEqual([]);
     expect(/var\(\s*--(s[1-9]|r|r-s|r-xs|sh-[12]|maxw|ease|t)\s*[,)]/.test(css)).toBe(false);

@@ -30,6 +30,8 @@ import {
   type CopyRule,
 } from "./helpers/forbidden-copy";
 
+import { stripComments } from "./helpers/strip-comments";
+
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SITE = "app/[locale]/(site)";
 const PAGE_FILES = {
@@ -62,25 +64,8 @@ function walk(absDir: string): string[] {
 }
 const toPosix = (p: string) => p.split(path.sep).join("/");
 
-/** 주석 제거 — 블록 주석 전체, 줄 주석은 문자열 밖의 // 부터 (tests/layout.test.ts 와 같은 규칙) */
-function stripComments(src: string): string {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .map((line) => {
-      let inStr: string | null = null;
-      for (let i = 0; i < line.length; i++) {
-        const ch = line[i];
-        if (inStr) {
-          if (ch === "\\") i++;
-          else if (ch === inStr) inStr = null;
-        } else if (ch === '"' || ch === "'" || ch === "`") inStr = ch;
-        else if (ch === "/" && line[i + 1] === "/") return line.slice(0, i);
-      }
-      return line;
-    })
-    .join("\n");
-}
+/** 주석을 걷어낸 코드. 제거기는 저장소에 하나뿐이다(`tests/helpers/strip-comments.ts` · P6-7/P6-8 · D7). */
+const codeOf = (rel: string) => stripComments(read(rel), rel);
 
 function ledgerImports(src: string): string[] {
   const names: string[] = [];
@@ -150,13 +135,13 @@ describe("1. 라우트 파일 — 존재 · revalidate = 600 · 요청 시점 AP
   });
 
   test.for(pageEntries)("%s — `export const revalidate = 600` · force-dynamic 없음", ([, rel]) => {
-    const code = stripComments(read(rel));
+    const code = codeOf(rel);
     expect(code).toMatch(/export\s+const\s+revalidate\s*=\s*600\b/);
     expect(/force-dynamic/.test(code)).toBe(false);
   });
 
   test.for(pageEntries)("%s — headers()·cookies()·searchParams·draftMode 0 (정적 렌더 유지)", ([, rel]) => {
-    const code = stripComments(read(rel));
+    const code = codeOf(rel);
     expect(/\bheaders\s*\(/.test(code), "headers()").toBe(false);
     expect(/\bcookies\s*\(/.test(code), "cookies()").toBe(false);
     expect(/searchParams/.test(code), "searchParams").toBe(false);
@@ -165,7 +150,7 @@ describe("1. 라우트 파일 — 존재 · revalidate = 600 · 요청 시점 AP
   });
 
   test.for(pageEntries)("%s — 서버 액션·서비스 롤·Next 캐시 우회 0 (anon + RLS 읽기 전용)", ([, rel]) => {
-    const code = stripComments(read(rel));
+    const code = codeOf(rel);
     expect(/['"]use server['"]/.test(code), "use server").toBe(false);
     expect(/createServiceClient|service_role|SUPABASE_SERVICE_ROLE_KEY/.test(code), "서비스 롤").toBe(false);
     expect(/@\/lib\/supabase\/server/.test(code), "서비스 롤 모듈").toBe(false);
@@ -189,14 +174,14 @@ describe("1. 라우트 파일 — 존재 · revalidate = 600 · 요청 시점 AP
   });
 
   test.for(pageEntries)("%s — generateMetadata 가 있고 setRequestLocale 을 부른다", ([, rel]) => {
-    const code = stripComments(read(rel));
+    const code = codeOf(rel);
     expect(code).toMatch(/export\s+(async\s+)?function\s+generateMetadata/);
     expect(code).toMatch(/setRequestLocale\(/);
     expect(code).toMatch(/COMPANY\.brandName/);
   });
 
   test("상세 페이지 — 동적 세그먼트 + ISR: dynamicParams = true · generateStaticParams 없음 · notFound() · getNotice(", () => {
-    const code = stripComments(read(PAGE_FILES.noticeDetail));
+    const code = codeOf(PAGE_FILES.noticeDetail);
     expect(code).toMatch(/export\s+const\s+dynamicParams\s*=\s*true/);
     expect(/generateStaticParams/.test(code)).toBe(false);
     expect(code).toMatch(/import\s*\{[^}]*\bnotFound\b[^}]*\}\s*from\s*["']next\/navigation["']/);
@@ -206,16 +191,16 @@ describe("1. 라우트 파일 — 존재 · revalidate = 600 · 요청 시점 AP
   });
 
   test("목록은 getNotices(50) · 갤러리는 getGallery(60) · 차량은 getVehicles() · 운임료는 getShowcaseRoutes()", () => {
-    expect(stripComments(read(PAGE_FILES.notices))).toMatch(/getNotices\(\s*50\s*\)/);
-    expect(stripComments(read(PAGE_FILES.gallery))).toMatch(/getGallery\(\s*60\s*\)/);
-    expect(stripComments(read(PAGE_FILES.fleet))).toMatch(/getVehicles\(\s*\)/);
-    expect(stripComments(read(PAGE_FILES.fares))).toMatch(/getShowcaseRoutes\(\s*\)/);
+    expect(codeOf(PAGE_FILES.notices)).toMatch(/getNotices\(\s*50\s*\)/);
+    expect(codeOf(PAGE_FILES.gallery)).toMatch(/getGallery\(\s*60\s*\)/);
+    expect(codeOf(PAGE_FILES.fleet)).toMatch(/getVehicles\(\s*\)/);
+    expect(codeOf(PAGE_FILES.fares)).toMatch(/getShowcaseRoutes\(\s*\)/);
   });
 
   test("페이지·components/pages 에 한글 리터럴 0건 (주석 제외) — 문구는 ko.json pages.* · home.* · 원장에서만", () => {
-    for (const { rel, text } of allNewSources) {
+    for (const { rel } of allNewSources) {
       if (rel.endsWith(".css")) continue;
-      const hits = stripComments(text)
+      const hits = codeOf(rel)
         .split("\n")
         .map((l, i) => [i + 1, l] as const)
         .filter(([, l]) => HANGUL.test(l));
@@ -318,15 +303,15 @@ describe("3. 카피 규칙 (pages.* + 페이지 소스)", () => {
 
   test("게이트 금지어 0건 — ko.json pages.* + 새 소스 전부", () => {
     for (const w of FORBIDDEN_WORDS) expect(pagesKoText.includes(w), `pages.* 에 금지어`).toBe(false);
-    for (const { rel, text } of allNewSources) {
-      const code = stripComments(text);
+    for (const { rel } of allNewSources) {
+      const code = codeOf(rel);
       for (const w of FORBIDDEN_WORDS) expect(code.includes(w), `${rel} 에 금지어`).toBe(false);
     }
   });
 
   test.for(CLAIM_RULES.map(([label, re]) => [label, re] as const))("실증 불가·비교 광고 0건 — %s", ([, re]) => {
     expect(re.test(pagesKoText)).toBe(false);
-    for (const { rel, text } of allNewSources) expect(re.test(stripComments(text)), rel).toBe(false);
+    for (const { rel } of allNewSources) expect(re.test(codeOf(rel)), rel).toBe(false);
   });
 
   test("원장 문구·값의 문자열 리터럴 0건 — 소스와 ko.json pages.* 양쪽 (원장 import 로만)", () => {
@@ -347,8 +332,8 @@ describe("3. 카피 규칙 (pages.* + 페이지 소스)", () => {
       "결제 진행됩니다",
       "10만원",
     ];
-    for (const { rel, text } of allNewSources) {
-      const code = stripComments(text);
+    for (const { rel } of allNewSources) {
+      const code = codeOf(rel);
       for (const frag of fragments) expect(code.includes(frag), `${rel} 에 원장 문구 리터럴: ${frag}`).toBe(false);
     }
     for (const frag of fragments) expect(pagesKoText.includes(frag), `ko.json pages 에 원장 문구 복제: ${frag}`).toBe(false);
@@ -388,7 +373,7 @@ describe("3. 카피 규칙 (pages.* + 페이지 소스)", () => {
 // =============================================================================
 describe("4. /about", () => {
   const src = read(PAGE_FILES.about);
-  const code = stripComments(src);
+  const code = codeOf(PAGE_FILES.about);
   const inventory = read(INVENTORY);
   const about = (pagesKo.about ?? {}) as Record<string, unknown>;
 
@@ -464,7 +449,7 @@ describe("4. /about", () => {
 // =============================================================================
 describe("5. /fleet", () => {
   const src = read(PAGE_FILES.fleet);
-  const code = stripComments(src);
+  const code = codeOf(PAGE_FILES.fleet);
   const inventory = read(INVENTORY);
 
   /** 인벤토리 §2 "### ★2" 블록 — 제목 줄 + 두 문장(인용 `> `) */
@@ -522,7 +507,7 @@ describe("5. /fleet", () => {
 // =============================================================================
 describe("6. /fares (P6-3b)", () => {
   const src = read(PAGE_FILES.fares);
-  const code = stripComments(src);
+  const code = codeOf(PAGE_FILES.fares);
   const faresKo = JSON.stringify(pagesKo.fares ?? {});
 
   test("원장 import — QUOTE_BASIS · PAYMENT · VERBATIM · COMPANY 를 가져와 그대로 렌더한다", () => {
@@ -718,7 +703,7 @@ describe("8. splitParagraphs — 본문은 \\n\\n 으로만 문단을 나눈다 
 // =============================================================================
 describe("9. /notices · /gallery", () => {
   test("/notices — 0건이면 빈 상태 문구(pages.notices.empty), 있으면 NoticeList(카테고리 배지는 home.notice.category 재사용)", () => {
-    const code = stripComments(read(PAGE_FILES.notices));
+    const code = codeOf(PAGE_FILES.notices);
     expect(code).toMatch(/notices\.length\s*===\s*0/);
     expect(code).toMatch(/<NoticeList\b/);
     const notices = pagesKo.notices as Record<string, unknown>;
@@ -731,7 +716,7 @@ describe("9. /notices · /gallery", () => {
   });
 
   test("/gallery — 0건이면 '준비 중' + 홈 링크, 있으면 GalleryGrid(홈 GallerySection 과 같은 카드) · alt 는 캡션(없으면 빈 alt)", () => {
-    const code = stripComments(read(PAGE_FILES.gallery));
+    const code = codeOf(PAGE_FILES.gallery);
     expect(code).toMatch(/pictures\.length\s*===\s*0/);
     expect(code).toMatch(/href="\/"/);
     expect(code).toMatch(/<GalleryGrid\b/);

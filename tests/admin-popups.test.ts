@@ -62,6 +62,8 @@ import { revalidate } from "@/lib/ports/revalidate";
 import { QUERY_TAGS } from "@/lib/queries/tags";
 import { createSsrClient } from "@/lib/supabase/ssr";
 
+import { stripComments } from "./helpers/strip-comments";
+
 // =============================================================================
 // 공통 헬퍼
 // =============================================================================
@@ -70,10 +72,8 @@ const read = (rel: string): string => readFileSync(path.join(ROOT, rel), "utf-8"
 const exists = (rel: string): boolean => existsSync(path.join(ROOT, rel));
 const HANGUL = /[가-힣]/;
 
-/** 주석·문자열 안의 내용은 검사에서 빼기 위한 최소 제거기(tests/admin-reservations.test.ts 와 같은 구현). */
-function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
-}
+/** 주석을 걷어낸 코드. 제거기는 저장소에 하나뿐이다(`tests/helpers/strip-comments.ts` · P6-7/P6-8 · D7). */
+const codeOf = (rel: string) => stripComments(read(rel), rel);
 
 const ACTION = "actions/admin/popup.ts";
 const LIB_INPUT = "lib/admin/popupInput.ts";
@@ -428,25 +428,25 @@ describe("4. 정적 규약", () => {
   test("액션 — 'use server' 첫 줄 · export 4개 · 전부 async · 첫 문장이 게이트", () => {
     const src = read(ACTION);
     expect(src.split("\n")[0].trim()).toMatch(/^["']use server["'];?$/);
-    const exports = [...stripComments(src).matchAll(/^export\s+.*$/gm)].map((m) => m[0]);
+    const exports = [...codeOf(ACTION).matchAll(/^export\s+.*$/gm)].map((m) => m[0]);
     expect(exports.length, "'use server' 파일의 export 는 전부 공개 POST 엔드포인트가 된다 (ADR-3)").toBe(4);
     for (const e of exports) expect(e, e).toMatch(/^export async function/);
     for (const name of ["createPopup", "updatePopup", "deletePopup", "togglePopupActive"]) {
       const body = new RegExp(`export async function ${name}\\([^)]*\\)[^{]*\\{\\s*await requireAdmin\\(\\);`);
-      expect(stripComments(src), `${name} 의 첫 문장이 게이트가 아니다`).toMatch(body);
+      expect(codeOf(ACTION), `${name} 의 첫 문장이 게이트가 아니다`).toMatch(body);
     }
   });
 
   test("서비스 롤 0 · unstable_cache 0 — 관리자 경로 규약 (ADR-2)", () => {
     for (const rel of TS_TARGETS) {
       expect(read(rel), rel).not.toMatch(/createServiceClient|SUPABASE_SERVICE_ROLE_KEY|supabase\/server/);
-      expect(stripComments(read(rel)), rel).not.toMatch(/unstable_cache/);
+      expect(codeOf(rel), rel).not.toMatch(/unstable_cache/);
     }
   });
 
   test("한글 리터럴 0 — 문구는 messages/ko.json admin.popups.* 에서만 온다", () => {
     for (const rel of TS_TARGETS) {
-      const offenders = stripComments(read(rel))
+      const offenders = codeOf(rel)
         .split("\n")
         .map((l, i) => [i + 1, l] as const)
         .filter(([, l]) => HANGUL.test(l));
@@ -460,13 +460,13 @@ describe("4. 정적 규약", () => {
   });
 
   test("공개 판정 함수를 재사용한다 — 판정 기준이 둘로 갈리지 않는다", () => {
-    expect(stripComments(read(LIB_DB))).toMatch(/isActiveOn/);
+    expect(codeOf(LIB_DB)).toMatch(/isActiveOn/);
     // lib/queries/popups.ts 는 이번 태스크가 고치지 않는다(브리프). 공개 규칙은 그 파일 하나다.
     expect(read("lib/queries/popups.ts")).toMatch(/export function isActiveOn/);
   });
 
   test("미리보기는 공개 팝업 컴포넌트를 그대로 쓴다 — 관리자 전용 사본이 없다", () => {
-    expect(stripComments(read(EDIT_PAGE))).toMatch(/HomePopup/);
+    expect(codeOf(EDIT_PAGE)).toMatch(/HomePopup/);
     expect(exists("components/admin/HomePopup.tsx"), "관리자 전용 사본을 만들지 않는다").toBe(false);
   });
 
@@ -510,7 +510,7 @@ describe("4. 정적 규약", () => {
 
   test("화면 — 두 페이지 모두 첫 문장이 게이트다", () => {
     for (const rel of [LIST_PAGE, EDIT_PAGE]) {
-      expect(stripComments(read(rel)), rel).toMatch(/export default async function \w+\([^)]*\)[^{]*\{\s*await requireAdmin\(\);/);
+      expect(codeOf(rel), rel).toMatch(/export default async function \w+\([^)]*\)[^{]*\{\s*await requireAdmin\(\);/);
     }
   });
 

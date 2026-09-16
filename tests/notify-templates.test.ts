@@ -34,15 +34,16 @@ import {
   type OwnerVars,
 } from "@/lib/notify/templates";
 
+import { stripComments } from "./helpers/strip-comments";
+
 const ROOT = path.resolve(import.meta.dirname, "..");
 const read = (rel: string): string => readFileSync(path.join(ROOT, rel), "utf-8");
 const exists = (rel: string): boolean => existsSync(path.join(ROOT, rel));
 
 const TEMPLATES = "lib/notify/templates.ts";
 
-function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
-}
+/** 주석을 걷어낸 코드. 제거기는 저장소에 하나뿐이다(`tests/helpers/strip-comments.ts` · P6-7/P6-8 · D7). */
+const codeOf = (rel: string) => stripComments(read(rel), rel);
 
 const hex = (s: string): string => Buffer.from(s, "utf8").toString("hex");
 
@@ -371,7 +372,7 @@ describe("5. 문구 규약", () => {
   });
 
   test("소스에 광고 표현·BM 금지어·타사 상호 0 (주석 제외)", () => {
-    const src = stripComments(read(TEMPLATES));
+    const src = codeOf(TEMPLATES);
     expect(src).not.toMatch(AD_WORDS);
     expect(src).not.toMatch(BM_WORDS);
     expect(src).not.toContain(W_LICENSE);
@@ -379,7 +380,7 @@ describe("5. 문구 규약", () => {
   });
 
   test("소스에 실증불가 수치 주장 0 — 숫자는 원장(PAYMENT)과 변수에서만 온다", () => {
-    expect(stripComments(read(TEMPLATES))).not.toMatch(CLAIM_NUMBERS);
+    expect(codeOf(TEMPLATES)).not.toMatch(CLAIM_NUMBERS);
   });
 
   test("렌더 결과의 수치 주장은 전부 변수·원장에서 온 것이다", () => {
@@ -418,7 +419,7 @@ describe("6. 원장 단일 출처", () => {
   });
 
   test("verbatim·대표전화·결제 문안을 다시 타이핑하지 않았다", () => {
-    const bare = stripComments(src());
+    const bare = codeOf(TEMPLATES);
     expect(bare, "verbatim 리터럴").not.toContain(VERBATIM.bookingNotice);
     expect(bare, "대표전화 리터럴").not.toContain(COMPANY.tel);
     expect(bare, "결제 안내 리터럴").not.toContain(PAYMENT.line);
@@ -426,7 +427,7 @@ describe("6. 원장 단일 출처", () => {
   });
 
   test("링크는 원점(호출부가 넘긴 origin) + 경로 상수뿐 — 도메인 리터럴 0", () => {
-    const bare = stripComments(src());
+    const bare = codeOf(TEMPLATES);
     expect(bare).not.toMatch(/https?:\/\//);
     expect(bare).not.toMatch(/bestour/i);
     expect(bare).not.toMatch(/process\.env/);
@@ -440,7 +441,7 @@ describe("6. 원장 단일 출처", () => {
   });
 
   test("순수 모듈 — 서버 지시어·네트워크·DB 0", () => {
-    const bare = stripComments(src());
+    const bare = codeOf(TEMPLATES);
     expect(bare).not.toMatch(/"use server"|'use server'/);
     expect(bare).not.toMatch(/\bfetch\(/);
     expect(bare).not.toMatch(/createServiceClient|SUPABASE_SERVICE_ROLE_KEY|supabase\//);

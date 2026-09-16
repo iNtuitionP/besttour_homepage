@@ -17,6 +17,8 @@ import { describe, expect, test } from "vitest";
 import { LEGACY_MENU, type MenuItem } from "@/lib/legacy-menu-map";
 import { LEGAL_LINKS } from "@/lib/legal/disclosures";
 
+import { stripComments } from "./helpers/strip-comments";
+
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 const LAYOUT_DIR = "components/layout";
@@ -50,25 +52,8 @@ const cssModules = walk(path.join(ROOT, "components"))
   .map((p) => toPosix(path.relative(ROOT, p)))
   .filter((f) => f.endsWith(".module.css"));
 
-/** 주석(`//` 줄 끝, 블록)을 걷어낸 코드만 남긴다 — tests/legal-pages.test.ts 와 같은 구현 */
-function stripComments(src: string): string {
-  const noBlock = src.replace(/\/\*[\s\S]*?\*\//g, "");
-  return noBlock
-    .split("\n")
-    .map((line) => {
-      let inStr: string | null = null;
-      for (let i = 0; i < line.length; i++) {
-        const ch = line[i];
-        if (inStr) {
-          if (ch === "\\") i++;
-          else if (ch === inStr) inStr = null;
-        } else if (ch === '"' || ch === "'" || ch === "`") inStr = ch;
-        else if (ch === "/" && line[i + 1] === "/") return line.slice(0, i);
-      }
-      return line;
-    })
-    .join("\n");
-}
+/** 주석을 걷어낸 코드. 제거기는 저장소에 하나뿐이다(`tests/helpers/strip-comments.ts` · P6-7/P6-8 · D7). */
+const codeOf = (rel: string) => stripComments(read(rel), rel);
 
 const HANGUL = /[ᄀ-ᇿ㄰-㆏가-힯]/;
 
@@ -226,8 +211,8 @@ describe("2. ready:false 는 링크를 만들지 않는다", () => {
 
   test("components/layout/** 에 href=\"#\" 죽은 링크 0건", () => {
     // 주석에 목업 상태를 설명하는 것은 허용 — 검사 대상은 실제로 렌더되는 코드다
-    for (const { file, text } of layoutSources) {
-      expect(/href=\{?["']#["']\}?/.test(stripComments(text)), `${file} 에 href=\"#\"`).toBe(false);
+    for (const { file } of layoutSources) {
+      expect(/href=\{?["']#["']\}?/.test(codeOf(file)), `${file} 에 href=\"#\"`).toBe(false);
     }
   });
 
@@ -246,7 +231,7 @@ describe("2. ready:false 는 링크를 만들지 않는다", () => {
 // =============================================================================
 describe("3. components/layout/** — 한글 리터럴 0건 + 원장 import", () => {
   test.for(layoutFiles.map((f) => [f] as const))("%s 에 한글 리터럴 없음 (주석 제외)", ([rel]) => {
-    const code = stripComments(read(rel));
+    const code = codeOf(rel);
     const hits = code
       .split("\n")
       .map((l, i) => [i + 1, l] as const)
@@ -284,8 +269,8 @@ describe("3. components/layout/** — 한글 리터럴 0건 + 원장 import", ()
       "대 보유", // 대 보유
       "누적", // 누적
     ];
-    for (const { file, text } of layoutSources) {
-      const code = stripComments(text);
+    for (const { file } of layoutSources) {
+      const code = codeOf(file);
       for (const w of UNPROVEN) {
         expect(code.includes(w), `${file} 에 실증 불가 문구`).toBe(false);
       }
@@ -353,7 +338,7 @@ type Decl = { file: string; prop: string; value: string; decl: string };
 
 /** 중괄호 블록 안쪽만 읽는다 — 선택자(.navLink:hover)나 at-rule prelude 를 선언으로 오인하지 않도록 */
 function declarations(rel: string): Decl[] {
-  const css = read(rel).replace(/\/\*[\s\S]*?\*\//g, "");
+  const css = codeOf(rel);
   const out: Decl[] = [];
   for (const block of css.matchAll(/\{([^{}]*)\}/g)) {
     for (const m of block[1].matchAll(/([-a-z]+)\s*:\s*([^;]+)/g)) {
@@ -397,14 +382,14 @@ describe("4. components/**/*.module.css — 토큰 규약", () => {
 
   test("HEX 리터럴 0건", () => {
     for (const rel of cssModules) {
-      const css = read(rel).replace(/\/\*[\s\S]*?\*\//g, "");
+      const css = codeOf(rel);
       expect(css.match(/#[0-9a-fA-F]{3,8}\b/g) ?? [], rel).toEqual([]);
     }
   });
 
   test("rgb()/rgba()/hsl() 0건 — 색은 역할 토큰만", () => {
     for (const rel of cssModules) {
-      const css = read(rel).replace(/\/\*[\s\S]*?\*\//g, "");
+      const css = codeOf(rel);
       expect(/\b(rgba?|hsla?)\(/.test(css), rel).toBe(false);
     }
   });
@@ -412,7 +397,7 @@ describe("4. components/**/*.module.css — 토큰 규약", () => {
   test("원시 토큰(--s\\d · --r · --r-s · --r-xs · --sh-\\d · --maxw · --ease · --t) 직접 참조 0건", () => {
     const PRIMITIVE = /var\(\s*--(s[1-9]|r|r-s|r-xs|sh-[12]|maxw|ease|t)\s*[,)]/;
     for (const rel of cssModules) {
-      const css = read(rel).replace(/\/\*[\s\S]*?\*\//g, "");
+      const css = codeOf(rel);
       const hits = css.split("\n").filter((l) => PRIMITIVE.test(l));
       expect(hits, `${rel} 가 원시 토큰을 직접 참조한다`).toEqual([]);
     }
@@ -427,10 +412,10 @@ describe("4. components/**/*.module.css — 토큰 규약", () => {
   });
 
   test("모든 var(--x) 참조가 styles/semantic.css 에 정의돼 있다", () => {
-    const semantic = read("styles/semantic.css").replace(/\/\*[\s\S]*?\*\//g, "");
+    const semantic = codeOf("styles/semantic.css");
     const defined = new Set([...semantic.matchAll(/(--[A-Za-z0-9-]+)\s*:/g)].map((m) => m[1]));
     for (const rel of cssModules) {
-      const css = read(rel).replace(/\/\*[\s\S]*?\*\//g, "");
+      const css = codeOf(rel);
       const refs = [...new Set([...css.matchAll(/var\(\s*(--[A-Za-z0-9-]+)/g)].map((m) => m[1]))];
       const missing = refs.filter((r) => !defined.has(r));
       expect(missing, `${rel} — semantic.css 에 없는 참조: ${missing.join(", ")}`).toEqual([]);
@@ -464,8 +449,8 @@ const ROLE_TOKENS = [
 ] as const;
 
 describe("5. semantic.css — 역할 토큰 계약", () => {
-  const semanticCss = read("styles/semantic.css").replace(/\/\*[\s\S]*?\*\//g, "");
-  const tokensCss = read("styles/tokens.css").replace(/\/\*[\s\S]*?\*\//g, "");
+  const semanticCss = codeOf("styles/semantic.css");
+  const tokensCss = codeOf("styles/tokens.css");
   const primitives = new Set([...tokensCss.matchAll(/(--[A-Za-z0-9-]+)\s*:/g)].map((m) => m[1]));
   const semanticDecls = [...semanticCss.matchAll(/(--[A-Za-z0-9-]+)\s*:\s*([^;}]+)[;}]/g)].map((m) => ({
     name: m[1],

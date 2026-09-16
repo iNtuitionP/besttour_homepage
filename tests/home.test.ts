@@ -28,6 +28,8 @@ import { withGalleryLock } from "./helpers/db-lock";
 import { COMPARATIVE_CLAIMS, FORBIDDEN_WORDS, UNPROVEN_CLAIMS, type CopyRule } from "./helpers/forbidden-copy";
 import { loadDotEnvLocal } from "./helpers/load-env-local";
 
+import { stripComments } from "./helpers/strip-comments";
+
 loadDotEnvLocal();
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -50,25 +52,8 @@ function walk(absDir: string): string[] {
 }
 const toPosix = (p: string) => p.split(path.sep).join("/");
 
-/** 주석 제거 — 블록 주석 전체, 줄 주석은 문자열 밖의 // 부터 (tests/layout.test.ts 와 같은 규칙) */
-function stripComments(src: string): string {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .map((line) => {
-      let inStr: string | null = null;
-      for (let i = 0; i < line.length; i++) {
-        const ch = line[i];
-        if (inStr) {
-          if (ch === "\\") i++;
-          else if (ch === inStr) inStr = null;
-        } else if (ch === '"' || ch === "'" || ch === "`") inStr = ch;
-        else if (ch === "/" && line[i + 1] === "/") return line.slice(0, i);
-      }
-      return line;
-    })
-    .join("\n");
-}
+/** 주석을 걷어낸 코드. 제거기는 저장소에 하나뿐이다(`tests/helpers/strip-comments.ts` · P6-7/P6-8 · D7). */
+const codeOf = (rel: string) => stripComments(read(rel), rel);
 
 function ledgerImports(src: string): string[] {
   const names: string[] = [];
@@ -87,7 +72,7 @@ const homeTsx = homeFiles.filter((f) => f.endsWith(".tsx"));
 const homeSources = homeFiles
   .filter((f) => /\.(tsx?|css)$/.test(f))
   .map((file) => ({ file, text: read(file) }));
-const homeCode = homeSources.map(({ file, text }) => ({ file, code: stripComments(text) }));
+const homeCode = homeSources.map(({ file }) => ({ file, code: codeOf(file) }));
 
 const ko = JSON.parse(read(MESSAGES_KO)) as Record<string, unknown>;
 const homeKo = JSON.stringify(ko.home ?? null);
@@ -396,7 +381,7 @@ describe("6. quoteHref", () => {
 });
 
 describe("6-b. QuoteWidget 은 접수하지 않는다", () => {
-  const src = stripComments(read(`${HOME_DIR}/QuoteWidget.tsx`));
+  const src = codeOf(`${HOME_DIR}/QuoteWidget.tsx`);
 
   test("이름·전화 입력란 없음 (개인정보를 동의 UI 없이 받게 된다 — P3 위저드 몫)", () => {
     expect(/type=["']tel["']/.test(src)).toBe(false);
@@ -449,7 +434,7 @@ const SECTIONS: ReadonlyArray<[component: string, dataSection: string]> = [
 ];
 
 describe("8. app/[locale]/(site)/page.tsx", () => {
-  const page = stripComments(read(PAGE));
+  const page = codeOf(PAGE);
 
   test("섹션 9개를 목업 DOM 순서대로 렌더한다", () => {
     let last = -1;
@@ -497,7 +482,7 @@ describe("8. app/[locale]/(site)/page.tsx", () => {
 
   test("gallery · notice 는 비어 있으면 섹션 자체를 숨긴다 (빈 그리드 금지)", () => {
     for (const f of ["GallerySection.tsx", "NoticeSection.tsx", "FleetSection.tsx"]) {
-      const src = stripComments(read(`${HOME_DIR}/${f}`));
+      const src = codeOf(`${HOME_DIR}/${f}`);
       expect(src, f).toMatch(/length\s*===\s*0\)\s*return\s+null/);
     }
   });
@@ -522,7 +507,7 @@ describe("9. 히어로 캐러셀 · 이미지 · 팝업", () => {
       if (!file.endsWith(".tsx")) continue;
       expect(/<img[\s>]/.test(code), `${file} 에 <img>`).toBe(false);
     }
-    const carousel = stripComments(read(`${HOME_DIR}/HeroCarousel.tsx`));
+    const carousel = codeOf(`${HOME_DIR}/HeroCarousel.tsx`);
     expect(carousel.match(/priority=\{/g) ?? []).toHaveLength(1);
     expect(carousel).toMatch(/priority=\{i === 0\}/);
     for (const { file, code } of homeCode) {
@@ -532,7 +517,7 @@ describe("9. 히어로 캐러셀 · 이미지 · 팝업", () => {
   });
 
   test("캐러셀 — 5초 · hover/focus 정지 · reduced-motion · aria-current · 방향키", () => {
-    const src = stripComments(read(`${HOME_DIR}/HeroCarousel.tsx`));
+    const src = codeOf(`${HOME_DIR}/HeroCarousel.tsx`);
     expect(src).toMatch(/AUTOPLAY_MS\s*=\s*5000/);
     expect(src).toMatch(/prefers-reduced-motion:\s*reduce/);
     expect(src).toMatch(/onMouseEnter/);
@@ -544,7 +529,7 @@ describe("9. 히어로 캐러셀 · 이미지 · 팝업", () => {
   });
 
   test("팝업 — dialog · aria-modal · ESC · localStorage try/catch · dismissKey 사용", () => {
-    const src = stripComments(read(`${HOME_DIR}/Popup.tsx`));
+    const src = codeOf(`${HOME_DIR}/Popup.tsx`);
     expect(src).toMatch(/role="dialog"/);
     expect(src).toMatch(/aria-modal/);
     expect(src).toMatch(/Escape/);

@@ -40,6 +40,8 @@ import {
   type ServiceClient,
 } from "@/lib/queries/recent";
 
+import { stripComments } from "./helpers/strip-comments";
+
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string) => readFileSync(path.join(ROOT, rel), "utf8").replace(/\r\n/g, "\n");
 const toPosix = (p: string) => p.split(path.sep).join("/");
@@ -53,25 +55,8 @@ const PREVIEW = "components/home/recent-feed-preview.ts";
 const PAGE = "app/[locale]/(site)/page.tsx";
 const QUERIES_TEST = "tests/queries.test.ts";
 
-/** 주석 제거 — tests/home.test.ts 와 같은 규칙 */
-function stripComments(src: string): string {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .map((line) => {
-      let inStr: string | null = null;
-      for (let i = 0; i < line.length; i++) {
-        const ch = line[i];
-        if (inStr) {
-          if (ch === "\\") i++;
-          else if (ch === inStr) inStr = null;
-        } else if (ch === '"' || ch === "'" || ch === "`") inStr = ch;
-        else if (ch === "/" && line[i + 1] === "/") return line.slice(0, i);
-      }
-      return line;
-    })
-    .join("\n");
-}
+/** 주석을 걷어낸 코드. 제거기는 저장소에 하나뿐이다(`tests/helpers/strip-comments.ts` · P6-7/P6-8 · D7). */
+const codeOf = (rel: string) => stripComments(read(rel), rel);
 
 function walk(dir: string): string[] {
   const out: string[] = [];
@@ -369,7 +354,7 @@ describe("3. RecentFeedItem 타입에 원문 키가 없다", () => {
 // =============================================================================
 describe("4·8. components/home/RecentFeed.tsx 정적 검사", () => {
   const src = read(COMPONENT);
-  const code = stripComments(src);
+  const code = codeOf(COMPONENT);
   const ko = JSON.parse(read("messages/ko.json")) as { home: { recentFeed: Record<string, string> } };
   const HANGUL = /[가-힣]/;
 
@@ -646,7 +631,7 @@ describe("9. tests/queries.test.ts 예외 등록 + 그 외 파일 서비스 롤 
 // 10. 페이지 배선 — routes 아래·trust 위, 60초 태그 캐시, 프리뷰 분기는 개발 전용
 // =============================================================================
 describe("10. app/[locale]/(site)/page.tsx 배선", () => {
-  const page = stripComments(read(PAGE));
+  const page = codeOf(PAGE);
 
   test("<RecentFeed> 가 <RoutesSection> 뒤, <TrustBar> 앞에 있다 (목업 §02 위치)", () => {
     const routes = page.search(/<RoutesSection[\s/>]/);
@@ -771,7 +756,7 @@ describe("12. '최근' 기간 창 — 경계 · 카피 대조 · 0건 숨김", (
   test("이 '빈 값 숨김' 선례는 법정 고지에 인용할 수 없다 — 고지는 빈 값이어도 렌더된다", () => {
     // P6-6 브리프 §(1-A) 2번: 마케팅 섹션의 숨김과 법정 고지의 숨김은 다른 규칙이다.
     // 같은 컴포넌트 안에서 고지(PRIVACY_NOTICE.publicFeedNotice)는 조건 없이 렌더된다 — 숨김 분기 밖에 있다.
-    const code = stripComments(read(COMPONENT));
+    const code = codeOf(COMPONENT);
     const afterGuard = code.slice(code.indexOf("return null"));
     expect(afterGuard).toMatch(/PRIVACY_NOTICE\.publicFeedNotice/);
     expect(/publicFeedNotice[^\n]*&&/.test(code), "고지에 조건부 렌더가 붙었다").toBe(false);

@@ -227,36 +227,51 @@ const definesInPlaceStripper = (src: string) =>
 const GATE_FILES = ["copy-rules.test.ts", "db-test-preconditions.test.ts"];
 
 /**
- * **줄어들기만 하는 재고 목록** (2026-09-16 실측 20개).
+ * **재고 목록은 P6-8 에서 0 이 됐다** (2026-09-16).
  *
- * P6-7 의 범위는 두 게이트다. 나머지 파일들의 제자리 제거기는 같은 결함을 갖고 있지만
- * "이 소스에 이 문자열이 있다/없다" 를 보는 자기 완결적 단언이라 게이트의 눈은 아니다 —
- * 옮기는 것은 별도 태스크다. 그래도 **새로 늘어나는 것은 여기서 막는다**:
- * 아래 목록은 부분집합 규칙이라 지우는 것은 자유롭고 **더하는 것은 실패**한다.
- * 새 테스트 파일은 `./helpers/strip-comments` 의 `stripComments` 를 쓸 것.
+ * P6-7 은 두 게이트만 옮기고 나머지 20개는 "줄어들기만 하는 목록"으로 증가만 막았다.
+ * P6-8 이 그 20개를 전부 헬퍼로 옮겼으므로 목록은 비었고, 규칙은 **부분집합**에서
+ * **0건**으로 조인다: `tests/**` 어디에도 제자리 TS 주석 제거기가 있으면 안 된다.
+ *
+ * 목록을 지우면서 "탐지가 낡지 않았다" 단언의 근거가 사라진다 —
+ * 예전에는 "실제로 N개를 고른다"가 탐지식이 살아 있다는 증거였는데, 이제 정답이 0이라
+ * **탐지식이 썩어도 0이 나온다.** 그래서 증거를 **픽스처**로 옮겼다(§6-2):
+ * 옛 제거기 3변종을 문자열로 지어 탐지식에 먹여 **true 가 나오는지** 확인한다.
+ * 픽스처 문자열은 소스에 그대로 나타나지 않도록 조립한다 — 그렇지 않으면 이 파일 자신이 탐지된다.
  */
-const LEGACY_IN_PLACE = [
-  "admin-auth.test.ts",
-  "admin-gallery.test.ts",
-  "admin-notices.test.ts",
-  "admin-notifications.test.ts",
-  "admin-popups.test.ts",
-  "admin-reservations.test.ts",
-  "admin-routes.test.ts",
-  "canonical.test.ts",
-  "gallery-albums-public.test.ts",
-  "home.test.ts",
-  "layout.test.ts",
-  "legal-pages.test.ts",
-  "notify-mail.test.ts",
-  "notify-templates.test.ts",
-  "notify-vars.test.ts",
-  "pages.test.ts",
-  "quote-wizard.test.ts",
-  "recent-feed.test.ts",
-  "reservation-check.test.ts",
-  "review-fix.test.ts",
-];
+const LEGACY_IN_PLACE: string[] = [];
+
+/**
+ * 옛 제자리 제거기 3변종을 **런타임에 조립**한다. 탐지식이 찾는 글자열(블록 주석 정규식 리터럴,
+ * 줄 스캐너의 다음 글자 비교식)이 이 파일 소스에는 **이어서 나타나지 않도록** 쪼개 적는다 —
+ * 그대로 적으면 이 파일 자신이 제자리 제거기로 탐지된다(실제로 한 번 그렇게 빨개졌다).
+ * 조립한 뒤의 문자열에는 온전히 나타나므로 탐지식은 정상적으로 반응한다.
+ */
+const BS = "\\";
+const LEGACY_BLOCK_SRC = `  const noBlock = src.replace(/${BS}/${BS}*[${BS}s${BS}S]*?${BS}*${BS}//g, "");`;
+/** 변종 A/C — 블록 정규식 + 한 줄씩 읽는 `//` 스캐너(실제 파일들이 쓰던 형태). */
+const LEGACY_SAMPLE_SCANNER = [
+  "function stripComments(src: string): string {",
+  LEGACY_BLOCK_SRC,
+  "  return noBlock.split(String.fromCharCode(10)).map((line) => {",
+  "    for (let i = 0; i < line.length; i++) {",
+  '      if (line[i] === "/" && line[i + ' + '1] === "/") return line.slice(0, i);',
+  "    }",
+  "    return line;",
+  "  }).join(String.fromCharCode(10));",
+  "}",
+].join("\n");
+/** 변종 B — 블록 정규식 + 줄 주석 정규식(`.*$`). */
+const LEGACY_SAMPLE_REGEX_B = [
+  "function stripComments(src: string): string {",
+  `  return src.replace(/${BS}/${BS}*[${BS}s${BS}S]*?${BS}*${BS}//g, "").replace(/(^|[^:])${BS}/${BS}/.*$/gm, "$1");`,
+  "}",
+].join("\n");
+/** 변종 naive — 블록 정규식 + `//` 부터 줄 끝까지(`[^\n]*`). 문자열 속 URL 도 지운다. */
+const LEGACY_SAMPLE_NAIVE = [
+  "const stripComments = (s: string) =>",
+  `  s.replace(/${BS}/${BS}*[${BS}s${BS}S]*?${BS}*${BS}//g, "").replace(/${BS}/${BS}/[^${BS}n]*/g, "");`,
+].join("\n");
 
 describe("6. 제거기는 하나뿐이다", () => {
   const files = readdirSync(TESTS_DIR).filter((f) => f.endsWith(".ts"));
@@ -268,17 +283,35 @@ describe("6. 제거기는 하나뿐이다", () => {
     expect(src).toMatch(/import\s*\{[^}]*stripComments[^}]*\}\s*from\s*["']\.\/helpers\/strip-comments["']/);
   });
 
-  test("제자리 제거기는 늘지 않는다 — 재고 목록의 부분집합이어야 한다", () => {
-    const added = detected.filter((f) => !LEGACY_IN_PLACE.includes(f));
+  test("제자리 제거기 0건 — tests/** 전체 (재고 목록은 P6-8 에서 비었다)", () => {
+    expect(LEGACY_IN_PLACE, "재고 목록은 비어 있어야 한다 — 다시 채우지 말고 헬퍼로 옮길 것").toEqual([]);
     expect(
-      added,
-      "새 파일이 제자리 주석 제거기를 정의했다. tests/helpers/strip-comments.ts 의 stripComments() 를 쓸 것 — " +
+      detected,
+      "제자리 주석 제거기가 있다. tests/helpers/strip-comments.ts 의 stripComments(src, fileName) 을 쓸 것 — " +
         "정규식 제거기는 문자열 속 별표 두 개를 블록 주석 시작으로 읽어 파일 뒤쪽을 통째로 건너뛴다(known-defects D7).",
     ).toEqual([]);
   });
 
-  test("탐지가 낡지 않았다 — 아무 파일도 못 고르면 이 규칙은 의미를 잃는다", () => {
-    expect(detected.length, `탐지된 파일: ${detected.join(", ") || "(없음)"}`).toBeGreaterThanOrEqual(10);
+  test("stripComments 를 쓰는 테스트 파일은 전부 헬퍼에서 가져온다 (제자리 재정의 우회 차단)", () => {
+    const offenders = files.filter((f) => {
+      const src = readFileSync(path.join(TESTS_DIR, f), "utf-8");
+      if (!/\bstripComments\s*\(/.test(src)) return false;
+      return !/import\s*\{[^}]*stripComments[^}]*\}\s*from\s*["']\.\/helpers\/strip-comments["']/.test(src);
+    });
+    expect(offenders, `헬퍼를 import 하지 않고 stripComments 를 쓰는 파일: ${offenders.join(", ")}`).toEqual([]);
+  });
+
+  test.for([
+    ["변종 A/C — 블록 정규식 + 줄 스캐너", LEGACY_SAMPLE_SCANNER],
+    ["변종 B — 블록 정규식 + 줄 주석 정규식", LEGACY_SAMPLE_REGEX_B],
+    ["변종 naive — 블록 정규식 + //부터 줄 끝", LEGACY_SAMPLE_NAIVE],
+  ] as const)("탐지가 낡지 않았다 — %s 를 실제로 잡는다", ([, sample]) => {
+    expect(definesInPlaceStripper(sample), `탐지식이 이 형태를 놓친다:\n${sample}`).toBe(true);
+  });
+
+  test("탐지가 아무 소스나 잡지는 않는다 — 헬퍼를 쓰는 형태는 통과", () => {
+    const clean = ['import { stripComments } from "./helpers/strip-comments";', "const code = stripComments(src, rel);"].join("\n");
+    expect(definesInPlaceStripper(clean)).toBe(false);
   });
 
   test("헬퍼 자신은 파서를 쓴다 (정규식으로 되돌아가지 않았다)", () => {

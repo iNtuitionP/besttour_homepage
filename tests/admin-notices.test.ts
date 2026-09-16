@@ -70,6 +70,8 @@ import { parseNoticeId } from "@/lib/queries/notices";
 import { QUERY_TAGS } from "@/lib/queries/tags";
 import { createSsrClient } from "@/lib/supabase/ssr";
 
+import { stripComments } from "./helpers/strip-comments";
+
 // =============================================================================
 // 공통 헬퍼 (tests/admin-popups.test.ts 와 같은 구현)
 // =============================================================================
@@ -78,9 +80,8 @@ const read = (rel: string): string => readFileSync(path.join(ROOT, rel), "utf-8"
 const exists = (rel: string): boolean => existsSync(path.join(ROOT, rel));
 const HANGUL = /[가-힣]/;
 
-function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
-}
+/** 주석을 걷어낸 코드. 제거기는 저장소에 하나뿐이다(`tests/helpers/strip-comments.ts` · P6-7/P6-8 · D7). */
+const codeOf = (rel: string) => stripComments(read(rel), rel);
 
 const ACTION = "actions/admin/notice.ts";
 const LIB_INPUT = "lib/admin/noticeInput.ts";
@@ -430,12 +431,12 @@ describe("4. 정적 규약", () => {
   test("액션 — 'use server' 첫 줄 · export 4개 · 전부 async · 첫 문장이 게이트", () => {
     const src = read(ACTION);
     expect(src.split("\n")[0].trim()).toMatch(/^["']use server["'];?$/);
-    const exports = [...stripComments(src).matchAll(/^export\s+.*$/gm)].map((m) => m[0]);
+    const exports = [...codeOf(ACTION).matchAll(/^export\s+.*$/gm)].map((m) => m[0]);
     expect(exports.length, "'use server' 파일의 export 는 전부 공개 POST 엔드포인트가 된다 (ADR-3)").toBe(4);
     for (const e of exports) expect(e, e).toMatch(/^export async function/);
     for (const name of ["createNotice", "updateNotice", "deleteNotice", "toggleNoticeActive"]) {
       const body = new RegExp(`export async function ${name}\\([^)]*\\)[^{]*\\{\\s*await requireAdmin\\(\\);`);
-      expect(stripComments(src), `${name} 의 첫 문장이 게이트가 아니다`).toMatch(body);
+      expect(codeOf(ACTION), `${name} 의 첫 문장이 게이트가 아니다`).toMatch(body);
     }
     // 별칭 import 금지(P5-4 리뷰 M2 — 다른 함수를 게이트 이름에 끼우는 경로)
     expect(src).toMatch(/import \{ requireAdmin \} from "@\/lib\/auth\/requireAdmin"/);
@@ -445,13 +446,13 @@ describe("4. 정적 규약", () => {
   test("서비스 롤 0 · unstable_cache 0 — 관리자 경로 규약 (ADR-2)", () => {
     for (const rel of TS_TARGETS) {
       expect(read(rel), rel).not.toMatch(/createServiceClient|SUPABASE_SERVICE_ROLE_KEY|supabase\/server/);
-      expect(stripComments(read(rel)), rel).not.toMatch(/unstable_cache/);
+      expect(codeOf(rel), rel).not.toMatch(/unstable_cache/);
     }
   });
 
   test("한글 리터럴 0 — 문구는 messages/ko.json admin.notices.* 에서만 온다", () => {
     for (const rel of TS_TARGETS) {
-      const offenders = stripComments(read(rel))
+      const offenders = codeOf(rel)
         .split("\n")
         .map((l, i) => [i + 1, l] as const)
         .filter(([, l]) => HANGUL.test(l));
@@ -463,7 +464,7 @@ describe("4. 정적 규약", () => {
     const forbidden = new RegExp(["est" + "_price", "price" + "_state", "route" + "_prices", "estim" + "ate\\(", "PRICE" + "_DISPLAY_MODE"].join("|"));
     for (const rel of TS_TARGETS) {
       expect(read(rel), rel).not.toMatch(forbidden);
-      expect(stripComments(read(rel)), rel).not.toMatch(/price/i);
+      expect(codeOf(rel), rel).not.toMatch(/price/i);
     }
   });
 
@@ -525,7 +526,7 @@ describe("4. 정적 규약", () => {
 
   test("화면 — 두 페이지 모두 첫 문장이 게이트다", () => {
     for (const rel of [LIST_PAGE, EDIT_PAGE]) {
-      expect(stripComments(read(rel)), rel).toMatch(/export default async function \w+\([^)]*\)[^{]*\{\s*await requireAdmin\(\);/);
+      expect(codeOf(rel), rel).toMatch(/export default async function \w+\([^)]*\)[^{]*\{\s*await requireAdmin\(\);/);
     }
   });
 
@@ -537,7 +538,7 @@ describe("4. 정적 규약", () => {
   test("공개 화면 반영은 세 탭이 같은 상수를 쓴다 · 경로 패턴 무효화 0건", () => {
     const actions = ["actions/admin/notice.ts", "actions/admin/route.ts", "actions/admin/popup.ts"];
     for (const rel of actions) {
-      const src = stripComments(read(rel));
+      const src = codeOf(rel);
       expect(src, `${rel} 이 공개 캐시를 비우지 않는다`).toMatch(/revalidatePath\(PUBLIC_CACHE_PATH, PUBLIC_CACHE_SCOPE\)/);
       expect(src, `${rel} 이 상수 대신 리터럴을 적었다`).not.toMatch(/revalidatePath\("\/", ?"layout"\)/);
       // 실측상 아무 일도 하지 않는 형태들 — 되살아나면 실패한다
@@ -555,12 +556,12 @@ describe("4. 정적 규약", () => {
 
   test("삭제는 비활성화 다음이다 — 목록에는 삭제가 없고, 수정 화면의 삭제는 한 단계 더 받는다", () => {
     // 목록에서 바로 지울 수 없다: 목록이 부르는 액션은 토글뿐이다
-    expect(stripComments(read(TOGGLE_UI))).toMatch(/toggleNoticeActive/);
-    expect(stripComments(read(TOGGLE_UI))).not.toMatch(/deleteNotice/);
-    expect(stripComments(read(LIST_PAGE))).not.toMatch(/deleteNotice/);
+    expect(codeOf(TOGGLE_UI)).toMatch(/toggleNoticeActive/);
+    expect(codeOf(TOGGLE_UI)).not.toMatch(/deleteNotice/);
+    expect(codeOf(LIST_PAGE)).not.toMatch(/deleteNotice/);
 
     // 수정 화면의 삭제는 무장(체크) + 확인(confirm) 두 단계다
-    const formSrc = stripComments(read(FORM_UI));
+    const formSrc = codeOf(FORM_UI);
     expect(formSrc).toMatch(/deleteNotice/);
     expect(formSrc, "삭제 버튼은 무장하기 전에는 비활성이어야 한다").toMatch(/armed/);
     expect(formSrc).toMatch(/window\.confirm/);

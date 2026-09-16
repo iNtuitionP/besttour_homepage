@@ -29,6 +29,8 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import { canonicalUrl, siteVerification } from "@/lib/site-url";
 
+import { stripComments } from "./helpers/strip-comments";
+
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const FALLBACK_ORIGIN = "https://bestour.co.kr";
 
@@ -41,25 +43,8 @@ const NAVER_ENV = "NEXT_PUBLIC_NAVER_SITE_VERIFICATION";
 
 const read = (rel: string) => readFileSync(path.join(ROOT, rel), "utf8").replace(/\r\n/g, "\n");
 
-/** 주석 제거 — 블록 주석 전체, 줄 주석은 문자열 밖의 // 부터 (tests/pages.test.ts 와 같은 규칙) */
-function stripComments(src: string): string {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .map((line) => {
-      let inStr: string | null = null;
-      for (let i = 0; i < line.length; i++) {
-        const ch = line[i];
-        if (inStr) {
-          if (ch === "\\") i++;
-          else if (ch === inStr) inStr = null;
-        } else if (ch === '"' || ch === "'" || ch === "`") inStr = ch;
-        else if (ch === "/" && line[i + 1] === "/") return line.slice(0, i);
-      }
-      return line;
-    })
-    .join("\n");
-}
+/** 주석을 걷어낸 코드. 제거기는 저장소에 하나뿐이다(`tests/helpers/strip-comments.ts` · P6-7/P6-8 · D7). */
+const code = (rel: string) => stripComments(read(rel), rel);
 
 // =============================================================================
 // 공개 라우트 수집 — tests/redirects.test.ts 의 방식 재사용(라우트 그룹은 세그먼트에서 뺀다)
@@ -105,10 +90,10 @@ const DYNAMIC_CANONICAL_ARG: Record<string, string> = {
   "/gallery/[album]": "`/gallery/${album.slug}`",
 };
 
-/** 소스에서 `canonicalUrl(<인자>)` 호출의 인자 텍스트를 전부 뽑는다. */
-function canonicalArgs(src: string): string[] {
+/** **주석을 이미 걷어낸** 소스에서 `canonicalUrl(<인자>)` 호출의 인자 텍스트를 전부 뽑는다. */
+function canonicalArgs(code: string): string[] {
   const out: string[] = [];
-  for (const m of stripComments(src).matchAll(/canonicalUrl\(\s*([^)]*?)\s*\)/g)) out.push(m[1]);
+  for (const m of code.matchAll(/canonicalUrl\(\s*([^)]*?)\s*\)/g)) out.push(m[1]);
   return out;
 }
 
@@ -222,7 +207,7 @@ describe("P7-2b — 공개 라우트 전수 × canonical", () => {
   });
 
   test.for(ROUTE_FILES.map((r) => [r.route, r] as const))("%s — canonical 이 있어야 할 곳에만 있다", ([, file]) => {
-    const args = canonicalArgs(read(file.rel));
+    const args = canonicalArgs(code(file.rel));
 
     if (NO_CANONICAL.has(file.route)) {
       expect(args, `${file.rel} 은 noindex 라우트다 — canonical 을 내면 안 된다`).toEqual([]);
@@ -238,7 +223,7 @@ describe("P7-2b — 공개 라우트 전수 × canonical", () => {
   test.for(ROUTE_FILES.filter((r) => !NO_CANONICAL.has(r.route)).map((r) => [r.route, r] as const))(
     "%s — alternates.canonical 자리에 헬퍼로 넣는다 (하드코딩 원점 0)",
     ([, file]) => {
-      const src = stripComments(read(file.rel));
+      const src = code(file.rel);
       expect(src, file.rel).toMatch(/alternates:\s*\{\s*canonical:\s*canonicalUrl\(/);
       expect(src, `${file.rel} — 원점을 하드코딩하지 않는다`).not.toContain("bestour.co.kr");
       // URL 인스턴스를 넘기면 Next 가 그것을 base 로 보고 **요청 pathname·searchParams 를 다시 붙인다**
@@ -255,7 +240,7 @@ describe("P7-2b — 공개 라우트 전수 × canonical", () => {
   test("/quote/done — noindex 를 유지하고 canonical 은 없다", () => {
     const file = ROUTE_FILES.find((r) => r.route === "/quote/done");
     expect(file, "/quote/done 페이지가 있어야 한다").toBeDefined();
-    const src = stripComments(read(file!.rel));
+    const src = code(file!.rel);
     expect(src).toMatch(/robots:\s*\{\s*index:\s*false/);
     expect(src).not.toContain("canonical");
   });
@@ -263,7 +248,7 @@ describe("P7-2b — 공개 라우트 전수 × canonical", () => {
   test("/notices/[id] — 공지가 있으면 id 를 담은 canonical, 부재(noindex)면 canonical 없음", () => {
     const file = ROUTE_FILES.find((r) => r.route === "/notices/[id]");
     expect(file, "/notices/[id] 페이지가 있어야 한다").toBeDefined();
-    const src = stripComments(read(file!.rel));
+    const src = code(file!.rel);
 
     // 부재 분기: `if (!notice) { ... }` 블록 안에 canonical 이 없고 noindex 는 그대로다
     const missingBranch = blockAfter(src, /if\s*\(\s*!notice\s*\)\s*\{/);
@@ -297,13 +282,13 @@ describe("P7-2b — hreflang 을 선언하지 않는다", () => {
   });
 
   test.for(LOCALE_FILES.map((f) => [f] as const))("%s — alternates.languages · hreflang 0건", ([rel]) => {
-    const src = stripComments(read(rel));
+    const src = code(rel);
     expect(src, `${rel} — 번역이 없는데 언어 대안을 선언하지 않는다`).not.toMatch(/languages\s*:/);
     expect(src, rel).not.toMatch(/hreflang/i);
   });
 
   test("헬퍼도 언어 대안을 만들지 않는다", () => {
-    const src = stripComments(read(SITE_URL_LIB));
+    const src = code(SITE_URL_LIB);
     expect(src).not.toMatch(/languages\s*:/);
     expect(src).not.toMatch(/hreflang/i);
   });
@@ -359,7 +344,7 @@ describe("P7-2b — 검색엔진 소유확인 메타", () => {
   });
 
   test("로케일 레이아웃은 헬퍼로만 붙이고, 값이 없으면 verification 키 자체를 넣지 않는다", () => {
-    const src = stripComments(read(LOCALE_LAYOUT));
+    const src = code(LOCALE_LAYOUT);
     expect(src).toMatch(/export\s+(async\s+)?function\s+generateMetadata/);
     expect(src).toMatch(/import\s*\{[^}]*\bsiteVerification\b[^}]*\}\s*from\s*["']@\/lib\/site-url["']/);
     // 조건부 스프레드 — 값이 없을 때 키가 생기지 않는다
@@ -371,7 +356,7 @@ describe("P7-2b — 검색엔진 소유확인 메타", () => {
   });
 
   test("metadataBase 는 siteOrigin() 에서 온다 — 하드코딩 0", () => {
-    const src = stripComments(read(LOCALE_LAYOUT));
+    const src = code(LOCALE_LAYOUT);
     expect(src).toMatch(/metadataBase:\s*new\s+URL\(\s*siteOrigin\(\)\s*\)/);
     expect(src).not.toContain("bestour.co.kr");
   });
@@ -412,7 +397,7 @@ describe("P7-2b — sitemap 과 canonical 이 같은 집합을 가리킨다", ()
       .map((entry) => new URL(entry.url).pathname)
       .sort();
 
-    const canonicalRoutes = ROUTE_FILES.filter((r) => !r.dynamic && canonicalArgs(read(r.rel)).length > 0)
+    const canonicalRoutes = ROUTE_FILES.filter((r) => !r.dynamic && canonicalArgs(code(r.rel)).length > 0)
       .map((r) => r.route)
       .sort();
 

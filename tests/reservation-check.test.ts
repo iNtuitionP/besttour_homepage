@@ -61,6 +61,8 @@ import { supabaseReservationCheckDb } from "@/lib/reservation-check/db";
 import { createServiceClient } from "@/lib/supabase/server";
 import { checkReservation } from "@/actions/reservation-check";
 
+import { stripComments } from "./helpers/strip-comments";
+
 const ROOT = path.resolve(import.meta.dirname, "..");
 const read = (rel: string) => readFileSync(path.join(ROOT, rel), "utf-8").replace(/\r\n/g, "\n");
 
@@ -72,25 +74,8 @@ const CARD = `${COMPONENT_DIR}/ReservationCard.tsx`;
 const PREVIEW = `${COMPONENT_DIR}/preview-result.ts`;
 const LIB_DIR = "lib/reservation-check";
 
-/** 주석(`//` 줄 끝, 블록)을 걷어낸 코드만 남긴다 — tests/layout.test.ts 와 같은 구현 */
-function stripComments(src: string): string {
-  const noBlock = src.replace(/\/\*[\s\S]*?\*\//g, "");
-  return noBlock
-    .split("\n")
-    .map((line) => {
-      let inStr: string | null = null;
-      for (let i = 0; i < line.length; i++) {
-        const ch = line[i];
-        if (inStr) {
-          if (ch === "\\") i++;
-          else if (ch === inStr) inStr = null;
-        } else if (ch === '"' || ch === "'" || ch === "`") inStr = ch;
-        else if (ch === "/" && line[i + 1] === "/") return line.slice(0, i);
-      }
-      return line;
-    })
-    .join("\n");
-}
+/** 주석을 걷어낸 코드. 제거기는 저장소에 하나뿐이다(`tests/helpers/strip-comments.ts` · P6-7/P6-8 · D7). */
+const codeOf = (rel: string) => stripComments(read(rel), rel);
 
 function ledgerImports(src: string): string[] {
   const names: string[] = [];
@@ -457,7 +442,7 @@ describe("3. lookupReservation — 부재와 불일치는 같은 결과, 일치�
     expect(phoneLast4Matches("", LAST4)).toBe(false);
     expect(phoneLast4Matches("12", LAST4)).toBe(false);
     expect(phoneLast4Matches("+8210", "8210")).toBe(true);
-    const src = stripComments(read(`${LIB_DIR}/lookup.ts`));
+    const src = codeOf(`${LIB_DIR}/lookup.ts`);
     // 비교 함수는 phone 이 null 일 때도 같은 비교 루틴을 탄다 — 이른 return 으로 분기하지 않는다
     expect(src).toMatch(/phoneLast4Matches\(/);
   });
@@ -765,25 +750,25 @@ describe("5. checkReservation — 얇은 래퍼", () => {
     test("process.env 0 · console 0 · headers.get 0 · zod 직접 호출 0 · next/cache·next/server 0 · try 정확히 2개", () => {
       // process.env 는 주석까지 포함해 0 — tests/reservation-action.test.ts §7 이 actions/** 원문을 grep 해 목록을 잠근다
       expect(action).not.toMatch(/process\.env/);
-      const code = stripComments(action);
+      const code = codeOf(ACTION);
       expect(code).not.toMatch(/console\./);
       expect(code).not.toMatch(/\.get\(/);
       expect(code).not.toMatch(/safeParse|\.parse\(/);
       expect(code).not.toMatch(/from\s+["']next\/(cache|server)["']/);
       expect(action).toMatch(/from\s+["']next\/headers["']/);
-      expect((stripComments(action).match(/^\s*try \{\s*$/gm) ?? []).length).toBe(2);
-      expect(stripComments(action)).not.toMatch(/\bif \(.*(name|phone|status)\b/);
+      expect((codeOf(ACTION).match(/^\s*try \{\s*$/gm) ?? []).length).toBe(2);
+      expect(codeOf(ACTION)).not.toMatch(/\bif \(.*(name|phone|status)\b/);
     });
 
     test("부품을 import 만 한다 — checkGuardDeps·createServiceClient·supabaseReservationCheckDb·structuredLog·formDataToCheckRaw·checkGuardContext·runCheckGuards·lookupReservation · defaultGuardDeps 0 · Turnstile 0", () => {
       for (const sym of ["checkGuardDeps", "createServiceClient", "supabaseReservationCheckDb", "structuredLog", "formDataToCheckRaw", "checkGuardContext", "runCheckGuards", "lookupReservation", "notFoundResult", "checkFailureResult", "guardFailureToCheckResult", "lookupToResult"]) {
         expect(action, sym).toContain(sym);
       }
-      expect(stripComments(action)).not.toMatch(/defaultGuardDeps|runGuards\(|turnstile/i);
+      expect(codeOf(ACTION)).not.toMatch(/defaultGuardDeps|runGuards\(|turnstile/i);
     });
 
     test("`await headers()` 와 `formDataToCheckRaw(` 가 첫 try 안, `lookupReservation(` 이 둘째 try 안", () => {
-      const lines = stripComments(action).split("\n");
+      const lines = codeOf(ACTION).split("\n");
       const tries = lines.map((l, i) => (/^\s*try \{\s*$/.test(l) ? i : -1)).filter((i) => i >= 0);
       const catches = lines.map((l, i) => (/^\s*\} catch \(/.test(l) ? i : -1)).filter((i) => i >= 0);
       expect(tries).toHaveLength(2);
@@ -992,7 +977,7 @@ describe("8. 컴포넌트·페이지 정적", () => {
     .map((p) => path.relative(ROOT, p).split(path.sep).join("/"))
     .sort();
   const codeFiles = componentFiles.filter((f) => /\.(ts|tsx)$/.test(f));
-  const sources = [...codeFiles, PAGE].map((file) => ({ file, text: read(file), code: stripComments(read(file)) }));
+  const sources = [...codeFiles, PAGE].map((file) => ({ file, text: read(file), code: codeOf(file) }));
 
   test("산출물이 있다 — page.tsx · CheckForm.tsx · ReservationCard.tsx · fields.ts · validate.ts · preview-result.ts · check.module.css · lib 6개 · 액션", () => {
     for (const f of [PAGE, FORM, CARD, PREVIEW, `${COMPONENT_DIR}/fields.ts`, `${COMPONENT_DIR}/validate.ts`, `${COMPONENT_DIR}/check.module.css`, ACTION]) {
@@ -1004,12 +989,12 @@ describe("8. 컴포넌트·페이지 정적", () => {
   // P6-6: 카탈로그가 `{tel}` 보간을 쓰게 됐으므로, 값을 넘기지 않으면 next-intl 이 렌더 시점에 던진다.
   // 카탈로그 쪽 단언(§7)과 짝이 되는 소스 쪽 단언 — 한쪽만 고치면 빨간불이다.
   test("서버 오류 문구를 풀 때 원장 tel 을 보간 인자로 넘긴다 ({tel} 자리가 비지 않게)", () => {
-    const src = stripComments(read(FORM));
+    const src = codeOf(FORM);
     expect(src).toMatch(/tRoot\(\s*result\.messageKey\s*,\s*\{\s*tel\s*\}\s*\)/);
   });
 
   test("useActionState — checkReservation 을 직접 넘기지 않고 (_prev, fd) 래퍼로 감싼다 (P3-4 규칙)", () => {
-    const src = stripComments(read(FORM));
+    const src = codeOf(FORM);
     expect(src).toMatch(/^\s*["']use client["'];?/m);
     expect(src).toMatch(/useActionState/);
     expect(src).not.toMatch(/useActionState\(\s*checkReservation/);
@@ -1019,7 +1004,7 @@ describe("8. 컴포넌트·페이지 정적", () => {
   });
 
   test("폼 — name 은 CF/CG 상수만(문자열 리터럴 name 0) · 허니팟 website(tabIndex -1·autoComplete off·aria-hidden) · role=alert · aria-invalid · pending 시 disabled", () => {
-    const src = stripComments(read(FORM));
+    const src = codeOf(FORM);
     expect(src).not.toMatch(/name="/);
     expect(src).toMatch(/name=\{CF\.publicCode\}/);
     expect(src).toMatch(/name=\{CF\.phoneLast4\}/);
@@ -1038,7 +1023,7 @@ describe("8. 컴포넌트·페이지 정적", () => {
   });
 
   test("서버 오류 결과 → 포커스를 role=alert 요약으로 옮긴다 — tabIndex -1 + liveRef + useEffect, 훅은 카드 early return 앞 (리뷰 M-2)", () => {
-    const src = stripComments(read(FORM));
+    const src = codeOf(FORM);
     const alertTag = src.match(/<div[^>]*role="alert"[^>]*>/)?.[0] ?? "";
     expect(alertTag, "role=alert 요약이 있어야 한다").not.toBe("");
     expect(alertTag).toMatch(/ref=\{liveRef\}/);
@@ -1068,7 +1053,7 @@ describe("8. 컴포넌트·페이지 정적", () => {
   });
 
   test("서버 페이지 — 원장 VERBATIM.bookingNotice·COMPANY.tel 을 읽어 props 로 내린다 · 'use client' 0 · force-dynamic 0 · 메타 reservationCheck.meta", () => {
-    const src = stripComments(read(PAGE));
+    const src = codeOf(PAGE);
     expect(/^\s*["']use client["']/m.test(src)).toBe(false);
     expect(ledgerImports(read(PAGE))).toEqual(expect.arrayContaining(["VERBATIM", "COMPANY"]));
     expect(src).toMatch(/bookingNotice=\{VERBATIM\.bookingNotice\}/);
@@ -1081,7 +1066,7 @@ describe("8. 컴포넌트·페이지 정적", () => {
   });
 
   test("카드 — data-legal=\"booking-notice\" 로 원장 문구 자리를 표시 · tel: 링크 · data-status 배지 · 가격 0", () => {
-    const src = stripComments(read(CARD));
+    const src = codeOf(CARD);
     expect(src).toMatch(/data-legal="booking-notice"/);
     expect(src).toMatch(/tel:\$\{tel\}/);
     expect(src).toMatch(/data-status=/);
@@ -1090,7 +1075,7 @@ describe("8. 컴포넌트·페이지 정적", () => {
   });
 
   test("개발 프리뷰(?previewResult=) — 페이지는 NODE_ENV 가드 뒤에서만 searchParams 를 읽고 mode 문자열만 내린다 · 원문 모양 값 0", () => {
-    const page = stripComments(read(PAGE));
+    const page = codeOf(PAGE);
     const guard = page.indexOf('process.env.NODE_ENV !== "production"');
     const sp = page.indexOf("await searchParams");
     expect(guard).toBeGreaterThan(-1);
@@ -1118,7 +1103,7 @@ describe("8. 컴포넌트·페이지 정적", () => {
     expect(v.maskedPhone).toMatch(/^\d{3}-\*{4}-\d{4}$/);
     expect(digitRuns(JSON.stringify(v), 5)).toEqual([]);
     expect(RESERVATION_STATUSES).toContain(v.status);
-    const src = stripComments(read(PREVIEW));
+    const src = codeOf(PREVIEW);
     expect(src).not.toMatch(/name:\s*["']|phone:\s*["']|email/);
     expect(src).not.toMatch(/maskName\(|maskPhone\(/); // 원문을 넣고 가리는 방식이 아니라 가려진 값만 둔다
   });
@@ -1143,7 +1128,7 @@ describe("8. 컴포넌트·페이지 정적", () => {
       for (const frag of ["45인승 당일", "상담 후 확정", "결제 진행됩니다"]) expect(code.includes(frag), `${file}: verbatim 조각`).toBe(false);
     }
     for (const f of ["guards", "lookup", "db", "view", "result", "formData"]) {
-      const code = stripComments(read(`${LIB_DIR}/${f}.ts`));
+      const code = codeOf(`${LIB_DIR}/${f}.ts`);
       for (const re of PRICE_MARKS) expect(re.test(code), `${f}: ${re}`).toBe(false);
     }
   });
@@ -1151,7 +1136,7 @@ describe("8. 컴포넌트·페이지 정적", () => {
   test("CSS — quote.module.css 를 import 해 폼 클래스를 재사용하고, check.module.css 는 추가분만(간격은 역할 토큰 — 규약은 layout.test §4 가 검사)", () => {
     expect(read(FORM)).toMatch(/from\s+["']@\/components\/quote\/quote\.module\.css["']/);
     expect(read(FORM)).toMatch(/from\s+["']\.\/check\.module\.css["']/);
-    const css = read(`${COMPONENT_DIR}/check.module.css`).replace(/\/\*[\s\S]*?\*\//g, "");
+    const css = codeOf(`${COMPONENT_DIR}/check.module.css`);
     expect(css.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).toEqual([]);
     expect(/\b(rgba?|hsla?)\(/.test(css)).toBe(false);
     expect(css).not.toMatch(/\.control\s*\{|\.btn\s*\{|\.field\s*\{/); // 복제 금지
