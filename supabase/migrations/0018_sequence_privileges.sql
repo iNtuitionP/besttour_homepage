@@ -62,6 +62,9 @@
 -- 적용 경로: `supabase db push` 또는 SQL Editor. **`psql -f` 를 쓰지 마라** — 파일이 원자적이지 않아 자기검증이
 --   `raise` 해도 앞 문장이 남는다(P4-5 리뷰 K1, docs/ops/migration-runbook.md). 로컬 검증은 `psql -1`(단일 트랜잭션).
 -- ⚠️ §3 ⑤ 가 `set local role` 로 롤을 바꾼다 — 적용하는 롤이 `anon`·`authenticated` 의 멤버여야 한다(0017 과 같다).
+--    탐침 뒤에는 `reset role` 이 아니라 **시작할 때 캡처한 적용 롤**로 `set local role` 해서 돌아온다. `reset role` 은 세션 기본 롤로
+--    돌아가므로, 로그인 롤과 적용 롤이 다른 연결(`set role postgres` 후 적용)에서는 권한이 옳아도 마지막 단언이 실패한다
+--    (GPT 검증 P2 — 로컬에서 supabase_admin 로그인 + set role postgres 로 재현하고, 이 방식으로 고친 뒤 통과를 확인했다).
 -- 롤백: supabase/rollbacks/0018_sequence_privileges.down.sql (수동 실행 전용 · 승인 플래그 요구).
 
 -- =========================================================================
@@ -229,7 +232,13 @@ begin
         exception when others then
           get stacked diagnostics st = returned_sqlstate, ms = message_text;
         end;
-        execute 'reset role';
+        -- `reset role` 을 쓰지 않는다 — 그것은 캡처한 적용 롤이 아니라 **세션 기본 롤**로 돌아간다.
+        -- `set role postgres` 로 바꿔 적용하는 연결(로그인 롤이 따로 있는 경우)이면 이후 문장이 로그인 롤로 돈다
+        -- (GPT 검증 P2 · 로컬 재현: session_user=supabase_admin 에서 current_user 가 supabase_admin 으로 돌아갔다).
+        execute format('set local role %I', applier);
+        if current_user <> applier then
+          raise exception '0018: 탐침 뒤 적용 롤(%)로 돌아오지 못했다 (current_user=%)', applier, current_user;
+        end if;
 
         if ok then
           raise exception '0018: % 가 %(%) 를 실행할 수 있다', probe_role, probe_call, probe_seq
@@ -255,7 +264,8 @@ begin
     end if;
     execute 'select pg_catalog.setval(''public.p0018_probe_seq''::regclass, 1, false)';
     execute 'select pg_catalog.nextval(''public.p0018_probe_seq''::regclass)';
-    execute 'reset role';
+    -- 이 블록은 아래 raise 로 서브트랜잭션째 되돌려져 롤도 블록 진입 전(적용 롤)으로 돌아간다. 그래도 명시한다 — reset role 이 아니라 적용 롤로.
+    execute format('set local role %I', applier);
     raise exception using errcode = 'P0018', message = 'p0018 control rollback';
   exception
     when sqlstate 'P0018' then
@@ -271,7 +281,7 @@ begin
 
   if current_user <> applier then
     raise exception '0018: 탐침이 롤을 되돌리지 못했다 (current_user=% · 기대=%)', current_user, applier
-      using hint = '이 상태로 뒤 문장이 돌면 엉뚱한 롤로 실행된다. reset role 이 빠진 경로가 있는지 확인할 것.';
+      using hint = '이 상태로 뒤 문장이 돌면 엉뚱한 롤로 실행된다. 적용 롤 복원(set local role <적용 롤>)이 빠진 경로가 있는지 확인할 것. reset role 로 바꾸면 안 된다 — 세션 기본 롤로 돌아간다.';
   end if;
   if to_regclass('public.p0018_probe_seq') is not null then
     raise exception '0018: 대조군의 임시 시퀀스가 남았다'

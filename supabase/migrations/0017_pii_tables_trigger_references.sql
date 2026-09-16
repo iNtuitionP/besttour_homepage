@@ -76,6 +76,8 @@
 -- PostgREST 스키마 캐시: 갱신하지 않는다. 표·컬럼·함수 시그니처가 그대로다(권한 변경은 캐시가 아니라 요청마다 평가된다).
 -- 적용 경로: `supabase db push` 또는 SQL Editor. **`psql -f` 를 쓰지 마라** — 파일이 원자적이지 않아 자기검증이
 --   `raise` 해도 앞 문장이 남는다(P4-5 리뷰 K1, docs/ops/migration-runbook.md).
+-- ⚠️ §3 ⑦ 은 탐침 뒤 `reset role` 이 아니라 **시작할 때 캡처한 적용 롤**로 `set local role` 해서 돌아온다(2026-09-17 수정, GPT 검증 P2).
+--    `reset role` 은 세션 기본 롤로 돌아가므로, `set role postgres` 후 적용하는 연결에서 권한이 옳아도 마지막 단언이 실패했다(로컬 재현).
 -- 롤백: supabase/rollbacks/0017_pii_tables_trigger_references.down.sql (수동 실행 전용 · 승인 플래그 요구).
 
 -- =========================================================================
@@ -270,7 +272,14 @@ begin
       exception when others then
         get stacked diagnostics st = returned_sqlstate, ms = message_text;
       end;
-      execute 'reset role';   -- 예외 경로에서는 서브트랜잭션 롤백이 이미 되돌리지만, 성공 경로를 위해 명시한다
+      -- 적용 롤로 **명시적으로** 돌아온다. `reset role` 을 쓰지 않는다 — 그것은 캡처한 적용 롤이 아니라 **세션 기본 롤**로 돌아간다.
+      -- `set role postgres` 로 바꿔 적용하는 연결(로그인 롤이 따로 있는 경우)이면 아래 drop trigger 와 이후 검사가 로그인 롤로 돌고
+      -- 마지막 단언이 권한이 옳은데도 실패한다(GPT 검증 P2 · 0018 과 같은 수정 · 로컬 재현: session_user=supabase_admin).
+      -- 예외 경로에서는 서브트랜잭션 롤백이 역할 전환 이전으로 되돌리지 않는다(전환은 서브트랜잭션 밖에서 했다) — 그래서 두 경로 모두 여기서 복원한다.
+      execute format('set local role %I', applier);
+      if current_user <> applier then
+        raise exception '0017: 탐침 뒤 적용 롤(%)로 돌아오지 못했다 (current_user=%)', applier, current_user;
+      end if;
 
       if created then
         execute format('drop trigger %I on public.%I', trg, probe_tbl);
@@ -297,7 +306,7 @@ begin
 
   if current_user <> applier then
     raise exception '0017: 탐침이 롤을 되돌리지 못했다 (current_user=% · 기대=%)', current_user, applier
-      using hint = '이 상태로 뒤 문장이 돌면 엉뚱한 롤로 실행된다. reset role 이 빠진 경로가 있는지 확인할 것.';
+      using hint = '이 상태로 뒤 문장이 돌면 엉뚱한 롤로 실행된다. 적용 롤 복원(set local role <적용 롤>)이 빠진 경로가 있는지 확인할 것. reset role 로 바꾸면 안 된다 — 세션 기본 롤로 돌아간다.';
   end if;
 
   select string_agg(format('%s.%s', tgrelid::regclass::text, tgname), ', ')

@@ -6,7 +6,17 @@
 -- 사고 시 사람이 SQL Editor 또는 psql 로 실행한 뒤:
 --   supabase migration repair --status reverted 0018
 --
--- 이 롤백이 하는 일(0018 이 한 것의 정확한 역):
+-- ## 🔴 이 롤백은 "이전 ACL" 이 아니라 **"Supabase 기본 기준선"** 으로 복원한다 (GPT 검증 P2)
+-- 0018 은 적용 전 ACL 을 어디에도 기록하지 않는다. 이 롤백은 그때 무엇이 있었는지 모르는 채 **고정 목록을 부여**한다.
+-- 그 목록은 **이 DB 의 기본 권한이 만든 상태**다: `pg_default_acl`(부여자 postgres)이 새 시퀀스에 `anon`·`authenticated` 전권을 주고
+-- (CLAUDE.md §3 · 원격 실측 2026-09-16), 0001~0017 중 시퀀스 권한을 바꾼 것은 0009 §6 의 부여(usage·select → authenticated,
+-- 기본값의 부분집합) 하나뿐이다. 따라서 **마이그레이션만으로 만들어진 DB 에서는 기준선 = 0018 직전 상태**다(로컬 실측으로 일치 확인).
+-- **어긋나는 경우**: 누가 대시보드·SQL Editor 로 시퀀스 권한을 미리 좁혀 뒀다면, 이 롤백은 0018 이 지운 적 없는 권한까지 **새로 연다.**
+-- 그래서 원격 적용 **직전** 일곱 시퀀스의 `relacl` 스냅샷을 docs/ops/migration-runbook.md 0018 절에 남기는 것을 적용 절차로 둔다.
+-- 롤백 전에 그 스냅샷과 이 목록을 대조하고, 다르면 **이 파일을 스냅샷에 맞게 고친 뒤** 실행한다.
+-- (0012~0017 롤백도 같은 방식 — 상행이 회수한 고정 목록을 조건 없이 부여 — 이다. 그 헤더의 "정확한 역" 은 같은 전제 위의 말이다.)
+--
+-- 이 롤백이 하는 일(0018 이 회수한 목록의 역 = 기본 기준선):
 --   ① 일곱 시퀀스에서 `anon` 에게 usage·select·update 를 되돌려 준다
 --   ② 일곱 시퀀스에서 `authenticated` 에게 select·update 를 되돌려 준다
 --   ③ `notifications_log_id_seq` 에서 `authenticated` 에게 usage 를 되돌려 준다
@@ -45,8 +55,8 @@ begin;
 do $$
 begin
   if coalesce(current_setting('bestour.rollback_0018_ack', true), '') <> '1' then
-    raise exception '0018 롤백 중단: 공개 롤에 시퀀스 UPDATE(setval) 를 다시 열려 한다 — notifications_log_id_seq 를 되감으면 접수는 정상인데 통지 적재가 기본키 중복으로 전부 실패하고, 오류도 로그도 화면 변화도 없다'
-      using hint = '되돌릴 이유를 확인했으면 같은 세션에서 `set bestour.rollback_0018_ack = ''1'';` 을 실행한 뒤 다시 돌린다. 되돌린 것을 필요로 하는 정상 경로는 하나도 없다 — 앱 코드는 시퀀스를 직접 부르지 않는다. 관리자 새 글 저장이 실패해서 왔다면 먼저 has_sequence_privilege(''authenticated'', ''public.notices_id_seq'', ''usage'') 를 볼 것 — 0018 은 그 권한을 회수하지 않았고 이 롤백도 되돌리지 않는다.';
+    raise exception '0018 롤백 중단: 공개 롤에 시퀀스 UPDATE(setval) 를 다시 열려 한다 — notifications_log_id_seq 를 되감으면 접수는 정상인데 통지 적재가 기본키 중복으로 전부 실패하고, 오류도 로그도 화면 변화도 없다. 이 롤백은 적용 전 ACL 이 아니라 Supabase 기본 기준선(anon·authenticated 전권)으로 복원한다'
+      using hint = '롤백 전에 docs/ops/migration-runbook.md 0018 절의 적용 직전 relacl 스냅샷과 이 파일의 부여 목록을 대조할 것 — 적용 전에 이미 좁혀져 있던 권한이 있으면 이 롤백은 그것까지 새로 연다(그때는 파일을 스냅샷에 맞게 고친다). 되돌릴 이유를 확인했으면 같은 세션에서 `set bestour.rollback_0018_ack = ''1'';` 을 실행한 뒤 다시 돌린다. 되돌린 것을 필요로 하는 정상 경로는 하나도 없다 — 앱 코드는 시퀀스를 직접 부르지 않는다. 관리자 새 글 저장이 실패해서 왔다면 먼저 has_sequence_privilege(''authenticated'', ''public.notices_id_seq'', ''usage'') 를 볼 것 — 0018 은 그 권한을 회수하지 않았고 이 롤백도 되돌리지 않는다.';
   end if;
 end
 $$;
