@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 
+import { getCopyWarningLabels } from "@/components/admin/copyWarningLabels";
 import { PopupForm } from "@/components/admin/PopupForm";
 import { PopupToggle } from "@/components/admin/PopupToggle";
 import { routing } from "@/i18n/routing";
@@ -30,6 +31,7 @@ export default async function AdminPopupsPage() {
   await requireAdmin();
 
   const t = await getTranslations({ locale: routing.defaultLocale, namespace: "admin.popups" });
+  const copyWarning = await getCopyWarningLabels();
   const rows = await listAdminPopups();
   const today = toKstDateString(new Date());
 
@@ -42,6 +44,7 @@ export default async function AdminPopupsPage() {
     notFound: t("result.notFound"),
     validation: t("result.validation"),
     failed: t("result.failed"),
+    copyWarning: t("result.copyWarning"),
   };
 
   return (
@@ -82,6 +85,7 @@ export default async function AdminPopupsPage() {
                 deleteArm: t("deleteArm"),
                 deleteConfirm: t("deleteConfirm"),
                 results,
+                copyWarning,
               }}
             />
           </section>

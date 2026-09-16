@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 
+import { getCopyWarningLabels } from "@/components/admin/copyWarningLabels";
 import { NoticeForm } from "@/components/admin/NoticeForm";
 import { routing } from "@/i18n/routing";
 import { NOTICE_CATEGORIES, parseAdminNoticeId } from "@/lib/admin/noticeInput";
@@ -25,6 +26,7 @@ export default async function AdminNoticeEditPage({ params }: { params: Params }
   await requireAdmin();
 
   const t = await getTranslations({ locale: routing.defaultLocale, namespace: "admin.notices" });
+  const copyWarning = await getCopyWarningLabels();
   const tc = await getTranslations({ locale: routing.defaultLocale, namespace: "home.notice" });
   const { id } = await params;
   const noticeId = parseAdminNoticeId(id);
@@ -55,6 +57,7 @@ export default async function AdminNoticeEditPage({ params }: { params: Params }
     notFound: t("result.notFound"),
     validation: t("result.validation"),
     failed: t("result.failed"),
+    copyWarning: t("result.copyWarning"),
   };
 
   return (
@@ -104,6 +107,7 @@ export default async function AdminNoticeEditPage({ params }: { params: Params }
               deleteArm: t("deleteArm"),
               deleteConfirm: t("deleteConfirm"),
               results,
+              copyWarning,
             }}
           />
         </section>

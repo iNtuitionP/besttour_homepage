@@ -37,7 +37,9 @@ export type UploadFailure = Extract<GalleryRejectReason, "upload" | "record" | "
 export type UploadOutcome = { kind: "done" } | { kind: "failed"; reason: UploadFailure };
 
 /** 행이 만들어지지 않았음이 **증명되는** 결과 코드. 이때만 되돌린다. */
-const PROVEN_NOT_WRITTEN: ReadonlySet<string> = new Set(["validation", "notFound"]);
+// copyWarning(P6-12) — 서버가 대조 단계에서 멈춘 것이라 쓰기 전이다. 업로더는 설명을 보내지 않으므로(caption: null) 지금은 닿지 않지만,
+// ok=true 라서 아래 "done" 판정에 섞이면 행 없는 파일을 성공이라 부르게 된다 — 그 길을 미리 닫는다.
+const PROVEN_NOT_WRITTEN: ReadonlySet<string> = new Set(["validation", "notFound", "copyWarning"]);
 
 export interface CommitUploadArgs {
   paths: UploadPaths;
@@ -100,7 +102,7 @@ export async function commitUpload(args: CommitUploadArgs): Promise<UploadOutcom
     return { kind: "failed", reason: "needsCheck" };
   }
 
-  if (result.ok) return { kind: "done" };
+  if (result.ok && !PROVEN_NOT_WRITTEN.has(result.code)) return { kind: "done" };
 
   if (PROVEN_NOT_WRITTEN.has(result.code)) {
     await discard(storage, paths.publicBucket, paths.publicKey);

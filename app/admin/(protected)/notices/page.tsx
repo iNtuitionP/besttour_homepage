@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 
+import { getCopyWarningLabels } from "@/components/admin/copyWarningLabels";
 import { NoticeForm } from "@/components/admin/NoticeForm";
 import { NoticeToggle } from "@/components/admin/NoticeToggle";
 import { routing } from "@/i18n/routing";
@@ -30,6 +31,7 @@ export default async function AdminNoticesPage() {
   await requireAdmin();
 
   const t = await getTranslations({ locale: routing.defaultLocale, namespace: "admin.notices" });
+  const copyWarning = await getCopyWarningLabels();
   const tc = await getTranslations({ locale: routing.defaultLocale, namespace: "home.notice" });
   const rows = await listAdminNotices();
   const today = toKstDateString(new Date());
@@ -46,6 +48,7 @@ export default async function AdminNoticesPage() {
     notFound: t("result.notFound"),
     validation: t("result.validation"),
     failed: t("result.failed"),
+    copyWarning: t("result.copyWarning"),
   };
 
   const labels = {
@@ -68,6 +71,7 @@ export default async function AdminNoticesPage() {
     deleteArm: t("deleteArm"),
     deleteConfirm: t("deleteConfirm"),
     results,
+    copyWarning,
   };
 
   return (

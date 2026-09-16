@@ -22,6 +22,7 @@
 import { z } from "zod";
 
 import { toKstDateString } from "../kst";
+import type { CopyWarning } from "./copyWarning";
 
 // =============================================================================
 // 버킷·상한 (스펙 §13.9 (4) · 컨트롤러가 만든 버킷 두 개)
@@ -360,7 +361,9 @@ export type GalleryActionCode =
   | "validation"
   | "failed"
   /** 파일을 못 지웠다 → **행을 남겼다**. 사장님이 다시 시도하면 된다(스토리지 삭제는 재시도해도 안전하다). */
-  | "fileFailed";
+  | "fileFailed"
+  /** 저장하지 않았다 — 설명·앨범 이름에 확인이 필요한 표현이 있다(P6-12 · lib/admin/copyWarning.ts). 오류가 아니다. */
+  | "copyWarning";
 
 export interface GalleryActionResult {
   /** 사장님에게 빨간 오류를 보일 것인가. */
@@ -368,6 +371,8 @@ export interface GalleryActionResult {
   /** DB 가 실제로 바뀌었는가. 캐시 무효화는 이것이 true 일 때만. */
   changed: boolean;
   code: GalleryActionCode;
+  /** code 가 copyWarning 일 때만 — 걸린 표현 목록. */
+  copyWarnings?: CopyWarning[];
 }
 
 export const GALLERY_FAILED: GalleryActionResult = { ok: false, changed: false, code: "failed" };

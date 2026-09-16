@@ -709,3 +709,29 @@
     gap: var(--space-inline-md);
   }
 }
+
+/* ── 사장님 글 경고 (P6-12 · known-defects D4) ─────────────────────────────
+ * 저장을 멈추고 무엇이 왜 문제인지 보이는 패널. 오류가 아니라 확인 요청이라 빨강이 아니다(팔레트에 상태색도 없다) —
+ * 굵은 테두리와 위치로 구분하고, 폼의 저장 버튼 바로 아래에 둔다.
+ */
+.copyWarning {
+  margin: var(--space-stack-sm) 0 0;
+  padding: var(--space-stack-sm) var(--space-inline-sm);
+  border: 2px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+}
+.copyWarningTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-brand);
+}
+.copyWarningList {
+  margin: var(--space-stack-xs) 0 var(--space-stack-sm);
+  padding-left: 1.2em;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}

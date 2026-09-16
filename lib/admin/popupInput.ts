@@ -20,6 +20,8 @@
  */
 import { z } from "zod";
 
+import type { CopyWarning } from "./copyWarning";
+
 /** 폼 필드 이름 — 화면·액션·테스트가 같은 문자열을 쓴다. */
 export const POPUP_FIELDS = {
   id: "id",
@@ -104,7 +106,9 @@ export type PopupActionCode =
   | "deactivated"
   | "notFound"
   | "validation"
-  | "failed";
+  | "failed"
+  /** 저장하지 않았다 — 확인이 필요한 표현이 있다(P6-12 · lib/admin/copyWarning.ts). 오류가 아니다. */
+  | "copyWarning";
 
 export interface PopupActionResult {
   /** 사장님에게 빨간 오류를 보일 것인가. */
@@ -114,6 +118,8 @@ export interface PopupActionResult {
   code: PopupActionCode;
   /** 어느 입력을 고쳐야 하는지 표시만 한다(문구는 화면 몫). */
   fieldErrors?: Partial<Record<PopupField, true>>;
+  /** code 가 copyWarning 일 때만 — 걸린 표현 목록. */
+  copyWarnings?: CopyWarning[];
 }
 
 export const POPUP_FAILED: PopupActionResult = { ok: false, changed: false, code: "failed" };

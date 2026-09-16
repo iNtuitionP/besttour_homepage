@@ -13,14 +13,20 @@
  * 화면마다 다른 문턱을 갖고 있으면 사장님이 "이 화면은 한 번만 누르면 되던가?" 를 매번 기억해야 한다.
  * 무장 체크박스를 켠 뒤에야 삭제 버튼이 눌리고, 누르면 브라우저가 한 번 더 묻는다.
  * 성공하면 목록으로 돌아간다 — 지워진 행의 수정 화면에 남아 있을 이유가 없다.
+ *
+ * **저장 전 확인(P6-12 · known-defects D4).** 서버가 제목·본문에서 확인이 필요한 표현을 찾으면 저장하지 않고
+ * `copyWarning` 을 돌려준다. 그러면 저장 버튼 아래에 CopyWarningPanel 이 무엇이·왜 문제인지 보이고,
+ * **그대로 저장하기**(submit + data-copy-ack)를 누르면 같은 폼에 확인 키를 붙여 다시 보낸다 — 막지 않는다.
  */
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition, type FormEvent } from "react";
 
 import { createPopup, deletePopup, updatePopup } from "@/actions/admin/popup";
+import { COPY_ACK_FIELD, type CopyWarning } from "@/lib/admin/copyWarning";
 import { POPUP_BODY_MAX, POPUP_FIELDS, POPUP_TITLE_MAX, type PopupActionCode, type PopupField } from "@/lib/admin/popupInput";
 
 import s from "./admin.module.css";
+import { CopyWarningPanel, isCopyAckSubmitter, mergeAck, type CopyWarningLabels } from "./CopyWarningPanel";
 
 export interface PopupFormValues {
   title: string;
@@ -41,6 +47,7 @@ export interface PopupFormLabels {
   deleteArm: string;
   deleteConfirm: string;
   results: Record<PopupActionCode, string>;
+  copyWarning: CopyWarningLabels;
 }
 
 export function PopupForm({
@@ -62,18 +69,32 @@ export function PopupForm({
   const [notice, setNotice] = useState("");
   const [invalid, setInvalid] = useState<Partial<Record<PopupField, true>>>({});
   const [armed, setArmed] = useState(false);
+  const [warnings, setWarnings] = useState<CopyWarning[]>([]);
+  const [ack, setAck] = useState<string[]>([]);
 
   const mark = (field: PopupField): "true" | undefined => (invalid[field] ? "true" : undefined);
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
+    // 경고 패널의 "그대로 저장하기"로 보낸 제출에만 확인 키를 붙인다. 일반 저장은 언제나 다시 대조된다.
+    if (isCopyAckSubmitter((event.nativeEvent as SubmitEvent).submitter)) {
+      for (const key of ack) formData.append(COPY_ACK_FIELD, key);
+    }
     setNotice("");
     setInvalid({});
     startTransition(async () => {
       const result = mode === "create" ? await createPopup(formData) : await updatePopup(formData);
       setNotice(labels.results[result.code]);
       setInvalid(result.fieldErrors ?? {});
+      if (result.code === "copyWarning") {
+        const held = result.copyWarnings ?? [];
+        setWarnings(held);
+        setAck((prev) => mergeAck(prev, held));
+        return;
+      }
+      setWarnings([]);
+      setAck([]);
       if (!result.changed) return;
       if (mode === "create") formRef.current?.reset();
       router.refresh();
@@ -220,6 +241,8 @@ export function PopupForm({
           {pending ? labels.processing : labels.submit}
         </button>
       </div>
+
+      <CopyWarningPanel warnings={warnings} labels={labels.copyWarning} pending={pending} idPrefix="popup" />
 
       {mode === "edit" && id !== undefined ? (
         <div className={s.dangerZone} data-testid="admin-popup-danger">

@@ -13,14 +13,20 @@
  *
  * slug 는 URL 세그먼트(/gallery/<slug>)로 그대로 쓰이므로 0008 의 CHECK 와 같은 규칙으로 먼저 거른다
  * (lib/admin/galleryInput.ts ALBUM_SLUG_RE). 형식이 틀리면 서버가 DB 를 부르지 않고 validation 으로 돌려준다.
+ *
+ * **앨범 이름은 저장 전에 확인한다(P6-12 · known-defects D4).** 앨범 이름은 공개 갤러리에 그대로 보인다.
+ * 서버가 확인이 필요한 표현을 찾으면 저장하지 않고 그 줄(또는 새 앨범 칸) 아래에 CopyWarningPanel 을 띄운다.
+ * **그대로 저장하기**를 누르면 같은 값에 확인 키(copyAck)를 붙여 다시 보낸다 — 막지 않는다.
  */
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { createGalleryAlbum, deleteGalleryAlbum, toggleGalleryAlbumActive, updateGalleryAlbum } from "@/actions/admin/gallery";
-import { ALBUM_SLUG_MAX, ALBUM_TITLE_MAX, GALLERY_SORT_MAX, type GalleryActionCode } from "@/lib/admin/galleryInput";
+import { COPY_ACK_FIELD, type CopyWarning } from "@/lib/admin/copyWarning";
+import { ALBUM_SLUG_MAX, ALBUM_TITLE_MAX, GALLERY_SORT_MAX, type GalleryActionCode, type GalleryActionResult } from "@/lib/admin/galleryInput";
 
 import s from "./admin.module.css";
+import { CopyWarningPanel, mergeAck, type CopyWarningLabels } from "./CopyWarningPanel";
 
 export interface GalleryAlbumsLabels {
   albumNew: string;
@@ -42,6 +48,7 @@ export interface GalleryAlbumsLabels {
   processing: string;
   state: { live: string; off: string };
   results: Record<GalleryActionCode, string>;
+  copyWarning: CopyWarningLabels;
 }
 
 export interface AdminAlbumView {
@@ -63,13 +70,38 @@ function AlbumRow({ album, labels, onDone }: { album: AdminAlbumView; labels: Ga
   const [slug, setSlug] = useState(album.slug);
   const [sort, setSort] = useState(String(album.sort));
   const [armed, setArmed] = useState(false);
+  const [warnings, setWarnings] = useState<CopyWarning[]>([]);
+  const [ack, setAck] = useState<string[]>([]);
 
-  const run = (action: () => Promise<{ code: GalleryActionCode }>): void => {
+  /** save=true 인 동작(이름 저장)만 경고 패널을 열고 닫는다. */
+  const run = (action: () => Promise<GalleryActionResult>, save = false): void => {
     startTransition(async () => {
       const result = await action();
+      if (result.code === "copyWarning") {
+        const held = result.copyWarnings ?? [];
+        setWarnings(held);
+        setAck((prev) => mergeAck(prev, held));
+      } else if (save) {
+        setWarnings([]);
+        setAck([]);
+      }
       onDone(result.code);
     });
   };
+
+  const onSave = (confirmed: boolean): void =>
+    run(
+      () =>
+        updateGalleryAlbum({
+          id: album.id,
+          title: title.trim(),
+          slug: slug.trim(),
+          sort: num(sort),
+          active: album.active,
+          ...(confirmed ? { [COPY_ACK_FIELD]: ack } : {}),
+        }),
+      true,
+    );
 
   return (
     <li className={s.albumRow} data-testid="admin-gallery-album">
@@ -126,7 +158,7 @@ function AlbumRow({ album, labels, onDone }: { album: AdminAlbumView; labels: Ga
           type="button"
           className={s.btnPrimary}
           disabled={pending}
-          onClick={() => run(() => updateGalleryAlbum({ id: album.id, title: title.trim(), slug: slug.trim(), sort: num(sort), active: album.active }))}
+          onClick={() => onSave(false)}
         >
           {pending ? labels.processing : labels.albumSave}
         </button>
@@ -139,6 +171,14 @@ function AlbumRow({ album, labels, onDone }: { album: AdminAlbumView; labels: Ga
           {album.active ? labels.turnOff : labels.turnOn}
         </button>
       </div>
+
+      <CopyWarningPanel
+        warnings={warnings}
+        labels={labels.copyWarning}
+        pending={pending}
+        onConfirm={() => onSave(true)}
+        idPrefix={`album-${album.id}`}
+      />
 
       <div className={s.dangerZone} data-testid="admin-gallery-album-danger">
         <label className={s.checkRow} htmlFor={`album-arm-${album.id}`}>
@@ -175,16 +215,34 @@ export function GalleryAlbums({ albums, labels }: { albums: readonly AdminAlbumV
   const [notice, setNotice] = useState("");
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
+  const [warnings, setWarnings] = useState<CopyWarning[]>([]);
+  const [ack, setAck] = useState<string[]>([]);
 
   const done = (code: GalleryActionCode): void => {
     setNotice(labels.results[code]);
     router.refresh();
   };
 
-  const onCreate = (): void => {
+  /** confirmed=true 는 경고 패널의 "그대로 저장하기" — 이미 본 표현의 확인 키를 함께 보낸다. */
+  const onCreate = (confirmed: boolean): void => {
     setNotice("");
     startTransition(async () => {
-      const result = await createGalleryAlbum({ title: title.trim(), slug: slug.trim(), sort: albums.length, active: true });
+      const result = await createGalleryAlbum({
+        title: title.trim(),
+        slug: slug.trim(),
+        sort: albums.length,
+        active: true,
+        ...(confirmed ? { [COPY_ACK_FIELD]: ack } : {}),
+      });
+      if (result.code === "copyWarning") {
+        const held = result.copyWarnings ?? [];
+        setWarnings(held);
+        setAck((prev) => mergeAck(prev, held));
+        setNotice(labels.results[result.code]);
+        return;
+      }
+      setWarnings([]);
+      setAck([]);
       if (result.ok) {
         setTitle("");
         setSlug("");
@@ -225,10 +283,12 @@ export function GalleryAlbums({ albums, labels }: { albums: readonly AdminAlbumV
         </div>
       </div>
       <div className={s.rowActions}>
-        <button type="button" className={s.btnPrimary} disabled={pending} onClick={onCreate} data-testid="admin-gallery-album-create">
+        <button type="button" className={s.btnPrimary} disabled={pending} onClick={() => onCreate(false)} data-testid="admin-gallery-album-create">
           {pending ? labels.processing : labels.albumCreate}
         </button>
       </div>
+
+      <CopyWarningPanel warnings={warnings} labels={labels.copyWarning} pending={pending} onConfirm={() => onCreate(true)} idPrefix="album-new" />
 
       <p className={s.hint}>{labels.albumDeleteNote}</p>
 

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 
+import { getCopyWarningLabels } from "@/components/admin/copyWarningLabels";
 import { GalleryAlbums } from "@/components/admin/GalleryAlbums";
 import { GalleryPhotoCard } from "@/components/admin/GalleryPhotoCard";
 import { GalleryUploader } from "@/components/admin/GalleryUploader";
@@ -44,6 +45,7 @@ export default async function AdminGalleryPage({ searchParams }: { searchParams:
   const params = await searchParams;
   const albumFilter = parseAlbumParam(params.album);
   const t = await getTranslations({ locale: routing.defaultLocale, namespace: "admin.gallery" });
+  const copyWarning = await getCopyWarningLabels();
 
   const [albums, photos, usage] = await Promise.all([listAdminAlbums(), listAdminPhotos({ albumId: albumFilter }), galleryUsage()]);
 
@@ -62,6 +64,7 @@ export default async function AdminGalleryPage({ searchParams }: { searchParams:
     validation: t("result.validation"),
     failed: t("result.failed"),
     fileFailed: t("result.fileFailed"),
+    copyWarning: t("result.copyWarning"),
   } satisfies Record<GalleryActionCode, string>;
 
   const reject = {
@@ -145,6 +148,7 @@ export default async function AdminGalleryPage({ searchParams }: { searchParams:
               processing: t("processing"),
               state,
               results,
+              copyWarning,
             }}
           />
         </section>
@@ -195,6 +199,7 @@ export default async function AdminGalleryPage({ searchParams }: { searchParams:
                     missingFile: t("missingFile"),
                     state,
                     results,
+                    copyWarning,
                   }}
                 />
               ))}

@@ -11,15 +11,20 @@
  * **파일이 없는 행을 화면에서 잡는다.** 삭제가 중간에 멈추면(파일은 지워졌는데 행이 남는 경우) 목록에 깨진 이미지가
  * 뜬다 — 그것을 그냥 두지 않고 onError 로 잡아 "파일을 찾지 못했다"고 적어 준다. 조용한 실패를 눈에 보이게 만드는 것이
  * 이 화면의 몫이다(서버는 그 사실을 알 방법이 없다 — 스토리지에 물어봐야 안다).
+ *
+ * **설명은 저장 전에 확인한다(P6-12 · known-defects D4).** 서버가 확인이 필요한 표현을 찾으면 저장하지 않고
+ * 카드 안에 CopyWarningPanel 을 띄운다. **그대로 저장하기**를 누르면 같은 값에 확인 키(copyAck)를 붙여 다시 보낸다 — 막지 않는다.
  */
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { deleteGalleryPhoto, toggleGalleryPhotoActive, updateGalleryPhoto } from "@/actions/admin/gallery";
-import { GALLERY_CAPTION_MAX, GALLERY_SORT_MAX, type GalleryActionCode } from "@/lib/admin/galleryInput";
+import { COPY_ACK_FIELD, type CopyWarning } from "@/lib/admin/copyWarning";
+import { GALLERY_CAPTION_MAX, GALLERY_SORT_MAX, type GalleryActionCode, type GalleryActionResult } from "@/lib/admin/galleryInput";
 
 import s from "./admin.module.css";
+import { CopyWarningPanel, mergeAck, type CopyWarningLabels } from "./CopyWarningPanel";
 
 const THUMB_WIDTH = 320;
 const THUMB_HEIGHT = 240;
@@ -40,6 +45,7 @@ export interface GalleryPhotoCardLabels {
   missingFile: string;
   state: { live: string; off: string };
   results: Record<GalleryActionCode, string>;
+  copyWarning: CopyWarningLabels;
 }
 
 export interface AdminPhotoView {
@@ -71,25 +77,42 @@ export function GalleryPhotoCard({
   const [caption, setCaption] = useState(photo.caption);
   const [albumId, setAlbumId] = useState<number | null>(photo.albumId);
   const [sort, setSort] = useState(String(photo.sort));
+  const [warnings, setWarnings] = useState<CopyWarning[]>([]);
+  const [ack, setAck] = useState<string[]>([]);
 
-  const run = (action: () => Promise<{ code: GalleryActionCode }>): void => {
+  /** save=true 인 동작(설명 저장)만 경고 패널을 열고 닫는다 — 노출 토글이 떠 있는 경고를 지우지 않게. */
+  const run = (action: () => Promise<GalleryActionResult>, save = false): void => {
     setNotice("");
     startTransition(async () => {
       const result = await action();
       setNotice(labels.results[result.code]);
+      if (result.code === "copyWarning") {
+        const held = result.copyWarnings ?? [];
+        setWarnings(held);
+        setAck((prev) => mergeAck(prev, held));
+        return;
+      }
+      if (save) {
+        setWarnings([]);
+        setAck([]);
+      }
       router.refresh();
     });
   };
 
-  const onSave = (): void => {
+  /** confirmed=true 는 경고 패널의 "그대로 저장하기" — 이미 본 표현의 확인 키를 함께 보낸다. */
+  const onSave = (confirmed: boolean): void => {
     const parsed = Number(sort);
-    run(() =>
-      updateGalleryPhoto({
-        id: photo.id,
-        caption: caption.trim() === "" ? null : caption.trim(),
-        albumId,
-        sort: Number.isInteger(parsed) ? parsed : 0,
-      }),
+    run(
+      () =>
+        updateGalleryPhoto({
+          id: photo.id,
+          caption: caption.trim() === "" ? null : caption.trim(),
+          albumId,
+          sort: Number.isInteger(parsed) ? parsed : 0,
+          ...(confirmed ? { [COPY_ACK_FIELD]: ack } : {}),
+        }),
+      true,
     );
   };
 
@@ -170,7 +193,7 @@ export function GalleryPhotoCard({
       </div>
 
       <div className={s.rowActions}>
-        <button type="button" className={s.btnPrimary} disabled={pending} onClick={onSave} data-testid="admin-gallery-save">
+        <button type="button" className={s.btnPrimary} disabled={pending} onClick={() => onSave(false)} data-testid="admin-gallery-save">
           {pending ? labels.processing : labels.save}
         </button>
         <button
@@ -183,6 +206,14 @@ export function GalleryPhotoCard({
           {photo.active ? labels.turnOff : labels.turnOn}
         </button>
       </div>
+
+      <CopyWarningPanel
+        warnings={warnings}
+        labels={labels.copyWarning}
+        pending={pending}
+        onConfirm={() => onSave(true)}
+        idPrefix={`photo-${photo.id}`}
+      />
 
       <div className={s.dangerZone}>
         <label className={s.checkRow} htmlFor={`arm-${photo.id}`}>

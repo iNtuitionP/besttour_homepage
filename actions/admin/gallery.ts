@@ -23,9 +23,14 @@
  *   - 서비스 롤을 쓰지 않는다(ADR-2). 0009 의 gallery·gallery_albums 정책과 0011 의 storage 정책이 DB 에서 한 번 더 막는다.
  *   - 예외는 여기서 끝난다(단 requireAdmin() 의 redirect 는 throw 로 전파돼야 하므로 게이트는 try 밖이다).
  *   - 로그에 남기는 것은 id 와 결과 코드뿐이다. 경로·캡션은 싣지 않는다.
+ *   - **사진 설명·앨범 이름은 저장 전에 카피 목록과 대조한다**(P6-12 · known-defects D4). 걸리면 저장하지 않고 확인을 요청하고,
+ *     입력 객체의 `copyAck` 로 확인되면 저장한다 — **막지 않는다**. 규약은 lib/admin/copyWarning.ts.
+ *     `copyAck` 는 zod 스키마 밖에서 따로 읽는다 — 스키마가 모르는 키는 버려지므로 쓰기 값에 섞이지 않는다.
  */
 import { revalidatePath } from "next/cache";
 
+import { holdForCopy } from "@/lib/admin/copyCheck";
+import { readCopyAckValue } from "@/lib/admin/copyWarning";
 import {
   ADMIN_GALLERY_PATH,
   adminGalleryClient,
@@ -134,6 +139,8 @@ export async function recordGalleryUpload(input: unknown): Promise<GalleryAction
   await requireAdmin();
   const parsed = GalleryUploadInput.safeParse(input);
   if (!parsed.success) return report("record", null, GALLERY_VALIDATION);
+  const held = holdForCopy({ caption: parsed.data.caption }, readCopyAckValue(input));
+  if (held) return report("record", null, held);
   return apply("record", null, "recorded", () => insertGalleryPhoto(parsed.data));
 }
 
@@ -142,6 +149,8 @@ export async function updateGalleryPhoto(input: unknown): Promise<GalleryActionR
   await requireAdmin();
   const parsed = GalleryPatchInput.safeParse(input);
   if (!parsed.success) return report("update", null, GALLERY_VALIDATION);
+  const held = holdForCopy({ caption: parsed.data.caption }, readCopyAckValue(input));
+  if (held) return report("update", parsed.data.id, held);
   return apply("update", parsed.data.id, "updated", () => updateGalleryPhotoRow(parsed.data));
 }
 
@@ -203,6 +212,8 @@ export async function createGalleryAlbum(input: unknown): Promise<GalleryActionR
   await requireAdmin();
   const parsed = AlbumInput.safeParse(input);
   if (!parsed.success) return report("albumCreate", null, GALLERY_VALIDATION);
+  const held = holdForCopy({ albumTitle: parsed.data.title }, readCopyAckValue(input));
+  if (held) return report("albumCreate", null, held);
   return apply("albumCreate", null, "albumCreated", () => insertAlbum(parsed.data));
 }
 
@@ -210,6 +221,8 @@ export async function updateGalleryAlbum(input: unknown): Promise<GalleryActionR
   await requireAdmin();
   const parsed = AlbumPatchInput.safeParse(input);
   if (!parsed.success) return report("albumUpdate", null, GALLERY_VALIDATION);
+  const held = holdForCopy({ albumTitle: parsed.data.title }, readCopyAckValue(input));
+  if (held) return report("albumUpdate", parsed.data.id, held);
   const { id, ...values } = parsed.data;
   return apply("albumUpdate", id, "albumUpdated", () => updateAlbumRow(id, values));
 }

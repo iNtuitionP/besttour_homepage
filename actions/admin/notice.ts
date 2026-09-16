@@ -17,6 +17,8 @@
  *     단 requireAdmin() 의 redirect 는 throw 로 전파돼야 한다(그것이 리다이렉트의 구현이다) — 그래서 게이트는 try 밖에 있다.
  *   - 로그에 남기는 것은 공지 id 와 결과 코드뿐이다. 제목·본문은 싣지 않는다.
  *   - **바뀐 것이 없으면 무효화하지 않는다.** 캐시 무효화는 실제 변경의 결과여야 한다.
+ *   - **제목·본문은 저장 전에 카피 목록과 대조한다**(P6-12 · known-defects D4). 걸리면 저장하지 않고 확인을 요청하고,
+ *     사장님이 "그대로 저장하기"로 확인하면 저장한다 — **막지 않는다**. 규약은 lib/admin/copyWarning.ts.
  */
 import { revalidatePath } from "next/cache";
 
@@ -31,6 +33,8 @@ import {
   type NoticeActionCode,
   type NoticeActionResult,
 } from "@/lib/admin/noticeInput";
+import { holdForCopy } from "@/lib/admin/copyCheck";
+import { readCopyAckForm } from "@/lib/admin/copyWarning";
 import { ADMIN_NOTICES_PATH, deleteNoticeRow, insertNotice, setNoticeActive, updateNoticeRow } from "@/lib/admin/notices";
 import { PUBLIC_CACHE_PATH, PUBLIC_CACHE_SCOPE } from "@/lib/admin/publicRevalidate";
 import { requireAdmin } from "@/lib/auth/requireAdmin";
@@ -95,6 +99,8 @@ export async function createNotice(formData: FormData): Promise<NoticeActionResu
   await requireAdmin();
   const parsed = parseNoticeForm(formData);
   if (!parsed.ok) return report("create", null, parsed.result);
+  const held = holdForCopy({ title: parsed.value.title, body: parsed.value.body }, readCopyAckForm(formData));
+  if (held) return report("create", null, held);
   return apply("create", null, "created", () => insertNotice(parsed.value));
 }
 
@@ -105,6 +111,8 @@ export async function updateNotice(formData: FormData): Promise<NoticeActionResu
   if (id === null) return report("update", null, noticeValidationFailed({ id: true }));
   const parsed = parseNoticeForm(formData);
   if (!parsed.ok) return report("update", id, parsed.result);
+  const held = holdForCopy({ title: parsed.value.title, body: parsed.value.body }, readCopyAckForm(formData));
+  if (held) return report("update", id, held);
   return apply("update", id, "updated", () => updateNoticeRow(id, parsed.value));
 }
 
