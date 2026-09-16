@@ -104,5 +104,6 @@ bash scripts/check-mockup-drift.sh       # 목업 커밋 해시 고정 + public/
   실측: 잠금을 빼고 10회 돌리면 **8회 실패**하고(`home.test.ts` 의 `getGallery` 가 남의 행을 본다) 붙이면 10/10 통과한다.
   **두 잠금을 함께 쓰는 파일은 `notifications → gallery` 순서로만 잡는다**(교착 방지). 완전성 게이트가 소스 위치를 비교해 강제한다.
   탐지는 `describe.skipIf(!gate.allowed …)` 와 **anon 전용 `!hasAnon` 형태 둘 다** 본다 — 앞의 형태만 보면 정작 피해자인 `home.test.ts` 를 놓친다.
+- **dev 서버가 떠 있는 동안 저장소에서 `npm run build` 를 돌리지 마라** (2026-09-16, 두 번 겪었다). `next build` 와 `next dev` 는 `.next` 를 공유해서, 빌드가 dev 서버의 청크 맵을 덮어쓰면 **모든 경로가 500** 이 되고 재컴파일로는 회복되지 않는다(`.next` 삭제 후 재기동만이 복구다). 빌드 실측이 필요하면 **사본에서** 빌드하라. 프로덕션 빌드는 어차피 CI `legal-pages-http` 잡이 매 푸시 수행한다.
 - **테스트를 `%TEMP%` 사본에서 돌리지 마라.** 같은 5파일이 저장소에서 21초, 임시 폴더 사본에서 **5시간 39분** 이었다(vitest transform 단계만 느리다 — `next build` 는 정상). 빌드 실측이 필요하면 사본에서 빌드하되 **vitest 는 저장소에서** 돌린다.
 - UI 태스크는 gstack `/browse`로 실측 검증(콘솔 에러 0, 375px 가로 스크롤 없음, 인터랙션 동작 확인) 없이 완료로 간주하지 않는다.
