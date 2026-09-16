@@ -39,6 +39,7 @@ import type { AnonClient } from "@/lib/supabase/anon";
 import type { GalleryAlbum, GalleryItem } from "@/lib/types";
 import { withGalleryLock } from "./helpers/db-lock";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
+import { stripComments } from "./helpers/strip-comments";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const MIGRATIONS_DIR = path.join(ROOT, "supabase", "migrations");
@@ -56,7 +57,6 @@ const INIT_SQL_SHA256 = "8b107b04a5f147708a3865e241ce83d97df63eb3cf2e753513f8baa
 
 const readSql = (p: string) => readFileSync(p, "utf-8");
 const normalize = (s: string) => s.replace(/\r\n/g, "\n");
-const stripSqlComments = (sql: string) => sql.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
 const compact = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
 const commentLines = (sql: string) => sql.split("\n").filter((l) => /^\s*--/.test(l)).join("\n");
 const read = (rel: string) => readFileSync(path.join(ROOT, rel), "utf-8");
@@ -73,7 +73,7 @@ describe("1. supabase/migrations/0008_gallery_albums.sql", () => {
   });
 
   test("gallery_albums — id serial pk · slug text unique not null · title not null · description · sort · active · created_at", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toContain("create table if not exists gallery_albums");
     expect(code).toMatch(/id serial primary key/);
     expect(code).toMatch(/slug\s+text\s+unique not null/);
@@ -85,13 +85,13 @@ describe("1. supabase/migrations/0008_gallery_albums.sql", () => {
   });
 
   test("slug CHECK — 소문자·숫자·하이픈 정규식 + 길이 1~40 (URL 세그먼트로 그대로 쓰인다)", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toContain("^[a-z0-9]+(-[a-z0-9]+)*$");
     expect(code).toMatch(/char_length\(slug\) between 1 and 40/);
   });
 
   test("gallery 는 alter 로만 넓힌다 — 재생성·drop table·drop column 0건", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toContain("alter table gallery");
     expect(code).not.toContain("create table if not exists gallery (");
     expect(code).not.toMatch(/drop table/);
@@ -101,7 +101,7 @@ describe("1. supabase/migrations/0008_gallery_albums.sql", () => {
   });
 
   test("album_id — int null 허용 + references gallery_albums (id) on delete set null (앨범을 지워도 사진은 남는다)", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toMatch(/album_id\s+int\s+references gallery_albums\s*\(\s*id\s*\) on delete set null/);
     // null 허용이어야 한다 — not null 을 붙이면 기존 행과 미분류 사진이 들어갈 자리가 없다
     expect(code).not.toMatch(/album_id\s+int\s+not null/);
@@ -109,7 +109,7 @@ describe("1. supabase/migrations/0008_gallery_albums.sql", () => {
   });
 
   test("width·height·bytes — int, null 허용, 값이 있으면 > 0 CHECK · original_path text · created_at 기본값", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     for (const col of ["width", "height", "bytes"]) {
       expect(code, col).toMatch(new RegExp(`${col}\\s+int\\b`));
       expect(code, col).toMatch(new RegExp(`check \\(${col} is null or ${col} > 0\\)`));
@@ -119,7 +119,7 @@ describe("1. supabase/migrations/0008_gallery_albums.sql", () => {
   });
 
   test("변환본 경로를 컬럼으로 늘리지 않는다 — image_path 하나뿐(1600/800/400 컬럼 없음)", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     for (const bad of ["image_path_1600", "image_path_800", "image_path_400", "thumb_path", "medium_path", "large_path"]) {
       expect(code, bad).not.toContain(bad);
     }
@@ -128,19 +128,19 @@ describe("1. supabase/migrations/0008_gallery_albums.sql", () => {
   });
 
   test("인덱스 — gallery (album_id, sort, id) 앨범별 페이지네이션 경로", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toMatch(/create index if not exists gallery_album_sort_idx on gallery \(album_id, sort, id\)/);
   });
 
   test("RLS — gallery_albums enable + gallery_albums_select_active using (active)", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toContain("alter table gallery_albums enable row level security");
     expect(code).toContain("drop policy if exists gallery_albums_select_active on gallery_albums");
     expect(code).toMatch(/create policy gallery_albums_select_active on gallery_albums for select using \(active\)/);
   });
 
   test("gallery_select_active 교체 — 이름은 유지하고 EXISTS 절로 비활성 앨범의 사진을 가린다", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toContain("drop policy if exists gallery_select_active on gallery");
     expect(code).toContain("create policy gallery_select_active on gallery for select using");
     expect(code).toMatch(/album_id is null or exists \(\s*select 1 from gallery_albums a where a\.id = gallery\.album_id and a\.active\s*\)/);
@@ -165,7 +165,7 @@ describe("2. 0001_init.sql 불변", () => {
   });
 
   test("0001 의 gallery 정책 원문(using (active))은 그 파일에 그대로 남아 있다 — 교체는 0008 이 런타임에 한다", () => {
-    const code = compact(stripSqlComments(readSql(INIT_SQL_PATH)));
+    const code = compact(stripComments(readSql(INIT_SQL_PATH), INIT_SQL_PATH));
     expect(code).toContain("create policy gallery_select_active on gallery for select using (active);");
     expect(code).not.toContain("gallery_albums");
   });
@@ -184,7 +184,7 @@ describe("3. supabase/rollbacks/0008_gallery_albums.down.sql", () => {
   });
 
   test("좁히는 롤백 — 앨범 행이 있으면 raise exception 으로 멈춘다(사람이 판단). 데이터를 조용히 지우지 않는다", () => {
-    const code = compact(stripSqlComments(readSql(DOWN_SQL_PATH)));
+    const code = compact(stripComments(readSql(DOWN_SQL_PATH), DOWN_SQL_PATH));
     expect(code).toMatch(/select count\(\*\) into .* from gallery_albums/);
     expect(code).toMatch(/raise exception/);
     expect(code).not.toMatch(/\bdelete from\b/);
@@ -193,7 +193,7 @@ describe("3. supabase/rollbacks/0008_gallery_albums.down.sql", () => {
   });
 
   test("정책은 0001 원문으로 복원하고, 0008 이 더한 것만 되돌린다", () => {
-    const code = compact(stripSqlComments(readSql(DOWN_SQL_PATH)));
+    const code = compact(stripComments(readSql(DOWN_SQL_PATH), DOWN_SQL_PATH));
     expect(code).toMatch(/create policy gallery_select_active on gallery for select using \(active\)/);
     expect(code).not.toContain("exists (select 1 from gallery_albums");
     expect(code).toContain("drop index if exists gallery_album_sort_idx");
@@ -204,7 +204,7 @@ describe("3. supabase/rollbacks/0008_gallery_albums.down.sql", () => {
   });
 
   test("가드가 보는 컬럼 = 롤백이 drop 하는 컬럼 (N3 — created_at 포함)", () => {
-    const code = compact(stripSqlComments(readSql(DOWN_SQL_PATH)));
+    const code = compact(stripComments(readSql(DOWN_SQL_PATH), DOWN_SQL_PATH));
     const guard = code.slice(code.indexOf("select count(*) into metas"), code.indexOf("raise exception", code.indexOf("into metas")));
     for (const col of ["album_id", "width", "height", "bytes", "original_path", "created_at"]) {
       expect(guard, col).toContain(`${col} is not null`);
@@ -212,7 +212,7 @@ describe("3. supabase/rollbacks/0008_gallery_albums.down.sql", () => {
   });
 
   test("재실행 가능 — 가드가 이미 사라진 대상을 보지 않는다 (N2)", () => {
-    const code = compact(stripSqlComments(readSql(DOWN_SQL_PATH)));
+    const code = compact(stripComments(readSql(DOWN_SQL_PATH), DOWN_SQL_PATH));
     // 테이블이 없으면 앨범 가드를 건너뛴다
     expect(code).toMatch(/to_regclass\('public\.gallery_albums'\) is null/);
     // 컬럼이 없으면 업로드 메타 가드를 건너뛴다

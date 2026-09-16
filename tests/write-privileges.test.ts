@@ -44,6 +44,10 @@
  *        `authenticated` 의 SELECT 는 살리며, 롤백이 대칭이고 승인 플래그를 조건 없이 요구한다
  *   12. 0017 권한 행렬 + **거동 실증** — 행렬 대조로 끝내지 않는다. 실제로 `CREATE TRIGGER` 를 시도해
  *        `anon`·`authenticated` 가 42501 로 거부되고 **`service_role` 은 성공**(대조군)하는지 본다
+ *   13·14. 0018 SQL·롤백 (P5-14) — **시퀀스.** 0012~0017 이 한 번도 회수하지 않았고, 사람이 아니라 P6-11 게이트가 먼저 찾았다.
+ *        회수 집합이 정확하고(콘텐츠 여섯의 `authenticated` usage 는 남긴다) 롤백이 대칭이며 승인 플래그를 조건 없이 요구한다
+ *   15. 0018 권한 행렬 + **거동 실증** — `setval`·`nextval` 을 공개 롤로 직접 쳐서 42501 을 보고, 허용된 두 경로
+ *        (관리자 nextval · 서비스 롤 nextval)는 성공하는지 대조군으로 본다. §5 에는 관리자 insert 4종 201 과 서비스 롤 통지 적재가 있다
  *
  * **0017 이 왜 0016 보다 급했나**: 0016 은 콘텐츠 표를 다뤘지만 같은 구멍이 `reservations`(고객 성명·전화번호·
  * 이메일·문의내용)·`notifications_log`(수신처·문자 본문)에도 남아 있었다. 적용 전에 **실제로 붙여 봤더니 붙었다** —
@@ -65,6 +69,7 @@ import { beforeAll, describe, expect, test } from "vitest";
 import { withGalleryLock, withNotificationsLock } from "./helpers/db-lock";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
 import { runLocalSql } from "./helpers/local-stack-sql";
+import { type SqlDataMode, sqlView, stripComments } from "./helpers/strip-comments";
 
 // =============================================================================
 // 공통 헬퍼 (tests/admin-reservations.test.ts 와 같은 구현)
@@ -81,10 +86,41 @@ const UP16_SQL = "supabase/migrations/0016_privileges_rls_cannot_protect.sql";
 const DOWN16_SQL = "supabase/rollbacks/0016_privileges_rls_cannot_protect.down.sql";
 const UP17_SQL = "supabase/migrations/0017_pii_tables_trigger_references.sql";
 const DOWN17_SQL = "supabase/rollbacks/0017_pii_tables_trigger_references.down.sql";
+const UP18_SQL = "supabase/migrations/0018_sequence_privileges.sql";
+const DOWN18_SQL = "supabase/rollbacks/0018_sequence_privileges.down.sql";
 
-const stripSqlComments = (sql: string) => sql.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
 const compact = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
-const sqlCode = (rel: string) => compact(stripSqlComments(read(rel)));
+
+/*
+ * =============================================================================
+ * 텍스트 단언의 두 시야 (P6-11 · GPT 검증 P1-4)
+ * =============================================================================
+ * **이 파일의 텍스트 단언은 "그 문장이 파일에 쓰여 있다" 만 증명한다. 실제 권한을 재는 1차 방어선은
+ * `tests/db-privilege-gate.test.ts`(카탈로그 실측)와 각 마이그레이션의 자기검증 블록(적용 중에 실행된다)이다.**
+ * 아래 §5·§6·§9·§12·§15 의 DB 실증도 텍스트가 아니라 권한 상태·거동을 본다.
+ *
+ * 주석을 옳게 지워도 부분 문자열 검색은 **실행**을 증명하지 못한다 — 데이터 인용(`comment on … is $c$ revoke … $c$`,
+ * `raise exception '… revoke …'` 의 hint)의 글자도 "문장" 으로 읽힌다. 그리고 극성에 따라 필요한 시야가 반대다:
+ *
+ *   · **문장 존재**("회수 문이 있다" · "0009 의 grant 가 남아 있다") → `sqlExec()` = `executable` 시야.
+ *     데이터 인용의 내용은 공백 처리하고, `execute '…'` · `execute format('…', …)` 의 **첫 인자만** 실행될 SQL 로 남긴다
+ *     (그 안의 주석도 지운다). 설명·힌트 문자열 속 문장이 존재를 거짓으로 만족시키지 못한다.
+ *   · **문장 부재**("grant 가 없다" · "select 를 건드리지 않는다" · "drop function 이 없다") → `sqlCode()` = `keep` 시야.
+ *     데이터를 **전부** 보인다 — 롤백이 실제로 쓰는 `execute 'grant …'` 같은 동적 SQL 을 놓치지 않기 위해서다.
+ *     데이터 속 무해한 글자 때문에 **실패**하는 쪽으로만 틀린다(안전한 방향).
+ *   · **정확한 집합**("회수 목록이 정확히 그것") → 두 시야로 나눠 본다: 기대 ⊆ 실행 시야 · 파일(keep) ⊆ 기대.
+ *   · **자기검증 구성요소**(`has_table_privilege`·`'select'`·`to_regclass`·`42501` …) → `keep`.
+ *     검사식의 인자가 문자열 리터럴이라(`has_function_privilege('service_role'`) executable 시야에서는 찾을 수 없다.
+ *     이 단언들은 "검증 블록이 그 모양으로 쓰여 있다" 까지만 말하고, 검증이 **돌았다**는 증거는 마이그레이션 적용 자체다.
+ *
+ * **한계** — 변수를 거치는 동적 SQL(`v_sql := …; execute v_sql`)은 어느 시야도 추적하지 못한다. 존재 단언은 그런 문장을
+ * 못 보고(실패 — 안전), 부재 단언은 조각 문자열이 보이는 만큼만 본다. 그 경로의 증거는 위의 1차 방어선이다.
+ */
+/** `keep` 시야 — 주석만 지운다. 부재 단언과 자기검증 구성요소 단언용. */
+const sqlCode = (rel: string) => compact(stripComments(read(rel), rel));
+/** `executable` 시야 — 실행되는 글자만. 문장 존재 단언용. */
+const sqlExec = (rel: string) => compact(sqlView(read(rel), rel, { data: "executable" }));
+const viewOf = (rel: string, data: SqlDataMode) => (data === "keep" ? sqlCode(rel) : sqlExec(rel));
 
 /** 회수/부여 대상 두 표. 이 목록 밖의 표는 0012 가 손대지 않는다. */
 const TARGET_TABLES = ["notifications_log", "reservations"] as const;
@@ -175,15 +211,55 @@ interface PrivStatement {
  * 문장 단위로 자른 뒤 매칭한다. 롤백은 표 존재 확인(to_regclass) 때문에 do 블록 안에서 `execute 'grant …'` 로
  * 부여하므로, 그 껍데기를 벗겨 같은 규칙으로 읽는다 — 상·하행의 대칭을 문자열 눈대중이 아니라 삼중항 집합으로 비교하기 위해서다.
  */
-function parsePrivStatements(rel: string): PrivStatement[] {
+function parsePrivStatements(rel: string, data: SqlDataMode): PrivStatement[] {
+  return parsePrivText(viewOf(rel, data));
+}
+
+/** `parsePrivStatements` 의 본체 — 이미 시야를 고른 텍스트를 받는다(이빨 픽스처가 메모리 SQL 로 부른다). */
+function parsePrivText(code: string): PrivStatement[] {
   const out: PrivStatement[] = [];
   // 종결자는 `;`(최상위 문장) 또는 `'`(do 블록 안의 execute 문자열) 둘 다.
   const re = /\b(revoke|grant)\s+([a-z, ]+?)\s+on\s+table\s+([a-z_, ]+?)\s+(?:from|to)\s+([a-z_, ]+?)\s*(?:;|')/g;
-  const code = sqlCode(rel);
   for (const m of code.matchAll(re)) {
     const [raw, verb, privs, tables, roles] = m;
     const list = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
     for (const table of list(tables)) {
+      out.push({ verb: verb as "revoke" | "grant", privs: list(privs), table, roles: list(roles), raw: raw.trim() });
+    }
+  }
+  return out;
+}
+
+/**
+ * 0018 (P5-14) 의 대상 — serial 기본값이 쓰는 **일곱 시퀀스**. `reservations` 는 uuid 라 시퀀스가 없다.
+ * 콘텐츠 여섯은 관리자 insert 가 `nextval` 하므로 `authenticated` 의 **usage** 만 남긴다.
+ */
+const CONTENT_SEQS = CONTENT_TABLES.map((t) => `${t}_id_seq`);
+const ALL_SEQS = [...CONTENT_SEQS, "notifications_log_id_seq"] as const;
+const SEQ_PRIVS = ["usage", "select", "update"] as const;
+
+/** 0018 이 회수하는 (롤|시퀀스|권한) 전체 — 헤더 "회수하는 것" 1~3 의 정확한 집합. */
+function expected0018Revokes(): Set<string> {
+  const set = new Set<string>();
+  for (const seq of ALL_SEQS) {
+    for (const priv of SEQ_PRIVS) set.add(`anon|${seq}|${priv}`);
+    for (const priv of ["select", "update"]) set.add(`authenticated|${seq}|${priv}`);
+  }
+  set.add("authenticated|notifications_log_id_seq|usage");
+  return set;
+}
+
+/**
+ * `revoke a, b on sequence s1, s2 from r` / `grant … to …` 를 (동사·권한·시퀀스·롤) 로 쪼갠다 — `parsePrivStatements` 의 시퀀스 판.
+ * 이름 목록에 `.` 이나 숫자가 섞이면 매치하지 않는다(대조군 임시 시퀀스 `public.p0018_probe_seq` 는 대상이 아니다).
+ */
+function parseSeqStatements(rel: string, data: SqlDataMode): PrivStatement[] {
+  const out: PrivStatement[] = [];
+  const re = /\b(revoke|grant)\s+([a-z, ]+?)\s+on\s+sequence\s+([a-z_, ]+?)\s+(?:from|to)\s+([a-z_, ]+?)\s*(?:;|')/g;
+  for (const m of viewOf(rel, data).matchAll(re)) {
+    const [raw, verb, privs, seqs, roles] = m;
+    const list = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
+    for (const table of list(seqs)) {
       out.push({ verb: verb as "revoke" | "grant", privs: list(privs), table, roles: list(roles), raw: raw.trim() });
     }
   }
@@ -199,6 +275,83 @@ function triples(stmts: PrivStatement[], verb: "revoke" | "grant"): Set<string> 
   return set;
 }
 
+type Parse = (rel: string, data: SqlDataMode) => PrivStatement[];
+
+/**
+ * **정확한 집합** — 존재 쪽(기대 ⊆ 실행 시야)과 부재 쪽(파일 전체 ⊆ 기대)을 나눠 본다.
+ * 실행 시야 ⊆ keep 시야이므로 둘 다 통과하면 두 시야의 집합이 기대와 같다.
+ */
+function expectExactTriples(rel: string, parse: Parse, verb: "revoke" | "grant", expected: Set<string>, what: string): void {
+  const exec = triples(parse(rel, "executable"), verb);
+  const keep = triples(parse(rel, "keep"), verb);
+  const missing = [...expected].filter((t) => !exec.has(t)).sort();
+  const extra = [...keep].filter((t) => !expected.has(t)).sort();
+  expect(missing, `${what} — 실행되는 문장에 없다(주석·데이터 속 글자는 세지 않는다)`).toEqual([]);
+  expect(extra, `${what} — 기대 밖의 ${verb} 가 파일에 있다(데이터 속 글자까지 본다 — 동적 SQL 을 놓치지 않기 위해)`).toEqual([]);
+}
+
+/**
+ * **대칭** — 상행이 (실행으로) 회수한 것은 하행이 (실행으로) 되돌리고, 하행이 파일 어디에서든 부여하는 것은
+ * 상행이 (실행으로) 회수한 것이어야 한다. 크기 비교는 옛 단언을 그대로 둔다.
+ */
+function expectSymmetric(upRel: string, downRel: string, parse: Parse, label: string): void {
+  const revoked = triples(parse(upRel, "executable"), "revoke");
+  const grantedExec = triples(parse(downRel, "executable"), "grant");
+  const grantedKeep = triples(parse(downRel, "keep"), "grant");
+  for (const t of revoked) expect(grantedExec.has(t), `${label} 이 회수한 ${t} 를 롤백이 되돌리지 않는다`).toBe(true);
+  for (const t of grantedKeep) expect(revoked.has(t), `롤백이 ${label} 이 회수하지 않은 ${t} 를 부여한다 — 이전 상태보다 넓어진다`).toBe(true);
+  expect(grantedKeep.size).toBe(revoked.size);
+}
+
+// =============================================================================
+// 0. 텍스트 단언의 시야 — 이빨 픽스처 (P6-11 · GPT 검증 P1-4)
+//
+//    파일 머리의 "두 시야" 규칙이 실제로 판정을 가르는지, 메모리 SQL 로 확인한다.
+//    각 픽스처는 **옛 시야(keep 하나로 존재·부재를 모두 보던 방식)에서의 판정**을 함께 단언한다 — 그것이 고치기 전의 거짓 통과다.
+// =============================================================================
+describe("0. 텍스트 단언의 시야 — 존재는 executable · 부재는 keep", () => {
+  const REVOKE_PII = "revoke insert, update, delete, truncate on table notifications_log from anon, authenticated;";
+  const view = (sql: string, data: SqlDataMode) => compact(sqlView(sql, "fixture.sql", { data }));
+  const revokesNotifInsert = (code: string) => triples(parsePrivText(code), "revoke").has("anon|notifications_log|insert");
+  const grantsNoticesToAnon = (code: string) => triples(parsePrivText(code), "grant").has("anon|notices|update");
+
+  test("① `comment on … is $c$ -- revoke … $c$` 는 회수 문의 존재를 만족시키지 못한다 (옛 시야: 만족시켰다)", () => {
+    const sql = ["comment on table notifications_log is $c$", `-- ${REVOKE_PII}`, "$c$;"].join("\n");
+    expect(revokesNotifInsert(view(sql, "keep")), "옛 시야의 거짓 통과 재현").toBe(true);
+    expect(revokesNotifInsert(view(sql, "executable")), "설명 문자열 속 revoke 가 존재로 세어진다").toBe(false);
+  });
+
+  test("② `execute format($q$ … -- revoke … $q$)` — 실행될 SQL 속 **주석** revoke 는 존재가 아니다 (옛 시야: 존재였다)", () => {
+    const sql = ["do $$", "begin", "  execute format($q$", "    select 1;", `    -- ${REVOKE_PII}`, "  $q$);", "end;", "$$;"].join("\n");
+    expect(revokesNotifInsert(view(sql, "keep")), "옛 시야의 거짓 통과 재현").toBe(true);
+    expect(revokesNotifInsert(view(sql, "executable")), "동적 SQL 속 주석이 존재로 세어진다").toBe(false);
+  });
+
+  test("③ 대조군 — `execute '<revoke …>'` 는 실행되는 문장이므로 존재로 센다", () => {
+    const sql = ["do $$", "begin", `  execute '${REVOKE_PII.replace(/;$/, "")}';`, "end $$;"].join("\n");
+    expect(revokesNotifInsert(view(sql, "executable")), "실행되는 동적 revoke 를 못 본다 — 롤백 대칭 검사가 눈이 먼다").toBe(true);
+  });
+
+  test("④ `execute 'grant update … to anon'` — 부재 단언은 동적 GRANT 를 본다(keep)", () => {
+    const sql = ["do $$", "begin", "  execute 'grant update on table notices to anon';", "end $$;"].join("\n");
+    expect(grantsNoticesToAnon(view(sql, "keep")), "부재 단언이 동적 GRANT 를 놓친다").toBe(true);
+    // 설명 문자열 속 grant 는 keep 에서도 보인다 — 부재 단언은 그 때문에 **실패**하는 쪽으로만 틀린다(안전)
+    expect(grantsNoticesToAnon(view("select 1; comment on table t is 'grant update on table notices to anon';", "keep"))).toBe(true);
+  });
+
+  test("⑤ Codex P1-1 입력 — 이어붙인 E 문자열 뒤의 실제 GRANT 를 부재 단언이 본다 (스캐너 수정 전: 숨겨졌다)", () => {
+    const sql = "select E'a'\n'\\' -- data'; grant update on table notices to anon;";
+    expect(grantsNoticesToAnon(view(sql, "keep"))).toBe(true);
+    expect(grantsNoticesToAnon(view(sql, "executable")), "실행되는 최상위 GRANT 는 어느 시야에서도 보여야 한다").toBe(true);
+  });
+
+  test("⑥ 조각 인자 — SQL 로 닫히지 않는 `execute` 인자는 존재 시야에서 숨긴다(실패 쪽) · throw 하지 않는다", () => {
+    const sql = ["do $$", "begin", `  execute 'revoke insert on table notifications_log from anon where x = ''' || v || '''';`, "end $$;"].join("\n");
+    expect(() => view(sql, "executable")).not.toThrow();
+    expect(revokesNotifInsert(view(sql, "executable"))).toBe(false);
+  });
+});
+
 // =============================================================================
 // 1. supabase/migrations/0012_write_privileges.sql — 텍스트
 // =============================================================================
@@ -211,7 +364,7 @@ describe("1. 0012_write_privileges.sql", () => {
   });
 
   test("notifications_log — insert·update·delete·truncate 를 anon·authenticated 양쪽에서 회수한다", () => {
-    const revoked = triples(parsePrivStatements(UP_SQL), "revoke");
+    const revoked = triples(parsePrivStatements(UP_SQL, "executable"), "revoke");
     for (const role of ["anon", "authenticated"]) {
       for (const priv of WRITE_PRIVS) {
         expect(revoked.has(`${role}|notifications_log|${priv}`), `${role} 의 notifications_log ${priv} 가 남는다`).toBe(true);
@@ -220,7 +373,7 @@ describe("1. 0012_write_privileges.sql", () => {
   });
 
   test("reservations — insert·delete·truncate 는 양쪽에서, update 는 anon 에서 회수한다 (authenticated update 는 0010 이 이미 닫았다)", () => {
-    const revoked = triples(parsePrivStatements(UP_SQL), "revoke");
+    const revoked = triples(parsePrivStatements(UP_SQL, "executable"), "revoke");
     for (const role of ["anon", "authenticated"]) {
       for (const priv of ["insert", "delete", "truncate"]) {
         expect(revoked.has(`${role}|reservations|${priv}`), `${role} 의 reservations ${priv} 가 남는다`).toBe(true);
@@ -230,7 +383,7 @@ describe("1. 0012_write_privileges.sql", () => {
   });
 
   test("select 는 어디서도 회수하지 않는다 — 관리자 화면이 그것으로 읽는다(0009 정책)", () => {
-    for (const s of parsePrivStatements(UP_SQL)) {
+    for (const s of parsePrivStatements(UP_SQL, "keep")) {
       expect(s.privs, `${s.raw} 가 select 를 건드린다`).not.toContain("select");
       expect(s.privs, `${s.raw} 가 all 로 뭉뚱그린다 — select 까지 사라진다`).not.toContain("all");
     }
@@ -238,8 +391,9 @@ describe("1. 0012_write_privileges.sql", () => {
   });
 
   test("콘텐츠 6표와 범위 밖 2표는 회수 대상이 아니다 — 회수하면 관리자 화면이 죽는다", () => {
-    const stmts = parsePrivStatements(UP_SQL);
-    expect(stmts.length, "권한 문장이 하나도 없다").toBeGreaterThan(0);
+    // 존재: 실행되는 권한 문장이 하나 이상 · 부재: 파일(데이터 포함)의 어느 문장도 범위 밖 표를 건드리지 않는다
+    expect(parsePrivStatements(UP_SQL, "executable").length, "권한 문장이 하나도 없다").toBeGreaterThan(0);
+    const stmts = parsePrivStatements(UP_SQL, "keep");
     for (const s of stmts) {
       expect(TARGET_TABLES as readonly string[], `${s.raw} 가 범위 밖 표를 건드린다`).toContain(s.table);
     }
@@ -254,7 +408,7 @@ describe("1. 0012_write_privileges.sql", () => {
   });
 
   test("부여(grant)는 하나도 없다 — 이 마이그레이션은 닫기만 한다", () => {
-    expect(parsePrivStatements(UP_SQL).filter((s) => s.verb === "grant")).toEqual([]);
+    expect(parsePrivStatements(UP_SQL, "keep").filter((s) => s.verb === "grant")).toEqual([]);
     expect(sqlCode(UP_SQL)).not.toMatch(/grant\s+(select|insert|update|delete|truncate|all|usage)/);
   });
 
@@ -268,7 +422,7 @@ describe("1. 0012_write_privileges.sql", () => {
   test("재실행 안전 — revoke 는 멱등이고 조건 분기(if not exists 류)가 필요 없다", () => {
     const code = sqlCode(UP_SQL);
     // revoke 는 없는 권한을 회수해도 오류가 아니다. 그래서 재실행 안전이 문장 자체의 성질로 성립한다.
-    expect(code).toMatch(/revoke /);
+    expect(sqlExec(UP_SQL), "실행되는 revoke 가 없다").toMatch(/revoke /);
     // 재실행하면 실패하는 문장이 섞여 있지 않은지(위 데이터·스키마 검사와 함께 이중으로 본다).
     expect(code).not.toMatch(/create (?!or replace)/);
   });
@@ -285,10 +439,10 @@ describe("1. 0012_write_privileges.sql", () => {
 
   test("0001~0011 을 수정하지 않는다 — 0012 는 파일 하나를 더할 뿐이다", () => {
     // 0009 §6 의 grant 문장과 0010 §6 의 revoke 문장이 그대로 남아 있어야 한다(0012 가 그것을 지우고 다시 쓰지 않았다).
-    const nine = sqlCode("supabase/migrations/0009_admin_rls.sql");
+    const nine = sqlExec("supabase/migrations/0009_admin_rls.sql");
     expect(nine).toContain("grant select on table notifications_log to authenticated");
     expect(nine).toContain("grant select, update on table reservations to authenticated");
-    const ten = sqlCode("supabase/migrations/0010_admin_reservation_actions.sql");
+    const ten = sqlExec("supabase/migrations/0010_admin_reservation_actions.sql");
     expect(ten).toContain("revoke update on table reservations from authenticated");
   });
 });
@@ -317,19 +471,14 @@ describe("2. 0012 롤백", () => {
   });
 
   test("대칭 — 0012 가 회수한 것을 되돌린다. 단 0010 이 닫은 문(reservations update → authenticated)은 되살리지 않는다", () => {
-    const revoked = triples(parsePrivStatements(UP_SQL), "revoke");
-    const granted = triples(parsePrivStatements(DOWN_SQL), "grant");
-
-    for (const t of revoked) {
-      expect(granted.has(t), `0012 가 회수한 ${t} 를 롤백이 되돌리지 않는다`).toBe(true);
-    }
-    for (const t of granted) {
-      expect(revoked.has(t), `롤백이 0012 가 회수하지 않은 ${t} 를 부여한다 — 이전 상태보다 넓어진다`).toBe(true);
-    }
+    expectSymmetric(UP_SQL, DOWN_SQL, parsePrivStatements, "0012");
     // 0012 는 authenticated 의 reservations update 를 회수하지 않았다(0010 소관). 따라서 롤백도 주면 안 된다 —
     // 주는 순간 리뷰 N5 가 지적한 "관리자가 retention_until·privacy_consent_at 을 고칠 수 있는" 상태로 돌아간다.
-    expect(revoked.has("authenticated|reservations|update"), "0012 가 0010 의 회수를 중복 실행하면 롤백이 그것을 되살리게 된다").toBe(false);
-    expect(granted.has("authenticated|reservations|update"), "롤백이 0010 이 닫은 문을 되살린다").toBe(false);
+    // (부재 단언 — 파일 전체를 본다)
+    const revokedKeep = triples(parsePrivStatements(UP_SQL, "keep"), "revoke");
+    const grantedKeep = triples(parsePrivStatements(DOWN_SQL, "keep"), "grant");
+    expect(revokedKeep.has("authenticated|reservations|update"), "0012 가 0010 의 회수를 중복 실행하면 롤백이 그것을 되살리게 된다").toBe(false);
+    expect(grantedKeep.has("authenticated|reservations|update"), "롤백이 0010 이 닫은 문을 되살린다").toBe(false);
   });
 
   test("데이터는 건드리지 않는다", () => {
@@ -361,19 +510,21 @@ describe("3. 0013_anon_write_privileges.sql", () => {
   });
 
   test("7표 × 4동작을 `anon` 에서만 회수한다", () => {
-    const revoked = triples(parsePrivStatements(UP13_SQL), "revoke");
+    const revoked = triples(parsePrivStatements(UP13_SQL, "executable"), "revoke");
     for (const table of ANON_REVOKE_TABLES) {
       for (const priv of WRITE_PRIVS) {
         expect(revoked.has(`anon|${table}|${priv}`), `anon 의 ${table} ${priv} 가 남는다`).toBe(true);
       }
     }
-    expect(revoked.size, `회수 삼중항이 ${ANON_REVOKE_TABLES.length} × ${WRITE_PRIVS.length} 가 아니다: ${[...revoked].join(" ")}`).toBe(
+    // 개수는 파일 전체(keep)로 센다 — 데이터 속 문장까지 넣어도 그 이상이 없어야 한다
+    const revokedKeep = triples(parsePrivStatements(UP13_SQL, "keep"), "revoke");
+    expect(revokedKeep.size, `회수 삼중항이 ${ANON_REVOKE_TABLES.length} × ${WRITE_PRIVS.length} 가 아니다: ${[...revokedKeep].join(" ")}`).toBe(
       ANON_REVOKE_TABLES.length * WRITE_PRIVS.length,
     );
   });
 
   test("`authenticated` 는 한 칸도 건드리지 않는다 — 관리자 화면이 그 롤로 쓴다", () => {
-    for (const s of parsePrivStatements(UP13_SQL)) {
+    for (const s of parsePrivStatements(UP13_SQL, "keep")) {
       expect(s.roles, `${s.raw} 가 authenticated 를 건드린다 — 관리자 화면이 죽는다`).not.toContain("authenticated");
       expect(s.roles, `${s.raw} 가 service_role 을 건드린다`).not.toContain("service_role");
       expect(s.roles, `${s.raw} 가 public 롤을 건드린다 — 이 파일의 범위가 아니다`).not.toContain("public");
@@ -381,7 +532,7 @@ describe("3. 0013_anon_write_privileges.sql", () => {
   });
 
   test("select 는 회수하지 않는다 — 공개 사이트가 anon 키로 이 7표를 읽는다", () => {
-    for (const s of parsePrivStatements(UP13_SQL)) {
+    for (const s of parsePrivStatements(UP13_SQL, "keep")) {
       expect(s.privs, `${s.raw} 가 select 를 건드린다`).not.toContain("select");
       expect(s.privs, `${s.raw} 가 all 로 뭉뚱그린다`).not.toContain("all");
     }
@@ -391,13 +542,13 @@ describe("3. 0013_anon_write_privileges.sql", () => {
   test("0012 가 이미 닫은 두 표와 admin_users 는 언급조차 하지 않는다", () => {
     const code = sqlCode(UP13_SQL);
     for (const t of OUT_OF_SCOPE_FOR_13) {
-      // 헤더 주석에서는 설명하지만(주석은 stripSqlComments 가 걷어낸다) SQL 본문에는 나오면 안 된다.
+      // 헤더 주석에서는 설명하지만(주석은 helpers/strip-comments 가 걷어낸다) SQL 본문에는 나오면 안 된다.
       expect(code, `0013 의 SQL 본문이 ${t} 를 건드린다`).not.toContain(t);
     }
   });
 
   test("부여(grant)는 하나도 없고, 데이터·스키마를 바꾸지 않는다", () => {
-    expect(parsePrivStatements(UP13_SQL).filter((s) => s.verb === "grant")).toEqual([]);
+    expect(parsePrivStatements(UP13_SQL, "keep").filter((s) => s.verb === "grant")).toEqual([]);
     const code = sqlCode(UP13_SQL);
     for (const forbidden of ["create table", "alter table", "drop table", "create policy", "drop policy", "insert into", "delete from", "truncate table", "create or replace function"]) {
       expect(code, `0013 이 "${forbidden}" 을 한다 — 권한만 건드려야 한다`).not.toContain(forbidden);
@@ -423,9 +574,9 @@ describe("3. 0013_anon_write_privileges.sql", () => {
   });
 
   test("0001~0012 를 수정하지 않는다 — 0013 은 파일 하나를 더할 뿐이다", () => {
-    const twelve = sqlCode(UP_SQL);
+    const twelve = sqlExec(UP_SQL);
     expect(twelve).toContain("revoke insert, update, delete, truncate on table notifications_log from anon, authenticated");
-    const nine = sqlCode("supabase/migrations/0009_admin_rls.sql");
+    const nine = sqlExec("supabase/migrations/0009_admin_rls.sql");
     expect(nine).toContain("grant select, insert, update, delete on table notices, popups, gallery, gallery_albums, showcase_routes, vehicles to authenticated");
   });
 });
@@ -452,11 +603,7 @@ describe("4. 0013 롤백", () => {
   });
 
   test("대칭 — 0013 이 회수한 것을 정확히 되돌린다(더도 덜도 아니게)", () => {
-    const revoked = triples(parsePrivStatements(UP13_SQL), "revoke");
-    const granted = triples(parsePrivStatements(DOWN13_SQL), "grant");
-    for (const t of revoked) expect(granted.has(t), `0013 이 회수한 ${t} 를 롤백이 되돌리지 않는다`).toBe(true);
-    for (const t of granted) expect(revoked.has(t), `롤백이 0013 이 회수하지 않은 ${t} 를 부여한다`).toBe(true);
-    expect(granted.size).toBe(revoked.size);
+    expectSymmetric(UP13_SQL, DOWN13_SQL, parsePrivStatements, "0013");
   });
 
   test("데이터는 건드리지 않고, 표가 없으면 건너뛴다", () => {
@@ -1031,6 +1178,75 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
       expect((routes.body as unknown[]).length, "anon 이 showcase_routes 를 읽지 못한다 — 홈의 대표 노선이 빈다").toBeGreaterThan(0);
     });
 
+    // -------------------------------------------------------------------------
+    // 5-5. 0018 — **시퀀스를 회수한 뒤에도 관리자가 새 행을 만든다** (행렬이 아니라 201 로).
+    //
+    //      insert 권한은 표에 있지만 serial 기본값의 `nextval` 은 **시퀀스 권한**으로 검사된다.
+    //      0018 이 콘텐츠 여섯의 `authenticated` usage 까지 가져갔다면 표 권한은 멀쩡한데 저장만 42501 로 실패한다 —
+    //      원인이 잘 보이지 않는 고장이다. 네 표에 실제로 넣어 **새 id 가 발급되는지** 본다.
+    // -------------------------------------------------------------------------
+    test("0018 실행 증명 — 관리자 세션이 공지·팝업·앨범·사진에 새 행을 만든다 (201 · nextval 이 새 id 를 준다)", async () => {
+      const made: { table: string; id: number }[] = [];
+      try {
+        const cases: [string, Record<string, unknown>][] = [
+          ["notices", { title: `P514-${RUN}`, body: "P5-14", active: false }],
+          ["popups", { title: `P514-${RUN}`, body: "P5-14", starts_at: "2000-01-01", ends_at: "2000-01-02", active: false }],
+          ["gallery_albums", { slug: `p514-${RUN}`, title: `P5-14 ${RUN}`, sort: 910014, active: false }],
+        ];
+        for (const [table, row] of cases) {
+          const r = await asUser(adminToken, "POST", `/${table}`, row, "return=representation");
+          expect(r.status, `관리자 화면이 새 글을 못 쓴다 — ${table} insert: ${JSON.stringify(r.body).slice(0, 300)}`).toBe(201);
+          const id = (r.body as { id: number }[])[0].id;
+          expect(Number.isInteger(id) && id > 0, `${table} 의 새 id 가 시퀀스에서 오지 않았다: ${id}`).toBe(true);
+          made.push({ table, id });
+        }
+        const albumId = made.find((m) => m.table === "gallery_albums")!.id;
+        const g = await asUser(
+          adminToken,
+          "POST",
+          "/gallery",
+          { image_path: `p514/${RUN}.webp`, original_path: `p514/${RUN}.orig`, sort: 910014, active: false, album_id: albumId },
+          "return=representation",
+        );
+        expect(g.status, `관리자 화면이 새 사진을 못 올린다 — gallery insert: ${JSON.stringify(g.body).slice(0, 300)}`).toBe(201);
+        const photoId = (g.body as { id: number }[])[0].id;
+        expect(Number.isInteger(photoId) && photoId > 0).toBe(true);
+        made.unshift({ table: "gallery", id: photoId }); // 사진을 앨범보다 먼저 지운다
+      } finally {
+        for (const m of made) {
+          const del = await asUser(adminToken, "DELETE", `/${m.table}?id=eq.${m.id}`);
+          expect(del.status, `${m.table} 정리: ${JSON.stringify(del.body).slice(0, 300)}`).toBeLessThan(300);
+        }
+      }
+    });
+
+    test("0018 실행 증명 — 서비스 롤의 공개 접수 → 통지 적재가 그대로 201 이다 (notifications_log 의 nextval)", async () => {
+      const id = await seedReservation(`D${RUN.slice(0, 4).toUpperCase()}`);
+      madeReservations.push(id);
+      const before = await rest("GET", "/notifications_log?select=id&order=id.desc&limit=1");
+      const maxBefore = ((before.body as { id: number }[])[0]?.id ?? 0) as number;
+      const enq = await rest(
+        "POST",
+        "/notifications_log",
+        { reservation_id: id, event: "created", channel: "sms", to_phone: "+821000000014", template: "created.customer.sms", status: "pending", next_attempt_at: OUT_OF_CLAIM_WINDOW },
+        "return=representation",
+      );
+      expect(enq.status, `통지 적재가 막혔다 — 접수는 되는데 문자가 한 통도 안 나간다: ${JSON.stringify(enq.body).slice(0, 300)}`).toBe(201);
+      const newId = (enq.body as { id: number }[])[0].id;
+      expect(newId, "새 통지 id 가 기존 최대값보다 크지 않다 — 시퀀스가 되감겼나").toBeGreaterThan(maxBefore);
+    });
+
+    test("0018 — 공개 롤에는 setval·nextval 을 부를 REST 경로 자체가 없다 (404 PGRST202)", async () => {
+      // 권한 회수와 별개로, 오늘의 도달 경로가 없음을 매번 확인한다(P6-11 실측의 고정). 이것이 바뀌면 0018 이 유일한 방어선이다.
+      for (const fn of ["setval", "nextval"]) {
+        const anon = await asAnon("POST", `/rpc/${fn}`, { regclass: "notifications_log_id_seq" });
+        expect(anon.status, `anon 의 /rpc/${fn}: ${JSON.stringify(anon.body).slice(0, 200)}`).toBe(404);
+        expect((anon.body as { code?: string } | null)?.code).toBe("PGRST202");
+        const user = await asUser(adminToken, "POST", `/rpc/${fn}`, { regclass: "notifications_log_id_seq" });
+        expect(user.status, `관리자 세션의 /rpc/${fn}: ${JSON.stringify(user.body).slice(0, 200)}`).toBe(404);
+      }
+    });
+
     test("정리 — 만든 것을 전부 지운다", async () => {
       for (const id of madeReservations) {
         await rest("DELETE", `/notifications_log?reservation_id=eq.${id}`);
@@ -1130,7 +1346,7 @@ describe("7. 0016_privileges_rls_cannot_protect.sql", () => {
   });
 
   test("일곱 표 × authenticated 에서 truncate·trigger·references 를 회수한다", () => {
-    const revoked = triples(parsePrivStatements(UP16_SQL), "revoke");
+    const revoked = triples(parsePrivStatements(UP16_SQL, "executable"), "revoke");
     for (const table of ANON_REVOKE_TABLES) {
       for (const priv of RLS_BLIND_PRIVS) {
         expect(revoked.has(`authenticated|${table}|${priv}`), `authenticated 의 ${table} ${priv} 가 남는다`).toBe(true);
@@ -1139,7 +1355,8 @@ describe("7. 0016_privileges_rls_cannot_protect.sql", () => {
   });
 
   test("같은 일곱 표 × anon 에서 trigger·references 를 회수한다 — 0013 은 네 동작만 가져갔다", () => {
-    const revoked = triples(parsePrivStatements(UP16_SQL), "revoke");
+    const revoked = triples(parsePrivStatements(UP16_SQL, "executable"), "revoke");
+    const revokedKeep = triples(parsePrivStatements(UP16_SQL, "keep"), "revoke");
     for (const table of ANON_REVOKE_TABLES) {
       for (const priv of ANON_RLS_BLIND_PRIVS) {
         expect(revoked.has(`anon|${table}|${priv}`), `anon 의 ${table} ${priv} 가 남는다`).toBe(true);
@@ -1148,36 +1365,36 @@ describe("7. 0016_privileges_rls_cannot_protect.sql", () => {
     // anon 의 TRUNCATE 는 0013 소관이다. 여기서 다시 회수하면 **롤백이** 0013 이 닫은 문을 되살리게 된다
     // (0012 §2 가 reservations update 에서 같은 이유로 피한 함정).
     for (const table of ANON_REVOKE_TABLES) {
-      expect(revoked.has(`anon|${table}|truncate`), `0016 이 0013 의 회수를 중복 실행한다 — 롤백이 그것을 되살린다`).toBe(false);
+      expect(revokedKeep.has(`anon|${table}|truncate`), `0016 이 0013 의 회수를 중복 실행한다 — 롤백이 그것을 되살린다`).toBe(false);
     }
   });
 
   test("`places` 에서만 authenticated 의 insert·update·delete 를 추가로 회수한다 (select 는 남긴다)", () => {
-    const revoked = triples(parsePrivStatements(UP16_SQL), "revoke");
+    const revoked = triples(parsePrivStatements(UP16_SQL, "executable"), "revoke");
+    const revokedKeep = triples(parsePrivStatements(UP16_SQL, "keep"), "revoke");
     for (const priv of PLACES_WRITE_PRIVS) {
       expect(revoked.has(`authenticated|places|${priv}`), `places 의 ${priv} 가 남는다 — 관리자 쓰기 정책도 코드 경로도 없다`).toBe(true);
     }
     for (const table of CONTENT_TABLES) {
       for (const priv of PLACES_WRITE_PRIVS) {
-        expect(revoked.has(`authenticated|${table}|${priv}`), `${table} 의 ${priv} 를 회수한다 — 관리자 화면이 죽는다`).toBe(false);
+        expect(revokedKeep.has(`authenticated|${table}|${priv}`), `${table} 의 ${priv} 를 회수한다 — 관리자 화면이 죽는다`).toBe(false);
       }
-      expect(revoked.has(`authenticated|${table}|select`), `${table} 의 select 를 회수한다`).toBe(false);
+      expect(revokedKeep.has(`authenticated|${table}|select`), `${table} 의 select 를 회수한다`).toBe(false);
     }
   });
 
   test("회수 목록이 정확히 그 셋이다 — 더도 덜도 아니다", () => {
-    const revoked = triples(parsePrivStatements(UP16_SQL), "revoke");
     const expected = new Set<string>();
     for (const table of ANON_REVOKE_TABLES) {
       for (const priv of RLS_BLIND_PRIVS) expected.add(`authenticated|${table}|${priv}`);
       for (const priv of ANON_RLS_BLIND_PRIVS) expected.add(`anon|${table}|${priv}`);
     }
     for (const priv of PLACES_WRITE_PRIVS) expected.add(`authenticated|places|${priv}`);
-    expect([...revoked].sort(), `회수 삼중항이 기대와 다르다`).toEqual([...expected].sort());
+    expectExactTriples(UP16_SQL, parsePrivStatements, "revoke", expected, "0016 회수 삼중항");
   });
 
   test("select 는 어디서도 회수하지 않고 `all` 로 뭉뚱그리지 않는다 · service_role 도 건드리지 않는다", () => {
-    for (const s of parsePrivStatements(UP16_SQL)) {
+    for (const s of parsePrivStatements(UP16_SQL, "keep")) {
       expect(s.privs, `${s.raw} 가 select 를 건드린다`).not.toContain("select");
       expect(s.privs, `${s.raw} 가 all 로 뭉뚱그린다`).not.toContain("all");
       expect(s.roles, `${s.raw} 가 service_role 을 건드린다 — 접수·enqueue·발송기·파기가 그것으로 돈다`).not.toContain("service_role");
@@ -1187,7 +1404,7 @@ describe("7. 0016_privileges_rls_cannot_protect.sql", () => {
   });
 
   test("부여(grant)는 하나도 없다 — 이 마이그레이션은 닫기만 한다", () => {
-    expect(parsePrivStatements(UP16_SQL).filter((s) => s.verb === "grant")).toEqual([]);
+    expect(parsePrivStatements(UP16_SQL, "keep").filter((s) => s.verb === "grant")).toEqual([]);
     // **문장 머리에서만** 찾는다 — 이 파일의 `hint` 문자열들이 다른 마이그레이션의 grant 문(0009 §6 의 시퀀스 usage,
     // 0005 §6 의 service_role execute)을 인용해 "그것이 살아 있는지 확인할 것" 이라고 안내한다(실측).
     expect(sqlCode(UP16_SQL)).not.toMatch(/(?:^|;)\s*grant\s+/);
@@ -1206,8 +1423,11 @@ describe("7. 0016_privileges_rls_cannot_protect.sql", () => {
     // **문장 머리에서만** 찾는다 — 이 파일의 `hint` 문자열이 "drop function 이 섞여 들어갔다" 를 설명하고 있어서
     // 단순 부분 문자열로 보면 그 설명에 걸린다(실측). compact() 가 문장을 `;` 로 갈라 두므로 앞뒤를 못박을 수 있다.
     expect(code, "drop function 문장이 있다 — ACL 이 초기화돼 기본 권한이 공개 롤에 EXECUTE 를 다시 부여한다").not.toMatch(/(?:^|;)\s*drop\s+function\b/);
-    const created = [...code.matchAll(/create or replace function ([a-z_]+)\s*\(/g)].map((m) => m[1]);
-    expect(created.sort(), "고치는 함수 목록이 다르다").toEqual([...PG_TEMP_FIXED_FNS].sort());
+    // 정확한 집합 — 실행 시야(존재)와 파일 전체(부재) 둘 다 기대와 같아야 한다
+    for (const view of [code, sqlExec(UP16_SQL)]) {
+      const created = [...view.matchAll(/create or replace function ([a-z_]+)\s*\(/g)].map((m) => m[1]);
+      expect(created.sort(), "고치는 함수 목록이 다르다").toEqual([...PG_TEMP_FIXED_FNS].sort());
+    }
   });
 
   test("claim_pending_notifications 는 건드리지 않는다 — 1-인자 판을 만들면 발송기가 42725 로 멈춘다", () => {
@@ -1223,17 +1443,20 @@ describe("7. 0016_privileges_rls_cannot_protect.sql", () => {
     const code = sqlCode(UP16_SQL);
     // 함수 **선언부**만 센다. `set search_path = public, pg_temp` 는 이 파일의 hint 문자열에도 나오므로
     // 부분 문자열로 세면 4가 된다(실측) — 선언부의 앞뒤(`security definer` … `as $$`)로 못박는다.
-    expect(
-      [...code.matchAll(/security definer set search_path = public, pg_temp as \$\$/g)].length,
-      "세 함수 전부에 pg_temp 가 붙지 않았다",
-    ).toBe(PG_TEMP_FIXED_FNS.length);
+    for (const view of [code, sqlExec(UP16_SQL)]) {
+      expect(
+        [...view.matchAll(/security definer set search_path = public, pg_temp as \$\$/g)].length,
+        "세 함수 전부에 pg_temp 가 붙지 않았다",
+      ).toBe(PG_TEMP_FIXED_FNS.length);
+    }
     expect(code, "pg_temp 없는 옛 형태가 남아 있다").not.toMatch(/set search_path = public as \$\$/);
     // 본문 로직은 0005·0007 원문 그대로여야 한다 — 상태 전이의 핵심 조건을 그대로 담고 있는지 본다.
+    // (조건에 문자열 리터럴이 들어 있어 keep 시야로 본다 — 파일 머리의 "자기검증 구성요소" 와 같은 이유)
     expect(code, "mark_notification_sent 의 where 조건이 바뀌었다").toContain("where id = p_id and status = 'pending'");
     expect(code, "reap 의 대상 조건이 바뀌었다").toContain("where status = 'pending' and attempts >= 5 and next_attempt_at <= now()");
     expect(code, "mark_notification_failed 의 백오프 계산이 바뀌었다").toContain("make_interval(secs => greatest(coalesce(p_retry_after_ms, 0), 0) / 1000.0)");
     for (const fn of PG_TEMP_FIXED_FNS) {
-      expect(code, `${fn} 이 security definer 가 아니다`).toMatch(new RegExp(`${fn}\\s*\\([^)]*\\)[\\s\\S]{0,160}security definer`));
+      expect(sqlExec(UP16_SQL), `${fn} 이 security definer 가 아니다`).toMatch(new RegExp(`${fn}\\s*\\([^)]*\\)[\\s\\S]{0,160}security definer`));
     }
   });
 
@@ -1246,7 +1469,7 @@ describe("7. 0016_privileges_rls_cannot_protect.sql", () => {
 
   test("재실행 안전 — revoke 와 create or replace 는 둘 다 멱등이다", () => {
     const code = sqlCode(UP16_SQL);
-    expect(code).toMatch(/revoke /);
+    expect(sqlExec(UP16_SQL), "실행되는 revoke 가 없다").toMatch(/revoke /);
     expect(code, "or replace 없는 create 가 있다").not.toMatch(/create (?!or replace)/);
   });
 
@@ -1279,13 +1502,13 @@ describe("7. 0016_privileges_rls_cannot_protect.sql", () => {
   });
 
   test("0001~0015 를 수정하지 않는다 — 0016 은 파일 하나를 더할 뿐이다", () => {
-    const five = sqlCode("supabase/migrations/0005_outbox.sql");
+    const five = sqlExec("supabase/migrations/0005_outbox.sql");
     expect(five, "0005 의 EXECUTE 회수가 사라졌다").toContain("revoke all on function mark_notification_sent(bigint, text) from public, anon, authenticated");
-    const seven = sqlCode("supabase/migrations/0007_outbox_reaper.sql");
+    const seven = sqlExec("supabase/migrations/0007_outbox_reaper.sql");
     expect(seven, "0007 의 service_role grant 가 사라졌다").toContain("grant execute on function reap_stale_notifications() to service_role");
-    const fourteen = sqlCode("supabase/migrations/0014_claim_by_channel.sql");
+    const fourteen = sqlExec("supabase/migrations/0014_claim_by_channel.sql");
     expect(fourteen, "0014 의 1-인자 drop 이 사라졌다").toContain("drop function if exists claim_pending_notifications(int)");
-    const nine = sqlCode("supabase/migrations/0009_admin_rls.sql");
+    const nine = sqlExec("supabase/migrations/0009_admin_rls.sql");
     expect(nine).toContain("grant select, insert, update, delete on table notices, popups, gallery, gallery_albums, showcase_routes, vehicles to authenticated");
   });
 
@@ -1321,28 +1544,28 @@ describe("8. 0016 롤백", () => {
   });
 
   test("대칭 — 0016 이 회수한 것을 정확히 되돌린다(더도 덜도 아니게)", () => {
-    const revoked = triples(parsePrivStatements(UP16_SQL), "revoke");
-    const granted = triples(parsePrivStatements(DOWN16_SQL), "grant");
-    for (const t of revoked) expect(granted.has(t), `0016 이 회수한 ${t} 를 롤백이 되돌리지 않는다`).toBe(true);
-    for (const t of granted) expect(revoked.has(t), `롤백이 0016 이 회수하지 않은 ${t} 를 부여한다 — 이전 상태보다 넓어진다`).toBe(true);
-    expect(granted.size).toBe(revoked.size);
+    expectSymmetric(UP16_SQL, DOWN16_SQL, parsePrivStatements, "0016");
   });
 
   test("`search_path` 를 옛 형태로 되돌린다 — 되돌리지 않으면 0016 재적용에서 검사가 눈이 먼다", () => {
     const code = sqlCode(DOWN16_SQL);
     expect(code, "롤백이 pg_temp 를 그대로 남긴다").not.toMatch(/security definer set search_path = public, pg_temp as \$\$/);
-    expect(
-      [...code.matchAll(/security definer set search_path = public as \$\$/g)].length,
-      "세 함수 전부를 옛 형태로 되돌리지 않았다",
-    ).toBe(PG_TEMP_FIXED_FNS.length);
+    for (const view of [code, sqlExec(DOWN16_SQL)]) {
+      expect(
+        [...view.matchAll(/security definer set search_path = public as \$\$/g)].length,
+        "세 함수 전부를 옛 형태로 되돌리지 않았다",
+      ).toBe(PG_TEMP_FIXED_FNS.length);
+    }
   });
 
   test("`drop function` 을 쓰지 않는다 — 롤백이 상행보다 넓은 문을 열면 안 된다", () => {
     const code = sqlCode(DOWN16_SQL);
     // 문장 머리에서만 찾는다 — 롤백의 hint 문자열이 "drop function 이 섞였는지 확인할 것" 을 설명한다(위 §7 과 같은 이유).
     expect(code, "drop function 문장이 있다 — ACL 이 초기화돼 기본 권한이 공개 롤에 EXECUTE 를 다시 부여한다").not.toMatch(/(?:^|;)\s*drop\s+function\b/);
-    const created = [...code.matchAll(/create or replace function ([a-z_]+)\s*\(/g)].map((m) => m[1]);
-    expect(created.sort()).toEqual([...PG_TEMP_FIXED_FNS].sort());
+    for (const view of [code, sqlExec(DOWN16_SQL)]) {
+      const created = [...view.matchAll(/create or replace function ([a-z_]+)\s*\(/g)].map((m) => m[1]);
+      expect(created.sort()).toEqual([...PG_TEMP_FIXED_FNS].sort());
+    }
   });
 
   test("롤백도 스스로 검증한다 — 그중 service_role 실행 가능 확인이 있다 (P4-5 리뷰 K4)", () => {
@@ -1478,7 +1701,7 @@ describe("10. 0017_pii_tables_trigger_references.sql", () => {
   });
 
   test("두 개인정보 표 × 두 공개 롤에서 trigger·references 를 회수한다", () => {
-    const revoked = triples(parsePrivStatements(UP17_SQL), "revoke");
+    const revoked = triples(parsePrivStatements(UP17_SQL, "executable"), "revoke");
     for (const table of PII_TABLES) {
       for (const role of ["anon", "authenticated"]) {
         for (const priv of PII_RLS_BLIND_PRIVS) {
@@ -1489,12 +1712,13 @@ describe("10. 0017_pii_tables_trigger_references.sql", () => {
   });
 
   test("`anon` 의 select 는 회수하고 `authenticated` 의 select 는 남긴다 — 관리자 화면이 두 표를 읽는다", () => {
-    const revoked = triples(parsePrivStatements(UP17_SQL), "revoke");
+    const revoked = triples(parsePrivStatements(UP17_SQL, "executable"), "revoke");
+    const revokedKeep = triples(parsePrivStatements(UP17_SQL, "keep"), "revoke");
     for (const table of PII_TABLES) {
       for (const priv of PII_ANON_ONLY_PRIVS) {
         expect(revoked.has(`anon|${table}|${priv}`), `anon 의 ${table} ${priv} 가 남는다 — 공개 롤은 이 표를 읽을 이유가 없다`).toBe(true);
         expect(
-          revoked.has(`authenticated|${table}|${priv}`),
+          revokedKeep.has(`authenticated|${table}|${priv}`),
           `authenticated 의 ${table} ${priv} 를 회수한다 — 관리자 예약 목록·발송 내역이 통째로 빈다`,
         ).toBe(false);
       }
@@ -1504,7 +1728,7 @@ describe("10. 0017_pii_tables_trigger_references.sql", () => {
   });
 
   test("쓰기 네 동작은 다시 회수하지 않는다 — 0010·0012 소관이고, 중복하면 롤백이 그 문을 되살린다", () => {
-    const revoked = triples(parsePrivStatements(UP17_SQL), "revoke");
+    const revoked = triples(parsePrivStatements(UP17_SQL, "keep"), "revoke");
     for (const table of PII_TABLES) {
       for (const role of ["anon", "authenticated"]) {
         for (const priv of WRITE_PRIVS) {
@@ -1518,17 +1742,16 @@ describe("10. 0017_pii_tables_trigger_references.sql", () => {
   });
 
   test("회수 목록이 정확히 그것뿐이다 — 더도 덜도 아니다", () => {
-    const revoked = triples(parsePrivStatements(UP17_SQL), "revoke");
     const expected = new Set<string>();
     for (const table of PII_TABLES) {
       for (const role of ["anon", "authenticated"]) for (const priv of PII_RLS_BLIND_PRIVS) expected.add(`${role}|${table}|${priv}`);
       for (const priv of PII_ANON_ONLY_PRIVS) expected.add(`anon|${table}|${priv}`);
     }
-    expect([...revoked].sort(), "회수 삼중항이 기대와 다르다").toEqual([...expected].sort());
+    expectExactTriples(UP17_SQL, parsePrivStatements, "revoke", expected, "0017 회수 삼중항");
   });
 
   test("service_role·postgres·public 롤은 건드리지 않는다 — 접수·enqueue·발송기·파기가 서비스 롤로 돈다", () => {
-    for (const s of parsePrivStatements(UP17_SQL)) {
+    for (const s of parsePrivStatements(UP17_SQL, "keep")) {
       expect(s.roles, `${s.raw} 가 service_role 을 건드린다`).not.toContain("service_role");
       expect(s.roles, `${s.raw} 가 postgres 를 건드린다`).not.toContain("postgres");
       expect(s.roles, `${s.raw} 가 public 롤을 건드린다`).not.toContain("public");
@@ -1537,7 +1760,7 @@ describe("10. 0017_pii_tables_trigger_references.sql", () => {
   });
 
   test("부여(grant)는 하나도 없다 — 이 마이그레이션은 닫기만 한다", () => {
-    expect(parsePrivStatements(UP17_SQL).filter((s) => s.verb === "grant")).toEqual([]);
+    expect(parsePrivStatements(UP17_SQL, "keep").filter((s) => s.verb === "grant")).toEqual([]);
     // **문장 머리에서만** 찾는다 — hint 문자열이 다른 마이그레이션의 grant 문(0009 §6·0005 §6)을 인용한다(§7 과 같은 이유).
     expect(sqlCode(UP17_SQL)).not.toMatch(/(?:^|;)\s*grant\s+/);
   });
@@ -1568,7 +1791,7 @@ describe("10. 0017_pii_tables_trigger_references.sql", () => {
 
   test("재실행 안전 — revoke 는 멱등이고 조건 분기가 필요 없다", () => {
     const code = sqlCode(UP17_SQL);
-    expect(code).toMatch(/revoke /);
+    expect(sqlExec(UP17_SQL), "실행되는 revoke 가 없다").toMatch(/revoke /);
     expect(code, "or replace 없는 create 가 최상위에 있다").not.toMatch(/(?:^|;)\s*create\s+(?!or replace)/);
   });
 
@@ -1629,12 +1852,12 @@ describe("10. 0017_pii_tables_trigger_references.sql", () => {
   });
 
   test("0001~0016 을 수정하지 않는다 — 0017 은 파일 하나를 더할 뿐이다", () => {
-    const nine = sqlCode("supabase/migrations/0009_admin_rls.sql");
+    const nine = sqlExec("supabase/migrations/0009_admin_rls.sql");
     expect(nine, "0009 의 관리자 select grant 가 사라졌다").toContain("grant select on table notifications_log to authenticated");
     expect(nine, "0009 의 reservations grant 가 사라졌다").toContain("grant select, update on table reservations to authenticated");
-    const twelve = sqlCode(UP_SQL);
+    const twelve = sqlExec(UP_SQL);
     expect(twelve, "0012 의 회수 문장이 사라졌다").toContain("revoke insert, update, delete, truncate on table notifications_log from anon, authenticated");
-    const sixteen = sqlCode(UP16_SQL);
+    const sixteen = sqlExec(UP16_SQL);
     expect(sixteen, "0016 의 회수 문장이 사라졌다").toContain("revoke trigger, references on table");
   });
 });
@@ -1661,15 +1884,11 @@ describe("11. 0017 롤백", () => {
   });
 
   test("대칭 — 0017 이 회수한 것을 정확히 되돌린다(더도 덜도 아니게)", () => {
-    const revoked = triples(parsePrivStatements(UP17_SQL), "revoke");
-    const granted = triples(parsePrivStatements(DOWN17_SQL), "grant");
-    for (const t of revoked) expect(granted.has(t), `0017 이 회수한 ${t} 를 롤백이 되돌리지 않는다`).toBe(true);
-    for (const t of granted) expect(revoked.has(t), `롤백이 0017 이 회수하지 않은 ${t} 를 부여한다 — 이전 상태보다 넓어진다`).toBe(true);
-    expect(granted.size).toBe(revoked.size);
+    expectSymmetric(UP17_SQL, DOWN17_SQL, parsePrivStatements, "0017");
   });
 
   test("0010·0012 가 닫은 쓰기 네 동작을 되살리지 않는다", () => {
-    const granted = triples(parsePrivStatements(DOWN17_SQL), "grant");
+    const granted = triples(parsePrivStatements(DOWN17_SQL, "keep"), "grant");
     for (const table of PII_TABLES) {
       for (const role of ["anon", "authenticated"]) {
         for (const priv of WRITE_PRIVS) {
@@ -1882,6 +2101,310 @@ describe.skipIf(!gate.allowed)("12. DB — 0017 권한 행렬 + 거동 실증 (�
         "  if exists (select 1 from pg_trigger where not tgisinternal",
         "               and tgrelid in ('public.reservations'::regclass, 'public.notifications_log'::regclass)) then",
         "    raise exception 'P513 탐침: 탐침이 만든 트리거가 남았다';",
+        "  end if;",
+        "end",
+        "$$;",
+      ].join("\n"),
+    );
+    expect(out, out).toContain("DO");
+  }, 300_000);
+});
+
+// =============================================================================
+// 13. supabase/migrations/0018_sequence_privileges.sql — 텍스트 (P5-14)
+//
+//     기본 권한은 새 시퀀스도 공개 롤에 연다. 0012~0017 은 표·함수만 정리했고 시퀀스는 한 번도 회수하지 않았다.
+//     P6-11 게이트가 첫 실행에서 36건을 이름으로 대며 빨개졌다 — 사람보다 기계가 먼저 찾은 첫 사례다.
+// =============================================================================
+describe("13. 0018_sequence_privileges.sql", () => {
+  test("존재하고, 0018 번호는 이 파일 하나뿐이다. migrations/ 안에 롤백이 섞여 있지 않다", () => {
+    expect(exists(UP18_SQL), `${UP18_SQL} 이 없다`).toBe(true);
+    const files = readdirSync(path.join(ROOT, "supabase", "migrations"));
+    expect(files.filter((f) => f.startsWith("0018"))).toEqual(["0018_sequence_privileges.sql"]);
+    expect(files.filter((f) => f.endsWith(".down.sql"))).toEqual([]);
+  });
+
+  test("회수 집합이 정확히 그것뿐이다 — anon 은 일곱×셋 전부, authenticated 는 일곱×(select·update) + 통지 시퀀스 usage", () => {
+    expectExactTriples(UP18_SQL, parseSeqStatements, "revoke", expected0018Revokes(), "0018 시퀀스 회수 삼중항");
+  });
+
+  test("🔴 콘텐츠 여섯의 `authenticated` usage 는 회수하지 않는다 — 관리자가 새 글을 못 쓰게 된다", () => {
+    const revoked = triples(parseSeqStatements(UP18_SQL, "keep"), "revoke");
+    for (const seq of CONTENT_SEQS) {
+      expect(revoked.has(`authenticated|${seq}|usage`), `authenticated 의 ${seq} usage 를 회수한다 — 관리자 insert 의 nextval 이 42501 로 죽는다`).toBe(false);
+    }
+    // `all` 로 뭉뚱그리면 usage 까지 사라진다.
+    expect(sqlCode(UP18_SQL)).not.toMatch(/revoke\s+all\s+on\s+sequence/);
+  });
+
+  test("service_role·postgres·public 롤은 건드리지 않는다 — 통지 적재와 definer 함수가 nextval 한다", () => {
+    expect(parseSeqStatements(UP18_SQL, "executable").length, "시퀀스 회수 문장을 하나도 읽지 못했다 — 파서가 눈이 멀었다").toBeGreaterThan(0);
+    const stmts = parseSeqStatements(UP18_SQL, "keep");
+    for (const s of stmts) {
+      for (const role of ["service_role", "postgres", "public"]) expect(s.roles, `${s.raw} 가 ${role} 을 건드린다`).not.toContain(role);
+      expect(s.privs, `${s.raw} 가 all 로 뭉뚱그린다`).not.toContain("all");
+    }
+  });
+
+  test("부여는 최상위에 하나도 없다 — 대조군의 임시 시퀀스 부여는 되돌려지는 execute 안에만 있다", () => {
+    expect(parseSeqStatements(UP18_SQL, "keep").filter((s) => s.verb === "grant")).toEqual([]);
+    const code = sqlCode(UP18_SQL);
+    expect(code).not.toMatch(/(?:^|;)\s*grant\s+/);
+    const probeGrants = [...code.matchAll(/grant [a-z, ]+ on sequence ([a-z0-9_.]+)/g)].map((m) => m[1]);
+    expect(probeGrants, "임시 시퀀스 말고 다른 것에 부여한다").toEqual(["public.p0018_probe_seq"]);
+  });
+
+  test("표·함수·데이터를 건드리지 않는다 — 시퀀스 권한 문장과 검증 블록뿐", () => {
+    const code = sqlCode(UP18_SQL);
+    expect(code, "표 권한 문장이 있다 — 0012~0017 소관이다").not.toMatch(/(?:revoke|grant)\s+[a-z, ]+\s+on\s+table\b/);
+    expect(code, "drop function 문장이 있다").not.toMatch(/(?:^|;)\s*drop\s+function\b/);
+    expect(code, "함수를 재정의한다").not.toMatch(/create\s+or\s+replace\s+function/);
+    for (const forbidden of ["create table", "alter table", "drop table", "create policy", "drop policy", "insert into", "delete from", "truncate table", "alter default privileges", "alter sequence"]) {
+      expect(code, `0018 이 "${forbidden}" 을 한다`).not.toContain(forbidden);
+    }
+    // 대조군의 임시 시퀀스 생성은 execute 문자열 안에 있어야 한다 — 최상위에 있으면 커밋된다.
+    expect(code, "최상위 create sequence 가 있다").not.toMatch(/(?:^|;)\s*create\s+sequence\b/);
+  });
+
+  test("스스로 검증한다 — 카탈로그 열거 · 콘텐츠 usage 생존 · 서비스 롤 불변 · PUBLIC 0 · 거동 탐침 + 대조군", () => {
+    const code = sqlCode(UP18_SQL);
+    expect(code, "시퀀스 권한을 실효값으로 보지 않는다").toContain("has_sequence_privilege");
+    expect(code, "시퀀스를 하드코딩으로만 본다 — 모르는 새 시퀀스를 놓친다").toMatch(/c\.relkind\s*=\s*'s'/);
+    expect(code, "PUBLIC 전수 검사가 없다").toContain("aclexplode");
+    expect(code, "PUBLIC 을 grantee 0 으로 보지 않는다").toContain("a.grantee = 0");
+    expect(code, "service_role 불변 확인이 없다").toContain("('service_role')");
+    expect(code, "setval 거동 탐침이 없다").toContain("pg_catalog.setval");
+    expect(code, "권한 거부 코드(42501)를 명시하지 않는다").toContain("42501");
+    expect(code, "롤 전환을 current_user 로 확인하지 않는다").toContain("current_user <> probe_role");
+    expect(code, "대조군이 없다").toContain("p0018_probe_seq");
+    expect(code, "어긋나도 조용히 성공한다").toContain("raise exception");
+    expect(code, "필터된 뷰를 증거로 쓴다").not.toContain("information_schema");
+  });
+
+  test("거동 탐침은 시퀀스 값을 바꾸지 않는다 — setval 은 현재 값 그대로, 값은 적용 롤이 먼저 읽는다", () => {
+    const code = sqlCode(UP18_SQL);
+    // setval 을 리터럴 숫자로 치면(예: 1) 권한이 남아 있을 때 통지 시퀀스를 **되감는다** — 트랜잭션으로 되돌려지지 않는다.
+    const calls = [...code.matchAll(/pg_catalog\.setval\(([^)]*)\)/g)].map((m) => m[1]);
+    const real = calls.filter((c) => !c.includes("p0018_probe_seq"));
+    expect(real.length, "실제 시퀀스 setval 탐침이 없다").toBeGreaterThan(0);
+    for (const c of real) expect(c, `setval 탐침이 현재 값을 쓰지 않는다: ${c}`).toMatch(/%l::regclass, %s, %l::boolean/);
+    expect(code, "현재 값을 적용 롤로 먼저 읽지 않는다").toContain("select last_value, is_called from public.%i");
+    expect(code.indexOf("select last_value, is_called"), "값을 읽기 전에 롤을 바꾼다").toBeLessThan(code.indexOf("set local role %i"));
+  });
+
+  test("자기검증 순서 — PUBLIC 검사가 공개 롤 행렬 검사보다 먼저다 (상속된 권한을 anon 의 것으로 오진하지 않게)", () => {
+    const code = sqlCode(UP18_SQL);
+    const publicCheck = code.indexOf("a.grantee = 0");
+    const matrixCheck = code.indexOf("has_sequence_privilege(r.role, c.oid");
+    expect(publicCheck).toBeGreaterThan(-1);
+    expect(matrixCheck).toBeGreaterThan(-1);
+    expect(publicCheck, "행렬 검사가 먼저 돌면 PUBLIC grant 가 'anon → x' 로 보고돼 엉뚱한 회수를 하게 된다").toBeLessThan(matrixCheck);
+  });
+
+  test("무엇이 왜 위험한지 파일에 적혀 있다 — setval 되감기 · 도달 경로 판단의 전례", () => {
+    const raw = read(UP18_SQL);
+    expect(raw).toContain("setval");
+    expect(raw, "통지 적재가 조용히 실패한다는 설명이 없다").toMatch(/기본키 중복/);
+    expect(raw, "TRIGGER 때의 전례(도달 불가 판단이 틀렸다)를 적지 않았다").toContain("supabase_functions.http_request");
+    expect(raw, "게이트가 먼저 찾았다는 출처가 없다").toContain("db-privilege-gate");
+  });
+
+  test("0001~0017 을 수정하지 않는다 — 0018 은 파일 하나를 더할 뿐이다", () => {
+    const nine = sqlExec("supabase/migrations/0009_admin_rls.sql");
+    expect(nine, "0009 의 관리자 시퀀스 부여가 사라졌다").toMatch(
+      /grant usage, select on sequence notices_id_seq, popups_id_seq, gallery_id_seq, gallery_albums_id_seq, showcase_routes_id_seq, vehicles_id_seq to authenticated/,
+    );
+    expect(sqlExec(UP17_SQL), "0017 의 회수 문장이 사라졌다").toContain("revoke trigger, references on table reservations, notifications_log from anon, authenticated");
+    expect(sqlExec(UP16_SQL), "0016 의 회수 문장이 사라졌다").toContain("revoke trigger, references on table");
+  });
+});
+
+// =============================================================================
+// 14. supabase/rollbacks/0018_sequence_privileges.down.sql — 텍스트
+// =============================================================================
+describe("14. 0018 롤백", () => {
+  test("rollbacks/ 에만 있고, 수동 실행 절차를 헤더에 적는다", () => {
+    expect(exists(DOWN18_SQL), `${DOWN18_SQL} 이 없다`).toBe(true);
+    const raw = read(DOWN18_SQL);
+    expect(raw).toMatch(/migration repair --status reverted 0018/);
+    expect(raw).toMatch(/begin;/);
+    expect(raw).toMatch(/commit;/);
+  });
+
+  test("승인 플래그를 **언제나** 요구한다 — 행 수·시퀀스 값을 조건으로 걸지 않는다", () => {
+    const raw = read(DOWN18_SQL);
+    expect(raw).toContain("bestour.rollback_0018_ack");
+    const code = sqlCode(DOWN18_SQL);
+    expect(code).toContain("raise exception");
+    expect(code, "행 수가 승인 조건에 섞여 있다").not.toMatch(/[>)]\s*0\s+and\s+coalesce\s*\(\s*current_setting/);
+    expect(code).toContain("if coalesce(current_setting('bestour.rollback_0018_ack', true), '') <> '1' then");
+  });
+
+  test("대칭 — 0018 이 회수한 것을 정확히 되돌린다(더도 덜도 아니게)", () => {
+    expectSymmetric(UP18_SQL, DOWN18_SQL, parseSeqStatements, "0018");
+    expect(parseSeqStatements(DOWN18_SQL, "keep").filter((s) => s.verb === "revoke")).toEqual([]);
+  });
+
+  test("되돌린 뒤 무엇이 다시 가능해지는지 예외 메시지가 말한다 — 승인 플래그를 요구하는 근거", () => {
+    expect(read(DOWN18_SQL)).toMatch(/raise exception '0018 롤백 중단:[^']*setval/);
+  });
+
+  test("표·함수·데이터를 건드리지 않고, 시퀀스가 없으면 건너뛴다", () => {
+    const code = sqlCode(DOWN18_SQL);
+    expect(code).not.toMatch(/(?:revoke|grant)\s+[a-z, ]+\s+on\s+table\b/);
+    expect(code).not.toMatch(/(?:^|;)\s*drop\s+function\b/);
+    expect(code).not.toMatch(/create\s+or\s+replace\s+function/);
+    for (const forbidden of ["delete from", "truncate table", "drop table", "insert into", "alter sequence"]) {
+      expect(code, `롤백이 "${forbidden}" 을 한다`).not.toContain(forbidden);
+    }
+    // 시퀀스 값은 건드리지 않는다. (예외 메시지는 "setval 이 다시 열린다" 를 설명하므로 호출 형태만 본다.)
+    expect(code, "롤백이 시퀀스 값을 바꾼다").not.toMatch(/\b(?:setval|nextval)\s*\(/);
+    expect(code, "시퀀스 존재 확인 없이 부여하면 0001·0008 롤백 뒤 재실행에서 죽는다").toContain("to_regclass");
+  });
+
+  test("롤백도 스스로 검증한다 — 되돌림 · PUBLIC 0 · 관리자 usage 와 서비스 롤 생존", () => {
+    const code = sqlCode(DOWN18_SQL);
+    expect(code).toContain("has_sequence_privilege");
+    expect(code).toContain("a.grantee = 0");
+    expect(code).toContain("('service_role', 'usage')");
+    expect(code).toContain("('authenticated', 'usage')");
+  });
+});
+
+// =============================================================================
+// 15. 0018 권한 행렬 + **거동 실증** (로컬 스택)
+//
+//     §12 와 같은 짝 구조. 행렬은 "권한이 없다" 까지만 말하므로, `set local role` 로 그 롤이 되어
+//     `setval`·`nextval` 을 **직접** 치고 42501 을 본다. 허용된 두 경로(관리자·서비스 롤의 nextval)는 대조군으로 성공해야 한다.
+//
+//     이 블록은 행을 만들지 않는다. setval 은 **현재 값 그대로** 치므로(거부돼야 하고, 만에 하나 통과해도 되감기지 않는다)
+//     시퀀스를 되감지 않는다. 대조군 nextval 은 번호 하나씩을 소모할 뿐이다 — 아웃박스·갤러리 잠금이 필요 없다.
+// =============================================================================
+describe.skipIf(!gate.allowed)("15. DB — 0018 시퀀스 권한 행렬 + 거동 실증 (로컬 스택)", { timeout: 300_000 }, () => {
+  let verdict = "";
+  const CONTENT6 = CONTENT_SEQS.map((s) => `'${s}'`).join(",");
+  const SEVEN = ALL_SEQS.map((s) => `('public.${s}')`).join(",");
+
+  beforeAll(() => {
+    verdict = runLocalSql(
+      [
+        "select",
+        // ① 허용(콘텐츠 여섯 × authenticated usage) 밖의 공개 롤 시퀀스 권한 — 카탈로그 전수
+        "  coalesce((select 'SEQ_LEAK ' || string_agg(format('%s/%s/%s', r.role, c.relname, p.priv), ' ')",
+        "     from pg_class c join pg_namespace n on n.oid = c.relnamespace",
+        "     cross join (values ('anon'),('authenticated')) r(role)",
+        "     cross join (values ('usage'),('select'),('update')) p(priv)",
+        "    where n.nspname = 'public' and c.relkind = 'S'",
+        "      and has_sequence_privilege(r.role, c.oid, p.priv)",
+        `      and not (r.role = 'authenticated' and p.priv = 'usage' and c.relname in (${CONTENT6}))), 'SEQ_NONE') as leak,`,
+        // ② 관리자 화면 — 콘텐츠 여섯의 authenticated usage
+        "  coalesce((select 'ADMIN_SEQ_LOST ' || string_agg(c.relname, ' ')",
+        "     from pg_class c join pg_namespace n on n.oid = c.relnamespace",
+        `    where n.nspname = 'public' and c.relname in (${CONTENT6})`,
+        "      and not has_sequence_privilege('authenticated', c.oid, 'usage')), 'ADMIN_SEQ_OK') as admin_seq,",
+        // ③ 서비스 롤·소유자 — 일곱 × 셋
+        "  coalesce((select 'SERVICE_SEQ_LOST ' || string_agg(format('%s/%s/%s', r.role, s.seq, p.priv), ' ')",
+        "     from (values ('service_role'),('postgres')) r(role)",
+        `     cross join (values ${SEVEN}) s(seq)`,
+        "     cross join (values ('usage'),('select'),('update')) p(priv)",
+        "    where not has_sequence_privilege(r.role, s.seq, p.priv)), 'SERVICE_SEQ_OK') as service_seq,",
+        // ④ PUBLIC 직접 부여
+        "  coalesce((select 'SEQ_PUBLIC_ACL ' || string_agg(format('%s/%s', c.relname, a.privilege_type), ' ')",
+        "     from pg_class c join pg_namespace n on n.oid = c.relnamespace",
+        "     cross join lateral aclexplode(c.relacl) a",
+        "    where n.nspname = 'public' and c.relkind = 'S' and a.grantee = 0), 'SEQ_PUBLIC_NONE') as seq_public,",
+        // 열거가 공허하지 않다 — 일곱이 실제로 있다
+        "  (select 'SEQ_COUNT ' || count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace",
+        "    where n.nspname = 'public' and c.relkind = 'S') as seq_count;",
+      ].join("\n"),
+    );
+  }, 300_000);
+
+  test("공개 롤의 시퀀스 권한은 콘텐츠 여섯 × authenticated usage 뿐이다 (카탈로그 전수)", () => {
+    expect(verdict, verdict).toContain("SEQ_NONE");
+    expect(verdict, "시퀀스 열거가 공허하다").toMatch(/SEQ_COUNT [7-9]|SEQ_COUNT \d{2,}/);
+  });
+
+  test("관리자 화면이 산다 — 콘텐츠 여섯의 authenticated usage 가 그대로다", () => {
+    expect(verdict, verdict).toContain("ADMIN_SEQ_OK");
+  });
+
+  test("서비스 롤·소유자의 시퀀스 권한은 불변 · PUBLIC 직접 부여 0", () => {
+    expect(verdict, verdict).toContain("SERVICE_SEQ_OK");
+    expect(verdict, verdict).toContain("SEQ_PUBLIC_NONE");
+  });
+
+  /**
+   * 거동 실증 — 통과 조건(하나라도 어긋나면 DO 블록이 raise 해서 runLocalSql 이 던진다):
+   *   · anon: 통지·공지 시퀀스의 setval·nextval 4회가 전부 **42501**
+   *   · authenticated: 통지 시퀀스의 setval·nextval, 공지 시퀀스의 setval 3회가 전부 **42501**
+   *   · authenticated 의 공지 nextval · service_role 의 통지 nextval 은 **성공**(대조군 = 허용된 두 경로)
+   *   · 매 시도 전에 `current_user` 가 기대 롤로 바뀌었고, 끝에 적용 롤로 돌아왔다
+   *   · 두 시퀀스의 값이 되감기지 않았다(setval 이 아무것도 바꾸지 않았다)
+   */
+  test("거동 실증 — 공개 롤의 setval·nextval 은 42501 · 관리자·서비스 롤의 nextval 은 성공 (롤 전환 확인 포함)", () => {
+    const out = runLocalSql(
+      [
+        "do $$",
+        "declare",
+        "  probe     record;",
+        "  ok        boolean;",
+        "  st        text;",
+        "  ms        text;",
+        "  v_last    bigint;",
+        "  v_called  boolean;",
+        "  n_before  bigint;",
+        "  x_before  bigint;",
+        "  applier   constant text := current_user;",
+        "begin",
+        "  select last_value into n_before from public.notifications_log_id_seq;",
+        "  select last_value into x_before from public.notices_id_seq;",
+        "  for probe in",
+        "    select * from (values",
+        "      ('anon', 'notifications_log_id_seq', 'setval', false),",
+        "      ('anon', 'notifications_log_id_seq', 'nextval', false),",
+        "      ('anon', 'notices_id_seq', 'setval', false),",
+        "      ('anon', 'notices_id_seq', 'nextval', false),",
+        "      ('authenticated', 'notifications_log_id_seq', 'setval', false),",
+        "      ('authenticated', 'notifications_log_id_seq', 'nextval', false),",
+        "      ('authenticated', 'notices_id_seq', 'setval', false),",
+        "      ('authenticated', 'notices_id_seq', 'nextval', true),",
+        "      ('service_role', 'notifications_log_id_seq', 'nextval', true)",
+        "    ) v(who, seq, fn, allowed)",
+        "  loop",
+        "    execute format('select last_value, is_called from public.%I', probe.seq) into v_last, v_called;",
+        "    execute format('set local role %I', probe.who);",
+        "    if current_user <> probe.who then",
+        "      raise exception 'P514 탐침: 롤 전환이 반영되지 않았다 (current_user=% · 기대=%)', current_user, probe.who;",
+        "    end if;",
+        "    ok := false; st := null; ms := null;",
+        "    begin",
+        "      if probe.fn = 'setval' then",
+        "        execute format('select pg_catalog.setval(%L::regclass, %s, %L::boolean)', 'public.' || probe.seq, v_last, v_called);",
+        "      else",
+        "        execute format('select pg_catalog.nextval(%L::regclass)', 'public.' || probe.seq);",
+        "      end if;",
+        "      ok := true;",
+        "    exception when others then",
+        "      get stacked diagnostics st = returned_sqlstate, ms = message_text;",
+        "    end;",
+        "    execute 'reset role';",
+        "    if probe.allowed and not ok then",
+        "      raise exception 'P514 탐침: 허용된 경로가 막혔다 — % → %(%) : SQLSTATE=% MESSAGE=%', probe.who, probe.fn, probe.seq, st, ms;",
+        "    end if;",
+        "    if not probe.allowed and ok then",
+        "      raise exception 'P514 탐침: % 가 %(%) 를 실행할 수 있다', probe.who, probe.fn, probe.seq;",
+        "    end if;",
+        "    if not probe.allowed and st is distinct from '42501' then",
+        "      raise exception 'P514 탐침: 권한 거부(42501)가 아닌 이유로 실패했다 — % → %(%) : SQLSTATE=% MESSAGE=%', probe.who, probe.fn, probe.seq, st, ms;",
+        "    end if;",
+        "  end loop;",
+        "  if current_user <> applier then",
+        "    raise exception 'P514 탐침: 롤이 되돌아오지 않았다 (current_user=%)', current_user;",
+        "  end if;",
+        "  if (select last_value from public.notifications_log_id_seq) < n_before",
+        "     or (select last_value from public.notices_id_seq) < x_before then",
+        "    raise exception 'P514 탐침: 시퀀스가 되감겼다';",
         "  end if;",
         "end",
         "$$;",

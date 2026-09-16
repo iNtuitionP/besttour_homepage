@@ -93,10 +93,9 @@ const GATE_SCRIPT = "scripts/check-admin-no-service-role.sh";
  */
 const INIT_SQL_SHA256 = "8b107b04a5f147708a3865e241ce83d97df63eb3cf2e753513f8baa1e81188d6";
 
-const stripSqlComments = (sql: string) => sql.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
 const compact = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
 const commentLines = (sql: string) => sql.split("\n").filter((l) => /^\s*--/.test(l)).join("\n");
-const sqlCode = (rel: string) => compact(stripSqlComments(read(rel)));
+const sqlCode = (rel: string) => compact(stripComments(read(rel), rel));
 
 /** 주석을 걷어낸 코드. 제거기는 저장소에 하나뿐이다(`tests/helpers/strip-comments.ts` · P6-7/P6-8 · D7). */
 const codeOf = (rel: string) => stripComments(read(rel), rel);

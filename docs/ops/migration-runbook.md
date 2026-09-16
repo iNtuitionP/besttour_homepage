@@ -12,7 +12,7 @@
 6. 결과를 이 파일에 날짜와 함께 적는다.
 
 **롤백 파일은 `supabase/rollbacks/` 에 있고 `migrations/` 밖이다** — CLI 가 `migrations/` 의 `^[0-9]+_.*\.sql$` 을 전부 마이그레이션으로 집기 때문이다. 롤백은 사람이 psql/SQL Editor 로 실행한 뒤 `supabase migration repair --status reverted <번호>`.
-0012·0013·0014·0015·0016·0017 롤백은 **승인 플래그를 조건 없이 요구**한다(`set bestour.rollback_00NN_ack = '1';`). 행이 0이어도 멈춘다 — 권한은 열린 채 남고 데이터는 나중에 들어오기 때문이다.
+0012·0013·0014·0015·0016·0017·0018 롤백은 **승인 플래그를 조건 없이 요구**한다(`set bestour.rollback_00NN_ack = '1';`). 행이 0이어도 멈춘다 — 권한은 열린 채 남고 데이터는 나중에 들어오기 때문이다.
 
 ---
 
@@ -110,7 +110,14 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENC
 대신 **재발을 기계로 잡는다** → 아래 후속 태스크.
 
 ### 후속
-- **DB 권한 게이트**: `anon` 이 public 스키마의 어느 표에도 쓰기 권한을 갖지 않는지(허용 목록 외) 단언하는 테스트. 지금은 표가 늘 때마다 사람이 기억해야 한다 — **네 번 놓쳤다.** 시퀀스·함수도 같이 본다. *(미착수)*
+- ~~**DB 권한 게이트**: `anon` 이 public 스키마의 어느 표에도 쓰기 권한을 갖지 않는지(허용 목록 외) 단언하는 테스트.~~ → **P6-11 (2026-09-17) 에서 신설: `tests/db-privilege-gate.test.ts`.** ✅
+  `pg_class`·`pg_proc`·`pg_policy` 에서 public 의 표·뷰·시퀀스·함수를 **열거**하고(하드코딩 없음) `has_*_privilege` 실효값 · 컬럼 단위 · PUBLIC(`aclexplode` grantee 0, NULL ACL 은 `acldefault`) ·
+  definer 함수의 `pg_temp` · 소유자 · RLS 켜짐 · "쓰기 권한에는 그 동작을 허용하는 `authenticated` 정책이 있다" 를 허용 목록(항목마다 사유)과 대조한다. 죽은 예외도 실패다.
+  **이빨**: 기본 권한 그대로의 임시 표·시퀀스·definer 함수를 `do $$ … raise $$` 로 **되돌려지는 트랜잭션 안에서** 만들어 게이트가 **이름을 대며** 빨개지는 것을 매 실행 확인한다(흔적 0 도 확인).
+  0017 롤백을 적용하면 `reservations`·`notifications_log` 10건으로 빨개진다(실측).
+  - ~~🔴 **게이트가 첫 실행에서 찾은 것 — 시퀀스 36건.**~~ → **0018 (P5-14, 2026-09-17) 에서 회수 완료. 게이트 초록.** ✅
+    0012~0017 은 **시퀀스를 한 번도 회수하지 않았다.** 공개 7개 시퀀스에서 `anon` 이 usage·select·update 를, `authenticated` 가 select·update(+ `notifications_log_id_seq` 의 usage)를 갖고 있었다.
+    허용 목록은 넓히지 않았다 — 처음부터 있던 **콘텐츠 6 × `authenticated.usage`** 만 남기고 나머지를 회수해서 초록이 됐다. 아래 0018 절.
 - ④⑤ 질의에 `has_any_column_privilege` 추가, ② 질의를 `pg_class.relacl` + `aclexplode` 로 교체. → **0016 이 자기검증·테스트 §9 에서 그렇게 한다**(질의 자체는 아래 0016 절에 있다). ✅
 - ~~`0012:34` 의 TRIGGER 관련 주석 정정.~~ → **0016 (P5-12) 에서 완료.** `0012` 헤더에 원문을 남긴 채 정정을 덧붙였다. ✅
 - ~~`authenticated` 의 콘텐츠 7표 **TRUNCATE 회수**~~ → **0016 에서 완료** (TRIGGER·REFERENCES 도 함께). ✅
@@ -282,3 +289,55 @@ PUBLIC 롤 grant 0 · 따로 부여된 컬럼 ACL 0(`pg_class.relacl`·`pg_attri
 `supabase/rollbacks/0017_pii_tables_trigger_references.down.sql` · **승인 플래그 요구**(`set bestour.rollback_0017_ack = '1';`). 근거: 되돌리면 `http_request` 트리거로 **접수마다 고객 개인정보가 외부로 나가는** 경로가 오류·로그·화면 변화 없이 다시 열린다. 되돌린 것을 필요로 하는 정상 경로는 하나도 없다.
 
 > **원격 적용: 아직 하지 않았다 (2026-09-16).** 0012~0017 이 함께 대기 중이다(원격은 0011 상태).
+
+---
+
+## 0018 — 공개 롤의 시퀀스 권한 회수 (작성 완료, 원격 적용 대기)
+
+**출처**: 사람이 아니라 **P6-11 게이트**(`tests/db-privilege-gate.test.ts`)가 첫 실행에서 36건을 이름으로 대며 찾았다. 기본 권한이 새 객체를 공개 롤에 여는 같은 뿌리의 **다섯 번째 사례**다.
+
+1. `anon` — 일곱 시퀀스(`notices`·`popups`·`gallery`·`gallery_albums`·`showcase_routes`·`vehicles`·`notifications_log` `_id_seq`)에서 usage·select·update **전부**
+2. `authenticated` — 일곱 시퀀스에서 select·update
+3. `authenticated` — `notifications_log_id_seq` 에서 usage 도
+
+🔴 **남기는 것: `authenticated` 의 콘텐츠 여섯 시퀀스 `usage`.** 관리자 화면의 insert 가 serial 기본값으로 `nextval` 한다. 이것을 잃으면 **표 insert 권한은 멀쩡한데 저장만 `42501 permission denied for sequence …` 로 실패**한다(로컬에서 일부러 회수해 봤더니 `gallery_albums` insert 가 403 이었다).
+`service_role`·`postgres` 불변 — 통지 적재(서비스 롤)와 0010 definer 함수(소유자)가 `notifications_log_id_seq` 를 `nextval` 한다. 표·함수 권한은 건드리지 않는다.
+
+**왜 회수하나**: `update` = `setval()`. `notifications_log_id_seq` 를 되감으면 이후 통지 적재가 **기본키 중복으로 전부 실패**한다 — 접수는 되는데 문자가 한 통도 나가지 않고, `setval` 은 행을 바꾸지 않아 흔적도 없다. 오늘 PostgREST 로 부를 경로는 없지만(`/rpc/setval`·`/rpc/nextval` → 404 PGRST202, `write-privileges` §5 가 매번 확인) "경로가 없으니 괜찮다" 는 0017(TRIGGER)에서 이미 틀렸다.
+
+### 로컬 실측 (2026-09-17, P5-14 구현 · `has_sequence_privilege` 실효값)
+| 시퀀스 | 롤 | 적용 전 | 적용 후 |
+|---|---|---|---|
+| 콘텐츠 여섯 | `anon` | usage, select, update | **(없음)** |
+| 콘텐츠 여섯 | `authenticated` | usage, select, update | **usage** |
+| `notifications_log_id_seq` | `anon`·`authenticated` | usage, select, update | **(없음)** |
+| 일곱 전부 | `service_role`·`postgres` | usage, select, update | **변화 없음** |
+
+`relacl` 부여자는 로컬에서 `postgres` 하나였다. PUBLIC(grantee 0) grant 0 — 적용 전후 모두. 적용 전후 권한 사실(표·컬럼·함수·정책·트리거 전수) diff 는 **시퀀스 7줄뿐**이었고 시퀀스 값도 그대로였다.
+⚠️ **원격은 부여자가 다를 수 있다**(CLAUDE.md §3 — `postgres`·`supabase_admin` 둘). `revoke` 는 실행 롤이 준 grant 만 지운다. 자기검증 ① 이 부여자와 무관한 실효값을 보므로 남으면 **적용이 멈춘다** — 그때는 힌트의 `aclexplode` 질의로 부여자를 확인할 것.
+
+### 자기검증 (마이그레이션 안의 DO 블록 — 실행 순서대로)
+| 순서 | 항 | 멈추는 조건 |
+|---|---|---|
+| 1 | ④ PUBLIC | public 스키마 시퀀스에 PUBLIC grant 가 있다 — **① 보다 먼저** 본다(상속된 권한을 anon 의 것으로 오진하지 않게) |
+| 2 | ① 행렬 | public 스키마 **모든** 시퀀스(카탈로그 열거)에서 `anon`·`authenticated` 권한이 콘텐츠 6 × `authenticated.usage` 밖에 있다 |
+| 3 | ② 관리자 | 콘텐츠 여섯 중 하나라도 `authenticated.usage` 가 없다 |
+| 4 | ③ 서비스 롤 | `service_role`·`postgres` 가 일곱 × 셋 중 하나라도 잃었다 |
+| 5 | ⑤ 거동 | `set local role` 로 `anon`·`authenticated` 가 되어 `setval`(**현재 값 그대로**)·`nextval` 을 쳐서 42501 이 아니면 멈춘다. 대조군: 권한을 준 임시 시퀀스에서 같은 문장이 성공해야 한다(서브트랜잭션째 되돌림) |
+
+로컬에서 각 항을 **일부러 깨뜨려** 전부 멈추는 것을 확인했다(P5-14 보고서 ⑤ — 7변형, 멈추지 않은 것 0).
+
+### 적용 경로
+`supabase db push` 또는 SQL Editor. **`psql -f` 를 쓰지 마라**(리뷰 K1). 로컬 단건 적용은 `psql -1`(단일 트랜잭션).
+⚠️ 자기검증 ⑤ 가 `set local role` 로 롤을 바꾼다 — **적용하는 롤이 `anon`·`authenticated` 의 멤버여야 한다**(0017 과 같다). 아니면 "롤 전환 실패" 로 명시적으로 멈춘다.
+⚠️ ⑤ 의 대조군은 `public.p0018_probe_seq` 를 **만들었다 되돌린다**(커밋되지 않는다). 적용 롤에 public 스키마 CREATE 가 필요하다(`postgres` 는 있다).
+
+### 적용 전/후 확인
+`tests/write-privileges.test.ts` §15 의 SQL 을 SQL Editor 에 붙여 넣는다. 기대 문자열: `SEQ_NONE` · `ADMIN_SEQ_OK` · `SERVICE_SEQ_OK` · `SEQ_PUBLIC_NONE` · `SEQ_COUNT 7`. 같은 절의 거동 DO 블록이 오류 없이 `DO` 로 끝나야 한다.
+
+### 롤백
+`supabase/rollbacks/0018_sequence_privileges.down.sql` · **승인 플래그 요구**(`set bestour.rollback_0018_ack = '1';`). 근거: 되돌리면 공개 롤이 `setval` 로 통지 시퀀스를 되감는 문이 오류·로그·화면 변화 없이 다시 열린다. 되돌린 것을 필요로 하는 정상 경로는 없다(앱 코드는 시퀀스를 직접 부르지 않는다).
+로컬 실측: 플래그 없이 실행 → 멈춤(exit 3, 권한 불변). 플래그와 함께 실행 → 적용 전 실효 권한으로 복원되고 **게이트가 다시 36건으로 빨개졌다**. 0018 재적용 뒤 사실 전수 diff 동일.
+⚠️ 관리자 "새 글 저장" 이 죽어서 롤백을 생각한다면 원인은 0018 이 아닐 가능성이 높다 — 0018 은 콘텐츠 여섯의 `authenticated` usage 를 남긴다. 먼저 `has_sequence_privilege('authenticated', 'public.notices_id_seq', 'usage')` 를 볼 것.
+
+> **원격 적용: 아직 하지 않았다 (2026-09-17).** 0012~0018 이 함께 대기 중이다. 로컬 `supabase_migrations.schema_migrations` 에도 0018 은 **기록되지 않았다**(`psql -1` 파일 적용 — `db reset` 금지 조건 때문). 다음 `db reset` 이나 CI 는 파일에서 정상 적용한다.

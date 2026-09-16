@@ -36,6 +36,7 @@ import { consentFields } from "@/lib/reservations/consent";
 import type { NewOutboxRow, OutboxRow } from "@/lib/types";
 import { withNotificationsLock } from "./helpers/db-lock";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
+import { stripComments } from "./helpers/strip-comments";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const MIGRATIONS_DIR = path.join(ROOT, "supabase", "migrations");
@@ -50,7 +51,6 @@ const FUNCTIONS = ["claim_pending_notifications", "mark_notification_sent", "mar
 
 const MINUTE = 60_000;
 const readSql = (p: string) => readFileSync(p, "utf-8");
-const stripSqlComments = (sql: string) => sql.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
 const compact = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
 
 const RID = "00000000-0000-4000-8000-000000000001";
@@ -86,7 +86,7 @@ describe("supabase/migrations/0005_outbox.sql", () => {
   });
 
   test("컬럼 — attempts int not null default 0 · last_error text · updated_at/next_attempt_at timestamptz not null default now()", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toMatch(/add column attempts int not null default 0/);
     expect(code).toMatch(/add column last_error text\s*[,;]/);
     expect(code).toMatch(/add column updated_at timestamptz not null default now\(\)/);
@@ -94,7 +94,7 @@ describe("supabase/migrations/0005_outbox.sql", () => {
   });
 
   test("status CHECK — 기존 익명 CHECK 를 pg_constraint 에서 정의문으로 찾아 drop 하고 pending 을 포함해 다시 건다", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toContain("from pg_constraint");
     expect(code).toContain("pg_get_constraintdef(con.oid)");
     expect(code).toContain("drop constraint %i");
@@ -104,13 +104,13 @@ describe("supabase/migrations/0005_outbox.sql", () => {
   });
 
   test("channel CHECK — email 추가 (P4-4/P4-5 폴백 메일이 같은 아웃박스를 쓴다)", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toContain("check (channel in ('sms', 'alimtalk', 'email'))");
   });
 
   test("부분 유니크 인덱스 — 같은 (reservation_id, event, channel, template) 로 sent 는 한 번만. template 이 없으면 created 의 사장님/고객 SMS 가 서로 막는다", () => {
     const raw = readSql(UP_SQL_PATH);
-    const code = compact(stripSqlComments(raw));
+    const code = compact(stripComments(raw, UP_SQL_PATH));
     expect(code).toContain(
       "create unique index if not exists notifications_log_sent_once on notifications_log (reservation_id, event, channel, template) where status = 'sent'",
     );
@@ -118,7 +118,7 @@ describe("supabase/migrations/0005_outbox.sql", () => {
   });
 
   test("pending 인덱스 — 발송기가 집어갈 행을 빨리 찾는다", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toContain(
       "create index if not exists notifications_log_pending on notifications_log (created_at) where status = 'pending'",
     );
@@ -126,7 +126,7 @@ describe("supabase/migrations/0005_outbox.sql", () => {
 
   test("claim 함수 — security definer · for update skip locked · 같은 문장에서 lease 를 찍어 두 번째 호출이 같은 행을 못 잡게 한다", () => {
     const raw = readSql(UP_SQL_PATH);
-    const code = compact(stripSqlComments(raw));
+    const code = compact(stripComments(raw, UP_SQL_PATH));
     expect(code).toContain("create or replace function claim_pending_notifications(p_limit int");
     expect(code).toContain("for update skip locked");
     expect(code).toMatch(/security definer/);
@@ -142,7 +142,7 @@ describe("supabase/migrations/0005_outbox.sql", () => {
   });
 
   test("mark 함수 2개 — sent 는 unique_violation 을 duplicate_sent 로 흡수, failed 는 give_up 이면 status failed", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toContain("create or replace function mark_notification_sent(p_id bigint, p_provider_message_id text)");
     expect(code).toContain("when unique_violation then");
     expect(code).toContain("last_error = 'duplicate_sent'");
@@ -152,7 +152,7 @@ describe("supabase/migrations/0005_outbox.sql", () => {
   });
 
   test("security definer 함수는 anon·authenticated 가 RPC 로 부를 수 없다 — execute 권한 회수 + service_role 에만 부여", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     for (const fn of FUNCTIONS) {
       expect(code, fn).toMatch(new RegExp(`revoke (all|execute) on function ${fn}\\([^)]*\\) from public, anon, authenticated`));
       expect(code, fn).toMatch(new RegExp(`grant execute on function ${fn}\\([^)]*\\) to service_role`));
@@ -161,7 +161,7 @@ describe("supabase/migrations/0005_outbox.sql", () => {
 
   test("기존 행 가드가 없고, 그 이유가 주석에 있다 (컬럼에 전부 default 가 있어 기존 행이 있어도 안전)", () => {
     const raw = readSql(UP_SQL_PATH);
-    const code = stripSqlComments(raw);
+    const code = stripComments(raw, UP_SQL_PATH);
     expect(code).not.toMatch(/raise\s+exception/i);
     expect(raw.split("\n").filter((l) => /^\s*--/.test(l)).join("\n")).toMatch(/가드/);
   });
@@ -180,7 +180,7 @@ describe("supabase/rollbacks/0005_outbox.down.sql", () => {
   });
 
   test("함수 3개·인덱스 2개·컬럼 4개 제거, CHECK 를 ('sent','failed') / ('sms','alimtalk') 로 복원", () => {
-    const code = compact(stripSqlComments(readSql(DOWN_SQL_PATH)));
+    const code = compact(stripComments(readSql(DOWN_SQL_PATH), DOWN_SQL_PATH));
     for (const fn of FUNCTIONS) expect(code, fn).toContain(`drop function if exists ${fn}(`);
     expect(code).toContain("drop index if exists notifications_log_sent_once");
     expect(code).toContain("drop index if exists notifications_log_pending");
@@ -190,7 +190,7 @@ describe("supabase/rollbacks/0005_outbox.down.sql", () => {
   });
 
   test("pending·email 행이 남아 있으면 멈춘다 — 복원 CHECK 가 그 행 때문에 실패하기 전에 사람이 알게", () => {
-    const code = stripSqlComments(readSql(DOWN_SQL_PATH));
+    const code = stripComments(readSql(DOWN_SQL_PATH), DOWN_SQL_PATH);
     const iGuard = code.search(/status\s*=\s*'pending'\s+or\s+channel\s*=\s*'email'/i);
     const iRaise = code.search(/raise\s+exception/i);
     const iDrop = code.search(/drop\s+column/i);

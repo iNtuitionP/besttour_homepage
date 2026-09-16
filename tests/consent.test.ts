@@ -22,6 +22,7 @@ import { PRIVACY_NOTICE } from "@/lib/legal/disclosures";
 import { PRIVACY_POLICY_VERSION, consentFields, retentionUntil } from "@/lib/reservations/consent";
 import { ReservationInput } from "@/lib/types";
 import { dbSmokeEnv, dbWriteGate, isLocalStack, isLocalStackUrl } from "./helpers/load-env-local";
+import { stripComments } from "./helpers/strip-comments";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const MIGRATIONS_DIR = path.join(ROOT, "supabase", "migrations");
@@ -39,8 +40,11 @@ const CONSTRAINTS = [
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const readSql = (p: string) => readFileSync(p, "utf-8");
-/** `-- …` 줄 끝 주석과 `/* … *\/` 블록 주석을 지운 코드만 남긴다 — 주석에 적힌 설명("default now() 를 쓰지 않는 이유")을 오탐하지 않기 위해. */
-const stripSqlComments = (sql: string) => sql.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
+/*
+ * 주석을 지운 코드는 `stripComments(sql, 경로)`(tests/helpers/strip-comments.ts · P6-11 문자 스캐너)로만 얻는다 —
+ * 주석에 적힌 설명("default now() 를 쓰지 않는 이유")을 오탐하지 않기 위해. 제자리 정규식 제거기는 문자열·달러 인용 속
+ * 주석 모양을 구분하지 못한다(known-defects D7).
+ */
 const compact = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
 
 // =============================================================================
@@ -54,7 +58,7 @@ describe("supabase/migrations/0003_consent.sql", () => {
   });
 
   test("컬럼 4개 — privacy_consent_at·privacy_policy_version·retention_until 은 NOT NULL, marketing_consent_at 은 nullable", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toMatch(/add column privacy_consent_at timestamptz not null/);
     expect(code).toMatch(/add column privacy_policy_version text not null/);
     expect(code).toMatch(/add column retention_until timestamptz not null/);
@@ -64,7 +68,7 @@ describe("supabase/migrations/0003_consent.sql", () => {
   });
 
   test("코드 줄에 default 가 하나도 없다 — 특히 default now() (받은 적 없는 동의의 시각을 채우는 허위 기록)", () => {
-    const code = stripSqlComments(readSql(UP_SQL_PATH));
+    const code = stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH);
     expect(code).not.toMatch(/default\s+now\s*\(\s*\)/i);
     expect(code).not.toMatch(/\bdefault\b/i);
   });
@@ -79,7 +83,7 @@ describe("supabase/migrations/0003_consent.sql", () => {
   });
 
   test("제약 3개 — 이름과 식이 브리프와 같다", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toContain(
       "add constraint reservations_consent_before_created check (privacy_consent_at <= created_at + interval '5 minutes')",
     );
@@ -93,7 +97,7 @@ describe("supabase/migrations/0003_consent.sql", () => {
   });
 
   test("기존 행 가드 — reservations 에 행이 있으면 raise exception 으로 멈추고, 그 가드가 add column 보다 앞에 있다", () => {
-    const code = stripSqlComments(readSql(UP_SQL_PATH));
+    const code = stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH);
     const iGuard = code.search(/if\s+exists\s*\(\s*select\s+1\s+from\s+reservations\s*\)/i);
     const iRaise = code.search(/raise\s+exception/i);
     const iAlter = code.search(/alter\s+table\s+reservations\s+add\s+column/i);
@@ -124,7 +128,7 @@ describe("supabase/rollbacks/0003_consent.down.sql", () => {
   test("존재하고, 제약 3개 drop → 컬럼 4개 drop 순서로 되돌리며 begin/commit 으로 감싼다", () => {
     expect(existsSync(DOWN_SQL_PATH)).toBe(true);
     const sql = readSql(DOWN_SQL_PATH);
-    const code = compact(stripSqlComments(sql));
+    const code = compact(stripComments(sql, DOWN_SQL_PATH));
 
     for (const name of CONSTRAINTS) expect(code, name).toContain(`drop constraint if exists ${name}`);
     for (const col of COLUMNS) expect(code, col).toContain(`drop column if exists ${col}`);

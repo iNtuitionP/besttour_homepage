@@ -26,6 +26,7 @@ import { consentFields } from "@/lib/reservations/consent";
 import type { OutboxRow } from "@/lib/types";
 import { withNotificationsLock } from "./helpers/db-lock";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
+import { stripComments } from "./helpers/strip-comments";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const MIGRATIONS_DIR = path.join(ROOT, "supabase", "migrations");
@@ -39,7 +40,6 @@ const REAP_ERROR = "lease_expired_after_max_attempts";
 const MINUTE = 60_000;
 
 const readSql = (p: string) => readFileSync(p, "utf-8");
-const stripSqlComments = (sql: string) => sql.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
 const compact = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
 const commentLines = (sql: string) => sql.split("\n").filter((l) => /^\s*--/.test(l)).join("\n");
 
@@ -55,7 +55,7 @@ describe("supabase/migrations/0007_outbox_reaper.sql", () => {
   });
 
   test("함수 — reap_stale_notifications() · returns setof notifications_log · security definer · set search_path = public", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toContain(`create or replace function ${FN}()`);
     expect(code).toContain("returns setof notifications_log");
     expect(code).toMatch(/security definer/);
@@ -63,12 +63,12 @@ describe("supabase/migrations/0007_outbox_reaper.sql", () => {
   });
 
   test("대상 — status = 'pending' and attempts >= 5 and next_attempt_at <= now() (5회째 lease 가 만료된 행만)", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toMatch(/where status = 'pending' and attempts >= 5 and next_attempt_at <= now\(\)/);
   });
 
   test("조치 — status = 'failed' · last_error = 'lease_expired_after_max_attempts' · updated_at = now() · 바뀐 행 반환", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toMatch(/set status = 'failed'/);
     expect(code).toContain(`last_error = '${REAP_ERROR}'`);
     expect(code).toMatch(/updated_at = now\(\)/);
@@ -76,7 +76,7 @@ describe("supabase/migrations/0007_outbox_reaper.sql", () => {
   });
 
   test("회수는 update 뿐이다 — delete 도, attempts 초기화도, 다른 상태 전이도 없다", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).not.toMatch(/\bdelete\b/);
     expect(code).not.toMatch(/attempts = 0/);
     expect(code).not.toMatch(/set status = 'pending'/);
@@ -88,7 +88,7 @@ describe("supabase/migrations/0007_outbox_reaper.sql", () => {
   });
 
   test("security definer 함수는 anon·authenticated 가 RPC 로 부를 수 없다 — execute 회수 + service_role 에만 부여 (0005 §6 과 동일)", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toMatch(new RegExp(`revoke (all|execute) on function ${FN}\\(\\) from public, anon, authenticated`));
     expect(code).toMatch(new RegExp(`grant execute on function ${FN}\\(\\) to service_role`));
   });
@@ -110,8 +110,8 @@ describe("MAX_ATTEMPTS 와 SQL 의 숫자 대조", () => {
   });
 
   test("0005 claim 은 attempts < 5, 0007 reap 은 attempts >= 5 — 서로 여집합이라 같은 행을 두 함수가 동시에 잡지 않는다", () => {
-    const claim = compact(stripSqlComments(readSql(OUTBOX_SQL_PATH)));
-    const reap = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const claim = compact(stripComments(readSql(OUTBOX_SQL_PATH), OUTBOX_SQL_PATH));
+    const reap = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(claim).toContain(`attempts < ${MAX_ATTEMPTS}`);
     expect(reap).toContain(`attempts >= ${MAX_ATTEMPTS}`);
     // 0007 이 다른 숫자를 쓰고 있지 않다
@@ -125,7 +125,7 @@ describe("MAX_ATTEMPTS 와 SQL 의 숫자 대조", () => {
 describe("supabase/rollbacks/0007_outbox_reaper.down.sql", () => {
   test("rollbacks/ 에 있고 함수 drop 만 한다 — failed 로 바뀐 행은 되돌리지 않는다(그 행은 진실이다)", () => {
     expect(existsSync(DOWN_SQL_PATH)).toBe(true);
-    const code = compact(stripSqlComments(readSql(DOWN_SQL_PATH)));
+    const code = compact(stripComments(readSql(DOWN_SQL_PATH), DOWN_SQL_PATH));
     expect(code).toContain(`drop function if exists ${FN}()`);
     expect(code).not.toMatch(/\bupdate notifications_log\b/);
     expect(code).not.toMatch(/\bdelete\b/);

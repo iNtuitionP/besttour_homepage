@@ -33,6 +33,7 @@ import type { NotifyChannel } from "@/lib/types";
 import { withNotificationsLock } from "./helpers/db-lock";
 import { runLocalSql } from "./helpers/local-stack-sql";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
+import { stripComments } from "./helpers/strip-comments";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const MIGRATIONS_DIR = path.join(ROOT, "supabase", "migrations");
@@ -44,7 +45,6 @@ const ACK_FLAG = "bestour.rollback_0014_ack";
 
 const MINUTE = 60_000;
 const readSql = (p: string) => readFileSync(p, "utf-8");
-const stripSqlComments = (sql: string) => sql.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
 const compact = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
 
 // =============================================================================
@@ -57,7 +57,7 @@ describe("1. supabase/migrations/0014_claim_by_channel.sql", () => {
   });
 
   test("1-인자 구버전 drop 이 create 보다 **앞**에 있다 — 기본값만 더하면 1-인자 호출이 모호해진다", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     const drop = code.indexOf(`drop function if exists ${FN}(int)`);
     const create = code.indexOf(`create or replace function ${FN}(`);
     expect(drop, "1-인자 drop 문이 없다").toBeGreaterThan(-1);
@@ -66,24 +66,24 @@ describe("1. supabase/migrations/0014_claim_by_channel.sql", () => {
   });
 
   test("새 시그니처 — p_limit int default 10 · p_channels text[] default null (구 호출 호환)", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toContain(`create or replace function ${FN}(p_limit int default 10, p_channels text[] default null)`);
   });
 
   test("where 절 — null 이면 전 채널, 아니면 channel = any(p_channels)", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toContain("status = 'pending' and next_attempt_at <= now() and attempts < 5");
     expect(code).toContain("(p_channels is null or channel = any (p_channels))");
   });
 
   test("security definer + search_path 에 pg_temp 까지 — 임시 릴레이션 섀도잉 차단", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toContain("security definer");
     expect(code).toContain("set search_path = public, pg_temp");
   });
 
   test("drop 이 ACL 을 지우므로 revoke/grant 를 새 시그니처로 다시 쓴다 — **같은 파일(=같은 트랜잭션)** 안에서", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toContain(`revoke all on function ${FN}(int, text[]) from public, anon, authenticated`);
     expect(code).toContain(`grant execute on function ${FN}(int, text[]) to service_role`);
     const create = code.indexOf(`create or replace function ${FN}(`);
@@ -94,12 +94,12 @@ describe("1. supabase/migrations/0014_claim_by_channel.sql", () => {
   });
 
   test("PostgREST 스키마 캐시 갱신 — 시그니처가 바뀌면 캐시된 스키마로는 새 인자를 못 본다", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toContain("notify pgrst, 'reload schema'");
   });
 
   test("자기검증 do 블록 3항 — ① 구버전 잔존 ② EXECUTE 보유자 ③ 채널 필터 실제 동작", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toContain("do $$");
     // ① 시그니처가 정확히 (int) 인 함수 객체가 남아 있지 않은가
     expect(code).toContain(`to_regprocedure('public.${FN}(int)')`);
@@ -116,7 +116,7 @@ describe("1. supabase/migrations/0014_claim_by_channel.sql", () => {
   });
 
   test("자기검증의 임시 행은 되돌린다 — 표에 흔적을 남기지 않는다(서브트랜잭션 + 예외)", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toContain("exception");
     expect(code).toContain("0014_probe_rollback");
   });
@@ -132,7 +132,7 @@ describe("2. supabase/rollbacks/0014_claim_by_channel.down.sql", () => {
   });
 
   test("승인 플래그를 조건 없이 요구한다 — 행 수를 보지 않는다", () => {
-    const code = compact(stripSqlComments(readSql(DOWN_SQL_PATH)));
+    const code = compact(stripComments(readSql(DOWN_SQL_PATH), DOWN_SQL_PATH));
     expect(code).toContain(`current_setting('${ACK_FLAG}', true)`);
     expect(code).toContain("raise exception");
     // "행이 없으면 그냥 진행" 같은 조건부 예외가 아니다 — count(*) 로 판단하지 않는다
@@ -146,7 +146,7 @@ describe("2. supabase/rollbacks/0014_claim_by_channel.down.sql", () => {
   });
 
   test("2-인자를 drop 하고 0005 의 1-인자를 복원 + grant 복원", () => {
-    const code = compact(stripSqlComments(readSql(DOWN_SQL_PATH)));
+    const code = compact(stripComments(readSql(DOWN_SQL_PATH), DOWN_SQL_PATH));
     expect(code).toContain(`drop function if exists ${FN}(int, text[])`);
     expect(code).toContain(`create or replace function ${FN}(p_limit int default 10)`);
     expect(code).toContain(`revoke all on function ${FN}(int) from public, anon, authenticated`);
@@ -538,7 +538,7 @@ describe.skipIf(!gate.allowed)("2-B. DB — claim RPC 실행 권한 실측 (로�
 // =============================================================================
 describe("3. 채널 낱말", () => {
   test("0005 의 channel CHECK 와 NotifyChannel 이 같다", () => {
-    const outbox = compact(stripSqlComments(readSql(path.join(MIGRATIONS_DIR, "0005_outbox.sql"))));
+    const outbox = compact(stripComments(readSql(path.join(MIGRATIONS_DIR, "0005_outbox.sql")), path.join(MIGRATIONS_DIR, "0005_outbox.sql")));
     const channels: NotifyChannel[] = ["sms", "alimtalk", "email"];
     expect(outbox).toContain(`check (channel in (${channels.map((c) => `'${c}'`).join(", ")}))`);
   });

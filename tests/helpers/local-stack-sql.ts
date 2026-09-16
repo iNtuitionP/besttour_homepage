@@ -16,6 +16,40 @@ import { isLocalStack } from "./load-env-local";
  * 출력(텍스트 표)을 파싱하지 않는다 — 호출자는 부분 문자열만 단언한다(형식이 바뀌어도 깨지지 않게).
  */
 export function runLocalSql(sql: string): string {
+  const res = execLocalSql(sql);
+  if (res.ok) return res.stdout;
+  throw new Error(
+    `runLocalSql: ${res.command} 실패 (exit ${res.status ?? "?"}) — 도구 문제일 수 있다. ` +
+      `stderr: ${res.stderr.slice(0, 500)} stdout: ${res.stdout.slice(0, 500)}`,
+  );
+}
+
+/**
+ * **실패가 기대되는** SQL 을 실행하고 CLI 출력(stdout + stderr)을 **잘라내지 않고** 돌려준다 (P6-11).
+ *
+ * 용도: `do $$ … raise exception '<결과>' $$` 처럼 **마지막에 일부러 터뜨려 트랜잭션 전체를 되돌리는** 탐침.
+ * `db query` 는 한 호출에 한 문장만 받고(여러 문장은 "cannot insert multiple commands into a prepared statement")
+ * 호출마다 세션이 새로 뜨므로, 임시 객체를 만든 채 결과를 읽고 **흔적 없이** 되돌리는 길은 이것뿐이다.
+ * `runLocalSql` 은 실패 출력을 500자로 자르므로 결과를 실어 나를 수 없다.
+ *
+ * 성공(exit 0)하면 throw 한다 — 탐침이 터지지 않았다는 것은 되돌림이 일어나지 않았다는 뜻이다.
+ */
+export function runLocalSqlExpectingError(sql: string): string {
+  const res = execLocalSql(sql);
+  if (res.ok) {
+    throw new Error(
+      "runLocalSqlExpectingError: SQL 이 성공했다 — 마지막 raise 로 되돌려야 할 탐침이 커밋됐을 수 있다. " +
+        `stdout: ${res.stdout.slice(0, 500)}`,
+    );
+  }
+  return `${res.stdout}\n${res.stderr}`;
+}
+
+type ExecResult =
+  | { ok: true; stdout: string }
+  | { ok: false; command: string; status: number | null | undefined; stdout: string; stderr: string };
+
+function execLocalSql(sql: string): ExecResult {
   if (!isLocalStack()) {
     throw new Error("runLocalSql: NEXT_PUBLIC_SUPABASE_URL 이 로컬 스택이 아니다 — 원격에는 실행하지 않는다");
   }
@@ -41,23 +75,27 @@ export function runLocalSql(sql: string): string {
   try {
     for (const [bin, prefix, shell] of candidates) {
       try {
-        return execFileSync(bin, [...prefix, ...args, shell ? `"${file}"` : file], {
+        const stdout = execFileSync(bin, [...prefix, ...args, shell ? `"${file}"` : file], {
           encoding: "utf8",
           stdio: ["ignore", "pipe", "pipe"],
           timeout: 120_000,
           windowsHide: true,
           shell,
         });
+        return { ok: true, stdout };
       } catch (e) {
         const err = e as NodeJS.ErrnoException & { stdout?: string; stderr?: string; status?: number | null };
         if (err.code === "ENOENT") {
           notFound.push(bin);
           continue;
         }
-        throw new Error(
-          `runLocalSql: ${bin} ${[...prefix, ...args].join(" ")} 실패 (exit ${err.status ?? "?"}) — 도구 문제일 수 있다. ` +
-            `stderr: ${(err.stderr ?? "").toString().slice(0, 500)} stdout: ${(err.stdout ?? "").toString().slice(0, 500)}`,
-        );
+        return {
+          ok: false,
+          command: `${bin} ${[...prefix, ...args].join(" ")}`,
+          status: err.status,
+          stdout: (err.stdout ?? "").toString(),
+          stderr: (err.stderr ?? "").toString(),
+        };
       }
     }
   } finally {

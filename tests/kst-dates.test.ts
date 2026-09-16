@@ -22,6 +22,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { toKstDateString } from "@/lib/kst";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
 import { runLocalSql } from "./helpers/local-stack-sql";
+import { stripComments } from "./helpers/strip-comments";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const MIGRATIONS_DIR = path.join(ROOT, "supabase", "migrations");
@@ -32,7 +33,6 @@ const INIT_SQL_PATH = path.join(MIGRATIONS_DIR, "0001_init.sql");
 
 const KST_TODAY_SQL = "(now() at time zone 'Asia/Seoul')::date";
 const readSql = (p: string) => readFileSync(p, "utf-8");
-const stripSqlComments = (sql: string) => sql.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
 const compact = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
 const count = (haystack: string, needle: string) => haystack.split(needle).length - 1;
 
@@ -50,7 +50,7 @@ describe("supabase/migrations/0004_kst_dates.sql", () => {
   });
 
   test("popups_select_active 를 drop 후 KST 오늘로 다시 만든다 — 0001 과 같은 이름·같은 구간(양 끝 포함)", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toContain("drop policy if exists popups_select_active on popups;");
     expect(code).toContain(
       compact(
@@ -60,18 +60,18 @@ describe("supabase/migrations/0004_kst_dates.sql", () => {
   });
 
   test("notices.published_at default 를 KST 오늘로 바꾼다", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(code).toContain(compact(`alter table notices alter column published_at set default ${KST_TODAY_SQL};`));
   });
 
   test("코드 줄에 `at time zone 'Asia/Seoul'` 이 정책·default 양쪽(2회 이상) 있고 current_date 는 없다", () => {
-    const code = compact(stripSqlComments(readSql(UP_SQL_PATH)));
+    const code = compact(stripComments(readSql(UP_SQL_PATH), UP_SQL_PATH));
     expect(count(code, "at time zone 'asia/seoul'")).toBeGreaterThanOrEqual(2);
     expect(code).not.toContain("current_date");
   });
 
   test("0001 은 수정하지 않았다 — current_date 가 원래 두 자리(popups 정책·notices default)에 그대로 있다", () => {
-    const init = compact(stripSqlComments(readSql(INIT_SQL_PATH)));
+    const init = compact(stripComments(readSql(INIT_SQL_PATH), INIT_SQL_PATH));
     expect(count(init, "current_date")).toBe(2);
     expect(init).toContain("published_at date not null default current_date");
     expect(init).toContain("for select using (active and current_date between starts_at and ends_at)");
@@ -92,7 +92,7 @@ describe("supabase/rollbacks/0004_kst_dates.down.sql", () => {
 
   test("존재하고, 정책과 default 를 0001 원문(current_date)으로 되돌리며 Asia/Seoul 은 코드 줄에 없다", () => {
     expect(existsSync(DOWN_SQL_PATH)).toBe(true);
-    const code = compact(stripSqlComments(readSql(DOWN_SQL_PATH)));
+    const code = compact(stripComments(readSql(DOWN_SQL_PATH), DOWN_SQL_PATH));
     expect(code).toContain("drop policy if exists popups_select_active on popups;");
     expect(code).toContain(
       "create policy popups_select_active on popups for select using (active and current_date between starts_at and ends_at);",
@@ -104,8 +104,8 @@ describe("supabase/rollbacks/0004_kst_dates.down.sql", () => {
   });
 
   test("복원되는 정책 정의문은 0001 의 것과 글자 단위로 같다", () => {
-    const init = compact(stripSqlComments(readSql(INIT_SQL_PATH)));
-    const down = compact(stripSqlComments(readSql(DOWN_SQL_PATH)));
+    const init = compact(stripComments(readSql(INIT_SQL_PATH), INIT_SQL_PATH));
+    const down = compact(stripComments(readSql(DOWN_SQL_PATH), DOWN_SQL_PATH));
     const policyRe = /create policy popups_select_active on popups for select using \([^;]*\);/;
     const initPolicy = init.match(policyRe)?.[0];
     const downPolicy = down.match(policyRe)?.[0];
