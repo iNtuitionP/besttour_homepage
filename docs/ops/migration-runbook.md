@@ -60,13 +60,98 @@ from (
 ) s group by t order by t;
 ```
 
+### ⚠️ 위 ②번 확인은 생각만큼 강하지 않다 (외부 모델 크로스체크, 2026-09-16)
+
+OpenAI Codex 에 적용 직전 검토를 받았고 **P1 은 나오지 않았다**(적용을 막을 문제 없음). 다만 **내 확인 방법 중 하나가 틀렸다**:
+
+`information_schema.role_table_grants` 는 **완전한 ACL 목록이 아니다.** grantor·grantee 가 "활성화된 롤" 인 항목만 보여주는 **필터된 뷰**다.
+따라서 **"이 뷰에 PUBLIC 이 없다" 는 "PUBLIC 에 권한이 없다" 의 증명이 아니다.** 제대로 보려면 `pg_class.relacl` 을 `aclexplode()` 로 풀고 **grantee OID = 0**(PUBLIC)을 찾아야 한다.
+
+다행히 **②가 무너져도 결론은 유지된다** — ④⑤의 `has_table_privilege` 검사는 **PUBLIC 과 상속된 표 권한까지 실제로 잡아내기** 때문이다. 즉 강한 증거는 ④⑤이고 ②는 보조였다. 그래도 남는 구멍 둘:
+
+- **"select 뿐" 은 "질의한 다섯 가지 중 select 뿐" 이라는 뜻이다.** `REFERENCES`·`TRIGGER` 는 그대로 남아 있다(의도적으로 남겼다).
+- **컬럼 단위 grant 는 `has_table_privilege` 가 못 본다.** 표 단위 revoke 가 직접 부여된 컬럼 grant 는 함께 지우지만, **PUBLIC 이나 다른 롤을 통해 상속된 컬럼 grant 는 살아남는다.** `has_any_column_privilege(role, table, 'insert')`·`'update'` 검사를 추가해야 한다.
+
+또 하나 정정: `0012` 가 `TRIGGER` 를 남긴 근거로 "스키마 CREATE 권한이 없어 쓸 수 없다" 고 적었는데 **그 이유는 성립하지 않는다.** `CREATE TRIGGER` 는 표의 TRIGGER 권한과 **이미 존재하는** 트리거 함수의 EXECUTE 만 요구한다 — 함수를 새로 만들 필요도, 스키마 CREATE 도 필요 없다. 공개 경로로 임의 `CREATE TRIGGER` 를 칠 방법은 못 찾았으므로 실exploit 은 아니지만, **적어 둔 이유가 틀렸다.**
+
+### 적용 **전** 원격 점검 (Codex 권고 — 로컬 성공은 원격 사실을 증명하지 못한다)
+
+로컬에서만 재고 원격은 적용 **후에** 보는 순서였는데, 그러면 이미 늦다. 그래서 적용 전에 원격 스키마를 떠서(`supabase db dump --linked`, **데이터 없이 스키마만**) 아래를 실측했다.
+
+| 확인 | 결과 (2026-09-16, 원격 `expexkhcuogkavpacrem`) |
+|---|---|
+| 마이그레이션 이력 | 0001~0011 적용됨, **0012·0013 대기** — 로컬과 일치 |
+| 9표에 PUBLIC 대상 GRANT | **없음** |
+| 컬럼 단위 GRANT | **없음** |
+| public 스키마의 뷰 | **없음** (보안 우회 경로 없음) |
+| 트리거 | **없음** |
+| 9표 소유자 | 전부 `postgres` |
+| definer 함수 9개 소유자 | 전부 `postgres` |
+| 함수 EXECUTE | 아웃박스 4종 → `service_role` · 관리자 전이 4종 → `authenticated` · `is_admin` → `authenticated`+`service_role`. **의도와 일치** |
+| RLS 활성 표 | 10 |
+
+### 🔴 이번에 찾은 뿌리 — 네 번 반복된 이유
+
+원격에 이것이 살아 있다:
+```sql
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES    TO anon, authenticated;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON FUNCTIONS TO anon, authenticated;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated;
+```
+
+"Supabase 가 넓게 준다" 는 막연한 말이 아니라 **이 설정 세 줄**이다. 그리고 이것은 **앞으로 만들 모든 객체에 계속 적용된다.**
+
+- 새 표를 만들면 **자동으로** anon·authenticated 가 전권을 갖는다 → 0012·0013 같은 사후 회수가 영원히 반복된다.
+- **새 함수도 마찬가지다.** `drop function` 후 `create function` 하면 **EXECUTE 가 anon·authenticated 에게 자동으로 다시 부여된다.**
+  → **0014(P4-5)가 정확히 이 모양이다.** 그래서 0014 는 재생성과 같은 트랜잭션 안에서 반드시 `revoke ... from public, anon, authenticated` 를 해야 한다.
+  빠뜨리면 **아웃박스 큐를 변경하고 통지 행을 반환하는 definer 함수가 공개 롤에 열린다** — 0012 가 표 권한을 회수한 것이 그 함수 하나로 무의미해진다. Codex 가 이것을 "빠뜨리면 P1" 으로 분류했다.
+
+**기본 권한 자체를 회수할 것인가?** 하지 않는다(지금은). Supabase 의 설계는 "새 표는 PostgREST 로 즉시 쓸 수 있고 RLS 가 문지기" 이고, 이 기본값을 건드리면 대시보드·PostgREST 의 기대와 어긋날 수 있다. 우리는 **개인정보 표에 한해 RLS 를 유일 방어선으로 두지 않기로** 결정했고, 그래서 표 단위로 명시 회수한다.
+대신 **재발을 기계로 잡는다** → 아래 후속 태스크.
+
+### 후속 (미착수)
+- **DB 권한 게이트**: `anon` 이 public 스키마의 어느 표에도 쓰기 권한을 갖지 않는지(허용 목록 외) 단언하는 테스트. 지금은 표가 늘 때마다 사람이 기억해야 한다 — **네 번 놓쳤다.** 시퀀스·함수도 같이 본다.
+- ④⑤ 질의에 `has_any_column_privilege` 추가, ② 질의를 `pg_class.relacl` + `aclexplode` 로 교체.
+- `0012:34` 의 TRIGGER 관련 주석 정정.
+- `authenticated` 의 콘텐츠 7표 **TRUNCATE 회수** — 관리자 CRUD 에 TRUNCATE 는 필요 없고 `is_admin()` 은 TRUNCATE 를 막지 못한다(RLS 적용 대상이 아니다). anon 에 적용한 논리가 그대로 적용된다.
+- **`places` 는 애초에 관리자가 쓰지 않는다** — `0002:58` 은 select 정책만 주고 0009 의 관리자 쓰기 정책 6표에 `places` 가 없다. 그 표의 `authenticated` CRUD 는 **쓰이지 않는 권한**이다.
+- `0005:96`·`0007:31` 의 definer 함수가 `set search_path = public` 만 하고 **`pg_temp` 를 빠뜨렸다**(0009·0010 은 제대로 한다). 임시 릴레이션이 먼저 검색되어 정규화되지 않은 `notifications_log` 참조가 가려질 수 있다. 현재 EXECUTE 가 `service_role` 로 제한돼 공개 exploit 은 없다.
+- `tests/write-privileges.test.ts` 가 **상태코드 ≥400 이면 통과**로 본다 — 500 이나 무관한 검증 실패도 "보안 성공" 으로 읽힌다. 권한 거부(`42501`)를 명시 단언해야 한다.
+
 ### 적용 후 확인 (원격)
 같은 질의 다섯 개를 원격에서 돌려 **위 표와 같은 결과**인지 대조하고, 아래에 날짜·결과를 적는다.
 
-> **원격 적용: 아직 하지 않았다.** 선행 조건인 CI green 을 기다리는 중이다(db-test 가 이 두 마이그레이션으로 풀린다).
+> **원격 적용: 아직 하지 않았다 (2026-09-16).** CI 는 green 이고 적용 전 점검도 끝났다.
+> `supabase db push --linked` 가 **자동 승인 정책(Production Deploy)에 막혔다.** 우회하지 않는다 — 사람이 판단할 자리다.
+> 진행하려면 사용자가 그 명령을 승인하거나 직접 실행해야 한다. 그때까지 원격은 **0011 상태**이고, 그 상태에서도 사이트는 정상 동작한다(회수는 방어 강화이지 기능 요구사항이 아니다).
 
 ---
 
-## 0014 — claim 채널 필터 (미작성, P4-5)
-`claim_pending_notifications` 에 채널 화이트리스트를 넣는다. **1-인자 구버전을 반드시 `drop` 한 뒤** 2-인자를 만든다 — `create or replace` 에 파라미터를 더하면 Postgres 가 새 함수로 보고 구버전이 남아 1-인자 호출이 **모호(ambiguous)** 해진다. `drop` 은 grant 도 지우므로 `revoke`/`grant` 를 다시 기술해야 한다(0005:166-169).
-근거와 배경은 `docs/ops/known-defects.md` **D3**.
+## 0014 — claim 채널 필터 (작성 완료, 독립 리뷰 **승인**, 원격 적용 대기)
+
+`claim_pending_notifications` 에 채널 화이트리스트(`p_channels text[] default null`)를 넣어 **보낼 수 없는 채널의 행을 아예 집지 않게** 한다. 배경은 `docs/ops/known-defects.md` **D3**.
+1-인자 구버전을 **먼저 `drop`** 한 뒤 2-인자를 만든다 — `create or replace` 에 파라미터를 더하면 Postgres 가 새 함수로 보고 구버전이 남아 1-인자 호출이 **모호(42725)** 해진다.
+
+### 🔴 배포 순서 — **0014 원격 적용이 코드 배포보다 먼저다** (리뷰 K5)
+`claimPending` 은 **항상** `p_channels` 를 함께 보낸다. 따라서 순서를 뒤집으면 배포된 코드가 아직 없는 2-인자 시그니처를 불러 **PostgREST 가 PGRST202/404 를 내고 통지 크론이 500** 이 된다(리뷰어 실측).
+안전한 실패이긴 하다(발송이 잘못 나가는 것이 아니라 아예 안 돈다). 그래도 **순서를 지킨다**:
+1. `supabase db push` 로 **0014 를 원격에 적용**
+2. 그다음 코드 배포(Vercel)
+3. 통지 크론을 `?dry=0` 으로 전환하는 것은 **그 뒤**
+
+### ⚠️ 적용 경로 — `psql -f` 를 쓰지 마라 (리뷰 K1)
+마이그레이션 파일에는 명시적 `begin/commit` 이 없다. `psql -f` 로 실행하면 **파일이 원자적이지 않아** 자기검증 블록이 `raise` 해도 앞서 실행된 문장이 남는다(리뷰어 실측: 가드가 멈췄는데 `anon` ACL 이 그대로 남았다).
+**`supabase db push` 또는 대시보드 SQL Editor 로만** 적용한다(CLI 는 마이그레이션 하나를 한 트랜잭션으로 돈다). 저장소의 13개 마이그레이션 전부 같은 관례이므로 0014 가 새로 만든 위험은 아니다.
+
+### 독립 리뷰가 실증한 것 (2026-09-16, 승인 · 치명 0 · 중대 0)
+- **SQL 뮤테이션 7종 전부 자기검증에서 멈췄다** — `revoke` 제거 / `revoke`+`grant` 제거 / `revoke` 를 `create` 앞으로 / 채널 필터 제거 / 1-인자 `drop` 제거 / `service_role` 회수.
+- **로컬에도 같은 기본 권한이 실재**함을 `pg_default_acl` 로 확인했다(원격만의 문제가 아니다).
+- 채널 인자 **9가지**(`null`·`{sms}`·`{email}`·`{sms,email}`·`{}`·`{bogus}`·`{alimtalk}`·`{sms,sms}`·`{null}`)를 직접 돌려, 집히지 않은 행은 `attempts` 는 물론 **`updated_at` 까지 불변**이고 **어떤 입력도 "전 채널" 로 승격되지 않음**(fail-closed)을 확인했다.
+- 타입 뮤테이션 **10종 전부 검출**(미검출 0).
+
+### 남은 권고 (후속)
+- **K2**: 롤백이 `set search_path = public`(pg_temp 없음)을 되살린다 — temp 표 섀도잉을 실증 재현했다. EXECUTE 가 `service_role` 뿐이라 악용성은 낮다. `0005`·`0007` 의 같은 문제와 **함께** 고친다.
+- **K3**: `expect([401,403,404]).toContain(...)` 가 "함수 없음(404)" 과 "권한 없음(401/42501)" 을 구분하지 못한다. 좁힐 것.
+- **K4**: 롤백 검증 블록에 `service_role` 실행 가능 확인이 빠졌다(상행에는 있다).
+- **K7**: Resend 가 `Idempotency-Key` 를 지원한다 — `WorkerReport.sentUnmarked` 의 중복 수신 창을 메일 채널에서 한 줄로 닫을 수 있다.
+- 보고서 §4 를 "가정" → "문서 확인" 으로 갱신(리뷰어가 Resend 공개 문서로 엔드포인트·인증·본문 필드·성공 `id` 4건을 대조해 전부 정확함을 확인했다).

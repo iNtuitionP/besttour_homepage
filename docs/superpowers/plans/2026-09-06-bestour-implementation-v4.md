@@ -347,7 +347,12 @@ components/**           props 경계. 법정 한글 리터럴 금지
 *개발 준비 완료 (구현 세션 책임)*
 - [ ] CI 전 잡 green (test · pricing · legal-disclosures · mockup-drift · db-test)
 - [ ] `check-temp-values.sh` exit 0 또는 잔여 항목이 문서로 승인됨
-- [ ] **알려진 결함 재검토** — `docs/ops/known-defects.md` 의 각 항목에 오픈 판단을 남긴다. 현재 D1(매칭된 라우트의 `notFound()` 가 JS 없이 빈 404 · `lang` 누락, 영향 경로는 `/notices/[id]` 하나). 선택지 A(root layout 구조 변경, 홈 ISR 깨질 위험)·B(없는 공지 → 목록 리다이렉트)·C(유지) 중 택일
+- [ ] **알려진 결함 재검토** — `docs/ops/known-defects.md` 의 각 항목에 오픈 판단을 남긴다. 현재 **D1~D6**.
+      - **D1**(매칭된 라우트의 `notFound()` 가 JS 없이 빈 404 · `lang` 누락) — 영향 경로가 **둘**이 됐다(`/notices/[id]` + `/gallery/[album]`). **2026-09-15 재확인: C 유지**, 단 근거 (a)"경로가 하나"는 폐기. 두 404 문서가 sha256 까지 같아 **한 결함이고 고치면 한 번에 둘 다 고쳐진다** · `noindex` 는 JS 없이도 나간다 · A 는 홈 ISR 위험, B 는 사장님 확인 필요. **셋째 경로가 생기면 그때 재검토.**
+      - **D3**(claim 이 채널을 안 가려 사장님 알림이 소멸) — 🔴 **P4-5 로 수정 예정. 오픈 차단.**
+      - **D4**(사장님이 admin 에 쓰는 글은 무검사) — 경고 방식으로, P6-6 이 목록을 통합한 뒤.
+      - **D5**(로그아웃 버튼 없음) — P5-11.  **D6**(팝업 이미지 도움말이 없는 버킷) — P6-6.
+      - **D2** 는 아래 "Supabase 인증 설정 3건" 항목과 같다.
 - [ ] **취소·환불 `[TEMP]`(원장 `CANCELLATION`) 가 화면에 나가는 상태로는 오픈 금지** — 위저드 6단계 청약철회 고지와 이용안내가 이 값을 확정 문구처럼 렌더한다(P3-4 독립 리뷰 M-1, 2026-09-13). 사장님 답변 1·2(환불 기준액·취소 기준일) → 원장 실값 교체 → 법정 문안 독립 재리뷰 순. 화면에 "확정 전" 표식은 두지 않기로 결정(공개 방문자 0·UIUX 소유·이 게이트가 차단)
 - [ ] Vercel **빌드** env 에 `NEXT_PUBLIC_TURNSTILE_SITE_KEY`(빌드 타임 인라인 — 빠지면 운영 `/quote` 가 "접수 준비 중"), 런타임 env 에 `GUARD_SECRET`·`TURNSTILE_SECRET_KEY`·`GUARD_ALLOWED_HOSTS`·Upstash 2종. `/quote` 두 요청 토큰 상이·no-store 는 CI `legal-pages-http` 가 매 푸시 단언
 - [ ] 무인증 `/admin/*` 접근 0 · admin 경로 service role 0건
@@ -357,7 +362,10 @@ components/**           props 경계. 법정 한글 리터럴 금지
 - [ ] **크론 실운영 전환** — `vercel.json` 의 path 를 `/api/cron/purge?dry=0` 으로 변경.
       P1-5 는 안전을 위해 dry-run 으로 배포된다(쿼리 없으면 보고만). 이걸 안 바꾸면 파기가 영원히 실행되지 않고,
       게시한 보유기간을 이행하지 못해 고지가 허위가 된다. `CRON_SECRET` 을 Vercel 환경변수에 넣는 것도 함께.
-- [ ] **`OWNER_PHONE` 설정** — 비어 있으면 `planNotifications`(outbox.ts:99-108)가 사장님 행을 `channel='email'` 로 만든다. 그런데 **claim 이 채널을 가리지 않아**(0005:98-112) 문자 어댑터가 그 메일 행까지 집고, `solapi.ts:288-290` 이 `retryable:false` 로 거부해 **한 번에 영구 failed** 가 된다. 즉 **접수가 들어와도 사장님께 아무 통지가 가지 않고 행도 소멸한다**(고객 문자는 정상). → `docs/ops/known-defects.md` **D3**, **P4-5 에서 수정**(0014 채널 필터 + Resend + 라우터). 사장님 질문 A-13
+- [ ] **`OWNER_PHONE` 설정** — 비어 있으면 `planNotifications`(outbox.ts:99-108)가 사장님 행을 `channel='email'` 로 만든다. 그런데 **claim 이 채널을 가리지 않아**(0005:98-112) 문자 어댑터가 그 메일 행까지 집고, `solapi.ts:288-290` 이 `unsupported_channel` 로 거부한다. 크론이 돌 때마다 다시 집혀 **`attempts` 가 1→5 로 오른 뒤 `failed` 로 종착**한다(실측). 즉 **접수가 들어와도 사장님께 아무 통지가 가지 않는다**(고객 문자는 정상). → `docs/ops/known-defects.md` **D3**, **P4-5 에서 수정 완료**(0014 채널 필터 + Resend + 라우터 — 원격 0014 적용 대기). 사장님 질문 A-13
+- [ ] 🔴 **배포 순서: `0014` 원격 적용 → 코드 배포 → 크론 `?dry=0`** (P4-5 리뷰 K5, 2026-09-16).
+      `claimPending` 은 **항상** `p_channels` 를 보낸다. 순서를 뒤집으면 배포된 코드가 없는 시그니처를 불러 **PostgREST 가 PGRST202/404 를 내고 통지 크론이 500** 이 된다(실측). 발송이 잘못 나가는 것이 아니라 아예 안 도는 안전한 실패이지만, 순서를 지키면 겪지 않는다.
+      마이그레이션은 **`supabase db push` 또는 SQL Editor 로만** 적용한다 — `psql -f` 는 파일이 원자적이지 않아 자기검증이 멈춰도 앞 문장이 남는다(리뷰 K1, 실측). 절차는 `docs/ops/migration-runbook.md`
 - [ ] **통지 크론 실운영 전환** — `vercel.json` 의 `/api/cron/notify` 를 `?dry=0` 으로(P4-1, 2026-09-13). 이것이 "발송 + M3 회수 시작"이다. 선행: P4-2 Solapi 어댑터 + 발신번호 등록 + `NOTIFY_SENDER` 가 운영·프리뷰에서 비어 있음 확인. 그 전엔 dry 로 두는 것이 정답(미구성 sender 는 claim 을 하지 않아 attempts 를 태우지 않는다)
 - [ ] 법정 3페이지 사람 리뷰 서명
 - [ ] Lighthouse 모바일 90+ (프로토콜 고정 측정)
