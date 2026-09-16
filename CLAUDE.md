@@ -48,6 +48,9 @@ bash scripts/check-mockup-drift.sh       # 목업 커밋 해시 고정 + public/
   - **`drop function` 후 `create function` 은 EXECUTE 를 다시 열어 준다.** 재생성과 **같은 트랜잭션 안에서** `revoke execute from public, anon, authenticated` + 필요한 롤에만 `grant` 를 다시 기술한다. 빠뜨리면 definer 함수가 공개 롤에 열린다.
   - 회수했는지 확인할 때 `information_schema.role_table_grants` 를 **증거로 쓰지 마라** — grantor·grantee 가 활성 롤인 항목만 보이는 **필터된 뷰**다. `has_table_privilege()`(PUBLIC·상속까지 잡는다)와 `has_any_column_privilege()`(컬럼 단위 grant)를 쓰고, PUBLIC 전수는 `pg_class.relacl` + `aclexplode()`(grantee OID 0)로 본다.
   - **TRUNCATE 는 RLS 의 적용을 받지 않는다.** 정책이 아무리 촘촘해도 TRUNCATE 권한을 가진 롤은 표를 통째로 비운다.
+  - **`MAINTAIN`(PostgreSQL 17+)도 RLS 밖이다.** `LOCK TABLE`·`VACUUM`·`ANALYZE`·`REINDEX` 를 허용한다 — 0019 전에는 익명 롤이 예약 표에 `ACCESS EXCLUSIVE` 잠금을 실제로 잡았다(접수를 멈출 수 있다). 회수는 **`server_version_num >= 170000` 조건부 동적 SQL** 로 쓴다(16 이하에서 `revoke maintain` 은 문법 오류로 원격 푸시 전체를 막는다).
+    강한 잠금은 **UPDATE·DELETE·TRUNCATE 로도** 허용된다(PostgreSQL 명세). 그래서 `authenticated` 는 콘텐츠 표에 쓰기 권한이 있는 한 잠금을 걸 수 있다 — `docs/ops/known-defects.md` **D10**.
+  - 🔴 **권한 종류를 하드코딩하지 마라.** `tests/db-privilege-gate.test.ts` 는 객체는 카탈로그에서 열거하면서 권한 종류는 목록으로 박아 두었고, PostgreSQL 이 `MAINTAIN` 을 더하자 **볼 수단이 없었다**(같은 DB 에서 옛 게이트 초록 · 고친 게이트 빨강으로 확인). 종류는 `aclexplode(acldefault(...))` 와 실제 ACL 에서 얻고, **직접 부여와 유효값을 둘 다** 본다.
   - 배경·실측·후속 목록: `docs/ops/migration-runbook.md`
 - **실증 불가 수치 금지.** "누적 4,800건", "한해 70만 명", "오늘 접수 17건" 같이 사장님이 근거를 제시하지 못한 숫자는 쓰지 않는다(표시광고법 §5 실증책임). 쓸 수 있는 것: **2013년부터**(등록증 개업일), 통신판매업 신고번호, "공항 픽업·샌딩 (송영 전문)".
 - **"면허"가 아니라 "등록".** 여객자동차 운수사업법상 전세버스는 등록제다. "면허 보유" 표기 금지. 차량 대수도 주장하지 않는다(협력사 차량이 섞여 실증 불가).

@@ -48,6 +48,10 @@
  *        회수 집합이 정확하고(콘텐츠 여섯의 `authenticated` usage 는 남긴다) 롤백이 대칭이며 승인 플래그를 조건 없이 요구한다
  *   15. 0018 권한 행렬 + **거동 실증** — `setval`·`nextval` 을 공개 롤로 직접 쳐서 42501 을 보고, 허용된 두 경로
  *        (관리자 nextval · 서비스 롤 nextval)는 성공하는지 대조군으로 본다. §5 에는 관리자 insert 4종 201 과 서비스 롤 통지 적재가 있다
+ *   16·17. 0019 SQL·롤백 (P5-15) — **표 권한 `MAINTAIN`**(PG17 · LOCK TABLE·VACUUM·ANALYZE — RLS 밖). 게이트가 권한 종류를
+ *        하드코딩해 놓쳤다. **버전 조건부**(16 이하에서는 notice 만)이고 표는 카탈로그 열거, 롤백은 기본 기준선 아홉 표 고정 목록
+ *   18. 0019 행렬 + **LOCK 거동 실증** + 버전 분기(실제 파일의 판정 줄 치환). §5-6 에는 0019 뒤 관리자 CRUD 2xx 와
+ *        앱의 실제 `enqueue`·파기 어댑터 실행이 있다
  *
  * **0017 이 왜 0016 보다 급했나**: 0016 은 콘텐츠 표를 다뤘지만 같은 구멍이 `reservations`(고객 성명·전화번호·
  * 이메일·문의내용)·`notifications_log`(수신처·문자 본문)에도 남아 있었다. 적용 전에 **실제로 붙여 봤더니 붙었다** —
@@ -69,7 +73,7 @@ import { beforeAll, describe, expect, test } from "vitest";
 import { withGalleryLock, withNotificationsLock, withShowcaseRoutesLock } from "./helpers/db-lock";
 import { expectPermissionDenied } from "./helpers/expect-denied";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
-import { runLocalSql } from "./helpers/local-stack-sql";
+import { runLocalSql, runLocalSqlExpectingError } from "./helpers/local-stack-sql";
 import { type SqlDataMode, sqlView, stripComments } from "./helpers/strip-comments";
 
 // =============================================================================
@@ -1234,6 +1238,105 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
         const user = await asUser(adminToken, "POST", `/rpc/${fn}`, { regclass: "notifications_log_id_seq" });
         expect(user.status, `관리자 세션의 /rpc/${fn}: ${JSON.stringify(user.body).slice(0, 200)}`).toBe(404);
       }
+    });
+
+    // -------------------------------------------------------------------------
+    // 5-6. 0019 (P5-15) — **MAINTAIN 을 회수한 뒤에도 관리자·접수·파기가 돈다** (행렬이 아니라 실행으로).
+    //
+    //      관리자 화면은 MAINTAIN 을 쓰지 않는다는 판단을 **실제 호출**로 확인한다. 접수 뒤 통지 적재와 파기는
+    //      테스트용 REST 흉내가 아니라 **앱의 실제 코드**(lib/notify/outbox.ts `enqueue` · lib/retention/purge.ts
+    //      `supabasePurgeClient`)를 서비스 롤 클라이언트로 부른다. 파기는 전역 `purge()` 가 아니라 어댑터의 두 메서드를
+    //      내 행에만 쓴다 — 전역 파기는 병렬로 도는 다른 파일의 만료 행까지 지운다(tests/purge.test.ts 가 그 실증을 따로 한다).
+    //      전제: 이 블록이 도는 DB 에서 공개 롤의 MAINTAIN 이 **실제로 회수돼 있다**(PG17+) — 먼저 확인하고 시작한다.
+    // -------------------------------------------------------------------------
+    test("0019 실행 증명 — MAINTAIN 회수 뒤 관리자 CRUD(공지·팝업·앨범·사진·노선) 2xx · 접수 → enqueue → 파기 어댑터", async () => {
+      const pre = runLocalSql(
+        [
+          "select 'P515_PRE ' || current_setting('server_version_num') || ' ' ||",
+          "  case when current_setting('server_version_num')::int < 170000 then 'PRE17'",
+          "       when exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace",
+          "                     cross join (values ('anon'), ('authenticated')) r(role)",
+          "                    where n.nspname = 'public' and c.relkind in ('r', 'p', 'v', 'm', 'f')",
+          "                      and has_table_privilege(r.role, c.oid, 'MAINTAIN')) then 'MAINTAIN_LEFT'",
+          "       else 'MAINTAIN_REVOKED' end as pre;",
+        ].join("\n"),
+      );
+      expect(pre, `0019 가 적용되지 않은 DB 에서 "0019 뒤에도 돈다" 를 증명할 수 없다: ${pre}`).toMatch(/P515_PRE \d+ (MAINTAIN_REVOKED|PRE17)/);
+
+      const made: { table: string; id: number }[] = [];
+      try {
+        // ① 관리자 CRUD — insert·update·delete 를 공지·팝업·앨범·사진에서 전부 2xx 로
+        for (const [table, row, patch] of [
+          ["notices", { title: `P515-${RUN}`, body: "P5-15", active: false }, { title: `P515-${RUN}-edit` }],
+          ["popups", { title: `P515-${RUN}`, body: "P5-15", starts_at: "2000-01-01", ends_at: "2000-01-02", active: false }, { body: "P5-15 edit" }],
+          ["gallery_albums", { slug: `p515-${RUN}`, title: `P5-15 ${RUN}`, sort: 910015, active: false }, { title: `P5-15 ${RUN} edit` }],
+        ] as const) {
+          const ins = await asUser(adminToken, "POST", `/${table}`, row, "return=representation");
+          expect(ins.status, `0019 뒤 관리자 ${table} insert: ${JSON.stringify(ins.body).slice(0, 300)}`).toBe(201);
+          const id = (ins.body as { id: number }[])[0].id;
+          made.push({ table, id });
+          const upd = await asUser(adminToken, "PATCH", `/${table}?id=eq.${id}`, patch, "return=representation");
+          expect(upd.status, `0019 뒤 관리자 ${table} update: ${JSON.stringify(upd.body).slice(0, 300)}`).toBe(200);
+          expect((upd.body as unknown[]).length, `${table} update 가 0행을 고쳤다`).toBe(1);
+        }
+        const albumId = made.find((m) => m.table === "gallery_albums")!.id;
+        const g = await asUser(
+          adminToken,
+          "POST",
+          "/gallery",
+          { image_path: `p515/${RUN}.webp`, original_path: `p515/${RUN}.orig`, sort: 910015, active: false, album_id: albumId },
+          "return=representation",
+        );
+        expect(g.status, `0019 뒤 관리자 gallery insert: ${JSON.stringify(g.body).slice(0, 300)}`).toBe(201);
+        const photoId = (g.body as { id: number }[])[0].id;
+        made.unshift({ table: "gallery", id: photoId });
+        const gUpd = await asUser(adminToken, "PATCH", `/gallery?id=eq.${photoId}`, { caption: "P5-15" }, "return=representation");
+        expect(gUpd.status, `0019 뒤 관리자 gallery update: ${JSON.stringify(gUpd.body).slice(0, 300)}`).toBe(200);
+
+        // 노선 — 행 수를 바꾸지 않는다(§5-4 의 사유). 실제 관리 화면과 같은 update 를 치고 되돌린다.
+        const before = await rest("GET", "/showcase_routes?select=id,sort&origin_code=eq.ICN&destination_code=eq.SEL");
+        const route = (before.body as { id: number; sort: number | null }[])[0];
+        expect(route, "노선 시드 행이 없다").toBeDefined();
+        const rUpd = await asUser(adminToken, "PATCH", `/showcase_routes?id=eq.${route.id}`, { sort: 910015 }, "return=representation");
+        expect(rUpd.status, `0019 뒤 관리자 showcase_routes update: ${JSON.stringify(rUpd.body).slice(0, 300)}`).toBe(200);
+        const rBack = await asUser(adminToken, "PATCH", `/showcase_routes?id=eq.${route.id}`, { sort: route.sort }, "return=representation");
+        expect(rBack.status).toBe(200);
+        expect((rBack.body as { sort: number | null }[])[0].sort, "노선 sort 를 되돌리지 못했다").toBe(route.sort);
+      } finally {
+        for (const m of made) {
+          const del = await asUser(adminToken, "DELETE", `/${m.table}?id=eq.${m.id}`, undefined, "return=representation");
+          expect(del.status, `0019 뒤 관리자 ${m.table} delete: ${JSON.stringify(del.body).slice(0, 300)}`).toBe(200);
+          expect((del.body as unknown[]).length, `${m.table} delete 가 0행을 지웠다`).toBe(1);
+        }
+      }
+
+      // ② 공개 접수 → 통지 적재 — 앱의 실제 enqueue 로
+      const { createClient } = await import("@supabase/supabase-js");
+      const { enqueue } = await import("@/lib/notify/outbox");
+      const { supabasePurgeClient } = await import("@/lib/retention/purge");
+      const service = createClient(baseUrl(), dbEnv.serviceRoleKey, { auth: { persistSession: false } });
+      const rid = await seedReservation(`E${RUN.slice(0, 4).toUpperCase()}`);
+      madeReservations.push(rid);
+      const ids = await enqueue(
+        [{ reservation_id: rid, event: "created", channel: "sms", to: "+821000000015", template: "created.customer.sms" }],
+        service,
+      );
+      // 방금 넣은 pending 행을 claim 창 밖으로 — 이 블록은 아웃박스 잠금 안이지만 잠금이 풀린 뒤에도 남지 않게 아래에서 지운다
+      await pushOutOfClaimWindow(rid);
+      expect(ids.length, "0019 뒤 접수 통지가 적재되지 않았다").toBe(1);
+      expect(Number.isInteger(ids[0]) && ids[0] > 0).toBe(true);
+
+      // ③ 파기 크론 경로 — 실제 어댑터: 만료 조회(읽기) + 내 행 삭제(통지 먼저, 예약 다음)
+      const purgeClient = supabasePurgeClient(service);
+      const scanned = await purgeClient.selectExpired(new Date().toISOString(), 1);
+      expect(Array.isArray(scanned), "파기 조회가 배열을 돌려주지 않았다").toBe(true);
+      const deleted = await purgeClient.deleteReservations([rid]);
+      expect(deleted, "0019 뒤 파기 어댑터가 예약을 지우지 못했다").toBe(1);
+      const logsLeft = await rest("GET", `/notifications_log?select=id&reservation_id=eq.${rid}`);
+      expect(logsLeft.body, "파기가 통지 로그를 남겼다").toEqual([]);
+      const resLeft = await rest("GET", `/reservations?select=id&id=eq.${rid}`);
+      expect(resLeft.body, "파기가 예약을 남겼다").toEqual([]);
+      madeReservations.splice(madeReservations.indexOf(rid), 1);
     });
 
     test("정리 — 만든 것을 전부 지운다", async () => {
@@ -2401,4 +2504,398 @@ describe.skipIf(!gate.allowed)("15. DB — 0018 시퀀스 권한 행렬 + 거동
     );
     expect(out, out).toContain("DO");
   }, 300_000);
+});
+
+// =============================================================================
+// 16. supabase/migrations/0019_maintain_privilege.sql — 텍스트 (P5-15)
+//
+//     PostgreSQL 17 의 표 권한 `MAINTAIN`(VACUUM·ANALYZE·CLUSTER·REINDEX·LOCK TABLE — RLS 밖). 0012~0018 이 한 번도 회수하지 않았고,
+//     P6-11 게이트는 권한 종류를 하드코딩해서 그것을 **초록으로 통과**시켰다. P5-15 가 게이트를 먼저 고쳤다.
+//     이 파일의 핵심 제약 두 가지: **버전 조건부**(16 이하에서 `revoke maintain` 은 오류 — 원격 푸시 전체가 막힌다)와
+//     **표 카탈로그 열거**. 그래서 회수 문장은 최상위가 아니라 버전 판정 뒤의 동적 SQL 안에만 있다.
+// =============================================================================
+const UP19_SQL = "supabase/migrations/0019_maintain_privilege.sql";
+const DOWN19_SQL = "supabase/rollbacks/0019_maintain_privilege.down.sql";
+
+/** 0019 적용 시점의 public 표 중 공개 롤이 MAINTAIN 을 갖고 있던 아홉 — 롤백이 되돌리는 고정 목록(admin_users 는 0009 가 revoke all). */
+const MAINTAIN_BASELINE_TABLES = [...CONTENT_TABLES, "places", "reservations", "notifications_log"] as const;
+
+/**
+ * §18 의 LOCK 거동 블록 — **runbook 이 원격 SQL Editor 에 붙이라고 하는 원문**이다(astra P1-1). 원격 안전 조건:
+ *   · 실제 표에는 **거부**만 기대한다(권한 검사가 잠금보다 먼저 — §18 주석의 PostgreSQL 소스 인용)
+ *   · **성공**을 기대하는 대조군은 블록 안에서 만든 일회용 표 `public.p0515_probe_tbl` 뿐이다(MAINTAIN 만 준다)
+ *   · 매 시도는 서브트랜잭션 안에서 하고 **언제나** P0516 으로 되돌린다 — 잡힌 잠금·임시 표·롤 전환이 즉시 사라진다
+ *   · 롤 복원은 캡처한 적용 롤로 `set local role`(reset role 금지)
+ * PostgreSQL 17 전용이다(`grant maintain`). runbook 은 버전부터 확인하게 한다.
+ */
+const LOCK_PROBE_SQL = [
+  "do $$",
+  "declare",
+  "  probe    record;",
+  "  ok       boolean;",
+  "  st       text;",
+  "  ms       text;",
+  "  applier  constant text := current_user;",
+  "begin",
+  "  for probe in",
+  "    select * from (values",
+  "      ('anon', 'reservations', false),",
+  "      ('anon', 'notifications_log', false),",
+  "      ('anon', 'notices', false),",
+  "      ('anon', 'places', false),",
+  "      ('authenticated', 'reservations', false),",
+  "      ('authenticated', 'notifications_log', false),",
+  "      ('authenticated', 'places', false),",
+  "      ('service_role', 'p0515_probe_tbl', true)",
+  "    ) v(who, tbl, allowed)",
+  "  loop",
+  "    ok := false; st := null; ms := null;",
+  "    begin",
+  "      if probe.tbl = 'p0515_probe_tbl' then",
+  "        execute 'create table public.p0515_probe_tbl (id int)';",
+  "        execute 'revoke all on table public.p0515_probe_tbl from anon, authenticated, service_role';",
+  "        execute 'grant maintain on table public.p0515_probe_tbl to service_role';",
+  "      end if;",
+  "      execute format('set local role %I', probe.who);",
+  "      if current_user <> probe.who then",
+  "        raise exception 'P515 탐침: 롤 전환이 반영되지 않았다 (current_user=% · 기대=%)', current_user, probe.who using errcode = 'P0517';",
+  "      end if;",
+  "      begin",
+  "        execute format('lock table public.%I in access exclusive mode nowait', probe.tbl);",
+  "        ok := true;",
+  "      exception when others then",
+  "        get stacked diagnostics st = returned_sqlstate, ms = message_text;",
+  "      end;",
+  "      execute format('set local role %I', applier);",
+  // 언제나 되돌린다 — 성공한 잠금·일회용 표·롤 전환이 이 서브트랜잭션과 함께 사라진다
+  "      raise exception using errcode = 'P0516', message = 'p515 probe rollback';",
+  "    exception",
+  "      when sqlstate 'P0516' then null;",
+  "    end;",
+  "    if current_user <> applier then",
+  "      raise exception 'P515 탐침: 적용 롤로 돌아오지 못했다 (current_user=%)', current_user;",
+  "    end if;",
+  "    if probe.allowed and not ok then",
+  "      raise exception 'P515 탐침: 대조군이 막혔다 — % → LOCK % : SQLSTATE=% MESSAGE=%', probe.who, probe.tbl, st, ms;",
+  "    end if;",
+  "    if not probe.allowed and ok then",
+  "      raise exception 'P515 탐침: % 가 % 를 ACCESS EXCLUSIVE 로 잠글 수 있다', probe.who, probe.tbl;",
+  "    end if;",
+  "    if not probe.allowed and st is distinct from '42501' then",
+  "      raise exception 'P515 탐침: 권한 거부(42501)가 아닌 이유로 실패했다 — % → LOCK % : SQLSTATE=% MESSAGE=%', probe.who, probe.tbl, st, ms;",
+  "    end if;",
+  "  end loop;",
+  "  if to_regclass('public.p0515_probe_tbl') is not null then",
+  "    raise exception 'P515 탐침: 일회용 표가 남았다';",
+  "  end if;",
+  "end",
+  "$$;",
+].join("\n");
+
+describe("16. 0019_maintain_privilege.sql", () => {
+  test("존재하고, 0019 번호는 이 파일 하나뿐이다. migrations/ 안에 롤백이 섞여 있지 않다", () => {
+    expect(exists(UP19_SQL), `${UP19_SQL} 이 없다`).toBe(true);
+    const files = readdirSync(path.join(ROOT, "supabase", "migrations"));
+    expect(files.filter((f) => f.startsWith("0019"))).toEqual(["0019_maintain_privilege.sql"]);
+    expect(files.filter((f) => f.endsWith(".down.sql"))).toEqual([]);
+  });
+
+  test("🔴 최상위에 revoke·grant 가 없다 — MAINTAIN 문장은 버전 판정 뒤 동적 SQL 에만 있다 (16 이하에서 문법 오류로 푸시가 막힌다)", () => {
+    const code = sqlCode(UP19_SQL);
+    expect(code, "최상위 revoke/grant 가 있다").not.toMatch(/(?:^|;)\s*(?:revoke|grant)\s/);
+    expect(code, "최상위 문장이 do 블록 하나가 아니다").toMatch(/^do \$\$/);
+    // 버전 판정 → 16 이하 건너뛰기(return) → 회수 의 순서
+    const ver = code.indexOf("v_applies constant boolean := v_ver >= 170000;");
+    const skip = code.indexOf("if not v_applies then");
+    const ret = code.indexOf("return;", skip);
+    const revoke = code.indexOf("revoke maintain on table");
+    expect(ver, "버전 판정식이 없다(server_version_num >= 170000)").toBeGreaterThan(-1);
+    expect(code).toContain("current_setting('server_version_num')::int");
+    expect(skip).toBeGreaterThan(ver);
+    expect(ret, "16 이하 분기가 return 으로 끝나지 않는다").toBeGreaterThan(skip);
+    expect(revoke, "회수가 버전 분기보다 먼저 나온다").toBeGreaterThan(ret);
+    expect(code.slice(skip, ret), "건너뛴 사실을 notice 로 남기지 않는다").toMatch(/raise notice '0019: [^']*건너뛴다/);
+  });
+
+  test("회수는 정확히 하나 — 공개 두 롤의 MAINTAIN, 표는 카탈로그 열거 (표 이름·권한 뭉치 하드코딩 없음)", () => {
+    const code = sqlCode(UP19_SQL);
+    const revokes = [...code.matchAll(/revoke ([a-z, ]+) on table ([^ ]+) from ([a-z_, ]+)/g)].map((m) => m.slice(1, 4));
+    expect(revokes).toEqual([
+      ["maintain", "%s", "anon, authenticated"],
+      ["all", "public.p0019_probe_tbl", "anon, authenticated, service_role"],
+    ]);
+    // 회수 루프는 pg_class 를 relkind 로 열거한다
+    expect(code).toMatch(/for rel in\s+select c\.oid::regclass\s+from pg_class c join pg_namespace n on n\.oid = c\.relnamespace\s+where n\.nspname = 'public' and c\.relkind in \('r', 'p', 'v', 'm', 'f'\)/);
+    // 부여는 대조군 임시 표에만
+    const grants = [...code.matchAll(/grant ([a-z, ]+) on table ([^ ]+) to ([a-z_, ]+)/g)].map((m) => m.slice(1, 4));
+    expect(grants).toEqual([["maintain", "public.p0019_probe_tbl", "anon"]]);
+  });
+
+  test("service_role·postgres·다른 권한·표·함수·데이터를 건드리지 않는다", () => {
+    const code = sqlCode(UP19_SQL);
+    expect(code, "시퀀스 권한 문장이 있다").not.toMatch(/(?:revoke|grant)\s+[a-z, ]+\s+on\s+sequence\b/);
+    expect(code, "함수 권한 문장이 있다").not.toMatch(/(?:revoke|grant)\s+[a-z, ]+\s+on\s+function\b/);
+    expect(code, "drop function 문장이 있다").not.toMatch(/\bdrop\s+function\b/);
+    expect(code, "함수를 재정의한다").not.toMatch(/create\s+or\s+replace\s+function/);
+    // 힌트 문장("reset role 로 바꾸면 안 된다")은 허용하고, **실행되는 형태**(최상위 문장·execute 인자)만 금지한다.
+    expect(code, "🔴 reset role 은 세션 기본 롤로 돌아간다 — 0017·0018 에서 원격 푸시를 막을 뻔했다").not.toMatch(/(?:^|;)\s*reset\s+role\b|execute\s+'\s*reset\s+role/);
+    expect(code.match(/set local role/g)?.length ?? 0, "롤 전환·복원 문장이 없다").toBeGreaterThanOrEqual(3);
+    for (const forbidden of ["alter table", "drop table", "create policy", "drop policy", "insert into", "delete from", "truncate", "alter default privileges", "vacuum", "cluster", "reindex"]) {
+      expect(code, `0019 가 "${forbidden}" 을 한다`).not.toContain(forbidden);
+    }
+    // 임시 표 생성은 되돌려지는 execute 안에만
+    expect(code, "최상위 create table 이 있다").not.toMatch(/(?:^|;)\s*create\s+table\b/);
+    expect([...code.matchAll(/create table ([a-z0-9_.]+)/g)].map((m) => m[1])).toEqual(["public.p0019_probe_tbl"]);
+  });
+
+  test("스스로 검증한다 — ⑤ 분기↔능력 · ③ PUBLIC · ① 열거 · ② 서비스 롤 불변 · ④ 전후 ACL 전수 · ⑥ LOCK 거동 + 대조군", () => {
+    const code = sqlCode(UP19_SQL);
+    expect(code, "⑤ 서버 능력(acldefault)과 버전 판정을 대조하지 않는다").toContain("v_applies is distinct from v_knows_maintain");
+    expect(code).toContain("aclexplode(acldefault('r', to_regrole(current_user)))");
+    expect(code, "③ PUBLIC 을 grantee 0 으로 보지 않는다").toContain("a.grantee = 0 and a.privilege_type = 'maintain'");
+    expect(code, "① 실효값으로 보지 않는다").toContain("has_table_privilege(r.role, c.oid, 'maintain')");
+    expect(code, "② 서비스 롤 전후 대조가 없다").toContain("after_svc is distinct from before_svc");
+    expect(code, "④ 전후 ACL 대조가 없다").toContain("after_acl is distinct from before_acl");
+    expect(code, "④ 가 종류를 하드코딩한다 — aclexplode 로 전 종류를 펼쳐야 한다").toMatch(/before_acl from \(\s*select format\('[^']*', c\.relname, a\.grantee::regrole, a\.grantor::regrole, a\.privilege_type, a\.is_grantable\)/);
+    expect(code, "④ 가 컬럼 ACL 을 보지 않는다").toContain("aclexplode(at.attacl)");
+    expect(code, "⑥ 강한 잠금 탐침이 없다").toContain("lock table %s in access exclusive mode nowait");
+    expect(code, "⑥ 롤 전환을 current_user 로 확인하지 않는다").toContain("current_user <> probe.who");
+    expect(code, "⑥ 적용 롤로 명시 복원하지 않는다").toContain("execute format('set local role %i', applier);");
+    expect(code, "권한 거부 코드(42501)를 명시하지 않는다").toContain("42501");
+    expect(code, "⑥ 대조군이 없다").toContain("lock table public.p0019_probe_tbl in access exclusive mode nowait");
+    expect(code, "⑥ 탐침이 공허해도 통과한다").toContain("n_probes = 0");
+    expect(code, "필터된 뷰를 증거로 쓴다").not.toContain("information_schema");
+  });
+
+  test("자기검증 순서 — PUBLIC(③)이 공개 롤 행렬(①)보다 먼저 · 분기(⑤)가 맨 앞", () => {
+    const code = sqlCode(UP19_SQL);
+    const branch = code.indexOf("v_applies is distinct from v_knows_maintain");
+    const revoke = code.indexOf("revoke maintain on table");
+    const pub = code.indexOf("a.grantee = 0 and a.privilege_type = 'maintain'");
+    const matrix = code.indexOf("and has_table_privilege(r.role, c.oid, 'maintain');");
+    const probe = code.indexOf("lock table %s in access exclusive mode nowait");
+    expect(branch).toBeGreaterThan(-1);
+    expect(branch).toBeLessThan(revoke);
+    expect(revoke).toBeLessThan(pub);
+    expect(pub, "행렬 검사가 먼저 돌면 PUBLIC grant 가 'anon → x' 로 보고돼 엉뚱한 회수를 하게 된다").toBeLessThan(matrix);
+    expect(matrix).toBeLessThan(probe);
+  });
+
+  test("⑥ 탐침 대상 선정이 MAINTAIN 을 '다른 권한' 으로 세지 않는다 — 새는 조합에서 눈을 감지 않게", () => {
+    const code = sqlCode(UP19_SQL);
+    expect(code).toContain("d.privilege_type not in ('select', 'maintain')");
+  });
+
+  test("무엇이 왜 위험한지, 무엇을 닫지 못하는지 파일에 적혀 있다", () => {
+    const raw = read(UP19_SQL);
+    expect(raw).toMatch(/LOCK TABLE/);
+    expect(raw, "예약 접수가 멈춘다는 설명이 없다").toMatch(/예약 접수/);
+    expect(raw, "TRIGGER 때의 전례를 적지 않았다").toContain("supabase_functions.http_request");
+    expect(raw, "게이트가 놓쳤다는 출처가 없다").toContain("db-privilege-gate");
+    expect(raw, "버전 조건의 이유가 없다").toMatch(/PostgreSQL 17/);
+    expect(raw, "authenticated 의 콘텐츠 표 LOCK 잔존을 적지 않았다").toMatch(/닫지 \*\*못하는\*\* 것/);
+  });
+
+  test("0001~0018 을 수정하지 않는다 — 0019 는 파일 하나를 더할 뿐이다", () => {
+    expect(sqlExec(UP18_SQL), "0018 의 회수 문장이 사라졌다").toMatch(/revoke usage, select, update on sequence/);
+    expect(sqlExec(UP17_SQL), "0017 의 회수 문장이 사라졌다").toContain("revoke trigger, references on table reservations, notifications_log from anon, authenticated");
+    expect(sqlCode(UP18_SQL), "0018 에 maintain 이 섞였다").not.toContain("maintain");
+  });
+});
+
+// =============================================================================
+// 17. supabase/rollbacks/0019_maintain_privilege.down.sql — 텍스트
+// =============================================================================
+describe("17. 0019 롤백", () => {
+  test("rollbacks/ 에만 있고, 수동 실행 절차와 '기본 기준선' 복원임을 헤더에 적는다", () => {
+    expect(exists(DOWN19_SQL), `${DOWN19_SQL} 이 없다`).toBe(true);
+    const raw = read(DOWN19_SQL);
+    expect(raw).toMatch(/migration repair --status reverted 0019/);
+    expect(raw).toMatch(/^begin;/m);
+    expect(raw).toMatch(/^commit;/m);
+    expect(raw, "이전 ACL 이 아니라 기본 기준선으로 복원한다는 명시가 없다").toMatch(/Supabase 기본 기준선/);
+    expect(raw, "업그레이드된 DB 에서 어긋나는 경우를 적지 않았다").toMatch(/업그레이드/);
+  });
+
+  test("승인 플래그를 **언제나** 요구한다 — 버전 판정보다 먼저, 행 수를 조건으로 걸지 않는다", () => {
+    const code = sqlCode(DOWN19_SQL);
+    const flag = code.indexOf("if coalesce(current_setting('bestour.rollback_0019_ack', true), '') <> '1' then");
+    expect(flag).toBeGreaterThan(-1);
+    expect(flag, "플래그 검사가 버전 분기 뒤에 있다").toBeLessThan(code.indexOf("v_ver"));
+    expect(code, "행 수가 승인 조건에 섞여 있다").not.toMatch(/[>)]\s*0\s+and\s+coalesce\s*\(\s*current_setting/);
+    expect(read(DOWN19_SQL)).toMatch(/raise exception '0019 롤백 중단:[^']*LOCK TABLE/);
+  });
+
+  test("버전 조건부 — 16 이하에서는 부여하지 않고 notice 로 끝난다", () => {
+    const code = sqlCode(DOWN19_SQL);
+    const skip = code.indexOf("if not v_applies then");
+    const firstGrant = code.indexOf("grant maintain");
+    expect(code).toContain("v_applies constant boolean := v_ver >= 170000;");
+    expect(code).toContain("v_applies is distinct from v_knows_maintain");
+    expect(skip).toBeGreaterThan(-1);
+    expect(skip, "부여가 버전 분기보다 먼저 나온다").toBeLessThan(firstGrant);
+    expect(code, "최상위 grant 가 있다").not.toMatch(/(?:^|;)\s*grant\s/);
+    expect(code, "검증 블록이 16 이하에서 has_table_privilege('maintain') 을 부른다(오류)").toMatch(/if current_setting\('server_version_num'\)::int < 170000 then\s+return;/);
+  });
+
+  test("대칭 — 아홉 표 × 두 공개 롤의 MAINTAIN 만 되돌린다 (admin_users 없음 · 다른 종류 없음 · 회수 없음)", () => {
+    const code = sqlCode(DOWN19_SQL);
+    const grants = new Set<string>();
+    for (const m of code.matchAll(/grant ([a-z, ]+) on table ([a-z_]+) to ([a-z_, ]+)'/g)) {
+      for (const p of m[1].split(",").map((s) => s.trim())) for (const r of m[3].split(",").map((s) => s.trim())) grants.add(`${r}|${m[2]}|${p}`);
+    }
+    const expected = new Set(MAINTAIN_BASELINE_TABLES.flatMap((t) => [`anon|${t}|maintain`, `authenticated|${t}|maintain`]));
+    expect([...grants].sort()).toEqual([...expected].sort());
+    expect(code).not.toMatch(/grant [a-z, ]+ on table admin_users/);
+    expect(code, "롤백이 회수한다").not.toMatch(/\brevoke\s/);
+    expect(code, "롤백이 표 이름 없이 열거로 부여한다 — 0019 뒤에 생긴 표까지 연다").not.toMatch(/grant maintain on table %s/);
+    for (const t of MAINTAIN_BASELINE_TABLES) expect(code, `${t} 존재 확인이 없다`).toContain(`to_regclass('public.${t}')`);
+  });
+
+  test("표·함수·시퀀스·데이터를 건드리지 않고, reset role 을 쓰지 않는다", () => {
+    const code = sqlCode(DOWN19_SQL);
+    expect(code).not.toMatch(/(?:revoke|grant)\s+[a-z, ]+\s+on\s+(?:sequence|function)\b/);
+    expect(code).not.toMatch(/\bdrop\s+function\b/);
+    expect(code).not.toMatch(/(?:^|;)\s*reset\s+role\b|execute\s+'\s*reset\s+role/);
+    expect(code, "롤백은 롤을 바꿀 이유가 없다").not.toContain("set local role");
+    for (const forbidden of ["delete from", "truncate", "drop table", "insert into", "alter table"]) {
+      expect(code, `롤백이 "${forbidden}" 을 한다`).not.toContain(forbidden);
+    }
+  });
+
+  test("롤백도 스스로 검증한다 — 되돌림 · PUBLIC 0 · admin_users 미개방 · 서비스 롤", () => {
+    const code = sqlCode(DOWN19_SQL);
+    expect(code).toContain("has_table_privilege(r.role, t.tbl, 'maintain')");
+    expect(code).toContain("a.grantee = 0 and a.privilege_type = 'maintain'");
+    expect(code).toContain("has_table_privilege('anon', 'public.admin_users', 'maintain')");
+    expect(code).toContain("has_table_privilege('service_role', t.tbl, 'maintain')");
+    // astra P2-6 — 서비스 롤 검사는 경고다. 롤백은 그 권한을 없앨 수 없고, 업그레이드 DB 에서는 원래 없었을 수 있다.
+    expect(code, "서비스 롤 검사가 롤백을 멈춘다 — 업그레이드 DB 에서 거짓 실패한다").toMatch(/raise warning '0019 롤백: service_role 의 maintain 이 없는 표가 있다/);
+    expect(code).not.toMatch(/raise exception '0019 롤백: service_role/);
+  });
+});
+
+// =============================================================================
+// 18. 0019 권한 행렬 + **거동 실증** + 버전 분기 (로컬 스택)
+//
+//     §12·§15 와 같은 짝 구조. 행렬은 "권한이 없다" 까지만 말하므로 `set local role` 로 그 롤이 되어
+//     `LOCK TABLE … ACCESS EXCLUSIVE MODE NOWAIT` 를 **직접** 치고 42501 을 본다(service_role 은 성공 — 대조군).
+//     VACUUM 은 트랜잭션·함수 안에서 돌 수 없고, 권한 없는 ANALYZE 는 오류가 아니라 WARNING 으로 건너뛰므로
+//     여기서는 LOCK 만 자동화한다(셋 모두의 거부 출력은 P5-15 보고서 ⑥).
+//     **버전 분기**: 로컬은 17 이므로 16 이하 경로는 실제 파일의 판정 줄만 치환해 실행한다(되돌려지게 notice 만 예외로 올린다).
+//     이 블록은 행을 만들지 않는다 — 탐침은 잠금을 잡더라도 서브트랜잭션째 되돌리고, 분기 실행은 전부 예외로 끝난다.
+// =============================================================================
+describe.skipIf(!gate.allowed)("18. DB — 0019 MAINTAIN 행렬 + LOCK 거동 + 버전 분기 (로컬 스택)", { timeout: 300_000 }, () => {
+  let version = 0;
+  let verdict = "";
+
+  beforeAll(() => {
+    const v = runLocalSql("select 'P515_VER ' || current_setting('server_version_num') as v;");
+    version = Number(v.match(/P515_VER (\d+)/)?.[1] ?? 0);
+    if (version < 170000) return;
+    verdict = runLocalSql(
+      [
+        "select",
+        "  coalesce((select 'MAINTAIN_LEAK ' || string_agg(format('%s/%s', r.role, c.relname), ' ')",
+        "     from pg_class c join pg_namespace n on n.oid = c.relnamespace",
+        "     cross join (values ('anon'),('authenticated')) r(role)",
+        "    where n.nspname = 'public' and c.relkind in ('r','p','v','m','f')",
+        "      and has_table_privilege(r.role, c.oid, 'MAINTAIN')), 'MAINTAIN_NONE') as leak,",
+        // service_role 은 "true" 를 요구한다 — **로컬·CI 는 마이그레이션으로 만든 17 DB** 라 기본 권한이 m 을 준다.
+        // 원격(16→17 업그레이드일 수 있다)에 붙일 때는 이 줄을 적용 직전 스냅샷과 대조한다(runbook 0019 · astra P2-6).
+        "  coalesce((select 'SERVICE_MAINTAIN_LOST ' || string_agg(c.relname, ' ')",
+        "     from pg_class c join pg_namespace n on n.oid = c.relnamespace",
+        "    where n.nspname = 'public' and c.relkind = 'r'",
+        "      and not has_table_privilege('service_role', c.oid, 'MAINTAIN')), 'SERVICE_MAINTAIN_OK') as svc,",
+        "  coalesce((select 'MAINTAIN_PUBLIC_ACL ' || string_agg(c.relname, ' ')",
+        "     from pg_class c join pg_namespace n on n.oid = c.relnamespace",
+        "     cross join lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a",
+        "    where n.nspname = 'public' and c.relkind in ('r','p','v','m','f') and a.grantee = 0 and a.privilege_type = 'MAINTAIN'), 'MAINTAIN_PUBLIC_NONE') as pub,",
+        // 롤백의 고정 목록이 실제 표를 가리키는가 — 아홉 모두 존재
+        `  (select 'BASELINE_PRESENT ' || count(*) from unnest(array[${MAINTAIN_BASELINE_TABLES.map((t) => `'public.${t}'`).join(",")}]) t(n) where to_regclass(t.n) is not null) as baseline;`,
+      ].join("\n"),
+    );
+  }, 300_000);
+
+  test("서버 버전을 읽었다 (로컬 스택·CI 는 17 이다 — supabase/config.toml)", () => {
+    expect(version).toBeGreaterThan(0);
+    expect(version, "로컬 스택이 17 미만이다 — 이 절의 행렬·거동은 17 전용이다").toBeGreaterThanOrEqual(170000);
+  });
+
+  test("공개 롤의 MAINTAIN 0 (카탈로그 전수) · service_role 은 그대로 · PUBLIC 0 · 롤백 목록 아홉 표 실재", () => {
+    expect(verdict, verdict).toContain("MAINTAIN_NONE");
+    expect(verdict, verdict).toContain("SERVICE_MAINTAIN_OK");
+    expect(verdict, verdict).toContain("MAINTAIN_PUBLIC_NONE");
+    expect(verdict, verdict).toContain(`BASELINE_PRESENT ${MAINTAIN_BASELINE_TABLES.length}`);
+  });
+
+  /**
+   * 거동 실증 — 통과 조건(하나라도 어긋나면 DO 블록이 raise 해서 runLocalSql 이 던진다):
+   *   · anon: reservations · notifications_log · notices · places 의 ACCESS EXCLUSIVE 잠금이 **42501**
+   *   · authenticated: reservations · notifications_log · places(SELECT 만 있는 표) 가 **42501**
+   *   · service_role: **일회용 임시 표**(블록 안에서 만들고 되돌린다)에 MAINTAIN 만 주면 잠금 **성공**(대조군)
+   *   · 매 시도 전에 `current_user` 가 기대 롤로 바뀌었고, 매 시도 뒤 **적용 롤로 `set local role`** 해서 돌아왔다(reset role 금지)
+   *
+   * 🔴 astra P1-1 — **이 블록은 runbook 이 원격 SQL Editor 에 붙이라고 하는 블록이다.** 그래서 실제 표를 **잡는 데 성공하는**
+   * 탐침을 두지 않는다. 처음 판의 대조군은 `('service_role', 'reservations', true)` 였고, 성공하면 되돌리기 전까지 실제 접수를 막고,
+   * 앱 트랜잭션이 이미 잠금을 쥐고 있으면 NOWAIT 가 55P03 으로 **거짓 실패**한다. 대조군은 0019 ⑥ 처럼 일회용 표로 옮겼다.
+   * 실제 표에 대한 **거부** 탐침은 남겼다 — PostgreSQL 17 `LockTableCommand` 는 `RangeVarGetRelidExtended(…, RangeVarCallbackForLockTable)`
+   * 로 **잠금을 잡기 전에** 콜백에서 `LockTableAclCheck`(MAINTAIN|UPDATE|DELETE|TRUNCATE, 약한 모드면 +SELECT/INSERT)를 하고,
+   * 실패하면 `aclcheck_error` 로 끝난다(namespace.c: "Callback allows caller to check permissions … prior to grabbing the relation lock").
+   * 즉 42501 로 거부되는 시도는 잠금을 잡지 않는다. (허용되면 — 그 자체가 결함 — 서브트랜잭션째 즉시 되돌린다.)
+   */
+  test("거동 실증 — 공개 롤의 LOCK TABLE … ACCESS EXCLUSIVE 는 42501 · service_role 은 일회용 표에서 성공 (롤 전환 확인 포함)", () => {
+    const out = runLocalSql(LOCK_PROBE_SQL);
+    expect(out, out).toContain("DO");
+    expect(runLocalSql("select 'P515_LEFT ' || count(*) as l from pg_class where relname = 'p0515_probe_tbl';")).toContain("P515_LEFT 0");
+  }, 300_000);
+
+  test("🔴 astra P1-1 — 원격에 붙일 블록은 실제 표에서 잠금 성공을 기대하지 않는다 (성공 기대 = 일회용 표뿐)", () => {
+    const rows = [...LOCK_PROBE_SQL.matchAll(/\('(\w+)', '([\w.]+)', (true|false)\)/g)].map((m) => ({ who: m[1], tbl: m[2], allowed: m[3] === "true" }));
+    expect(rows.length).toBeGreaterThanOrEqual(8);
+    for (const r of rows.filter((x) => x.allowed)) expect(r.tbl, `${r.who} 가 실제 표 ${r.tbl} 를 잠그는 데 성공해야 한다고 적혀 있다`).toBe("p0515_probe_tbl");
+    for (const r of rows.filter((x) => !x.allowed)) expect(r.tbl).not.toBe("p0515_probe_tbl");
+    expect(rows.some((x) => x.allowed), "대조군이 없다").toBe(true);
+    // 일회용 표는 블록 안에서 만들고 예외로 되돌린다 — 최상위에 create 가 없다
+    expect(LOCK_PROBE_SQL).toContain("execute 'create table public.p0515_probe_tbl (id int)';");
+    expect(LOCK_PROBE_SQL).toContain("raise exception using errcode = 'P0516'");
+    expect(LOCK_PROBE_SQL).not.toMatch(/reset\s+role/);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 버전 분기 — 실제 0019 파일의 판정 줄만 치환해서 실행한다.
+  //   · skip 경로의 `raise notice` 를 `raise exception` 으로 올린다 — 메시지를 읽고 트랜잭션을 통째로 되돌리기 위해서다
+  //     (db query 는 notice 를 돌려주지 않는다). 분기 로직 자체는 한 글자도 바꾸지 않는다.
+  // ---------------------------------------------------------------------------
+  const VER_LINE = "v_ver             constant int     := current_setting('server_version_num')::int;";
+  const KNOWS_LINE =
+    "v_knows_maintain  constant boolean := exists (select 1 from aclexplode(acldefault('r', to_regrole(current_user))) d where d.privilege_type = 'MAINTAIN');";
+  const SKIP_NOTICE = "raise notice '0019: PostgreSQL % (server_version_num=%) — MAINTAIN 권한이 없는 버전이다";
+  const variant = (ver: string, knows: string) => {
+    const src = read(UP19_SQL);
+    for (const needle of [VER_LINE, KNOWS_LINE, SKIP_NOTICE]) expect(src, `치환 대상이 파일에 없다 — 파일이 바뀌었나: ${needle}`).toContain(needle);
+    return src
+      .split(VER_LINE).join(`v_ver             constant int     := ${ver};`)
+      .split(KNOWS_LINE).join(`v_knows_maintain  constant boolean := ${knows};`)
+      .split(SKIP_NOTICE).join("raise exception 'P515_SKIP 0019: PostgreSQL % (server_version_num=%) — MAINTAIN 권한이 없는 버전이다");
+  };
+
+  test("16 이하 경로 — 판정 16·능력 없음이면 **아무것도 하지 않고** 건너뛴 사실을 남긴다 (회수 문장까지 가지 않는다)", () => {
+    const out = runLocalSqlExpectingError(variant("160004", "false"));
+    expect(out, out).toContain("P515_SKIP 0019:");
+    expect(out, out).toContain("server_version_num=160004");
+    expect(out, "건너뛰지 않고 뒤로 진행했다").not.toMatch(/0019: (공개 롤|PUBLIC|MAINTAIN 말고|service_role|거동|대조군)/);
+  });
+
+  test("분기 가드 — 판정과 능력이 어긋나면 어느 쪽이든 멈춘다 (16 인데 MAINTAIN 을 안다 · 17 인데 모른다)", () => {
+    const a = runLocalSqlExpectingError(variant("160004", "true"));
+    expect(a, a).toContain("0019: 버전 분기와 서버 능력이 어긋난다 — server_version_num=160004");
+    const b = runLocalSqlExpectingError(variant("170006", "false"));
+    expect(b, b).toContain("0019: 버전 분기와 서버 능력이 어긋난다 — server_version_num=170006");
+  });
+
+  test("판정식 단위 — 경계값 (160099 → 건너뜀 · 170000 → 적용 · 180001 → 적용)", () => {
+    const out = runLocalSql("select 'P515_EDGE ' || (160099 >= 170000)::text || ' ' || (170000 >= 170000)::text || ' ' || (180001 >= 170000)::text as e;");
+    expect(out).toContain("P515_EDGE false true true");
+  });
 });

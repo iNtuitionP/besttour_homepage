@@ -12,7 +12,7 @@
 6. 결과를 이 파일에 날짜와 함께 적는다.
 
 **롤백 파일은 `supabase/rollbacks/` 에 있고 `migrations/` 밖이다** — CLI 가 `migrations/` 의 `^[0-9]+_.*\.sql$` 을 전부 마이그레이션으로 집기 때문이다. 롤백은 사람이 psql/SQL Editor 로 실행한 뒤 `supabase migration repair --status reverted <번호>`.
-0012·0013·0014·0015·0016·0017·0018 롤백은 **승인 플래그를 조건 없이 요구**한다(`set bestour.rollback_00NN_ack = '1';`). 행이 0이어도 멈춘다 — 권한은 열린 채 남고 데이터는 나중에 들어오기 때문이다.
+0012·0013·0014·0015·0016·0017·0018·0019 롤백은 **승인 플래그를 조건 없이 요구**한다(`set bestour.rollback_00NN_ack = '1';`). 행이 0이어도 멈춘다 — 권한은 열린 채 남고 데이터는 나중에 들어오기 때문이다.
 
 ---
 
@@ -111,13 +111,25 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENC
 
 ### 후속
 - ~~**DB 권한 게이트**: `anon` 이 public 스키마의 어느 표에도 쓰기 권한을 갖지 않는지(허용 목록 외) 단언하는 테스트.~~ → **P6-11 (2026-09-17) 에서 신설: `tests/db-privilege-gate.test.ts`.** ✅
-  `pg_class`·`pg_proc`·`pg_policy` 에서 public 의 표·뷰·시퀀스·함수를 **열거**하고(하드코딩 없음) `has_*_privilege` 실효값 · 컬럼 단위 · PUBLIC(`aclexplode` grantee 0, NULL ACL 은 `acldefault`) ·
+  `pg_class`·`pg_proc`·`pg_policy` 에서 public 의 표·뷰·시퀀스·함수를 **열거**하고(하드코딩 없음 · P5-15 부터 노출 스키마 전부와 공개 롤 자체까지 — 아래 후속) `has_*_privilege` 실효값 · 컬럼 단위 · PUBLIC(`aclexplode` grantee 0, NULL ACL 은 `acldefault`) ·
   definer 함수의 `pg_temp` · 소유자 · RLS 켜짐 · "쓰기 권한에는 그 동작을 허용하는 `authenticated` 정책이 있다" 를 허용 목록(항목마다 사유)과 대조한다. 죽은 예외도 실패다.
   **이빨**: 기본 권한 그대로의 임시 표·시퀀스·definer 함수를 `do $$ … raise $$` 로 **되돌려지는 트랜잭션 안에서** 만들어 게이트가 **이름을 대며** 빨개지는 것을 매 실행 확인한다(흔적 0 도 확인).
   0017 롤백을 적용하면 `reservations`·`notifications_log` 10건으로 빨개진다(실측).
   - ~~🔴 **게이트가 첫 실행에서 찾은 것 — 시퀀스 36건.**~~ → **0018 (P5-14, 2026-09-17) 에서 회수 완료. 게이트 초록.** ✅
     0012~0017 은 **시퀀스를 한 번도 회수하지 않았다.** 공개 7개 시퀀스에서 `anon` 이 usage·select·update 를, `authenticated` 가 select·update(+ `notifications_log_id_seq` 의 usage)를 갖고 있었다.
     허용 목록은 넓히지 않았다 — 처음부터 있던 **콘텐츠 6 × `authenticated.usage`** 만 남기고 나머지를 회수해서 초록이 됐다. 아래 0018 절.
+  - ~~🔴 **게이트가 놓친 것 — 표 권한 `MAINTAIN`(PG17) 18건.**~~ → **0019 (P5-15, 2026-09-17) 에서 회수 완료. 게이트 초록.** ✅
+    게이트는 객체를 열거하면서 **권한 종류는 하드코딩**했다(`values ('select'), …, ('references')`). PG17 이 `MAINTAIN` 을 더하자 볼 수단이 없어 **초록으로 통과**시켰다.
+    P5-15 가 게이트를 먼저 고쳤다 — 종류를 `acldefault(<종류>, 소유자)`(서버가 아는 전 종류) ∪ 실제 ACL 의 `aclexplode` 에서 얻고, **ACL 관점**(직접 부여 전수)과 **유효값 관점**(`has_*_privilege`)을 둘 다 본다.
+    고친 게이트는 0019 적용 **전** 같은 DB 에서 18건(9표 × 두 공개 롤)으로 빨개졌고, 허용 목록을 넓히지 않은 채 0019 로 초록이 됐다. 아래 0019 절.
+- **`authenticated` 가 콘텐츠 여섯 표를 `LOCK TABLE … ACCESS EXCLUSIVE` 할 수 있다** (P5-15 발견, *미착수*). PostgreSQL 은 강한 잠금을 MAINTAIN **또는 UPDATE·DELETE·TRUNCATE** 로 허용한다. 관리자 편집용 표 단위 UPDATE·DELETE 가 그 문을 연다 — 0019 로는 닫히지 않는다(로컬 실측: authenticated 로 `lock table notices in access exclusive mode` 성공). 오늘 PostgREST 로 LOCK 을 칠 경로는 없다. 닫으려면 관리자 쓰기를 definer 함수로 옮기거나 별도 관리자 롤을 두는 설계 변경이 필요하다 — 판단은 컨트롤러.
+- ~~**게이트의 스키마 권한은 아직 `'create'` 하나만 본다**~~ → **P5-15 astra 수정 라운드에서 넓혔다.** ✅ (GPT 독립 리뷰 P1 5건 · P2 2건)
+  - **노출 스키마**: `public` 하드코딩 대신 `supabase/config.toml [api] schemas`(지금 `public`·`graphql_public`). graphql_public 의 `graphql(text,text,jsonb,jsonb)`(소유자 supabase_admin · invoker · PUBLIC EXECUTE — Supabase 기본)만 이름으로 허용한다. 이 스키마의 **기본 권한도 anon·authenticated 전권**이다(실측) — 새 객체는 게이트가 잡는다.
+  - **grant option**(직접 `is_grantable` · 유효 `WITH GRANT OPTION`) · **스키마 USAGE/CREATE 전 종류** · **사용자 타입 USAGE** · **large object 수(0)** · **공개 롤의 불리언 속성 전부·설정 키·도달 가능한 롤(SET·INHERIT 옵션 포함)**.
+  - 허용 목록 조회를 `Object.hasOwn` 으로 바꿨다 — 표 이름이 `constructor` 면 허용으로 판정되던 결함(재현됨).
+  - **실측 기준선(2026-09-17 로컬)**: 두 공개 롤 모두 `rolinherit` 만 true · 설정은 `statement_timeout` 하나(anon 3s·authenticated 8s) · 멤버십 0(반대로 `postgres`·`authenticator`·`supabase_realtime_admin` 이 두 롤의 멤버 — 공개 롤의 권한을 넓히지 않는다) · grant option 0 · large object 0 · 스키마 USAGE 는 노출 스키마만, `public` 에 PUBLIC USAGE(PG15+ 기본).
+  - 🔸 **새로 드러난 기준선 하나 — `reservation_status` enum 의 PUBLIC USAGE.** typacl 이 NULL(PostgreSQL 기본값 = PUBLIC USAGE)이다. 타입 USAGE 는 행을 읽게 해 주지 않는다. 게이트에 `TYPE_USAGE` 로 **고정**했고(넓힌 것이 아니라 새 수집기의 기준선), 회수할지는 컨트롤러 판단 — *미결*.
+  - **여전히 보지 않는 것**: DB 단위 권한(CONNECT·TEMPORARY), 언어·FDW·foreign server, 설정 파라미터 ACL(`pg_parameter_acl`), large object 개별 ACL(개수 0 단언으로 갈음), 노출되지 않은 스키마(`extensions`·`auth`·`storage` — Supabase 소유), 표의 행 타입·배열 타입(표 권한을 따른다).
 - ④⑤ 질의에 `has_any_column_privilege` 추가, ② 질의를 `pg_class.relacl` + `aclexplode` 로 교체. → **0016 이 자기검증·테스트 §9 에서 그렇게 한다**(질의 자체는 아래 0016 절에 있다). ✅
 - ~~`0012:34` 의 TRIGGER 관련 주석 정정.~~ → **0016 (P5-12) 에서 완료.** `0012` 헤더에 원문을 남긴 채 정정을 덧붙였다. ✅
 - ~~`authenticated` 의 콘텐츠 7표 **TRUNCATE 회수**~~ → **0016 에서 완료** (TRIGGER·REFERENCES 도 함께). ✅
@@ -342,6 +354,14 @@ select c.relname, c.relacl
  where n.nspname = 'public' and c.relkind = 'S' order by 1;
 ```
 기대(기준선): 일곱 개 모두 `anon=rwU`·`authenticated=rwU` 를 포함. **다르면**(이미 좁혀진 권한이 있으면) 롤백 파일의 부여 목록을 스냅샷에 맞게 고쳐 둔다 — 아니면 롤백이 0018 이 지운 적 없는 권한까지 연다.
+**표 스냅샷도 함께 뜬다 (P5-15 — `MAINTAIN` 포함)**. 0012~0019 가 한 번에 밀리므로 시퀀스만 떠서는 0019 롤백을 판단할 수 없다. 표의 `relacl` 에는 PG17 의 `m`(MAINTAIN)이 들어 있다 — **글자 하나까지** 그대로 붙인다:
+```sql
+select c.relname, c.relkind, c.relacl
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+ where n.nspname = 'public' and c.relkind in ('r', 'p', 'v', 'm', 'f', 'S') order by 1;
+select current_setting('server_version_num');
+```
+기대(기준선, 0011 상태의 원격): 콘텐츠 7표·개인정보 2표의 `anon=…`·`authenticated=…` 항목에 **`m` 이 있다**(`arwdDxtm`). `m` 이 **없으면** 원격은 16 이하에서 업그레이드된 DB 이거나 누가 좁힌 것이다 — 0019 롤백은 그 표에 없던 `m` 을 새로 주게 되므로 파일을 고쳐 둔다(0019 절).
 부여자(`/postgres`)도 함께 본다 — `supabase_admin` 부여가 섞여 있으면 0018 의 자기검증 ① 이 적용을 멈춘다(위 "부여자" 경고).
 
 ### 적용 전/후 확인
@@ -353,3 +373,87 @@ select c.relname, c.relacl
 ⚠️ 관리자 "새 글 저장" 이 죽어서 롤백을 생각한다면 원인은 0018 이 아닐 가능성이 높다 — 0018 은 콘텐츠 여섯의 `authenticated` usage 를 남긴다. 먼저 `has_sequence_privilege('authenticated', 'public.notices_id_seq', 'usage')` 를 볼 것.
 
 > **원격 적용: 아직 하지 않았다 (2026-09-17).** 0012~0018 이 함께 대기 중이다. 로컬 `supabase_migrations.schema_migrations` 에도 0018 은 **기록되지 않았다**(`psql -1` 파일 적용 — `db reset` 금지 조건 때문). 다음 `db reset` 이나 CI 는 파일에서 정상 적용한다.
+
+---
+
+## 0019 — 공개 롤의 표 `MAINTAIN` 회수 (작성 완료, 원격 적용 대기 · **PostgreSQL 17+ 전용, 버전 조건부**)
+
+**출처**: P6-13 이 범위 밖에서 발견, 컨트롤러가 재측정. 그리고 **P6-11 게이트가 놓쳤다** — 권한 종류를 하드코딩했기 때문이다(후속 목록의 해당 항목). 기본 권한이 새 표를 `arwdDxtm` 으로 여는 같은 뿌리의 **여섯 번째 사례**다.
+
+**`MAINTAIN` 이 허용하는 것**: `VACUUM` · `ANALYZE` · `CLUSTER` · `REINDEX` · `REFRESH MATERIALIZED VIEW` · **`LOCK TABLE`(모든 모드)**. **RLS 는 이것을 보지 않는다**(TRUNCATE·TRIGGER 와 같은 부류).
+적용 전 로컬 실측(`set local role anon`): `lock table public.reservations in access exclusive mode nowait` → **`LOCK TABLE` 성공**, `analyze public.reservations` → **실제로 돌았다**(`pg_stat_user_tables.last_analyze` 갱신). 강한 잠금을 쥐는 동안 **예약 접수가 전부 멈춘다.** 오늘 PostgREST 로 도달할 경로는 없다 — 그러나 그 판단은 TRIGGER 때 틀렸다(0017).
+
+1. `anon`·`authenticated` — public 스키마 **모든 표·뷰**(카탈로그 열거, 시퀀스 제외)에서 `MAINTAIN`
+2. `service_role`·`postgres` 불변 · 다른 권한 전부 불변(자기검증 ④ 가 전후 ACL 전수를 대조)
+3. 관리자 화면은 MAINTAIN 을 쓰지 않는다 — `tests/write-privileges.test.ts` §5-6 이 0019 뒤 관리자 CRUD(공지·팝업·앨범·사진·노선) 2xx, 앱의 실제 `enqueue`, 실제 파기 어댑터를 실행으로 확인한다.
+
+### 🔴 적용 직전 필수 — 원격 버전 확인
+```sql
+select current_setting('server_version_num'), version();
+```
+- `>= 170000` → 0019 가 회수한다. 적용 로그에 `NOTICE: 0019: PostgreSQL 17.x — 공개 롤의 MAINTAIN 회수 완료 · 거동 탐침 N건 거부 확인 · 대조군 성공` 이 나와야 한다(로컬 N=14).
+- `< 170000` → 0019 는 **아무것도 하지 않고** `NOTICE: 0019: PostgreSQL … MAINTAIN 권한이 없는 버전이다(17 부터). 회수를 건너뛴다.` 만 남긴다. **이 조건부가 없으면** 16 이하에서 `revoke maintain` 이 `ERROR: unrecognized privilege type "maintain"` 로 멈추고, `db push` 가 0012~0019 를 한 번에 밀므로 **원격 푸시 전체가 막힌다**(PostgreSQL 15 컨테이너에서 재현).
+  그 경우 **17 로 업그레이드한 뒤**에는 기존 표 ACL 에 `m` 이 없을 수 있다(업그레이드는 옛 ACL 을 옮긴다). 그래도 **새로** 만드는 표는 기본 권한으로 `m` 을 받는다 — 고친 게이트가 이름을 대며 잡는다. 그때 0019 를 다시 돌리면 된다(재실행 안전).
+- 자기검증 ⑤ 가 **버전 판정과 서버 능력**(`aclexplode(acldefault('r', …))` 에 MAINTAIN 이 있는가)을 대조한다. 어긋나면 멈춘다 — 버전 번호만 믿고 조용히 건너뛰지 않는다.
+- 위 0018 절의 **적용 직전 스냅샷(표 포함)**을 함께 뜬다 — 0019 롤백 판단에 필요하다.
+
+### 로컬 실측 (2026-09-17, P5-15 구현 · PostgreSQL 17.6)
+| 표 | 롤 | 적용 전 | 적용 후 |
+|---|---|---|---|
+| 콘텐츠 6 · places · reservations · notifications_log | `anon`·`authenticated` | `has_table_privilege(…, 'MAINTAIN')` = true | **false** |
+| 위 9 + admin_users | `service_role` | true | **true (불변)** |
+| admin_users | `anon`·`authenticated` | false (0009) | false |
+
+적용 전후 권한 사실 전수(표·컬럼·시퀀스 ACL, 함수 ACL·설정, 정책, 트리거, 스키마 ACL, 기본 권한) diff 는 **9표의 `m` 글자뿐**이었다. PUBLIC(grantee 0) MAINTAIN 0.
+적용 후 공개 롤로 직접 시도: `LOCK … ACCESS EXCLUSIVE` → `42501 permission denied for table …` · `VACUUM`/`ANALYZE` → `WARNING: permission denied to vacuum/analyze "…", skipping it`(통계 시각 불변). `service_role` 은 셋 다 성공.
+
+### 자기검증 (DO 블록 하나 — 실행 순서대로)
+| 순서 | 항 | 멈추는 조건 |
+|---|---|---|
+| 1 | ⑤ 분기 | 버전 판정(`>= 170000`)과 서버 능력(MAINTAIN 을 아는가)이 어긋난다. 17 미만이면 여기서 notice 후 `return` |
+| 2 | ③ PUBLIC | public 표에 PUBLIC 의 MAINTAIN 이 있다 — **① 보다 먼저**(상속을 anon 의 것으로 오진하지 않게) |
+| 3 | ① 행렬 | public **모든** 표·뷰(카탈로그)에서 `anon`·`authenticated` 의 MAINTAIN 이 true |
+| 4 | ② 서비스 롤 | `service_role`·`postgres` 의 MAINTAIN 이 적용 전과 다르다(업그레이드 DB 의 옛 ACL 을 이유로 막지 않도록 "true" 가 아니라 "불변" 을 본다) |
+| 5 | ④ 불변 | 적용 전후 ACL 전수(종류 불문 · 컬럼 포함)에서 공개 롤 MAINTAIN 외에 달라진 것이 있다 |
+| 6 | ⑥ 거동 | `set local role` 로 공개 롤이 되어, "강한 잠금을 허용할 수 있는 것이 MAINTAIN 뿐인" 조합 전부(로컬 14)에 `LOCK … ACCESS EXCLUSIVE MODE NOWAIT` 를 쳐서 42501 이 아니면 멈춘다. 대조군: MAINTAIN **하나만** 준 임시 표에서 같은 문장이 성공해야 한다(서브트랜잭션째 되돌림). 탐침 대상 0 도 멈춘다 |
+
+로컬에서 **10변형을 일부러 깨뜨려 전부 멈추는 것**을 확인했다(P5-15 보고서 ⑧). 기준선(원본)은 센티넬에서만 멈췄고 실행 뒤 사실 전수 diff 0.
+
+### 적용 경로
+`supabase db push` 또는 SQL Editor. **`psql -f` 를 쓰지 마라**(리뷰 K1). 로컬 단건 적용은 `psql -1`.
+⚠️ ⑥ 이 `set local role` 로 롤을 바꾼다 — 적용 롤이 `anon`·`authenticated` 의 멤버여야 한다(0017·0018 과 같다). 복원은 `reset role` 이 아니라 **캡처한 적용 롤로 `set local role`**. 로컬 세 방식 모두 통과: postgres 로그인 · supabase_admin 로그인 + `set role postgres` · supabase_admin 로그인 그대로(각각 `after|<session>|<적용 롤>` 유지). `reset role` 로 바꾼 변형은 B 방식에서 `0019: 탐침 뒤 적용 롤(postgres)로 돌아오지 못했다 (current_user=supabase_admin)` 로 멈춘다(실측).
+⚠️ ⑥ 의 대조군은 `public.p0019_probe_tbl` 을 만들었다 되돌린다 — 적용 롤에 public 스키마 CREATE 가 필요하다. 탐침은 `NOWAIT` 이고 거부되는 시도는 잠금을 잡지 않는다(권한 검사가 먼저다).
+⚠️ **0019 가 닫지 못하는 것**: `authenticated` 는 콘텐츠 여섯 표를 UPDATE·DELETE 권한으로 여전히 강하게 잠글 수 있다(후속 목록).
+
+### 적용 전/후 확인
+`tests/write-privileges.test.ts` §18 의 행렬 SQL 을 SQL Editor 에 붙여 넣는다. 기대 문자열: `MAINTAIN_NONE` · `SERVICE_MAINTAIN_OK` · `MAINTAIN_PUBLIC_NONE` · `BASELINE_PRESENT 9`. (17 미만이면 이 질의는 `unrecognized privilege type` 으로 실패한다 — 버전부터 볼 것.)
+⚠️ **`SERVICE_MAINTAIN_LOST …` 가 나와도 곧바로 실패가 아니다**(astra P2-6). 원격이 16→17 업그레이드 DB 면 기존 표 ACL 에 `m` 이 원래 없을 수 있다 — 0019 는 service_role 을 건드리지 않는다(상행 ② 는 "불변" 을 본다). **적용 직전 스냅샷과 대조**해서, 스냅샷에 `service_role=…m…` 이 있던 표만 문제로 본다. 롤백의 같은 검사도 그래서 경고(`WARNING`)만 한다.
+
+**LOCK 거동 블록** — 같은 파일의 상수 `LOCK_PROBE_SQL` 원문을 붙인다. 오류 없이 `DO` 로 끝나야 한다.
+🔴 **원격에 붙여도 되는 이유 (astra P1-1 수정 뒤)**: 이 블록은 **실제 표에서는 거부(42501)만** 기대한다. 처음 판은 대조군이 `('service_role', 'reservations', true)` — 실제 예약 표에 `ACCESS EXCLUSIVE` 를 **잡는 데 성공**하는 탐침이었다. 성공하면 서브트랜잭션을 되돌릴 때까지 접수가 막히고, 앱 트랜잭션이 이미 잠금을 쥐고 있으면 `NOWAIT` 가 `55P03` 으로 **거짓 실패**한다. 지금 대조군은 블록 안에서 만들고 되돌리는 일회용 표 `public.p0515_probe_tbl`(MAINTAIN 만 부여)이다. 모든 시도는 서브트랜잭션 안에서 하고 **언제나** 되돌린다.
+거부 탐침이 실제 표를 잠그지 않는 근거 — PostgreSQL 17 `src/backend/commands/lockcmds.c`:
+```c
+reloid = RangeVarGetRelidExtended(rv, lockstmt->mode,
+                                  lockstmt->nowait ? RVR_NOWAIT : 0,
+                                  RangeVarCallbackForLockTable,
+                                  (void *) &lockstmt->mode);
+/*
+ * Before acquiring a table lock on the named table, check whether we have
+ * permission to do so.
+ */
+static void RangeVarCallbackForLockTable(…)
+    …
+    /* Check permissions. */
+    aclresult = LockTableAclCheck(relid, lockmode, GetUserId());
+    if (aclresult != ACLCHECK_OK)
+        aclcheck_error(aclresult, …, rv->relname);
+```
+`src/backend/catalog/namespace.c` `RangeVarGetRelidExtended` 머리 주석: *"Callback allows caller to check permissions or acquire additional locks prior to grabbing the relation lock."* — 콜백이 `LockRelationOid`/`ConditionalLockRelationOid` 보다 먼저 불린다. `LockTableAclCheck` 는 `ACL_MAINTAIN | ACL_UPDATE | ACL_DELETE | ACL_TRUNCATE`(약한 모드는 +SELECT·INSERT)를 요구한다 — 그래서 `authenticated` 는 UPDATE·DELETE 가 있는 콘텐츠 표를 잠글 수 있다(`known-defects` D10). 로컬 실측 오류 위치도 `aclcheck_error, aclchk.c` 였다.
+
+### 롤백
+`supabase/rollbacks/0019_maintain_privilege.down.sql` · **승인 플래그 요구**(`set bestour.rollback_0019_ack = '1';`), 버전 판정보다 먼저. **복원 대상은 기본 기준선**(아홉 표 × 두 공개 롤 MAINTAIN, `admin_users` 제외, 표 이름 고정 목록)이다 — 실행 전에 적용 직전 표 스냅샷과 대조할 것. 16 이하에서는 notice 만 남기고 아무것도 하지 않는다.
+근거: 되돌리면 `anon` 이 `LOCK TABLE reservations … ACCESS EXCLUSIVE` 로 접수를 멈추는 문이 오류·로그·화면 변화 없이 다시 열린다. 되돌린 것을 필요로 하는 정상 경로는 없다.
+⚠️ **플래그는 기준선이 맞는지를 검증하지 않는다**(astra P2-6). 롤백은 고정 목록(아홉 표 × 두 롤)을 부여한다 — 적용 직전 스냅샷에서 `m` 이 없던 표가 있으면 **파일을 고친 뒤** 실행한다. 롤백 검증의 service_role MAINTAIN 검사는 **경고(WARNING)만** 한다: 롤백은 그 권한을 없앨 수 없고, 업그레이드 DB 에서는 원래 없었을 수 있기 때문이다(로컬 실측: 되돌려지는 트랜잭션에서 places 의 service_role `m` 을 뺀 뒤 롤백 본문 → `WARNING` 후 끝까지 진행).
+로컬 실측: 플래그 없이 → 멈춤(exit 3, ACL 불변). 플래그와 함께 → 사실 전수가 **0019 적용 전과 동일**. 그 상태에서 게이트가 다시 **18건으로 빨개지고** §18·§5-6 도 빨개졌다(`MAINTAIN_LEFT`). 0019 재적용 두 번 → exit 0 · 사실이 최초 적용과 동일(멱등). PostgreSQL 15 컨테이너에서도 롤백은 플래그 없이 멈추고, 플래그와 함께면 notice 만 남기고 ACL 불변.
+
+> **원격 적용: 아직 하지 않았다 (2026-09-17).** 0012~0019 가 함께 대기 중이다. 로컬 `schema_migrations` 에는 0019 가 기록되지 않았다(`psql -1` 파일 적용). **원격 버전은 이 세션에서 확인하지 못했다** — 위 "적용 직전 필수" 가 첫 단계다.

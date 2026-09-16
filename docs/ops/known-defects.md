@@ -380,3 +380,34 @@ components/home/image-url.ts:18
 적용은 `supabase db push` 가 **자동 승인 정책(Production Deploy)에 막혀** 있고 우회하지 않았다. 사용자 승인이 필요하다. 절차는 `docs/ops/migration-runbook.md`.
 
 **원격 적용 시 알아 둘 거동 변화**: anon 키로 `/rest/v1/reservations` 를 치는 외부 모니터링이 있으면 `200` → `401` 로 바뀐다(저장소 안에는 그런 경로가 없다).
+
+---
+
+## D10. 로그인한 사용자는 **쓰기 권한만으로** 콘텐츠 표를 잠글 수 있다
+
+**발견**: 2026-09-17, P5-15(0019 `MAINTAIN` 회수) 구현자가 범위 밖에서 보고. PostgreSQL 명세로 확인.
+
+### 무엇이 가능한가
+PostgreSQL 은 `ACCESS EXCLUSIVE` 같은 강한 표 잠금을 **`MAINTAIN` 또는 `UPDATE`·`DELETE`·`TRUNCATE`** 권한으로 허용한다.
+0019 가 `MAINTAIN` 을 회수했지만, `authenticated` 는 관리자 화면 때문에 콘텐츠 여섯 표(`notices`·`popups`·`gallery`·`gallery_albums`·`showcase_routes`·`vehicles`)에 **`UPDATE`·`DELETE` 를 여전히 갖는다.** 그래서 **로그인만 하면**(관리자가 아니어도) `lock table notices in access exclusive mode` 가 된다 — 0019 전후 모두 로컬에서 성공을 확인했다.
+RLS 는 이것을 막지 못한다. 게이트는 그 쓰기 권한을 **의도적으로 허용**하므로 빨갛지 않다.
+
+개인정보 두 표(`reservations`·`notifications_log`)는 `authenticated` 에게 `SELECT` 만 남아 있어 **잠금이 거부된다**(0012·0017).
+
+### 왜 지금 급하지 않은가
+**공개 회원가입이 막혀 있다**(D2, 2026-09-13 조치). 따라서 지금 `authenticated` 롤을 가질 수 있는 것은 **관리자 명단에 있는 사람뿐**이다. 관리자는 어차피 그 표를 고칠 수 있다.
+PostgREST 는 `LOCK` 을 노출하지 않으므로 공개 API 로 도달할 경로도 없다. 도달하려면 SQL 을 직접 칠 수 있어야 한다.
+
+### 무엇이 이것을 위험하게 만드나
+**공개 가입이 다시 열리는 순간**, 아무나 계정을 만들어 공지·갤러리 표를 잠가 관리자 화면과 공개 화면을 멈출 수 있다. D2 가 "다시 켜지 말 것" 이라고 적은 이유가 하나 더 늘었다.
+
+### 선택지
+| # | 방법 | 비용 |
+|---|---|---|
+| A | 관리자 쓰기를 **definer 함수**로 옮기고 `authenticated` 의 표 쓰기 권한을 회수 | 관리자 화면 쓰기 경로 전면 수정 — 0010 이 예약 전이에 한 방식 |
+| B | 관리자 전용 **별도 롤**을 두고 `authenticated` 에서 쓰기를 떼어 냄 | Supabase 인증과 롤 매핑 설계 필요 |
+| C | 그대로 두고 공개 가입 차단(D2)에 기댄다 | 0 |
+
+### 현재 결정 (컨트롤러, 2026-09-17)
+**C — 기록하고 둔다.** 근거: `authenticated` = 관리자 명단이라는 전제가 D2 조치로 성립하고, A·B 는 관리자 화면 쓰기 경로 전체를 바꾸는 설계 변경이라 오픈 직전에 넣을 크기가 아니다.
+**전제가 깨지면 재검토 필수** — 공개 가입을 다시 여는 결정, 또는 관리자가 아닌 `authenticated` 사용자가 생기는 설계는 이 항목을 먼저 풀어야 한다.
