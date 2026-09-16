@@ -129,9 +129,12 @@ export function QuoteWizard({
   const ready = isIntakeReady(formToken, turnstileSiteKey);
   const block = submitBlock({ formToken, siteKey: turnstileSiteKey, privacyConsent: state.privacyConsent, pending });
 
+  // `{tel}` 보간 — reservation.errors.* 의 ratelimit·infra·server 가 대표전화를 부른다. 예전에는 카탈로그에 번호가
+  // 리터럴로 박혀 있었고(P6-6 감사 R-6), 번호가 바뀌면 조용히 뒤처졌다. 원장 값은 서버 페이지가 prop 으로 준다.
+  // 필드 오류(quote.*)에는 {tel} 이 없지만 ICU 는 쓰이지 않는 인자를 무시하므로 한 갈래로 둔다.
   const resolve = useCallback(
-    (key: string) => (key.startsWith(SERVER_KEY_PREFIX) ? tRoot(key) : t(key)),
-    [t, tRoot],
+    (key: string) => (key.startsWith(SERVER_KEY_PREFIX) ? tRoot(key, { tel }) : t(key)),
+    [t, tRoot, tel],
   );
   const errorFor = useCallback(
     (field: string) => {

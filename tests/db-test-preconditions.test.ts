@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 
 import { dbSmokeEnv, dbWriteGate, isLocalStackUrl, loadDotEnvLocal } from "./helpers/load-env-local";
+import { stripComments } from "./helpers/strip-comments";
 
 /**
  * DB 테스트 전제 — REQUIRE_DB_TESTS=1 이면 "조용한 skip" 은 실패다 (P3-3 독립 리뷰 N5, 2026-09-13).
@@ -76,9 +77,12 @@ const TESTS_DIR = path.resolve(import.meta.dirname);
 /**
  * 주석은 빼고 본다. 주석에 함수 이름을 설명해 둔 파일(예: "…와 `claim_pending_notifications` RPC 를 확인한다")을
  * 잠금 대상으로 오인하면, 실제로는 표를 건드리지도 않는 파일에 잠금을 강요하게 된다 — 2026-09-15 실측으로 한 번 겪었다.
- * 문자열 안의 `://`(URL)는 줄 주석으로 보지 않는다.
+ *
+ * 제거는 **TypeScript 파서**가 한다(tests/helpers/strip-comments.ts). 여기 있던 정규식판은
+ * 문자열 속 글로브 패턴의 별표 두 개를 블록 주석 시작으로 읽어 `tests/pages.test.ts` 의 182~470행(289줄)을
+ * 스캔에서 지우고 있었다 — 그 구간에 DB 블록이 하나 생기는 순간 이 게이트가 조용히 통과한다(known-defects D7).
+ * 파싱에 실패하면 헬퍼가 throw 한다(조용히 원문을 돌려주지 않는다).
  */
-const stripTsComments = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
 /** 모든 DB 실증 블록의 공통 형태 — 이것이 없으면 실 DB 를 건드리지 않는 파일이다(가짜 클라이언트·SQL 텍스트 단언). */
 const DB_BLOCK_RE = /describe\.skipIf\(\s*!gate\.allowed/;
 const OUTBOX_MARKERS: [label: string, re: RegExp][] = [
@@ -97,7 +101,7 @@ describe("통지 아웃박스 잠금 — 완전성 게이트 (P5-10)", () => {
   const needsLock = files
     .map((f) => {
       const raw = readFileSync(path.join(TESTS_DIR, f), "utf-8");
-      return { file: f, raw, code: stripTsComments(raw) };
+      return { file: f, raw, code: stripComments(raw, f) };
     })
     .filter(({ code }) => DB_BLOCK_RE.test(code))
     .map((f) => ({ ...f, hits: OUTBOX_MARKERS.filter(([, re]) => re.test(f.code)).map(([label]) => label) }))
@@ -162,7 +166,7 @@ describe("갤러리 표 잠금 — 완전성 게이트 (P6-3b)", () => {
 
   const needsLock = files
     .map((f) => ({ file: f, raw: readFileSync(path.join(TESTS_DIR, f), "utf-8") }))
-    .map((f) => ({ ...f, code: stripTsComments(f.raw) }))
+    .map((f) => ({ ...f, code: stripComments(f.raw, f.file) }))
     .filter(({ code }) => GALLERY_DB_BLOCK_RE.test(code))
     .map((f) => ({ ...f, hits: GALLERY_MARKERS.filter(([, re]) => re.test(f.code)).map(([label]) => label) }))
     .filter(({ hits }) => hits.length > 0);
@@ -198,7 +202,7 @@ describe("갤러리 표 잠금 — 완전성 게이트 (P6-3b)", () => {
 
   test("두 잠금을 다 쓰는 파일은 notifications → gallery 순서로 잡는다 (순환 대기 = 교착 방지)", () => {
     for (const f of files) {
-      const code = stripTsComments(readFileSync(path.join(TESTS_DIR, f), "utf-8"));
+      const code = stripComments(readFileSync(path.join(TESTS_DIR, f), "utf-8"), f);
       const n = code.indexOf("withNotificationsLock()");
       const g = code.indexOf("withGalleryLock()");
       if (n === -1 || g === -1) continue;

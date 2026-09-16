@@ -22,6 +22,13 @@ import { LEGACY_MENU } from "@/lib/legacy-menu-map";
 import { COMPANY, INSURANCE, PAYMENT, QUOTE_BASIS, VERBATIM } from "@/lib/legal/disclosures";
 import { getNotice, getNotices, parseNoticeId } from "@/lib/queries";
 import type { AnonClient } from "@/lib/supabase/anon";
+import {
+  COMPARATIVE_CLAIMS,
+  FORBIDDEN_WORDS,
+  PRICE_LITERALS,
+  UNPROVEN_CLAIMS,
+  type CopyRule,
+} from "./helpers/forbidden-copy";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SITE = "app/[locale]/(site)";
@@ -114,49 +121,15 @@ const pagesLeaves = leaves(pagesKo);
 const homeKo = (ko.home ?? {}) as Record<string, unknown>;
 const homeLeaves = leaves(homeKo);
 
-// ── 금지어 (리터럴 금지 — 헤더 참조) ──────────────────────────────────────
-// 코드 포인트로 조립한다 — 이 파일도 check-legal-disclosures.sh 의 검사 대상이라 리터럴을 두면 게이트가 빨강이다.
-const cp = (...codes: number[]) => String.fromCharCode(...codes);
-const W_LICENSE = cp(0xba74, 0xd5c8); // "등록"이 맞다 — CLAUDE.md §3
-const W_RIVAL = cp(0xc804, 0xc138, 0xbc84, 0xc2a4, 0xd558, 0xb098); // 타사 상호
-const W_BM_OUTBOUND = cp(0xb098, 0xac00, 0xb294, 0x20, 0xbc84, 0xc2a4); // soul §10.2
-const W_BM_TAKEOUT = cp(0xd0dc, 0xc6b0, 0xace0, 0x20, 0xb098, 0xac00); // soul §10.2
-const W_BM_EMPTY = cp(0xacf5, 0xcc28); // soul §10.2
-const W_BM_RETURN = cp(0xd68c, 0xc1a1); // soul §10.2
-const FORBIDDEN = [W_LICENSE, W_RIVAL, W_BM_OUTBOUND, W_BM_TAKEOUT, W_BM_EMPTY, W_BM_RETURN];
-
-/** 실증 불가 수치·주장 (CLAUDE.md §3 · 브리프 §하지 말 것). "2013년부터"(원장 establishedYear 보간)는 허용이므로 13년 앞에 숫자가 없을 때만 잡는다. */
-const UNPROVEN: ReadonlyArray<[string, RegExp]> = [
-  ["4,800", /4,800/],
-  ["70만", /70만/],
-  ["만 명", /만\s*명/],
-  ["13년", /(?<!\d)13년/],
-  ["17건", /17건/],
-  ["연중무휴", /연중무휴/],
-  ["누적", /누적/],
-  ["운행 경력", /운행 경력/],
-  ["2013 하드코딩", /(?<![\w-])2013(?![\w-])/],
-  ["무사고", /무사고/],
-  ["사고 없", /사고\s*없/],
-  ["큰 사고", /큰 사고/],
-  ["차량 대수 주장", /\d+\s*대\s*(보유|의 차량|규모)/],
-  ["연식", /연식/],
-  ["년식", /년식/],
-  ["외국인 관광객 수송 문장", /외국인 관광객/],
-  ["국토여행", /국토여행/],
-];
-
-/** /fares 무가격 규칙 (브리프 §/fares) — 금액 셀·km 단가·요금표·비교 광고 표현 */
-const PRICE_TABLE: ReadonlyArray<[string, RegExp]> = [
-  ["원 단위 금액", /\d{1,3}(,\d{3})+\s*원/],
-  ["만원 리터럴", /\d+(\.\d+)?\s*만\s*원/],
-  ["km당", /km\s*당/i],
-  ["초과", /초과/],
-  ["요금표", /요금표/],
-  ["저렴", /저렴/],
-  ["최저", /최저/],
-  ["할인율", /\d+\s*%/],
-];
+/**
+ * 금지어·실증 불가·비교 광고 — 목록은 tests/helpers/forbidden-copy.ts 단일 원장 (P6-6).
+ *
+ * 예전에는 이 파일이 `UNPROVEN`(17건)과 `PRICE_TABLE`(8건)을 따로 들고 있었고, 그중 비교 광고 패턴
+ * (`저렴`·`최저`)은 **`pages.fares` 한 곳에만** 걸렸다. 같은 표현이 홈·위저드에서는 검사 없이 배포됐다
+ * (감사 P6-6-audit.md §2 B-1). 비교 광고는 전역(tests/copy-rules.test.ts)으로 올리고,
+ * **금액 리터럴만** 여기 /fares 에 남긴다 — 대표 노선 가격은 사장님이 준 정당한 값이라 전역으로 걸면 오탐이다.
+ */
+const CLAIM_RULES: readonly CopyRule[] = [...UNPROVEN_CLAIMS, ...COMPARATIVE_CLAIMS];
 
 /** check-no-pricing.sh 와 같은 패턴 — 게이트가 이 파일도 보므로 심볼을 조각으로 조립한다 */
 const PRICING_SYMBOLS = new RegExp(
@@ -337,15 +310,21 @@ describe("3. 카피 규칙 (pages.* + 페이지 소스)", () => {
     expect(pagesLeaves.length).toBeGreaterThan(10);
   });
 
+  test("통합 목록이 비어 있지 않다 (빈 배열이면 아래 검사가 전면 통과한다)", () => {
+    expect(FORBIDDEN_WORDS.length).toBeGreaterThanOrEqual(6);
+    expect(CLAIM_RULES.length).toBeGreaterThanOrEqual(26);
+    expect(PRICE_LITERALS.length).toBeGreaterThanOrEqual(6);
+  });
+
   test("게이트 금지어 0건 — ko.json pages.* + 새 소스 전부", () => {
-    for (const w of FORBIDDEN) expect(pagesKoText.includes(w), `pages.* 에 금지어`).toBe(false);
+    for (const w of FORBIDDEN_WORDS) expect(pagesKoText.includes(w), `pages.* 에 금지어`).toBe(false);
     for (const { rel, text } of allNewSources) {
       const code = stripComments(text);
-      for (const w of FORBIDDEN) expect(code.includes(w), `${rel} 에 금지어`).toBe(false);
+      for (const w of FORBIDDEN_WORDS) expect(code.includes(w), `${rel} 에 금지어`).toBe(false);
     }
   });
 
-  test.for(UNPROVEN.map(([label, re]) => [label, re] as const))("실증 불가 수치·주장 0건 — %s", ([, re]) => {
+  test.for(CLAIM_RULES.map(([label, re]) => [label, re] as const))("실증 불가·비교 광고 0건 — %s", ([, re]) => {
     expect(re.test(pagesKoText)).toBe(false);
     for (const { rel, text } of allNewSources) expect(re.test(stripComments(text)), rel).toBe(false);
   });
@@ -571,7 +550,8 @@ describe("6. /fares (P6-3b)", () => {
     expect(src).toMatch(/from\s+["']@\/components\/home\/SectionHead["']/);
   });
 
-  test.for(PRICE_TABLE.map(([label, re]) => [label, re] as const))("금액·요금표·비교 광고 표현 0 — %s", ([, re]) => {
+  // 비교 광고(`저렴`·`최저`)는 여기서 빠졌다 — 전역(CLAIM_RULES)으로 올라갔기 때문이다. 여기 남은 것은 금액 리터럴뿐.
+  test.for(PRICE_LITERALS.map(([label, re]) => [label, re] as const))("금액·요금표 표현 0 — %s", ([, re]) => {
     expect(re.test(faresKo), "ko.json pages.fares").toBe(false);
     expect(re.test(code), "fares/page.tsx").toBe(false);
   });

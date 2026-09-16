@@ -271,6 +271,54 @@ describe.concurrent("check-legal-disclosures.sh", { timeout: GATE_TIMEOUT_MS }, 
     const r = await fx.run(SCRIPT);
     expect(r.status).toBe(0);
   });
+
+  // ── (d) 실증 불가 주장 (P6-6) — tests 를 뺀 대상에서만 돈다 ──────────────────
+  // 여기 문자열은 리터럴로 적어도 된다: (d) 의 대상 배열에 tests 가 없기 때문이다.
+  // 그 "tests 제외"가 규약이라는 것 자체를 아래 마지막 두 케이스가 단언한다.
+  it.for([
+    { file: "messages/ko.json", claim: "무사고" },
+    { file: "app/page.tsx", claim: "업계 1위" },
+    { file: "components/Hero.tsx", claim: "국내 최대" },
+    { file: "lib/copy.ts", claim: "최저가 보장" },
+    { file: "i18n/messages.ts", claim: "누적 견적" },
+    { file: "styles/notes.css", claim: "누적 운행" },
+    { file: "supabase/migrations/0099_seed.sql", claim: "4,800" },
+  ])("실증 불가 주장을 잡는다 — $file / $claim → exit 1", async ({ file, claim }, { fx }) => {
+    fx.put(file, `const copy = "${claim}";\n`);
+    const r = await fx.run(SCRIPT);
+    expect(r.status).toBe(1);
+    expect(r.out).toContain(`${file}:1:`);
+  });
+
+  it("tests/ 의 같은 문자열은 잡지 않는다 — 테스트는 '없어야 한다'를 단언하려고 정당하게 담는다", async ({ fx }) => {
+    fx.put("tests/copy.test.ts", `expect(text).not.toContain("무사고");\nexpect(text).not.toContain("업계 1위");\n`);
+    const r = await fx.run(SCRIPT);
+    expect(r.out).not.toContain("tests/copy.test.ts:");
+    expect(r.status).toBe(0);
+  });
+
+  it("주석 줄의 실증 불가 주장은 오탐 — 코드 줄만 잡는다", async ({ fx }) => {
+    fx.put("lib/copy.ts", [`// 무사고 는 실증 불가라 쓰지 않는다`, `export const ok = 1;`, ""].join("\n"));
+    const r = await fx.run(SCRIPT);
+    expect(r.out).not.toContain("lib/copy.ts:1:");
+    expect(r.status).toBe(0);
+  });
+
+  it("오탐이 큰 패턴은 넣지 않았다 — 쉼표 없는 4800(픽셀·타임아웃)·최다(일반 어휘)·N개 시도(attempt)", async ({ fx }) => {
+    fx.put("styles/a.css", ".x { width: 4800px; }\n");
+    fx.put("lib/b.ts", "export const TIMEOUT_MS = 4800;\n");
+    fx.put("lib/c.ts", 'export const note = "최다 득표";\n');
+    fx.put("lib/d.ts", 'export const retry = "3개 시도 후 중단";\n');
+    const r = await fx.run(SCRIPT);
+    expect(r.status).toBe(0);
+  });
+
+  it("supabase/ 도 금지어 검사 대상이다 (P6-6 — 시드 SQL 에 한글 카피가 들어간다)", async ({ fx }) => {
+    fx.put("supabase/migrations/0099_seed.sql", `insert into t values ('${W_RIVAL}');\n`);
+    const r = await fx.run(SCRIPT);
+    expect(r.status).toBe(1);
+    expect(r.out).toContain("supabase/migrations/0099_seed.sql:1:");
+  });
 });
 
 // ═════════════════════════════════════════════════════════════════════════

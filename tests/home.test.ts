@@ -25,6 +25,7 @@ import { parseKst, toKstDateString } from "@/lib/kst";
 import { COMPANY, PAYMENT, QUOTE_BASIS, VERBATIM } from "@/lib/legal/disclosures";
 import { DEFAULT_GALLERY_LIMIT, getGallery, mapGalleryRows, QUERY_TAGS } from "@/lib/queries";
 import { withGalleryLock } from "./helpers/db-lock";
+import { COMPARATIVE_CLAIMS, FORBIDDEN_WORDS, UNPROVEN_CLAIMS, type CopyRule } from "./helpers/forbidden-copy";
 import { loadDotEnvLocal } from "./helpers/load-env-local";
 
 loadDotEnvLocal();
@@ -91,26 +92,15 @@ const homeCode = homeSources.map(({ file, text }) => ({ file, code: stripComment
 const ko = JSON.parse(read(MESSAGES_KO)) as Record<string, unknown>;
 const homeKo = JSON.stringify(ko.home ?? null);
 
-// ── 금지어 (리터럴 금지 — 헤더 참조) ──────────────────────────────────────
-const W_LICENSE = "\uba74\ud5c8"; // "등록"이 맞다 — CLAUDE.md §3
-const W_RIVAL = "\uc804\uc138\ubc84\uc2a4\ud558\ub098"; // 타사 상호
-const W_BM_OUTBOUND = "\ub098\uac00\ub294 \ubc84\uc2a4"; // soul §10.2
-const W_BM_TAKEOUT = "\ud0dc\uc6b0\uace0 \ub098\uac00"; // soul §10.2
-const W_BM_EMPTY = "\uacf5\ucc28"; // soul §10.2
-const W_BM_RETURN = "\ud68c\uc1a1"; // soul §10.2
-const FORBIDDEN = [W_LICENSE, W_RIVAL, W_BM_OUTBOUND, W_BM_TAKEOUT, W_BM_EMPTY, W_BM_RETURN];
-
-/** 실증 불가 수치·문구 (브리프 §검증 1 + CLAUDE.md §3). "2013년" 은 허용이므로 13년 앞에 숫자가 없을 때만 잡는다. */
-const UNPROVEN: ReadonlyArray<[string, RegExp]> = [
-  ["4,800", /4,800/],
-  ["70만", /70만/],
-  ["13년", /(?<!\d)13년/],
-  ["17건", /17건/],
-  ["연중무휴", /연중무휴/],
-  ["누적", /누적/],
-  ["운행 경력", /운행 경력/],
-  ["2013 하드코딩", /(?<![\w-])2013(?![\w-])/],
-];
+/**
+ * 실증 불가 수치·비교 광고 — 목록은 tests/helpers/forbidden-copy.ts 단일 원장 (P6-6).
+ *
+ * 예전에는 이 파일이 자기 목록(8건)을 들고 있었고 tests/pages.test.ts 가 다른 목록(17건)을, 비교 광고 패턴
+ * (저렴·최저)은 `pages.fares` 한 곳만 보고 있었다. 그래서 프로젝트가 스스로 "비교 광고 표현"이라 판정한 문장이
+ * 홈에서는 검사 없이 배포됐다(감사 P6-6-audit.md §2 B-1). 목록을 하나로 모으고 비교 광고를 홈에도 올린다.
+ * 카탈로그 전체(quote·reservation·admin …)·en.json·연락처 리터럴은 tests/copy-rules.test.ts 가 본다.
+ */
+const CLAIM_RULES: readonly CopyRule[] = [...UNPROVEN_CLAIMS, ...COMPARATIVE_CLAIMS];
 
 // =============================================================================
 // 1. 금지어·실증 불가 수치 0건 — components/home/** + messages/ko.json home.*
@@ -121,17 +111,22 @@ describe("1. components/home/** · ko.json home — 금지어·실증 불가 수
     expect(ko.home, "messages/ko.json 에 home 네임스페이스가 없다").toBeTruthy();
   });
 
+  test("통합 목록이 비어 있지 않다 (빈 배열이면 아래 검사가 전면 통과한다)", () => {
+    expect(FORBIDDEN_WORDS.length).toBeGreaterThanOrEqual(6);
+    expect(CLAIM_RULES.length).toBeGreaterThanOrEqual(26);
+  });
+
   test.for(homeCode.map((s) => [s.file, s.code] as const))("%s — 게이트 금지어 0건", ([, code]) => {
-    for (const w of FORBIDDEN) expect(code.includes(w)).toBe(false);
+    for (const w of FORBIDDEN_WORDS) expect(code.includes(w)).toBe(false);
   });
 
-  test.for(homeCode.map((s) => [s.file, s.code] as const))("%s — 실증 불가 수치 0건", ([, code]) => {
-    for (const [label, re] of UNPROVEN) expect(re.test(code), label).toBe(false);
+  test.for(homeCode.map((s) => [s.file, s.code] as const))("%s — 실증 불가·비교 광고 0건", ([, code]) => {
+    for (const [label, re] of CLAIM_RULES) expect(re.test(code), label).toBe(false);
   });
 
-  test("ko.json home.* — 금지어·실증 불가 수치 0건", () => {
-    for (const w of FORBIDDEN) expect(homeKo.includes(w)).toBe(false);
-    for (const [label, re] of UNPROVEN) expect(re.test(homeKo), label).toBe(false);
+  test("ko.json home.* — 금지어·실증 불가·비교 광고 0건", () => {
+    for (const w of FORBIDDEN_WORDS) expect(homeKo.includes(w)).toBe(false);
+    for (const [label, re] of CLAIM_RULES) expect(re.test(homeKo), label).toBe(false);
   });
 
   test("인사말 요약에 '외국인 관광객' 수치 문장이 없다 (legacy-content-inventory §2 주의 1·2)", () => {
@@ -577,5 +572,25 @@ describe("10. resolveImageUrl", () => {
     expect(resolveImageUrl(null, SUPA)).toBeNull();
     expect(resolveImageUrl("  ", SUPA)).toBeNull();
     expect(resolveImageUrl("gallery/a.jpg", "")).toBeNull();
+  });
+
+  // admin 팝업 도움말의 경로 예시가 이 함수의 규칙과 어긋나면 안 된다 (P6-6 감사 D6).
+  // 예전 예시 "hero/bus-02.jpg" 에는 앞 슬래시가 없었다 — 그러면 이 함수가 Supabase Storage 객체로 읽어
+  // ${SUPABASE_URL}/storage/v1/object/public/hero/… 를 만든다. 그런데 버킷은 gallery·gallery-originals
+  // 둘뿐이라(0011_storage_policies.sql) hero 버킷은 없고, 실제 파일은 public/hero/bus-02.jpg 다.
+  // 사장님이 도움말을 그대로 따라 적으면 깨진 이미지가 된다. 문구와 규칙이 다시 어긋나지 않게 여기서 잠근다.
+  //
+  // 여기서 블록 주석을 쓰지 않는 이유: tests/db-test-preconditions.test.ts 의 주석 제거기는 문자열 안의
+  // "components/home/**" 을 블록 주석 시작으로 오해한다. 이 파일 뒤쪽에 닫는 표시가 새로 생기면 그 사이가
+  // 통째로 지워져 갤러리 잠금 게이트가 이 파일을 놓친다. 줄 주석은 그 짝을 만들지 않는다.
+  test("admin 팝업 도움말의 경로 예시가 그대로 해석된다 (앞 슬래시 = 로컬 public/ 경로)", () => {
+    type KoAdmin = { admin?: { popups?: { hint?: { imagePath?: string } } } };
+    const hint = (JSON.parse(read(MESSAGES_KO)) as KoAdmin).admin?.popups?.hint?.imagePath;
+    expect(hint, "admin.popups.hint.imagePath 가 없다").toBeTruthy();
+    const example = (hint ?? "").match(/(\/?[\w./-]+\.(?:jpg|jpeg|png|webp))/i)?.[1];
+    expect(example, `도움말에서 경로 예시를 찾지 못했다: ${hint}`).toBeTruthy();
+    expect(example!.startsWith("/"), `도움말 예시 "${example}" 에 앞 슬래시가 없다 — Storage 객체로 해석된다`).toBe(true);
+    expect(resolveImageUrl(example!, SUPA)).toBe(example);
+    expect(existsSync(path.join(ROOT, "public", example!.replace(/^\//, "")))).toBe(true);
   });
 });

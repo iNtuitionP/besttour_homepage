@@ -780,6 +780,13 @@ describe("8. 정적 검사", () => {
     expect(src).toMatch(/try\s*\{[\s\S]*issueFormToken\([\s\S]*\}\s*catch/);
   });
 
+  // P6-6: reservation.errors.* 의 ratelimit·infra·server 가 `{tel}` 보간을 쓰게 됐다(감사 R-6 — 리터럴 대표전화 제거).
+  // 값을 넘기지 않으면 next-intl 이 렌더 시점에 던지므로, 카탈로그 쪽 단언과 짝이 되는 소스 쪽 단언을 둔다.
+  test("서버 오류 문구를 풀 때 원장 tel 을 보간 인자로 넘긴다 ({tel} 자리가 비지 않게)", () => {
+    const wiz = stripComments(read(WIZARD));
+    expect(wiz).toMatch(/tRoot\(\s*key\s*,\s*\{\s*tel\s*\}\s*\)/);
+  });
+
   test("'use client' 는 QuoteWizard.tsx · TurnstileWidget.tsx 두 파일뿐", () => {
     const clients = quoteTsx.filter((f) => /^\s*["']use client["']/m.test(read(f)));
     expect(clients.sort()).toEqual([TURNSTILE, WIZARD].sort());

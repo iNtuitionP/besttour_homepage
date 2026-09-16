@@ -933,9 +933,15 @@ describe("7. messages/ko.json — reservationCheck 네임스페이스", () => {
     for (const [k, v] of Object.entries(errors)) expect(typeof v === "string" && v.trim().length > 0, k).toBe(true);
   });
 
-  test("ratelimit·infra·server 문구에 원장 COMPANY.tel · server 는 infra 와 같은 문구", () => {
-    for (const k of ["ratelimit", "infra", "server"]) expect(errors[k], k).toContain(COMPANY.tel);
+  // P6-6: 리터럴 대표전화 → 원장 보간 `{tel}`. 이유는 tests/reservation-action.test.ts 의 같은 자리 주석 참조
+  // (감사 R-6 — reservationCheck.* 는 어떤 카피 게이트도 보지 않던 네임스페이스다). 값은 CheckForm 이 tel prop 으로 넣는다.
+  test("ratelimit·infra·server 문구는 원장 보간 {tel} 을 쓴다 · server 는 infra 와 같은 문구", () => {
+    for (const k of ["ratelimit", "infra", "server"]) {
+      expect(errors[k], k).toContain("{tel}");
+      expect(errors[k], k).not.toContain(COMPANY.tel);
+    }
     expect(errors.server).toBe(errors.infra);
+    expect(errors.validation).not.toContain("{tel}");
     expect(errors.validation).not.toContain(COMPANY.tel);
   });
 
@@ -993,6 +999,13 @@ describe("8. 컴포넌트·페이지 정적", () => {
       expect(existsSync(path.join(ROOT, f)), f).toBe(true);
     }
     for (const f of ["guards", "lookup", "db", "view", "result", "formData"]) expect(existsSync(path.join(ROOT, LIB_DIR, `${f}.ts`)), f).toBe(true);
+  });
+
+  // P6-6: 카탈로그가 `{tel}` 보간을 쓰게 됐으므로, 값을 넘기지 않으면 next-intl 이 렌더 시점에 던진다.
+  // 카탈로그 쪽 단언(§7)과 짝이 되는 소스 쪽 단언 — 한쪽만 고치면 빨간불이다.
+  test("서버 오류 문구를 풀 때 원장 tel 을 보간 인자로 넘긴다 ({tel} 자리가 비지 않게)", () => {
+    const src = stripComments(read(FORM));
+    expect(src).toMatch(/tRoot\(\s*result\.messageKey\s*,\s*\{\s*tel\s*\}\s*\)/);
   });
 
   test("useActionState — checkReservation 을 직접 넘기지 않고 (_prev, fd) 래퍼로 감싼다 (P3-4 규칙)", () => {

@@ -35,6 +35,8 @@ import {
   DEFAULT_RECENT_LIMIT,
   getRecentReservationsMasked,
   RECENT_SELECT,
+  RECENT_WINDOW_DAYS,
+  recentWindowStart,
   type ServiceClient,
 } from "@/lib/queries/recent";
 
@@ -98,7 +100,7 @@ function fakeClient(responses: Record<string, TableResponse>, recorded: Recorded
       recorded.push(rec);
       const resp = responses[table];
       const builder: Record<string, unknown> = {};
-      for (const op of ["select", "eq", "neq", "in", "is", "not", "order", "limit", "range", "overrideTypes"]) {
+      for (const op of ["select", "eq", "neq", "in", "is", "not", "gte", "lte", "order", "limit", "range", "overrideTypes"]) {
         builder[op] = (...args: unknown[]) => {
           if (op === "select") rec.select = String(args[0]);
           else rec.calls.push({ op, args });
@@ -704,5 +706,91 @@ describe("11. recent-feed-preview.ts", () => {
     expect(/@\/lib\/queries|@\/lib\/supabase/.test(src)).toBe(false);
     const ko = read("messages/ko.json");
     for (const r of PREVIEW_RECENT_ROWS) expect(ko.includes(r.name)).toBe(false);
+  });
+});
+
+// =============================================================================
+// 12. 기간 조건 — 카피가 "최근"이라고 말하는 범위를 쿼리가 실제로 건다 (P6-6 감사 R-1)
+// =============================================================================
+describe("12. '최근' 기간 창 — 경계 · 카피 대조 · 0건 숨김", () => {
+  const base = { vehicle_slug: "bus45", depart_at: "2026-09-19T23:00:00Z" };
+  const NOW = new Date("2026-09-16T00:00:00.000Z");
+  const DAY_MS = 86_400_000;
+
+  /**
+   * gte("created_at", …) 를 **실제로 적용하는** 가짜 클라이언트.
+   * 위쪽 fakeClient 는 호출만 기록하고 필터링하지 않으므로, 경계 검사에는 쓸 수 없다.
+   */
+  function windowClient(rows: RecentReservationRow[]) {
+    const seen: { gte?: string } = {};
+    const client = {
+      from(table: string) {
+        const builder: Record<string, unknown> = {};
+        let data: unknown = table === "vehicles" ? VEHICLE_ROWS : rows;
+        for (const op of ["select", "in", "order", "limit", "overrideTypes"]) builder[op] = () => builder;
+        builder.gte = (col: string, value: string) => {
+          if (table === "reservations" && col === "created_at") {
+            seen.gte = value;
+            data = rows.filter((r) => r.created_at >= value);
+          }
+          return builder;
+        };
+        builder.then = (onFulfilled: (v: unknown) => unknown) =>
+          Promise.resolve({ data, error: null }).then(onFulfilled);
+        return builder;
+      },
+    };
+    return { client: client as unknown as ServiceClient, seen };
+  }
+
+  test("창 시작 시각은 now - RECENT_WINDOW_DAYS 일이다 (상수가 실제로 쓰인다)", () => {
+    expect(RECENT_WINDOW_DAYS).toBeGreaterThan(0);
+    expect(recentWindowStart(NOW)).toBe(new Date(NOW.getTime() - RECENT_WINDOW_DAYS * DAY_MS).toISOString());
+  });
+
+  test("경계 — 창 안(1초 안쪽) 1건은 남고, 창 밖(1초 바깥) 1건은 빠진다", async () => {
+    const edge = new Date(NOW.getTime() - RECENT_WINDOW_DAYS * DAY_MS);
+    const rows: RecentReservationRow[] = [
+      { ...base, name: "안쪽사람", status: "new", created_at: new Date(edge.getTime() + 1000).toISOString() },
+      { ...base, name: "바깥사람", status: "new", created_at: new Date(edge.getTime() - 1000).toISOString() },
+    ];
+    const { client, seen } = windowClient(rows);
+    const items = await getRecentReservationsMasked(8, client, NOW);
+    expect(seen.gte, "쿼리에 기간 조건이 걸리지 않았다").toBe(edge.toISOString());
+    expect(items.map((i) => i.maskedName)).toEqual(["안**"]);
+  });
+
+  test("창 밖 접수만 있으면 0건 — 홈은 섹션을 통째로 숨긴다 (마케팅 섹션에만 허용되는 빈 값 숨김)", async () => {
+    const old = new Date(NOW.getTime() - (RECENT_WINDOW_DAYS + 90) * DAY_MS).toISOString();
+    const { client } = windowClient([{ ...base, name: "오래된사람", status: "new", created_at: old }]);
+    await expect(getRecentReservationsMasked(8, client, NOW)).resolves.toEqual([]);
+    // 숨김 자체는 §4·8 이 단언한다(`length === 0 → return null`). 여기서는 **그 숨김이 어디까지 허용되는지**를 못 박는다.
+    expect(read(COMPONENT)).toMatch(/length\s*===\s*0\)\s*return\s+null/);
+  });
+
+  test("이 '빈 값 숨김' 선례는 법정 고지에 인용할 수 없다 — 고지는 빈 값이어도 렌더된다", () => {
+    // P6-6 브리프 §(1-A) 2번: 마케팅 섹션의 숨김과 법정 고지의 숨김은 다른 규칙이다.
+    // 같은 컴포넌트 안에서 고지(PRIVACY_NOTICE.publicFeedNotice)는 조건 없이 렌더된다 — 숨김 분기 밖에 있다.
+    const code = stripComments(read(COMPONENT));
+    const afterGuard = code.slice(code.indexOf("return null"));
+    expect(afterGuard).toMatch(/PRIVACY_NOTICE\.publicFeedNotice/);
+    expect(/publicFeedNotice[^\n]*&&/.test(code), "고지에 조건부 렌더가 붙었다").toBe(false);
+  });
+
+  test("카피가 시간 주장을 하지 않는다 — '방금'·'실시간' 0건, '최근' 은 있다", () => {
+    const feed = JSON.stringify(
+      (JSON.parse(read("messages/ko.json")) as { home: { recentFeed: unknown } }).home.recentFeed,
+    );
+    expect(feed.includes("방금"), "기간 조건이 30일인데 카피가 '방금'이라고 말한다").toBe(false);
+    expect(feed.includes("실시간"), "기간 조건이 30일인데 카피가 '실시간'이라고 말한다").toBe(false);
+    expect(feed.includes("최근")).toBe(true);
+  });
+
+  test("화이트리스트·마스킹·반환 타입은 넓어지지 않았다 (기간 조건만 더했다)", () => {
+    expect(RECENT_SELECT.split(",").sort()).toEqual([...RECENT_SELECT_COLUMNS].sort());
+    expect(RECENT_SELECT.includes("phone")).toBe(false);
+    expect(RECENT_SELECT.includes("email")).toBe(false);
+    expect(RECENT_SELECT.includes("message")).toBe(false);
+    expect(RECENT_SELECT.includes("public_code")).toBe(false);
   });
 });

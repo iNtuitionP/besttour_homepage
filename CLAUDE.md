@@ -35,6 +35,14 @@ bash scripts/check-mockup-drift.sh       # 목업 커밋 해시 고정 + public/
   - Top-5 고지: "대표 노선 예시 견적 · 45인승 당일왕복 기준 · 실제 견적은 상담 후 확정"
 - 운행 일시는 **KST 벽시계**로 수신(예: `2026-09-01T08:00`, `Z` UTC 입력 금지)하고 서버에서 `Asia/Seoul`로 해석한다. 장소·여행구분은 `lib/codes.ts`의 canonical code로 저장 — 번역 문자열을 저장하지 않는다.
 - Supabase **service role 키는 서버 전용**(클라이언트 노출 금지). 공개 뮤테이션(예약 접수 등)은 반드시 **zod 검증 + Upstash RateLimit + Cloudflare Turnstile + 허니팟** 전부 통과 후 처리한다.
+- 🔴 **새로 만드는 표·함수·시퀀스는 기본으로 `anon`·`authenticated` 에게 전권이 부여된다.** 막연한 경향이 아니라 원격에 실재하는 설정 세 줄이다(2026-09-16 실측):
+  `ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES|FUNCTIONS|SEQUENCES TO anon, authenticated;`
+  **따라서 마이그레이션이 명시적으로 회수하지 않으면 RLS 가 유일한 방어선이 된다.** 이 뿌리로 **네 번 재발**했다(admin_users → reservations UPDATE → notifications_log 전부 → 콘텐츠 7표).
+  - 새 표를 만들면 같은 마이그레이션에서 **의도하지 않은 동작을 회수**한다. 공개 읽기 전용 표면은 `select` 만 남긴다.
+  - **`drop function` 후 `create function` 은 EXECUTE 를 다시 열어 준다.** 재생성과 **같은 트랜잭션 안에서** `revoke execute from public, anon, authenticated` + 필요한 롤에만 `grant` 를 다시 기술한다. 빠뜨리면 definer 함수가 공개 롤에 열린다.
+  - 회수했는지 확인할 때 `information_schema.role_table_grants` 를 **증거로 쓰지 마라** — grantor·grantee 가 활성 롤인 항목만 보이는 **필터된 뷰**다. `has_table_privilege()`(PUBLIC·상속까지 잡는다)와 `has_any_column_privilege()`(컬럼 단위 grant)를 쓰고, PUBLIC 전수는 `pg_class.relacl` + `aclexplode()`(grantee OID 0)로 본다.
+  - **TRUNCATE 는 RLS 의 적용을 받지 않는다.** 정책이 아무리 촘촘해도 TRUNCATE 권한을 가진 롤은 표를 통째로 비운다.
+  - 배경·실측·후속 목록: `docs/ops/migration-runbook.md`
 - **실증 불가 수치 금지.** "누적 4,800건", "한해 70만 명", "오늘 접수 17건" 같이 사장님이 근거를 제시하지 못한 숫자는 쓰지 않는다(표시광고법 §5 실증책임). 쓸 수 있는 것: **2013년부터**(등록증 개업일), 통신판매업 신고번호, "공항 픽업·샌딩 (송영 전문)".
 - **"면허"가 아니라 "등록".** 여객자동차 운수사업법상 전세버스는 등록제다. "면허 보유" 표기 금지. 차량 대수도 주장하지 않는다(협력사 차량이 섞여 실증 불가).
 - **금지어 — 타사 상호.** 옛 사이트 하위 페이지에 남아 있던 **"전세버스하나관광"**은 어떤 파일에도 들어오면 안 된다(`check-legal-disclosures.sh`가 grep). 옛 사이트 카피를 옮길 때 특히 주의.
@@ -68,7 +76,8 @@ bash scripts/check-mockup-drift.sh       # 목업 커밋 해시 고정 + public/
 | PreToolUse (Write\|Edit) | 아카이브 목업(variant-07-final·wizard·variant-01~06) 편집 **차단** | 폐기된 방향 부활, 아카이브 이식 |
 | PreToolUse (Bash) | `cd`/`pushd`가 섞인 복합 명령 안의 `git push` **차단** (단독 실행 또는 `git -C` 요구) | 엉뚱한 원격으로 push |
 | PostToolUse (Write\|Edit) | app/lib/actions/components/tests 편집 직후 `check-no-pricing.sh` 자동 실행, 위반 시 즉시 통보 | 가격 계산 코드 부활 (CI보다 왼쪽에서 차단) |
-| CI `legal-disclosures` (P0-5) | `check-legal-disclosures.sh` — 원장 파일이 생기는 순간부터 필수 문구 존재·`면허`·`전세버스하나` 금지어 검사 | 법정 문구 누락, 타사 상호 유입 |
+| CI `legal-disclosures` (P0-5) | `check-legal-disclosures.sh` — 원장 파일이 생기는 순간부터 필수 문구 존재·`면허`·`전세버스하나` 금지어 검사 (P6-6: `supabase` 도 스캔 대상 — 시드 SQL 한글 카피) | 법정 문구 누락, 타사 상호 유입 |
+| CI `legal-disclosures` (d) (P6-6) | 같은 스크립트의 **두 번째 규칙** — 실증 불가 주장(`4,800`·`누적 견적`·`누적 운행`·`업계 1위`·`국내 최대`·`최저가 보장`·`무사고`) 0건. **`tests` 는 대상에서 뺀다**(테스트는 "없어야 한다"를 단언하려고 그 문자열을 정당하게 담는다 — 그쪽은 `tests/copy-rules.test.ts` 가 잠근다) | 실증책임(표시광고법 §5) 없는 주장이 배포 표면에 남음 |
 | CI `mockup-drift` (P0-5) | `check-mockup-drift.sh` — 브리프에 고정한 목업 해시와 현재 해시 대조, 브랜드 자산 두 사본 해시 대조 | 목업이 바뀐 줄 모르고 이식, 자산 사본 불일치 |
 | CI `temp-values` (P0-5) | `check-temp-values.sh` exit 1 승격 — 단 CLAUDE.md 등 규약 설명 문장은 제외 | 임시값이 오픈까지 살아남음 |
 

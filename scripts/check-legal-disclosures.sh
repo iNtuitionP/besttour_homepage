@@ -9,11 +9,20 @@
 # 검사 항목:
 #   (a) lib/legal/disclosures.ts 가 있으면 — verbatim 2문구가 바이트 단위 그대로 코드 줄에 존재해야 한다.
 #   (b) lib/legal/disclosures.ts 가 있으면 — 함수 export 0개 (상수 객체/문자열/배열만 허용).
-#   (c) 항상 — app lib actions components tests i18n messages styles 에 금지어 0건.
+#   (c) 항상 — app lib actions components tests i18n messages styles supabase 에 금지어 0건.
 #       금지어: 면허("등록"이 맞다) · 전세버스하나(타사 상호) · 나가는 버스 · 태우고 나가 · 공차 · 회송(BM 비노출)
+#       `supabase` 는 P6-6 에서 더했다 — 시드 SQL 에 한글 카피가 들어가는데(0001 차종명 · 0002 지명)
+#       지금까지 **어느 게이트도 스캔하지 않았다**(감사 P6-6-audit.md §6-8).
+#   (d) 항상 — app lib actions components i18n messages styles supabase 에 실증 불가 주장 0건. **tests 제외.**
+#       주장: 4,800 · 누적 견적 · 누적 운행 · 업계 1위 · 국내 최대 · 최저가 보장 · 무사고
+#       왜 (c) 와 대상이 다른가: 테스트는 "이 문자열이 없어야 한다"를 단언하려고 **정당하게** 그 문자열을 담는다.
+#       (c) 의 금지어는 tests 가 코드포인트로 조립해 우회하지만(tests/helpers/forbidden-copy.ts), 실증 불가 주장까지
+#       전부 조립하게 만들면 테스트가 읽히지 않는다. 그래서 (d)는 배포 표면만 본다 — tests 쪽은 vitest 가 잠근다
+#       (tests/copy-rules.test.ts 가 같은 목록을 ko.json 전 네임스페이스·en.json·컴포넌트에 건다).
+#       오탐이 0 인 것만 넣는다: `4800`(쉼표 없음, 픽셀·타임아웃 값)·`최다`(일반 어휘)·`개 시도`("N개 시도(attempt)")는 넣지 않는다.
 #
-# 주석 줄 제외: `//`, `/*`, `*`, `#` 로 시작하는 줄은 (a)(b)(c) 모두에서 뺀다.
-#   - (b)(c): 금지어·패턴을 설명하는 주석은 오탐이다.
+# 주석 줄 제외: `//`, `/*`, `*`, `#` 로 시작하는 줄은 (a)(b)(c)(d) 모두에서 뺀다.
+#   - (b)(c)(d): 금지어·패턴을 설명하는 주석은 오탐이다.
 #   - (a): 주석에만 있는 verbatim 은 배포되지 않으므로 충족으로 치지 않는다.
 #   한계: 줄 끝 주석(`code; // ...`)과 `*` 없이 이어지는 블록 주석 내부 줄은 코드 줄로 취급된다.
 #
@@ -53,7 +62,11 @@ FUNC_RULES=(
 
 # (c) 금지어 — 부분 문자열 일치.
 FORBIDDEN='면허|전세버스하나|나가는 버스|태우고 나가|공차|회송'
-SCAN_TARGETS=(app lib actions components tests i18n messages styles)
+SCAN_TARGETS=(app lib actions components tests i18n messages styles supabase)
+
+# (d) 실증 불가 주장 — 부분 문자열 일치. 대상에서 tests 를 뺀다(헤더 (d) 참조).
+UNPROVABLE='4,800|누적 견적|누적 운행|업계 1위|국내 최대|최저가 보장|무사고'
+UNPROVABLE_TARGETS=(app lib actions components i18n messages styles supabase)
 
 COMMENT_LINE='^[[:space:]]*(//|/\*|\*|#)'
 
@@ -129,10 +142,38 @@ else
   fi
 fi
 
+# ── (d) 실증 불가 주장 — tests 제외 (헤더 (d) 참조) ─────────────────────
+existing_u=()
+for t in "${UNPROVABLE_TARGETS[@]}"; do
+  [ -e "$t" ] && existing_u+=("$t")
+done
+
+if [ ${#existing_u[@]} -eq 0 ]; then
+  report "실증 불가 주장 검사 대상 경로 없음 (대상 목록: ${UNPROVABLE_TARGETS[*]}). 통과 처리."
+else
+  report "실증 불가 주장 검사 대상 = ${existing_u[*]} (tests 제외)"
+  report "실증 불가 주장 = ${UNPROVABLE}"
+  raw_u=$(grep -rnIHE --exclude-dir=node_modules --exclude-dir=.next -e "$UNPROVABLE" "${existing_u[@]}" 2>/dev/null)
+  claim_hits=()
+  if [ -n "$raw_u" ]; then
+    while IFS= read -r hit; do
+      [ -z "$hit" ] && continue
+      rest="${hit#*:}"
+      content="${rest#*:}"
+      is_comment "$content" || claim_hits+=("$hit")
+    done <<< "$raw_u"
+  fi
+  if [ ${#claim_hits[@]} -gt 0 ]; then
+    report "실증 불가 주장 검출 — 주석 줄은 제외한 결과입니다. 표시광고법 §5 는 광고주에게 실증책임을 지웁니다:"
+    printf '%s\n' "${claim_hits[@]}"
+    fail=1
+  fi
+fi
+
 if [ "$fail" -ne 0 ]; then
   report "실패 — 위 항목을 수정하세요."
   exit 1
 fi
 
-report "OK — 필수 문구·함수 export·금지어 검사 통과."
+report "OK — 필수 문구·함수 export·금지어·실증 불가 주장 검사 통과."
 exit 0

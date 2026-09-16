@@ -74,7 +74,9 @@ function CheckRound({ bookingNotice, tel, previewResult, onAgain }: CheckFormPro
   const errors: CheckFieldErrors = { ...serverFieldErrors, ...clientErrors };
   const codeErr = errors.publicCode ? tRoot(errors.publicCode) : undefined;
   const last4Err = errors.phoneLast4 ? tRoot(errors.phoneLast4) : undefined;
-  const serverMessage = result && !result.ok ? tRoot(result.messageKey) : null;
+  // `{tel}` 보간 — reservationCheck.errors.* 의 ratelimit·infra·server 가 대표전화를 부른다. 예전에는 카탈로그에
+  // 번호가 리터럴로 박혀 있었고(P6-6 감사 R-6), 번호가 바뀌면 조용히 뒤처졌다. 원장 값은 서버 페이지가 prop 으로 준다.
+  const serverMessage = result && !result.ok ? tRoot(result.messageKey, { tel }) : null;
   const hasAlert = Boolean(serverMessage || codeErr || last4Err);
 
   const onCodeChange = (e: ChangeEvent<HTMLInputElement>) => {
