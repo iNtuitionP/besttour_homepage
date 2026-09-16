@@ -11,7 +11,9 @@
  *   6. 로그에 개인정보 0 — reservationId·오류 코드·표 이름뿐
  *   7. 서비스 롤 예외 등록은 tests/queries.test.ts SERVICE_ROLE_EXCEPTIONS 가 맡는다(여기서는 정적 경계만 본다)
  *   8. 어댑터 결합: vars 를 주면 solapiSender.configured 가 true, 없으면 false
- *   9. DB 실증: 로컬 스택에 실제 예약 1행 → 서비스 롤은 읽고 anon 은 0행. 즉시 정리
+ *   9. DB 실증: 로컬 스택에 실제 예약 1행 → 서비스 롤은 읽고 **anon 은 권한 거부(42501)**. 즉시 정리
+ *      (0017 이전에는 "anon 은 0행" 이었다 — 그 0행은 RLS 정책이 없어서 나온 결과일 뿐이라
+ *       정책 한 줄이 붙는 순간 고객 표가 공개됐다. 0017 이 `anon` 의 select 를 회수해 권한 층에서 먼저 막는다.)
  *
  * **실제 발송 0 · 실제 네트워크 0**(§9 의 로컬 스택 REST 제외). 원격 DB 에는 어떤 쓰기도 하지 않는다 —
  * §9 는 dbWriteGate()(로컬 스택 URL + REQUIRE_DB_TESTS=1)가 열렸을 때만 정의된다.
@@ -746,15 +748,34 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("9. DB 실증 (로컬 스�
     expect(v).toBeNull();
   });
 
-  test("anon 키로는 같은 조회가 0행이다 — reservations 는 RLS 정책이 없어 서비스 롤만 읽는다", async () => {
+  /**
+   * **0017 (P5-13) 로 단언이 바뀌었다 — 약화가 아니라 강화다.**
+   *
+   * 예전 단언은 `status=200` · `body=[]` 였다. 그 0행은 `reservations` 에 `anon` 용 RLS 정책이 **없어서**
+   * 나오는 결과일 뿐이고, `anon` 은 표의 SELECT 권한을 그대로 갖고 있었다. 즉 누군가 "접수 현황을 클라이언트에서
+   * 직접 읽자" 며 `anon` 용 select 정책을 한 줄 붙이는 순간 고객 성명·전화번호가 공개된다 — 권한 층이 비어 있었다.
+   * 0017 이 그 SELECT 를 회수했으므로 이제 **정책과 무관하게 권한에서 먼저 막힌다.**
+   *
+   * 이 테스트가 보장하려던 것은 처음부터 "공개 롤은 고객 데이터를 못 본다" 였다. "0행" 은 그 보장의 **약한 형태**다 —
+   * 권한이 있는데 마침 볼 게 없는 상태와 구분되지 않기 때문이다. "권한 거부(42501)" 는 구분된다.
+   */
+  test("anon 키로는 권한 거부(42501)다 — 0017 이 anon 의 select 를 회수했다 (이전에는 200 + 빈 배열)", async () => {
     const anonKey = env.anonKey;
     expect(anonKey, "anon 키가 없으면 이 단언을 할 수 없다").toBeTruthy();
     const anonHeaders = { apikey: anonKey as string, Authorization: `Bearer ${anonKey}`, "Content-Type": "application/json" };
     const r = await rest("GET", `/reservations?select=${OWNER_VARS_SELECT}&id=eq.${reservationId}`, undefined, undefined, anonHeaders);
-    expect(r.status).toBe(200);
-    expect(r.body).toEqual([]);
+    const shown = JSON.stringify(r.body).slice(0, 300);
+    expect([401, 403], `anon 이 reservations 를 읽었다 (status=${r.status} body=${shown})`).toContain(r.status);
+    expect((r.body as { code?: string } | null)?.code, `권한 거부 코드(42501)가 아니다: ${shown}`).toBe("42501");
 
+    // 로더는 권한 거부를 **삼키지 않는다** — null 로 뭉개면 "예약이 없다" 와 구분되지 않는다(lib/notify/vars.ts loadRow).
     const anonClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL as string, anonKey as string, { auth: { persistSession: false } });
-    expect(await templateVars({ client: anonClient, origin: ORIGIN }).ownerVars(reservationId)).toBeNull();
+    const logged: TemplateVarsLogEntry[] = [];
+    await expect(
+      templateVars({ client: anonClient, origin: ORIGIN, log: (e) => logged.push(e) }).ownerVars(reservationId),
+    ).rejects.toThrow(/42501/);
+    // 로그에는 개인정보가 아니라 표 이름과 오류 코드만 실린다(§6 과 같은 규약).
+    expect(logged.map((e) => e.code), JSON.stringify(logged)).toContain("42501");
+    expect(JSON.stringify(logged).includes(RAW_PII.phone), "로그에 전화번호가 실렸다").toBe(false);
   });
 });

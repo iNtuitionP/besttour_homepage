@@ -12,7 +12,7 @@
 6. 결과를 이 파일에 날짜와 함께 적는다.
 
 **롤백 파일은 `supabase/rollbacks/` 에 있고 `migrations/` 밖이다** — CLI 가 `migrations/` 의 `^[0-9]+_.*\.sql$` 을 전부 마이그레이션으로 집기 때문이다. 롤백은 사람이 psql/SQL Editor 로 실행한 뒤 `supabase migration repair --status reverted <번호>`.
-0012·0013·0014·0015·0016 롤백은 **승인 플래그를 조건 없이 요구**한다(`set bestour.rollback_00NN_ack = '1';`). 행이 0이어도 멈춘다 — 권한은 열린 채 남고 데이터는 나중에 들어오기 때문이다.
+0012·0013·0014·0015·0016·0017 롤백은 **승인 플래그를 조건 없이 요구**한다(`set bestour.rollback_00NN_ack = '1';`). 행이 0이어도 멈춘다 — 권한은 열린 채 남고 데이터는 나중에 들어오기 때문이다.
 
 ---
 
@@ -116,9 +116,10 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENC
 - ~~`authenticated` 의 콘텐츠 7표 **TRUNCATE 회수**~~ → **0016 에서 완료** (TRIGGER·REFERENCES 도 함께). ✅
 - ~~**`places` 는 애초에 관리자가 쓰지 않는다**~~ → **0016 에서 `authenticated` 의 insert/update/delete 회수 완료**(`select` 는 남겼다). ✅
 - ~~`0005:96`·`0007:31` 의 definer 함수가 `pg_temp` 를 빠뜨렸다~~ → **0016 에서 완료.** 단 **함수는 넷이 아니라 셋**이었다 — `0005:96` 의 `claim_pending_notifications(int)` 는 `0014` 가 이미 지웠고 2-인자 판은 처음부터 `public, pg_temp` 다. ✅
-- `tests/write-privileges.test.ts` 가 **상태코드 ≥400 이면 통과**로 본다 — 500 이나 무관한 검증 실패도 "보안 성공" 으로 읽힌다. 권한 거부(`42501`)를 명시 단언해야 한다. *(미착수 · P4-5 리뷰 K3 과 같은 결)*
-- 🔴 **`reservations`·`notifications_log` 에도 `TRIGGER`·`REFERENCES` 가 남아 있다** (2026-09-16 실측: `anon`·`authenticated` 둘 다 `references, select, trigger`). 콘텐츠 표보다 **위험이 크다** — `supabase_functions.http_request` 트리거를 붙이면 고객 이름·전화번호가 행이 바뀔 때마다 외부로 나간다. 0016 은 브리프가 못박은 일곱 콘텐츠 표만 다뤘다. **0017 후보.** *(미착수)*
-- `anon` 이 `reservations`·`notifications_log` 에 **`select`** 를 갖고 있다(정책이 없어 RLS 가 0행을 낸다). 0012 는 "select 는 회수하지 않는다" 를 관리자 화면 근거로 정했는데 그 근거는 `authenticated` 에만 해당한다. 위 항목과 함께 볼 것. *(미착수)*
+- ~~`tests/write-privileges.test.ts` 가 **상태코드 ≥400 이면 통과**로 본다~~ → **0017 (P5-13) 에서 완료.** 같은 파일의 거부 단언 13곳을 `expectPermissionDenied()`(상태코드 401·403 **그리고** PostgreSQL `42501`)로 바꾸고, **대조군**(없는 표 → 404 `PGRST205`)을 같은 블록에 둬 "거부" 와 "부재" 가 구분되는지 보인다. ✅ *(같은 형태가 `tests/admin-*.test.ts` 등 6파일에 아직 남아 있다 — 아래 새 후속 항목)*
+- ~~🔴 **`reservations`·`notifications_log` 에도 `TRIGGER`·`REFERENCES` 가 남아 있다**~~ → **0017 에서 회수 완료.** 적용 전에 **실제로 붙여 봤고 붙었다**(아래 0017 절의 실측 원문). ✅
+- ~~`anon` 이 `reservations`·`notifications_log` 에 **`select`** 를 갖고 있다~~ → **0017 에서 회수 완료.** 두 표를 `anon` 으로 읽는 경로가 코드에 하나도 없고(공개 경로는 전부 서비스 롤) 0009 의 세 정책은 전부 `to authenticated` 다. ✅
+- **느슨한 거부 단언이 남은 파일들**: `tests/admin-auth.test.ts` · `tests/admin-reservations.test.ts` · `tests/admin-notifications.test.ts` · `tests/admin-notices.test.ts` · `tests/admin-popups.test.ts` · `tests/admin-routes.test.ts` · `tests/admin-gallery.test.ts` 에 `toBeGreaterThanOrEqual(400)` 이 남아 있다. 전부가 권한 거부는 아니다(Storage API 응답·중복키 409·RPC 부재 404 가 섞여 있어 일괄 치환하면 오히려 틀린 단언이 된다) — **한 건씩 무엇을 단언하려던 것인지 읽고** 권한 거부인 것만 `42501` 로 조인다. *(미착수)*
 
 ### 적용 후 확인 (원격)
 같은 질의 다섯 개를 원격에서 돌려 **위 표와 같은 결과**인지 대조하고, 아래에 날짜·결과를 적는다.
@@ -216,3 +217,68 @@ where p.prorettype = 'pg_catalog.trigger'::regtype
 `supabase/rollbacks/0016_privileges_rls_cannot_protect.down.sql` · **승인 플래그 요구**(`set bestour.rollback_0016_ack = '1';`). 근거: 되돌린 뒤의 세계가 **조용히** 위험하다(TRUNCATE 는 RLS 밖, TRIGGER 는 외부 유출, `pg_temp` 없는 `search_path` 는 엉뚱한 표를 고치고 성공을 돌려준다). 되돌린 것을 필요로 하는 정상 경로는 하나도 없다.
 
 > **원격 적용: 아직 하지 않았다 (2026-09-16).** 0012~0016 이 함께 대기 중이다(원격은 0011 상태).
+
+---
+
+## 0017 — 개인정보 두 표의 TRIGGER·REFERENCES 와 `anon` SELECT 회수 (작성 완료, 원격 적용 대기)
+
+**무엇을 하나**: 0016 은 브리프가 못박은 **콘텐츠 일곱 표**만 다뤘다. 같은 구멍이 `reservations`(고객 성명·전화번호·이메일·문의내용)·`notifications_log`(수신처·문자 본문)에도 남아 있었고, **그쪽이 더 위험하다.**
+
+1. 두 표 × `anon`·`authenticated` 에서 **TRIGGER·REFERENCES** 회수
+2. 두 표에서 **`anon` 의 SELECT** 회수 (`authenticated` 의 SELECT 는 남긴다 — 관리자 화면이 읽는다)
+
+함수·정책·데이터는 건드리지 않는다. `drop function` 도, `create or replace function` 도 없다.
+
+### 🔴 이것은 이론이 아니다 — 적용 **전에** 붙여 봤고, 붙었다 (2026-09-16 로컬 실측)
+`set local role <롤>` 뒤 `supabase_functions.http_request` 트리거를 `CREATE TRIGGER` 로 붙이는 시도(마지막에 `raise` 로 전부 롤백):
+```
+[anon → reservations]          CREATE TRIGGER 성공
+[anon → notifications_log]     CREATE TRIGGER 성공
+[authenticated → reservations] CREATE TRIGGER 성공
+[authenticated → notifications_log] CREATE TRIGGER 성공
+```
+0017 적용 **후** 같은 시도:
+```
+[anon → reservations]          거부 SQLSTATE=42501 MESSAGE=permission denied for table reservations
+[anon → notifications_log]     거부 SQLSTATE=42501 MESSAGE=permission denied for table notifications_log
+[authenticated → reservations] 거부 SQLSTATE=42501 MESSAGE=permission denied for table reservations
+[authenticated → notifications_log] 거부 SQLSTATE=42501 MESSAGE=permission denied for table notifications_log
+```
+`CREATE TRIGGER` 는 표의 TRIGGER 권한 + **이미 존재하는** 트리거 함수의 EXECUTE 만 요구한다(스키마 CREATE 도, 소유권도 불필요). `supabase_functions.http_request` 는 `anon`·`authenticated` 모두 `execute=true` 다.
+
+### `anon` 의 SELECT 를 회수한 근거
+0012 의 "select 는 회수하지 않는다" 는 **관리자 화면이 읽는다** 였고, 그것은 `authenticated` 에만 해당한다. 두 표를 `anon` 으로 읽는 경로가 코드에 **하나도 없다**: `lib/queries/recent.ts`·`lib/reservation-check/db.ts`·`lib/notify/vars.ts`·`lib/retention/purge.ts` 전부 **서비스 롤**이고, 관리자 목록·발송 내역은 `authenticated`(SSR 세션)다. 0009 의 세 정책(`reservations_admin_select`·`reservations_admin_update`·`notifications_log_admin_select`)도 전부 `to authenticated` 다.
+
+**거동 변화**: PostgREST 가 `200 []` 대신 **`401` + `42501`** 을 낸다. 그 0행은 *정책이 없어서* 나오던 결과라, 누가 `anon` 용 select 정책을 한 줄 붙이면 고객 표가 공개됐다 — 이제 정책과 무관하게 권한에서 먼저 막힌다. 바뀐 단언: `tests/notify-vars.test.ts` 의 "anon 키로는 0행" → "권한 거부(42501)".
+
+### 적용 전/후 확인 질의 (0017 판 — 여덟 가지를 한 문장으로)
+`tests/write-privileges.test.ts` §12 의 SQL 을 그대로 SQL Editor 에 붙여 넣어 대조한다.
+
+| # | 기대 문자열 | 뜻 |
+|---|---|---|
+| ① | `PII_BLIND_NONE` | 두 표에 `anon`·`authenticated` 의 trigger/references 0 (컬럼 단위 references 포함) |
+| ② | `ANON_PII_NONE` | `anon` 은 두 표에서 **일곱 동작 전부** 없음(select 까지) |
+| ③ | `ADMIN_READ_OK` | `authenticated` 의 select 는 표·컬럼 단위 모두 생존 = 관리자 화면이 산다 |
+| ④ | `SERVICE_OK` | `service_role` 의 일곱 동작 불변 = 접수·enqueue·발송기·파기가 산다 |
+| ⑤ | `PII_COLUMN_NONE` · `PII_PUBLIC_NONE` | 컬럼 단위 grant 0 · PUBLIC 상속 0 |
+| ⑥ | `OUTBOX_FN_ONLY_SERVICE` · `OUTBOX_FN_SERVICE_OK` | 아웃박스 definer 함수 **넷**의 EXECUTE 보유자는 `service_role`(+소유자) 뿐이고 실행 가능 |
+| ⑦ | `PII_NO_USER_TRIGGER` | 두 표에 사용자 트리거 0 |
+| ⑧ | (같은 파일의 거동 테스트) | `anon`·`authenticated` 의 `CREATE TRIGGER` 4회가 **42501**, `service_role` 2회는 **성공**(대조군) |
+
+### 로컬 실측 (2026-09-16, P5-13 구현)
+| 표 | 롤 | 적용 전 | 적용 후 |
+|---|---|---|---|
+| `reservations`·`notifications_log` | `anon` | references, select, trigger | **(없음)** |
+| `reservations`·`notifications_log` | `authenticated` | references, select, trigger | **select** |
+| 같은 두 표 | `service_role`·`postgres` | 7종 전부 | **변화 없음** |
+
+PUBLIC 롤 grant 0 · 따로 부여된 컬럼 ACL 0(`pg_class.relacl`·`pg_attribute.attacl` 을 `aclexplode` 로 전수) — 적용 전후 모두.
+
+### 적용 경로
+`supabase db push` 또는 SQL Editor. **`psql -f` 를 쓰지 마라**(리뷰 K1).
+⚠️ 자기검증 ⑦ 이 `set local role` 로 롤을 바꿔 `CREATE TRIGGER` 를 시도한다 — **적용하는 롤이 `anon`·`authenticated`·`service_role` 의 멤버여야 한다**(`postgres`/`supabase_admin` 은 멤버다). 아니면 마이그레이션이 "롤 전환 실패" 로 **명시적으로 멈춘다**(조용히 건너뛰지 않는다).
+
+### 롤백
+`supabase/rollbacks/0017_pii_tables_trigger_references.down.sql` · **승인 플래그 요구**(`set bestour.rollback_0017_ack = '1';`). 근거: 되돌리면 `http_request` 트리거로 **접수마다 고객 개인정보가 외부로 나가는** 경로가 오류·로그·화면 변화 없이 다시 열린다. 되돌린 것을 필요로 하는 정상 경로는 하나도 없다.
+
+> **원격 적용: 아직 하지 않았다 (2026-09-16).** 0012~0017 이 함께 대기 중이다(원격은 0011 상태).

@@ -88,6 +88,10 @@
 --   · **`reservations`·`notifications_log` 의 TRIGGER·REFERENCES** — 실측하니 두 표에도 남아 있다
 --     (`anon`·`authenticated` 둘 다 `references, select, trigger`). 개인정보가 든 표라 위험은 더 크지만
 --     **이 태스크의 범위가 아니다**(브리프가 일곱 표로 못박았다). 보고서 ⑧ 과 runbook 후속 목록에 올린다.
+--     → **후속 완료 (2026-09-16 · P5-13 / 0017).** `supabase/migrations/0017_pii_tables_trigger_references.sql`
+--       이 두 표에서 TRIGGER·REFERENCES 를 회수하고, 함께 **`anon` 의 SELECT** 도 회수했다(그 select 를 쓰는
+--       공개 경로가 하나도 없다 — 전부 서비스 롤이다). 0017 은 이 파일을 한 글자도 바꾸지 않는다(위 세 줄은
+--       그대로 두는 것이 기록이다). 0017 적용 전에 두 표에 `http_request` 트리거를 **실제로 붙여 봤고 붙었다.**
 --
 -- 기존 행 영향: 권한을 회수하고 함수 셋의 `search_path` 를 바꾼다. 표·컬럼·CHECK·인덱스·정책 변경 0, 데이터 변경 0.
 --   0014·0015 와 달리 **자기검증도 행을 만들지 않는다** — §5 는 카탈로그만 읽는다(임시 행을 넣는 거동 탐침이 없다).
