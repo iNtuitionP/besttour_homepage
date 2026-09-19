@@ -31,6 +31,17 @@
 -- 재실행 안전: `revoke` 는 없는 권한을 회수해도 오류가 아니다.
 -- 롤백: supabase/rollbacks/0013_anon_write_privileges.down.sql (수동 실행 전용 · 승인 플래그 **무조건** 요구).
 
+-- lock_timeout 상한 (P5-15 R7): CLI 가 이 파일을 한 트랜잭션으로 돌려 set local 은 이 파일에만 걸린다 — 잠금을 5초 넘게 기다리면 파일째 롤백.
+set local lock_timeout = '5s';
+do $$
+begin
+  if current_setting('lock_timeout') <> '5s' then
+    raise exception '0013: 앞 문장의 set local lock_timeout 이 남지 않았다 (지금 %) — 파일이 한 트랜잭션으로 돌지 않는 경로다. 아무것도 바꾸기 전에 멈춘다', current_setting('lock_timeout')
+      using hint = 'supabase db push 로 적용할 것(파일 하나 = 트랜잭션 하나). psql -f 처럼 문장마다 커밋하는 경로에서는 set local 이 그 문장에서 끝난다(PostgreSQL 은 경고만 낸다).';
+  end if;
+end
+$$;
+
 -- =========================================================================
 -- 1. 회수 — 7표, `anon` 만, 쓰기 네 동작만
 -- =========================================================================

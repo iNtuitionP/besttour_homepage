@@ -99,9 +99,21 @@
 --   실제 쓰고 지우며, TRUNCATE·TRIGGER 는 PostgREST 로 호출할 방법이 아예 없어 같은 파일 §9 의 행렬이 유일한 증거다.
 -- 재실행 안전: `revoke` 는 없는 권한을 회수해도 오류가 아니고, `create or replace` 는 멱등이다.
 -- PostgREST 스키마 캐시: 갱신하지 않는다. 함수 **시그니처**가 바뀌지 않았고(0014 는 그래서 필요했다) 표·컬럼 모양도 그대로다.
--- 적용 경로: `supabase db push` 또는 SQL Editor. **`psql -f` 를 쓰지 마라** — 파일이 원자적이지 않아 자기검증이
+-- 적용 경로: **`supabase db push` 만**(P5-15 R6 — SQL Editor 로 본문을 돌리면 schema_migrations 이력이 남지 않아
+--   다음 db push 가 이 파일을 다시 돌린다. SQL Editor 는 읽기 확인용). **`psql -f` 를 쓰지 마라** — 파일이 원자적이지 않아 자기검증이
 --   `raise` 해도 앞 문장이 남는다(P4-5 리뷰 K1, docs/ops/migration-runbook.md).
 -- 롤백: supabase/rollbacks/0016_privileges_rls_cannot_protect.down.sql (수동 실행 전용 · 승인 플래그 요구 — 근거는 그 파일 헤더).
+
+-- lock_timeout 상한 (P5-15 R7): CLI 가 이 파일을 한 트랜잭션으로 돌려 set local 은 이 파일에만 걸린다 — 잠금을 5초 넘게 기다리면 파일째 롤백.
+set local lock_timeout = '5s';
+do $$
+begin
+  if current_setting('lock_timeout') <> '5s' then
+    raise exception '0016: 앞 문장의 set local lock_timeout 이 남지 않았다 (지금 %) — 파일이 한 트랜잭션으로 돌지 않는 경로다. 아무것도 바꾸기 전에 멈춘다', current_setting('lock_timeout')
+      using hint = 'supabase db push 로 적용할 것(파일 하나 = 트랜잭션 하나). psql -f 처럼 문장마다 커밋하는 경로에서는 set local 이 그 문장에서 끝난다(PostgreSQL 은 경고만 낸다).';
+  end if;
+end
+$$;
 
 -- =========================================================================
 -- 1. 일곱 표 — `authenticated` 의 TRUNCATE·TRIGGER·REFERENCES 회수
@@ -304,7 +316,24 @@ begin
     end if;
 
     select p.proconfig into cfg from pg_proc p where p.oid = fn_oid;
-    if cfg is null or not exists (select 1 from unnest(cfg) c where c ~ '^search_path=.*\mpg_temp\M') then
+    -- search_path 항목만 스키마 목록으로 풀어 비교한다(P5-15 R6 — runbook 행렬 · 롤백 · 게이트와 같은 판정).
+    -- 쉼표는 따옴표 밖에서만 가르고, 따옴표 식별자는 풀고("" → "), 비인용 이름은 소문자로 비교한다
+    -- (src/backend/utils/adt/varlena.c SplitIdentifierString 의 규칙). `"x pg_temp"` 는 pg_temp 가 아니다.
+    -- 토큰 앞뒤 공백 = src/backend/parser/scansup.c scanner_isspace — 스페이스·\t·\n·\r·\f 는 모든 버전에서, **\v 는 17 이상에서만**.
+    -- 실측 (P5-15 R8 · 네 버전 같은 방법: set_config('search_path', chr(11) || 'public', true) 뒤 current_schemas(false)):
+    --   15.17 → {}  · 16.15 → {}  · 17.6 → {public}  · 18.6 → {public}
+    --   즉 경계는 **17** 이다(astra R7 은 16 으로 추정했으나 16.15 실측이 뒤집었다 — 16 은 \v 를 이름의 일부로 읽는다).
+    -- E-문자열에는 \v 이스케이프가 없어(v 한 글자가 된다) chr(11) 로 쓴다.
+    if cfg is null or not exists (
+         select 1
+           from unnest(cfg) c
+          cross join lateral regexp_split_to_table(substr(c, 13), ',(?=(?:[^"]*"[^"]*")*[^"]*$)') x(tok)
+          cross join lateral (select btrim(x.tok, ' ' || chr(9) || chr(10) || chr(13) || chr(12)
+                                       || case when current_setting('server_version_num')::int >= 170000 then chr(11) else '' end) as t) y
+          where left(c, 12) = 'search_path='
+            and case when y.t like '"%'
+                     then replace(substr(y.t, 2, length(y.t) - 2), '""', '"')
+                     else lower(y.t) end = 'pg_temp') then
       raise exception '0016: % 의 search_path 에 pg_temp 가 없다 (proconfig=%)', fn_sig, cfg
         using hint = 'set search_path = public, pg_temp 로 적을 것. 목록에서 빼면 Postgres 가 pg_temp 를 맨 앞에서 암묵 검색해 호출자의 임시 표가 진짜 표를 가릴 수 있다(P4-5 리뷰 K2 가 실증했다).';
     end if;

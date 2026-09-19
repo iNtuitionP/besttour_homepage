@@ -54,6 +54,17 @@
 -- 재실행 안전: `revoke` 는 없는 권한을 회수해도 오류가 아니다. 조건 분기가 필요 없다.
 -- 롤백: supabase/rollbacks/0012_write_privileges.down.sql (수동 실행 전용 — 0005·0007·0009·0010 롤백 헤더 참조).
 
+-- lock_timeout 상한 (P5-15 R7): CLI 가 이 파일을 한 트랜잭션으로 돌려 set local 은 이 파일에만 걸린다 — 잠금을 5초 넘게 기다리면 파일째 롤백.
+set local lock_timeout = '5s';
+do $$
+begin
+  if current_setting('lock_timeout') <> '5s' then
+    raise exception '0012: 앞 문장의 set local lock_timeout 이 남지 않았다 (지금 %) — 파일이 한 트랜잭션으로 돌지 않는 경로다. 아무것도 바꾸기 전에 멈춘다', current_setting('lock_timeout')
+      using hint = 'supabase db push 로 적용할 것(파일 하나 = 트랜잭션 하나). psql -f 처럼 문장마다 커밋하는 경로에서는 set local 이 그 문장에서 끝난다(PostgreSQL 은 경고만 낸다).';
+  end if;
+end
+$$;
+
 -- =========================================================================
 -- 1. notifications_log — 네 동작 전부. 상태 전이(pending→sent/failed)는 서비스 롤 발송기와
 --    0005·0007 의 definer 함수 몫이고, 관리자에게는 0009 의 select 정책 하나만 있다.

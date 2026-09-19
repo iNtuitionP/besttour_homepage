@@ -1709,6 +1709,7 @@ describe.skipIf(!gate.allowed)("9. DB — 0016 권한·함수 행렬 실측 (로
 
   test("anon 은 일곱 표에서 select 만 갖는다 (0013 이 네 동작 · 0016 이 trigger·references)", () => {
     expect(verdict, verdict).toContain("ANON_SELECT_ONLY");
+    expect(verdict, verdict).toContain("ANON_SELECT_OK");
   });
 
   test("places — 쓰기 셋은 사라지고 두 롤의 읽기는 살아 있다", () => {
@@ -1746,6 +1747,105 @@ describe.skipIf(!gate.allowed)("9. DB — 0016 권한·함수 행렬 실측 (로
       "select 'P515B ' || coalesce((select proacl::text from pg_proc where oid = to_regprocedure('public.reap_stale_notifications()')), 'NULL') || ' ' || (to_regprocedure('public.mark_notification_failed(bigint, text, boolean, bigint)') is not null)::text as a;",
     );
     expect(after, after).toMatch(/P515B \{[^}]*service_role=X[^}]*\} true/);
+  }, 300_000);
+
+  test("🔴 R6 P2-2·P2-3 — 행렬은 사라진 anon SELECT · 컬럼 단위 쓰기 · search_path 밖의 pg_temp 를 실패 라벨로 보고한다 (되돌림)", () => {
+    const matrix = runbookSql("0016").replace(/;\s*$/, "");
+    const out = runLocalSqlExpectingError(
+      [
+        "do $p515r6$",
+        "declare payload text;",
+        "begin",
+        // P2-2 ① 콘텐츠 표의 anon SELECT 가 사라짐 — 공개 사이트가 빈다
+        "  revoke select on table public.notices from anon;",
+        // P2-2 ② 컬럼 단위 쓰기 — 표 단위 has_table_privilege 는 이것을 못 본다
+        "  grant update (sort) on table public.places to authenticated;",
+        "  grant insert (name_ko) on table public.vehicles to anon;",
+        "  grant references (caption) on table public.gallery to anon;",
+        // P2-3 ① search_path 에는 없고 다른 설정 값에만 pg_temp — 옛 판정(`like '%pg_temp%'`)은 통과시켰다
+        "  alter function public.reap_stale_notifications() set search_path = public;",
+        "  alter function public.reap_stale_notifications() set application_name = 'pg_temp';",
+        // P2-3 ② 따옴표 식별자 안의 낱말 — pg_temp 스키마가 아니다
+        `  alter function public.mark_notification_sent(bigint, text) set search_path = public, "x pg_temp";`,
+        `  select row_to_json(m)::text into payload from (${matrix}) m;`,
+        "  raise exception 'P515R6 %', payload;",
+        "end",
+        "$p515r6$;",
+      ].join("\n"),
+    );
+    expect(out, out).toContain("P515R6");
+    expect(out, out).toMatch(/ANON_SELECT_LOST [^"\\]*public\.notices/);
+    expect(out, out).toMatch(/PLACES_WRITE_LEAK [^"\\]*update/);
+    expect(out, out).toMatch(/ANON_EXTRA [^"\\]*public\.vehicles\/insert/);
+    expect(out, out).toMatch(/ANON_EXTRA [^"\\]*public\.gallery\/references/);
+    expect(out, out).toMatch(/PG_TEMP_MISSING [^"\\]*reap_stale_notifications/);
+    expect(out, out).toMatch(/PG_TEMP_MISSING [^"\\]*mark_notification_sent/);
+    expect(out, out).not.toMatch(/PG_TEMP_MISSING [^"\\]*mark_notification_failed/);
+    // 되돌려졌다 — 실제 객체는 그대로
+    const after = runLocalSql(
+      [
+        "select 'P515R6B '",
+        "  || has_table_privilege('anon', 'public.notices', 'select')::text || ' '",
+        "  || has_any_column_privilege('authenticated', 'public.places', 'update')::text || ' '",
+        "  || has_any_column_privilege('anon', 'public.vehicles', 'insert')::text || ' '",
+        "  || array_to_string((select proconfig from pg_proc where oid = 'public.reap_stale_notifications()'::regprocedure), ';') as a;",
+      ].join("\n"),
+    );
+    expect(after, after).toMatch(/P515R6B true false false search_path=public, pg_temp"/);
+  }, 300_000);
+
+  test("R6 — 정상 상태의 search_path 표기 변형도 pg_temp 로 읽는다 (대문자 비인용 · 따옴표 · 공백) (되돌림)", () => {
+    const matrix = runbookSql("0016").replace(/;\s*$/, "");
+    const out = runLocalSqlExpectingError(
+      [
+        "do $p515r6ok$",
+        "declare payload text;",
+        "begin",
+        `  alter function public.reap_stale_notifications() set search_path = "$user", public, PG_TEMP;`,
+        `  alter function public.mark_notification_sent(bigint, text) set search_path = "public", "pg_temp";`,
+        `  alter function public.mark_notification_failed(bigint, text, boolean, bigint) set search_path = "a,b", pg_temp;`,
+        `  select m.pg_temp || ' | ' || (select string_agg(array_to_string(proconfig, ';'), ' / ') from pg_proc where proname in ('reap_stale_notifications', 'mark_notification_sent', 'mark_notification_failed')) into payload from (${matrix}) m;`,
+        "  raise exception 'P515R6OK %', payload;",
+        "end",
+        "$p515r6ok$;",
+      ].join("\n"),
+    );
+    expect(out, out).toMatch(/P515R6OK PG_TEMP_OK \|/);
+  }, 300_000);
+
+  test("🔴 R7 P2-a — 행렬의 search_path 분리는 PostgreSQL 공백 집합(\\t 등 · \\v 는 17 이상)을 쓴다 (SET FROM CURRENT · 되돌림)", () => {
+    const matrix = runbookSql("0016").replace(/;\s*$/, "");
+    const out = runLocalSqlExpectingError(
+      [
+        "do $p515r7$",
+        "declare payload text; saved text := current_setting('search_path'); v17 boolean := current_setting('server_version_num')::int >= 170000;",
+        "begin",
+        // ① 탭 — 유효한 search_path(PG 가 pg_temp 로 읽는다)
+        "  perform set_config('search_path', 'public,' || chr(9) || 'pg_temp', true);",
+        "  alter function public.reap_stale_notifications() set search_path from current;",
+        // ② 세로 탭 — 17 이상에서만 공백
+        "  perform set_config('search_path', 'public,' || chr(11) || 'pg_temp', true);",
+        "  alter function public.mark_notification_sent(bigint, text) set search_path from current;",
+        // ③ 대조군 — 따옴표 안의 탭은 이름의 일부 → pg_temp 아님
+        "  perform set_config('search_path', 'public, \"' || chr(9) || 'pg_temp\"', true);",
+        "  alter function public.mark_notification_failed(bigint, text, boolean, bigint) set search_path from current;",
+        "  perform set_config('search_path', saved, true);",
+        `  select row_to_json(m)::text into payload from (${matrix}) m;`,
+        "  raise exception 'P515R7 v17=% cfg=% %', v17,",
+        "    (select string_agg(replace(replace(array_to_string(proconfig, ';'), chr(9), '<TAB>'), chr(11), '<VT>'), ' / ' order by proname) from pg_proc",
+        "      where proname in ('reap_stale_notifications', 'mark_notification_sent', 'mark_notification_failed')), payload;",
+        "end",
+        "$p515r7$;",
+      ].join("\n"),
+    );
+    expect(out, out).toContain("P515R7 v17=t ");
+    expect(out, out).toContain("search_path=public,<TAB>pg_temp");
+    expect(out, out).toContain("search_path=public,<VT>pg_temp");
+    expect(out, out).not.toMatch(/PG_TEMP_MISSING [^"\\]*reap_stale_notifications/);
+    expect(out, out).not.toMatch(/PG_TEMP_MISSING [^"\\]*mark_notification_sent/);
+    expect(out, out).toMatch(/PG_TEMP_MISSING [^"\\]*mark_notification_failed/);
+    const after = runLocalSql("select 'P515R7B ' || array_to_string((select proconfig from pg_proc where oid = 'public.reap_stale_notifications()'::regprocedure), ';') as a;");
+    expect(after, after).toMatch(/P515R7B search_path=public, pg_temp"/);
   }, 300_000);
 
   test("1-인자 claim 구버전이 되살아나지 않았다 — 되살아나면 호출이 모호해져 발송기가 멈춘다", () => {
@@ -2588,7 +2688,10 @@ describe("16. 0019_maintain_privilege.sql", () => {
   test("🔴 최상위에 revoke·grant 가 없다 — MAINTAIN 문장은 버전 판정 뒤 동적 SQL 에만 있다 (16 이하에서 문법 오류로 푸시가 막힌다)", () => {
     const code = sqlCode(UP19_SQL);
     expect(code, "최상위 revoke/grant 가 있다").not.toMatch(/(?:^|;)\s*(?:revoke|grant)\s/);
-    expect(code, "최상위 문장이 do 블록 하나가 아니다").toMatch(/^do \$\$/);
+    // P5-15 R7 — 앞머리 두 문장(set local lock_timeout · 그 확인 DO)은 모든 버전에서 유효하다(lock_timeout 은 9.3+). 그 뒤가 버전 판정 DO 다.
+    const PREAMBLE = /^set local lock_timeout = '5s'; do \$\$ begin if current_setting\('lock_timeout'\) <> '5s' then .*? end if; end \$\$; /;
+    expect(code, "lock_timeout 앞머리가 없다").toMatch(PREAMBLE);
+    expect(code.replace(PREAMBLE, ""), "앞머리 뒤 최상위 문장이 do 블록 하나가 아니다").toMatch(/^do \$\$ declare/);
     // 버전 판정 → 16 이하 건너뛰기(return) → 회수 의 순서
     const ver = code.indexOf("v_applies constant boolean := v_ver >= 170000;");
     const skip = code.indexOf("if not v_applies then");
@@ -2859,7 +2962,13 @@ describe.skipIf(!gate.allowed)("18. DB — 0019 MAINTAIN 행렬 + LOCK 거동 + 
     "v_knows_maintain  constant boolean := exists (select 1 from aclexplode(acldefault('r', to_regrole(current_user))) d where d.privilege_type = 'MAINTAIN');";
   const SKIP_NOTICE = "raise notice '0019: PostgreSQL % (server_version_num=%) — MAINTAIN 권한이 없는 버전이다";
   const variant = (ver: string, knows: string) => {
-    const src = read(UP19_SQL);
+    const full = read(UP19_SQL);
+    // P5-15 R7 — 이 헬퍼는 문장 하나만 보낸다(prepared statement). 앞머리(set local lock_timeout · 확인 DO)를 떼고 버전 판정 DO 만 돌린다.
+    //            떼어 낸 부분이 주석과 그 앞머리뿐인지 확인한다(다른 최상위 문장이 숨지 않게).
+    const cut = full.indexOf("do $$\ndeclare");
+    const head = compact(stripComments(full.slice(0, cut), UP19_SQL));
+    expect(head).toMatch(/^set local lock_timeout = '5s'; do \$\$ begin if current_setting\('lock_timeout'\) <> '5s' then .*? end if; end \$\$;$/);
+    const src = full.slice(cut);
     for (const needle of [VER_LINE, KNOWS_LINE, SKIP_NOTICE]) expect(src, `치환 대상이 파일에 없다 — 파일이 바뀌었나: ${needle}`).toContain(needle);
     return src
       .split(VER_LINE).join(`v_ver             constant int     := ${ver};`)
@@ -2914,18 +3023,48 @@ function runbookSection(num: RunbookSection): string {
   return raw.slice(start, next === -1 ? undefined : next);
 }
 
-/** runbook 표식 사이의 ```sql 블록 — 운영자가 원격 SQL Editor 에 붙이는 원문이고, 테스트가 그대로 실행하는 원문이다. */
+/** CommonMark 여는 펜스: 3칸 이하 들여쓰기 · 같은 문자 3개 이상 · 정보 문자열. */
+const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+/**
+ * CommonMark 닫는 펜스 (astra R6 P2-4): 3칸 이하 들여쓰기, 여는 펜스와 **같은 문자**로
+ * **여는 길이 이상**, 뒤에는 **공백만**. `~~~not-a-close`·`` ```sql `` 은 닫는 줄이 아니다.
+ */
+function isFenceClose(line: string, openFence: string): boolean {
+  const m = line.match(/^ {0,3}(`{3,}|~{3,})[ \t]*\r?$/);
+  return !!m && m[1][0] === openFence[0] && m[1].length >= openFence.length;
+}
+
+/**
+ * 표식 사이의 ```sql 블록을 꺼낸다 (텍스트 단위 — 단위 테스트가 변형을 넣는다).
+ * `full` 은 runbook 전체, `section` 은 그 절. 실패하면 throw.
+ */
+function extractMarkedSql(full: string, section: string, marker: string): string {
+  const begin = `<!-- P515:${marker}:BEGIN -->`;
+  const end = `<!-- P515:${marker}:END -->`;
+  const count = (s: string, needle: string) => s.split(needle).length - 1;
+  // 표식 쌍은 runbook 전체에서 정확히 하나 — 그리고 그 하나가 이 절 안에 있어야 한다 (astra R6 P2-4)
+  for (const mk of [begin, end]) {
+    if (count(full, mk) !== 1) throw new Error(`표식이 runbook 전체에 정확히 하나가 아니다: ${mk} ×${count(full, mk)}`);
+    if (count(section, mk) !== 1) throw new Error(`표식이 이 절에 정확히 하나가 아니다: ${mk} ×${count(section, mk)}`);
+  }
+  const b = section.indexOf(begin);
+  const e = section.indexOf(end);
+  if (e <= b) throw new Error(`끝 표식이 시작 표식보다 앞에 있다 (${marker})`);
+  // 표식 사이에는 완결된 ```sql 블록 정확히 하나와 빈 줄만 있어야 한다
+  const lines = section.slice(b + begin.length, e).replace(/\r\n/g, "\n").split("\n");
+  while (lines.length && lines[0].trim() === "") lines.shift();
+  while (lines.length && lines[lines.length - 1].trim() === "") lines.pop();
+  const open = lines[0]?.match(FENCE_OPEN);
+  if (!open || open[2].trim().toLowerCase() !== "sql") throw new Error("표식 뒤 첫 줄이 ```sql 여는 펜스가 아니다");
+  const closeAt = lines.findIndex((l, k) => k > 0 && isFenceClose(l, open[1]));
+  if (closeAt < 0) throw new Error("표식 사이의 sql 블록이 닫히지 않았다");
+  if (closeAt !== lines.length - 1) throw new Error("표식 사이에 sql 블록 뒤로 다른 내용(두 번째 블록·산문)이 있다");
+  return lines.slice(1, closeAt).join("\n");
+}
+
+/** runbook 표식 사이의 ```sql 블록 — 운영자가 원격 SQL Editor 에 붙여 **읽기 확인**하는 원문이고, 테스트가 그대로 실행하는 원문이다. */
 function runbookSql(num: RunbookSection): string {
-  const sec = runbookSection(num);
-  const begin = `<!-- P515:${MATRIX_MARKER[num]}:BEGIN -->`;
-  const end = `<!-- P515:${MATRIX_MARKER[num]}:END -->`;
-  const b = sec.indexOf(begin);
-  const e = sec.indexOf(end);
-  expect(b, `runbook ${num} 절에 행렬 SQL 시작 표식이 없다`).toBeGreaterThan(-1);
-  expect(e, `runbook ${num} 절에 행렬 SQL 끝 표식이 없다`).toBeGreaterThan(b);
-  const m = sec.slice(b + begin.length, e).match(/^```sql\n([\s\S]*?)\n```\s*$/m);
-  expect(m, "표식 사이에 ```sql 블록이 하나 있어야 한다").not.toBeNull();
-  return (m as RegExpMatchArray)[1];
+  return extractMarkedSql(read(RUNBOOK), runbookSection(num), MATRIX_MARKER[num]);
 }
 const runbookMatrixSql = () => runbookSql("0019");
 
@@ -2988,13 +3127,14 @@ function remoteViolations(sec: string): string[] {
   const out: string[] = [];
   let lastProse = "";
   for (let i = 0; i < lines.length; i++) {
+    // 여는 줄은 넓게 잡는다(들여쓰기 무관 — 놓치는 것보다 과하게 보는 쪽이 안전하다). 닫는 줄은 엄격하게.
     const open = lines[i].match(/^\s*(`{3,}|~{3,})\s*([\w-]*)/);
     if (open) {
       const fence = open[1];
       const lang = open[2].toLowerCase();
       const body: string[] = [];
       let j = i + 1;
-      while (j < lines.length && !lines[j].trimStart().startsWith(fence)) body.push(lines[j++]);
+      while (j < lines.length && !isFenceClose(lines[j], fence)) body.push(lines[j++]);
       if (j >= lines.length) out.push(`닫히지 않은 코드 블록 (${i + 1}행)`);
       const text = body.join("\n");
       const exempt = lastProse.includes(LOCAL_ONLY);
@@ -3020,6 +3160,109 @@ function remoteViolations(sec: string): string[] {
 }
 
 describe("19. runbook 0017·0018·0019 — 원격 확인 절차는 카탈로그 질의뿐 (astra R2 P1-A · R3 · R4)", () => {
+  // ---------------------------------------------------------------------------
+  // astra R6 P2-4 — 표식·펜스 파서의 엄격성
+  // ---------------------------------------------------------------------------
+  const M = "TEST_MATRIX_SQL";
+  const B = `<!-- P515:${M}:BEGIN -->`;
+  const E = `<!-- P515:${M}:END -->`;
+  const one = [B, "```sql", "select 1;", "```", E].join("\n");
+
+  test("🔴 R6 P2-1 — 원격 적용 경로는 `supabase db push` 하나 · 적용 후 이력 확인 · 수동 적용 예외는 승인 조건부", () => {
+    const raw = read(RUNBOOK).replace(/\r\n/g, "\n");
+    const top = raw.slice(0, raw.indexOf("\n## 0012"));
+    // SQL Editor 를 적용 경로로 적은 문장이 어디에도 없다 (runbook · 0012~0019 마이그레이션)
+    const applyViaEditor = /db push[^\n]{0,30}또는[^\n]{0,30}SQL Editor|SQL Editor[^\n]{0,10}로 적용|SQL Editor 로만/;
+    expect(raw.match(applyViaEditor)?.[0] ?? null, "runbook 이 SQL Editor 를 적용 경로로 적는다").toBeNull();
+    const migs = readdirSync(path.join(ROOT, "supabase", "migrations")).filter((n) => /^001[2-9]_.*\.sql$/.test(n));
+    expect(migs.length).toBe(8);
+    for (const f of migs) {
+      expect(read(`supabase/migrations/${f}`).match(applyViaEditor)?.[0] ?? null, f).toBeNull();
+    }
+    // 맨 위에 결정이 있다
+    expect(top.indexOf("### 🔴 적용 경로"), "맨 위에 「적용 경로」 절이 없다").toBeGreaterThan(-1);
+    const route = top.slice(top.indexOf("### 🔴 적용 경로"));
+    expect(route).toMatch(/0012~0019[^\n]*`supabase db push`[^\n]*하나/);
+    expect(route).toMatch(/SQL Editor[^\n]*읽기 확인/);
+    // 적용 직후 필수 — 이력 마지막이 0019
+    expect(route).toContain("select version, name from supabase_migrations.schema_migrations order by version;");
+    expect(route).toMatch(/마지막이 `0019`/);
+    // 예외 — 수동 적용 뒤 repair 는 컨트롤러 승인이 있을 때만
+    const repairLine = route.split("\n").find((l) => l.includes("supabase migration repair --status applied")) ?? "";
+    expect(repairLine, "repair --status applied 안내가 없다").not.toBe("");
+    expect(repairLine).toMatch(/컨트롤러 승인/);
+    // 순서 4 도 같은 말을 한다
+    expect(top).toMatch(/^4\. 원격에 적용한다[^\n]*`supabase db push`/m);
+  });
+
+  test("🔴 R7 P2-b — 대기 중인 0012~0019 여덟 파일의 첫 실행문은 `set local lock_timeout = '5s'` · runbook 은 부분 적용을 적는다", () => {
+    const all = readdirSync(path.join(ROOT, "supabase", "migrations")).filter((n) => /^\d{4}_.*\.sql$/.test(n));
+    const pending = all.filter((n) => /^001[2-9]_/.test(n));
+    expect(pending.length).toBe(8);
+    for (const f of pending) {
+      const rel = `supabase/migrations/${f}`;
+      const code = sqlCode(rel);
+      expect(code.slice(0, 40), `${f} — 첫 실행문`).toMatch(/^set local lock_timeout = '5s';/);
+      // 둘째 실행문 — set local 이 실제로 걸렸는지(파일이 한 트랜잭션인지) 확인하고, 아니면 아무것도 바꾸기 전에 멈춘다
+      expect(code.slice(0, 200), `${f} — 가드`).toMatch(
+        new RegExp(String.raw`^set local lock_timeout = '5s'; do \$\$ begin if current_setting\('lock_timeout'\) <> '5s' then raise exception '${f.slice(0, 4)}: 앞 문장의 set local lock_timeout 이 남지 않았다`),
+      );
+      expect(code.match(/lock_timeout'?\s*(=|to\s)/g)?.length ?? 0, `${f} — 다른 곳에서 lock_timeout 을 바꾸지 않는다`).toBe(1);
+      expect(code, `${f} — set_config 로 바꾸지 않는다`).not.toMatch(/set_config\(\s*'lock_timeout'/);
+      // 바로 윗줄 주석이 이유를 적는다
+      expect(read(rel), `${f} — 이유 주석`).toMatch(/\n--[^\n]*lock_timeout[^\n]*\nset local lock_timeout = '5s';\n/);
+    }
+    // 이미 원격에 적용된 0001~0011 은 건드리지 않는다(db push 가 다시 돌리지 않는다)
+    for (const f of all.filter((n) => !pending.includes(n))) expect(read(`supabase/migrations/${f}`), f).not.toMatch(/lock_timeout/);
+    const raw = read(RUNBOOK);
+    expect(raw, "db push 에서 lock_timeout 이 불가하다는 옛 서술").not.toMatch(/lock_timeout[^\n]*(걸 수 없다|넣을 수 없다)|넣을 수 없다[^\n]*lock_timeout/);
+    const top = raw.slice(0, raw.indexOf("\n## 0012"));
+    expect(top).toContain("set local lock_timeout = '5s';");
+    // 부분 적용 — 앞 파일은 커밋·기록된 채 남고, 그 파일은 롤백되고, 다음 push 가 그 파일부터
+    expect(top).toMatch(/앞 파일[^\n]*커밋[^\n]*기록/);
+    expect(top).toMatch(/그 파일[^\n]*롤백/);
+    expect(top).toMatch(/다음 `supabase db push` 가 그 파일부터/);
+    // R8 P2-b — 확인 DO 의 보장 수준을 과장하지 않는다(자동 커밋 + 기본값 5초면 통과한다)
+    expect(top, "확인 DO 가 원자성을 증명한다고 적혀 있다").toMatch(/원자성을 증명하지 않는다/);
+    expect(top).toMatch(/기본값이 이미 5초면 통과한다/);
+  });
+
+  test("🔴 R6 P2-4 — 표식 사이에 SQL 블록이 둘이면 거부한다 (두 번째 블록을 조용히 버리지 않는다)", () => {
+    expect(extractMarkedSql(one, one, M)).toBe("select 1;");
+    const two = [B, "```sql", "select 1;", "```", "", "```sql", "grant maintain on table notices to anon;", "```", E].join("\n");
+    expect(() => extractMarkedSql(two, two, M)).toThrow();
+    const trailing = [B, "```sql", "select 1;", "```", "그리고 이것도 붙여라: vacuum", E].join("\n");
+    expect(() => extractMarkedSql(trailing, trailing, M), "블록 밖의 산문이 표식 안에 있다").toThrow();
+  });
+
+  test("🔴 R6 P2-4 — 표식 쌍이 둘이면 거부한다 (절 안이든 runbook 전체든)", () => {
+    const dup = [one, "", one.replace("select 1;", "select 2;")].join("\n");
+    expect(() => extractMarkedSql(dup, dup, M)).toThrow();
+    // 절에는 하나뿐이지만 runbook 다른 곳에 같은 표식이 또 있다
+    expect(() => extractMarkedSql(`${one}\n\n## 다른 절\n${one}`, one, M)).toThrow();
+    // 끝 표식만 중복
+    const dupEnd = [B, "```sql", "select 1;", "```", E, E].join("\n");
+    expect(() => extractMarkedSql(dupEnd, dupEnd, M)).toThrow();
+  });
+
+  test("🔴 R6 P2-4 — 닫는 펜스 문법은 엄격하다: `~~~not-a-close` 는 닫는 줄이 아니다", () => {
+    // 옛 파서(startsWith)는 `~~~not-a-close` 에서 블록을 닫고, 블록 안의 주석 줄을 "로컬 전용" 산문으로 읽어
+    // 다음 펜스 블록(실제로는 블록 밖의 잠금 문장)을 면제했다.
+    const sec = ["## 예시", "", "~~~sql", "select 1;", "~~~not-a-close", `-- ${LOCAL_ONLY}`, "~~~", "lock table public.notices in access exclusive mode;", "~~~"].join("\n");
+    expect(remoteViolations(sec), "가짜 닫는 줄로 잠금 문장이 면제됐다").not.toEqual([]);
+    // 표식 추출도 같은 규칙 — 닫는 줄 뒤에 글자가 있으면 닫힘이 아니다
+    const bad = [B, "```sql", "select 1;", "```sql", E].join("\n");
+    expect(() => extractMarkedSql(bad, bad, M)).toThrow();
+    // 여는 줄보다 짧은 닫는 줄은 닫힘이 아니다 · 다른 문자도 아니다
+    const short = [B, "````sql", "select 1;", "```", E].join("\n");
+    expect(() => extractMarkedSql(short, short, M)).toThrow();
+    const mixed = [B, "~~~sql", "select 1;", "```", E].join("\n");
+    expect(() => extractMarkedSql(mixed, mixed, M)).toThrow();
+    // 허용: 더 긴 닫는 줄 · 뒤따르는 공백 · 3칸 이하 들여쓰기
+    expect(extractMarkedSql([B, "~~~sql", "select 1;", "~~~~  ", E].join("\n"), [B, "~~~sql", "select 1;", "~~~~  ", E].join("\n"), M)).toBe("select 1;");
+    expect(remoteViolations(["```sql", "select 1;", "   ```", "평범한 설명."].join("\n"))).toEqual([]);
+  });
+
   test("🔴 R4 P2-1 — 스캐너의 이빨: astra 의 세 우회(text 펜스의 LOCK · 산문의 명령 · 테스트 절 복사 안내)와 변형을 잡는다", () => {
     const base = ["## 0019 — 예시", "", "원격 확인:", ""];
     const cases: [string, string[]][] = [
@@ -3152,7 +3395,23 @@ describe("19. runbook 0017·0018·0019 — 원격 확인 절차는 카탈로그 
     expect(s16).toContain("aclexplode(coalesce(p.proacl, acldefault('f', p.proowner)))");
     expect(s16).not.toMatch(/aclexplode\(p\.proacl\)/);
     expect(s16).not.toMatch(/p\.proname in \(/);
-    for (const k of ["'RLS_BLIND_NONE'", "'ANON_SELECT_ONLY'", "'PLACES_WRITE_NONE'", "'PLACES_READ_OK'", "'PG_TEMP_OK'", "'FN_EXEC_ONLY_SERVICE'", "'FN_NO_PUBLIC_ROLE_EXEC'", "'FN_SERVICE_OK'", "'CLAIM_ONE_ARG_GONE'", "'ADMIN_OK'", "'SEQ_OK'"]) {
+    // R6 P2-2·P2-3 — anon select 생존 · 컬럼 단위 쓰기 · search_path 항목만 파싱
+    expect(s16).toContain("has_any_column_privilege('anon', t.tbl, p.priv)");
+    expect(s16).toContain("has_any_column_privilege('authenticated', 'public.places', p.priv)");
+    expect(s16).toContain("where left(c, 12) = 'search_path='");
+    expect(s16, "모든 설정 값을 훑는 pg_temp 판정이 돌아왔다").not.toMatch(/like\s+'%pg_temp%'/i);
+    // R7 P2-a — 세 SQL 판정(행렬·0016 ④·롤백)이 같은 공백 집합을 쓴다. 스페이스만 지우는 btrim(x.tok) 은 금지.
+    const WS_EXPR = /btrim\(x\.tok, ' ' \|\| chr\(9\) \|\| chr\(10\) \|\| chr\(13\) \|\| chr\(12\)\s+\|\| case when current_setting\('server_version_num'\)::int >= 170000 then chr\(11\) else '' end\)/;
+    for (const [name, text] of [
+      ["runbook 0016 행렬", s16],
+      ["0016 ④", read("supabase/migrations/0016_privileges_rls_cannot_protect.sql")],
+      ["0016 롤백", read("supabase/rollbacks/0016_privileges_rls_cannot_protect.down.sql")],
+    ] as const) {
+      expect(text, name).toMatch(WS_EXPR);
+      expect(text, `${name} — 스페이스만 지우는 btrim`).not.toMatch(/btrim\(x\.tok\)/);
+      expect(text, `${name} — E'\\v' 는 PG 이스케이프가 아니다`).not.toMatch(/E'[^']*\\v/);
+    }
+    for (const k of ["'RLS_BLIND_NONE'", "'ANON_SELECT_ONLY'", "'ANON_SELECT_OK'", "'PLACES_WRITE_NONE'", "'PLACES_READ_OK'", "'PG_TEMP_OK'", "'FN_EXEC_ONLY_SERVICE'", "'FN_NO_PUBLIC_ROLE_EXEC'", "'FN_SERVICE_OK'", "'CLAIM_ONE_ARG_GONE'", "'ADMIN_OK'", "'SEQ_OK'"]) {
       expect(s16, k).toContain(k);
     }
     const self = read("tests/write-privileges.test.ts");

@@ -68,6 +68,17 @@
 --   표·컬럼 모양도 바뀌지 않는다(0014 는 **RPC 시그니처**가 바뀌어 필요했던 것이다).
 -- 롤백: supabase/rollbacks/0015_album_delete_keeps_visibility.down.sql (수동 실행 전용 · 승인 플래그 요구 — 근거는 그 파일 헤더).
 
+-- lock_timeout 상한 (P5-15 R7): CLI 가 이 파일을 한 트랜잭션으로 돌려 set local 은 이 파일에만 걸린다 — 잠금을 5초 넘게 기다리면 파일째 롤백.
+set local lock_timeout = '5s';
+do $$
+begin
+  if current_setting('lock_timeout') <> '5s' then
+    raise exception '0015: 앞 문장의 set local lock_timeout 이 남지 않았다 (지금 %) — 파일이 한 트랜잭션으로 돌지 않는 경로다. 아무것도 바꾸기 전에 멈춘다', current_setting('lock_timeout')
+      using hint = 'supabase db push 로 적용할 것(파일 하나 = 트랜잭션 하나). psql -f 처럼 문장마다 커밋하는 경로에서는 set local 이 그 문장에서 끝난다(PostgreSQL 은 경고만 낸다).';
+  end if;
+end
+$$;
+
 -- =========================================================================
 -- 1. 트리거 함수 — 지워지는 앨범이 비활성일 때만 그 앨범 사진을 내린다
 -- =========================================================================

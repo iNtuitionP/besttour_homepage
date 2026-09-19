@@ -7,7 +7,7 @@
 1. 로컬 스택(`supabase db reset`)에 적용하고 **DB 테스트 전량**이 통과한다.
 2. **CI 가 green** 이다(푸시된 커밋 기준). red 인 채로 원격에 적용하지 않는다.
 3. 아래 **적용 전 확인**을 로컬에서 실행해 기대값과 일치하는지 본다.
-4. 원격에 적용한다.
+4. 원격에 적용한다 — **`supabase db push` 로만**(아래 「적용 경로」). 적용 직후 이력 마지막이 `0019` 인지 본다.
 5. 같은 확인을 **원격에서** 다시 실행해 로컬과 같은 결과인지 대조한다.
 6. 결과를 이 파일에 날짜와 함께 적는다.
 
@@ -22,11 +22,32 @@ select version, name from supabase_migrations.schema_migrations order by version
 **③ 이벤트 트리거** — 0019 절 "적용 직전 필수 — 이벤트 트리거 확인"(0017·0018·0019 의 일회용 객체 생성이 CREATE TABLE·CREATE TRIGGER·CREATE SEQUENCE 태그를 낸다).
 **④ 0018 절의 적용 직전 스냅샷**(시퀀스·표 `relacl`) — 롤백 판단에 필요하다.
 
+### 🔴 적용 경로 — `supabase db push` 하나 (P5-15 R6 · 컨트롤러 결정 2026-09-17)
+- **0012~0019 의 원격 적용 경로는 `supabase db push` 하나다.** CLI 는 마이그레이션 파일 하나를 한 트랜잭션으로 돌리고, 성공한 버전을 `supabase_migrations.schema_migrations` 에 기록한다.
+- **SQL Editor 는 읽기 확인 전용이다** — 적용 전·후 행렬, 이력 조회처럼 카탈로그를 읽는 질의만 붙인다. **마이그레이션 본문을 SQL Editor 에 붙여 적용하지 않는다**: 그러면 이력이 남지 않아, 다음 `supabase db push` 가 **같은 마이그레이션을 다시 돌린다**(두 번 도는 것을 전제로 검토한 파일이 아니다).
+- **`psql -f` 도 쓰지 않는다**(리뷰 K1 — 파일이 원자적이지 않다. 이력도 남지 않는다).
+- 🔴 **적용 직후 필수 — 이력 확인**(읽기 질의):
+  ```sql
+  select version, name from supabase_migrations.schema_migrations order by version;
+  ```
+  기대: 적용 전 목록(마지막 `0011`) 뒤에 `0012`~`0019` 여덟 줄이 붙고, **마지막이 `0019`**. 한 줄이라도 빠졌거나 마지막이 `0019` 가 아니면 **멈추고 컨트롤러에게 보고한다**(`db push` 는 실패한 파일에서 멈추고 그 뒤 버전을 돌리지 않는다 — 어디서 멈췄는지가 이 목록에 보인다).
+- **예외 — 이미 수동 적용(SQL Editor·psql)을 해 버렸다면**: 본문이 실제로 전부 적용됐는지 해당 절의 행렬로 먼저 확인한 뒤, `supabase migration repair --status applied <번호>` 로 이력을 맞춘다 — **이 경로는 컨트롤러 승인이 있을 때만 쓴다.** `repair` 는 이력만 고치고 본문을 돌리지 않으므로, 적용되지 않은 버전을 `applied` 로 적으면 그 마이그레이션은 **영영 건너뛰어진다**.
+- **잠금 대기 상한 — 파일 안의 `set local lock_timeout = '5s';`** (P5-15 R7 · 컨트롤러 결정): 0012~0019 여덟 파일 모두 **첫 실행문**이 이것이고, 둘째 실행문이 **그 시점에 `lock_timeout` 이 실제로 `5s` 인지**만 확인한다 — 아니면 아무것도 바꾸기 전에 멈춘다. ⚠️ 이 확인은 **원자성을 증명하지 않는다**(astra R7 P2-b): 자동 커밋 세션이라도 서버·롤·DB 기본값이 이미 5초면 통과한다. 잡아 주는 것은 "`set local` 이 그 문장에서 끝나 설정이 남지 않은 경우"(예: 기본값이 5초가 아닌 서버에서 `psql -f`)뿐이다. **파일 하나가 한 트랜잭션이라는 보장은 적용 경로(`supabase db push`)에서 오고**, 아래 실측이 그것을 확인한 것이다. CLI 는 파일 하나를 한 트랜잭션으로 보내므로 이 설정은 **그 파일에만** 걸리고 다음 파일로 새지 않는다. 어떤 문장이 잠금을 5초 넘게 기다리면 `ERROR: canceling statement due to lock timeout (SQLSTATE 55P03)` 로 그 파일이 실패한다 — 접수 트랜잭션을 줄 세우지 않는다.
+- **부분 적용 — push 전체는 원자적이지 않다**: 한 파일이 시간 초과(또는 다른 오류)로 실패하면 **앞 파일들은 커밋·기록된 채 남고**, **그 파일은 롤백되며**(이력에도 없다), 뒤 파일은 돌지 않는다. 막던 세션이 끝난 뒤 **다음 `supabase db push` 가 그 파일부터** 이어서 적용한다. 시간 초과는 **멈추고 보고할 일**이다 — 수동 적용이나 `repair` 로 건너뛰지 않는다. 어디서 멈췄는지는 적용 직후 이력 확인이 보여 준다.
+- **실측** (2026-09-17 · supabase CLI 2.117.0 · 로컬 전용 `--db-url postgresql://…@127.0.0.1:…`):
+  - 합성 마이그레이션(PG 15.17 일회용 컨테이너 · PG 17.6 로컬 스택의 일회용 DB 둘 다): 한 파일의 행들이 **같은 xid**, `set local` 뒤 `lock_timeout=5s`, 다음 파일에서는 `0`(새지 않음). 다른 세션이 표를 쥔 채 push → 약 5초 뒤 `55P03` · 그 파일의 표·행·이력 없음 · 앞 파일 이력 유지 → 풀린 뒤 push 가 그 파일부터 재개. 대조군(`set local` 없음)은 잠금이 풀릴 때까지 **기다렸다**(20초 잡음 → 20초 걸림).
+  - **실제 0012~0019** (로컬 스택: 롤백 → 로컬 이력 `reverted` → push): 다른 세션이 `gallery_albums` 에 ROW EXCLUSIVE(쓰기 중인 트랜잭션과 같은 잠금)를 쥔 상태에서 `0012`·`0013`·`0014` 적용·기록, **`0015` 의 CREATE TRIGGER 가 55P03** 으로 파일째 롤백(트리거 0 · 이력 0014 까지) → 풀린 뒤 push 가 `0015`~`0019` 적용 · 이력 0019 까지 · 사실 스냅샷이 이전 적용 상태와 동일. 오류의 `At statement: 3`(0부터 셈)은 `set local` · 확인 DO · 트리거 함수 다음의 CREATE TRIGGER 다 — 확인 DO 가 CLI 배치에서 통과했다는 뜻이다.
+  - 부수 관찰: 이력에 **더 뒤 번호가 이미 있으면** push 는 `Found local migration files to be inserted before the last migration on remote database` 로 아무것도 적용하지 않는다(`--include-all` 요구). 원격 이력의 마지막은 `0011` 이어야 하므로(① 확인) 정상 경로에서는 나오지 않는다 — 나오면 멈추고 보고한다(`--include-all` 을 임의로 붙이지 않는다).
+  - 서버 로그에는 `WARNING: SET LOCAL can only be used in transaction blocks` 가 남는다 — CLI 가 파일을 명시적 `BEGIN` 없이 **확장 프로토콜 배치 하나**로 보내기 때문이다. 그래도 설정은 배치(= 한 트랜잭션) 끝까지 유효했다(위 xid·`lock_timeout` 실측). 전제가 깨졌을 때 둘째 실행문이 잡아 주는 범위는 위 ⚠️ 와 같다 — 기본값이 5초가 아닌 서버에서 설정이 남지 않은 경우다.
+  - 같은 이유로 **최상위 `LOCK TABLE` 은 CLI 에서 `25P01 LOCK TABLE can only be used in transaction blocks`** 로 거부된다(실측). 0012~0019 에는 최상위 LOCK 이 없다(0019 의 LOCK 은 DO 블록 안의 동적 SQL).
+- 자기검증의 거동 탐침(0017 ⑦ · 0018 ⑤ · 0019 ⑥)은 **42501 만 거부 성공으로 친다** — 55P03 으로 실패하면 "권한 거부가 아닌 이유로 실패했다" 로 멈춘다(깨뜨리기 실측, 아래 각 절).
+
 ### 🔴 적용 창 운영 규칙 (P5-15 R5 · 컨트롤러 결정 2026-09-17)
 - **적용하는 동안 대시보드·다른 세션에서 스키마 변경(DDL)과 권한 변경을 하지 않는다.** 적용 트랜잭션과 서로 기다리게 된다.
 - **적용은 접수가 적은 시간대에 한다.** 자기검증은 실제 표·시퀀스에 잠금을 잡는 탐침을 치지 않도록 고쳤지만(0017 ⑦ · 0018 ⑤ · 0019 ⑥), 마이그레이션 본문 자체의 잠금 대기는 남는다(아래).
 - **최상위 `REVOKE` 도 `pg_class` 튜플 잠금을 기다릴 수 있다.** 로컬 실측(다른 세션이 `alter sequence public.notifications_log_id_seq cache 1` 을 커밋하지 않고 쥔 상태 · `lock_timeout 3s`): 0018 의 최상위 `revoke … on sequence` 만 돌려도 `ERROR: canceling statement due to lock timeout` · `CONTEXT: while updating tuple (39,29) in relation "pg_class"`. 권한을 바꾸는 모든 마이그레이션의 성질이다. 그동안 그 시퀀스의 앱 `nextval` 은 ALTER 세션의 SHARE ROW EXCLUSIVE 에 막힌다.
-- SQL Editor 로 적용한다면 세션 첫 줄에 `set lock_timeout = '5s';` 를 두는 것을 권한다 — 기다리며 다른 세션을 줄 세우기보다 실패하고 다시 시도하는 편이 접수에 안전하다(실패하면 트랜잭션째 되돌려진다).
+- 잠금 대기는 각 파일의 `set local lock_timeout = '5s'` 가 5초로 자른다(위 「적용 경로」 · P5-15 R7). 위 두 규칙은 그 시간 초과가 **나지 않게** 하는 운영 조건이다. 시간 초과로 push 가 멈추면 대시보드에서 `pg_stat_activity` 의 `wait_event_type = 'Lock'` 을 **읽어** 막던 세션을 확인하고 컨트롤러에게 보고한 뒤, 그 세션이 끝나면 다시 push 한다(그 파일부터 재개).
+- 로컬 실측(P5-15 R7): 다른 세션이 `notifications_log_id_seq` 를 ALTER 중일 때 0018 을 `psql -1` 로 적용 → 5.8초 뒤 `canceling statement due to lock timeout` · `while updating tuple … in relation "pg_class"`. 실제 표 셋(reservations·notifications_log·gallery)이 ACCESS EXCLUSIVE 로 잡힌 상태에서도 0019 는 0.8초에 끝났다 — 탐침은 권한 검사에서 먼저 거부되어 잠금을 기다리지 않는다.
 
 **롤백 파일은 `supabase/rollbacks/` 에 있고 `migrations/` 밖이다** — CLI 가 `migrations/` 의 `^[0-9]+_.*\.sql$` 을 전부 마이그레이션으로 집기 때문이다. 롤백은 사람이 psql/SQL Editor 로 실행한 뒤 `supabase migration repair --status reverted <번호>`.
 0012·0013·0014·0015·0016·0017·0018·0019 롤백은 **승인 플래그를 조건 없이 요구**한다(`set bestour.rollback_00NN_ack = '1';`). 행이 0이어도 멈춘다 — 권한은 열린 채 남고 데이터는 나중에 들어오기 때문이다.
@@ -182,7 +203,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENC
 
 ### ⚠️ 적용 경로 — `psql -f` 를 쓰지 마라 (리뷰 K1)
 마이그레이션 파일에는 명시적 `begin/commit` 이 없다. `psql -f` 로 실행하면 **파일이 원자적이지 않아** 자기검증 블록이 `raise` 해도 앞서 실행된 문장이 남는다(리뷰어 실측: 가드가 멈췄는데 `anon` ACL 이 그대로 남았다).
-**`supabase db push` 또는 대시보드 SQL Editor 로만** 적용한다(CLI 는 마이그레이션 하나를 한 트랜잭션으로 돈다). 저장소의 13개 마이그레이션 전부 같은 관례이므로 0014 가 새로 만든 위험은 아니다.
+**`supabase db push` 로만** 적용한다(CLI 는 마이그레이션 하나를 한 트랜잭션으로 돌고 이력을 남긴다 — 맨 위 「적용 경로」, P5-15 R6). 저장소의 13개 마이그레이션 전부 같은 관례이므로 0014 가 새로 만든 위험은 아니다.
 
 ### 독립 리뷰가 실증한 것 (2026-09-16, 승인 · 치명 0 · 중대 0)
 - **SQL 뮤테이션 7종 전부 자기검증에서 멈췄다** — `revoke` 제거 / `revoke`+`grant` 제거 / `revoke` 를 `create` 앞으로 / 채널 필터 제거 / 1-인자 `drop` 제거 / `service_role` 회수.
@@ -224,7 +245,7 @@ where p.prorettype = 'pg_catalog.trigger'::regtype
 ### 적용 전 확인 질의 (0016 판 — 컬럼 단위 grant 와 PUBLIC 까지 본다)
 `information_schema.role_table_grants` 를 **증거로 쓰지 않는다**(필터된 뷰). 아래 여덟 가지를 한 문장으로 묻는다.
 
-아래 행렬(카탈로그 질의뿐)을 SQL Editor 에 붙여 넣는다. 붙이는 원문은 **이 runbook 의 블록뿐**이다.
+아래 행렬(카탈로그 질의뿐)을 **읽기 확인용으로** SQL Editor 에 붙여 넣는다(적용 경로가 아니다). 붙이는 원문은 **이 runbook 의 블록뿐**이다.
 (로컬 검사도 이 표식 사이의 원문을 읽어 그대로 돌린다 — P5-15 R5.)
 <!-- P515:0016_MATRIX_SQL:BEGIN -->
 ```sql
@@ -237,10 +258,15 @@ select
   coalesce((select 'ANON_EXTRA ' || string_agg(format('%s/%s', t.tbl, p.priv), ' ')
      from (values ('public.notices'),('public.popups'),('public.gallery'),('public.gallery_albums'),('public.showcase_routes'),('public.vehicles'),('public.places')) t(tbl)
      cross join (values ('insert'),('update'),('delete'),('truncate'),('trigger'),('references')) p(priv)
-    where has_table_privilege('anon', t.tbl, p.priv)), 'ANON_SELECT_ONLY') as anon_extra,
+    where has_table_privilege('anon', t.tbl, p.priv)
+       or case when p.priv in ('insert','update','references') then has_any_column_privilege('anon', t.tbl, p.priv) else false end), 'ANON_SELECT_ONLY') as anon_extra,
+  coalesce((select 'ANON_SELECT_LOST ' || string_agg(t.tbl, ' ')
+     from (values ('public.notices'),('public.popups'),('public.gallery'),('public.gallery_albums'),('public.showcase_routes'),('public.vehicles')) t(tbl)
+    where not has_table_privilege('anon', t.tbl, 'select')), 'ANON_SELECT_OK') as anon_read,
   coalesce((select 'PLACES_WRITE_LEAK ' || string_agg(p.priv, ' ')
      from (values ('insert'),('update'),('delete')) p(priv)
-    where has_table_privilege('authenticated', 'public.places', p.priv)), 'PLACES_WRITE_NONE') as places_write,
+    where has_table_privilege('authenticated', 'public.places', p.priv)
+       or case when p.priv <> 'delete' then has_any_column_privilege('authenticated', 'public.places', p.priv) else false end), 'PLACES_WRITE_NONE') as places_write,
   coalesce((select 'PLACES_READ_LOST ' || string_agg(r.role, ' ')
      from (values ('anon'),('authenticated')) r(role)
     where not has_table_privilege(r.role, 'public.places', 'select')), 'PLACES_READ_OK') as places_read,
@@ -250,7 +276,16 @@ select
   coalesce((select 'PG_TEMP_MISSING ' || string_agg(s.sig, ' ')
      from (values ('public.mark_notification_sent(bigint, text)'),('public.mark_notification_failed(bigint, text, boolean, bigint)'),('public.reap_stale_notifications()')) s(sig)
      join pg_proc p on p.oid = to_regprocedure(s.sig)
-    where not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) c where c like '%pg_temp%')), 'PG_TEMP_OK') as pg_temp,
+    where not exists (
+      select 1
+        from unnest(coalesce(p.proconfig, '{}')) c
+       cross join lateral regexp_split_to_table(substr(c, 13), ',(?=(?:[^"]*"[^"]*")*[^"]*$)') x(tok)
+       cross join lateral (select btrim(x.tok, ' ' || chr(9) || chr(10) || chr(13) || chr(12)
+                                    || case when current_setting('server_version_num')::int >= 170000 then chr(11) else '' end) as t) y
+       where left(c, 12) = 'search_path='
+         and case when y.t like '"%'
+                  then replace(substr(y.t, 2, length(y.t) - 2), '""', '"')
+                  else lower(y.t) end = 'pg_temp')), 'PG_TEMP_OK') as pg_temp,
   coalesce((select 'FN_EXEC_EXTRA ' || string_agg(format('%s/%s', p.proname, g.who), ' ')
      from (values ('public.mark_notification_sent(bigint, text)'),('public.mark_notification_failed(bigint, text, boolean, bigint)'),('public.reap_stale_notifications()')) s(sig)
      join pg_proc p on p.oid = to_regprocedure(s.sig)
@@ -281,9 +316,9 @@ select
 | # | 기대 문자열 | 뜻 |
 |---|---|---|
 | ① | `RLS_BLIND_NONE` | 7표에 `authenticated` 의 truncate/trigger/references 0 (컬럼 단위 references 포함) |
-| ② | `ANON_SELECT_ONLY` | 7표에서 `anon` 은 select 만 |
-| ③ | `PLACES_WRITE_NONE` · `PLACES_READ_OK` | places 쓰기 0 · 두 롤의 읽기 생존 |
-| ④ | `PG_TEMP_OK` | 함수 셋의 `proconfig` 에 `pg_temp` |
+| ② | `ANON_SELECT_ONLY` · `ANON_SELECT_OK` | 7표에서 `anon` 은 select 만(insert·update·references 는 **컬럼 단위까지**) · 콘텐츠 6표의 `anon` select 는 **살아 있다**(사라지면 `ANON_SELECT_LOST …` = 공개 사이트가 빈다) (P5-15 R6) |
+| ③ | `PLACES_WRITE_NONE` · `PLACES_READ_OK` | places 쓰기 0(insert·update 는 컬럼 단위까지) · 두 롤의 읽기 생존 |
+| ④ | `PG_TEMP_OK` | 함수 셋의 **`search_path` 항목**을 스키마 목록으로 풀었을 때 `pg_temp` 가 있다(다른 설정 값에 `pg_temp` 가 적힌 것은 치지 않는다 · 따옴표 식별자는 푼 뒤 비교) (P5-15 R6). 토큰 앞뒤 공백은 PostgreSQL `scanner_isspace` 집합 — 스페이스·탭·LF·CR·FF 는 모든 버전, **세로 탭(`chr(11)`)은 17 이상에서만**. 실측(P5-15 R8 · `set_config('search_path', chr(11) \|\| 'public', true)` 뒤 `current_schemas(false)`): **15.17 `{}` · 16.15 `{}` · 17.6 `{public}` · 18.6 `{public}`** → 경계는 **17**. `E'\v'` 는 PG 이스케이프가 아니라(`v` 가 된다) `chr(11)` 로 쓴다 (P5-15 R7·R8) |
 | ⑤ | `FN_ALL_PRESENT` · `FN_EXEC_ONLY_SERVICE` · `FN_NO_PUBLIC_ROLE_EXEC` | 세 시그니처가 **전부 있고**(없으면 `FN_MISSING …`), EXECUTE 보유자는 `service_role`(+소유자) 뿐이며(NULL ACL 은 기본값 = PUBLIC EXECUTE 로 읽는다), 공개 롤의 **유효** EXECUTE 0 (P5-15 R5) |
 | ⑥ | `FN_SERVICE_OK` | `service_role` 이 여전히 실행할 수 있다(발송기) |
 | ⑦ | `CLAIM_ONE_ARG_GONE` | 1-인자 claim 이 되살아나지 않았다 |
@@ -305,7 +340,7 @@ select
 **R5 수정 (2026-09-17, P5-15)**: ④ 의 EXECUTE 보유자 검사가 `aclexplode(p.proacl)` 이었다 — `proacl IS NULL`(기본 ACL = PUBLIC EXECUTE)이면 0행이라 통과한다. `coalesce(p.proacl, acldefault('f', p.proowner))` 로 고쳤다. 상행은 바로 뒤의 **유효 EXECUTE 검사**가 원래 있어 실제로는 멈췄지만(로컬 실측: NULL 로 만들면 `공개 롤이 … 를 실행할 수 있다 (anon=t · authenticated=t)`), **롤백 파일에는 그 검사가 없어 그대로 통과했다** — 롤백에도 두 가지(NULL 채움 · 유효 EXECUTE 거부)를 넣었다. 위 행렬도 함수 셋을 시그니처로 묶고(없으면 `FN_MISSING`) NULL ACL 과 유효 EXECUTE 를 본다. 이 절은 원격 미적용 전제다 — 공통 절 "① 원격 적용 이력" 을 먼저 본다.
 
 ### 적용 경로
-`supabase db push` 또는 SQL Editor. **`psql -f` 를 쓰지 마라**(리뷰 K1 — 파일이 원자적이지 않아 자기검증이 `raise` 해도 앞 문장이 남는다). 실제로 0016 을 만들면서 `supabase db reset` 이 **문장 단위로** 적용하다 6번째 문장에서 멈추는 것을 봤다(그 시점에 §1~§4 는 이미 적용돼 있었다) — 같은 성질이다.
+**`supabase db push` 만**(맨 위 「적용 경로」 — SQL Editor 는 읽기 확인용). **`psql -f` 를 쓰지 마라**(리뷰 K1 — 파일이 원자적이지 않아 자기검증이 `raise` 해도 앞 문장이 남는다). 실제로 0016 을 만들면서 `supabase db reset` 이 **문장 단위로** 적용하다 6번째 문장에서 멈추는 것을 봤다(그 시점에 §1~§4 는 이미 적용돼 있었다) — 같은 성질이다.
 
 ### 롤백
 `supabase/rollbacks/0016_privileges_rls_cannot_protect.down.sql` · **승인 플래그 요구**(`set bestour.rollback_0016_ack = '1';`). 근거: 되돌린 뒤의 세계가 **조용히** 위험하다(TRUNCATE 는 RLS 밖, TRIGGER 는 외부 유출, `pg_temp` 없는 `search_path` 는 엉뚱한 표를 고치고 성공을 돌려준다). 되돌린 것을 필요로 하는 정상 경로는 하나도 없다.
@@ -346,7 +381,7 @@ select
 **거동 변화**: PostgREST 가 `200 []` 대신 **`401` + `42501`** 을 낸다. 그 0행은 *정책이 없어서* 나오던 결과라, 누가 `anon` 용 select 정책을 한 줄 붙이면 고객 표가 공개됐다 — 이제 정책과 무관하게 권한에서 먼저 막힌다. 바뀐 단언: `tests/notify-vars.test.ts` 의 "anon 키로는 0행" → "권한 거부(42501)".
 
 ### 적용 전/후 확인 질의 (0017 판 — 여덟 가지를 한 문장으로)
-아래 행렬(카탈로그 질의뿐)을 SQL Editor 에 붙여 넣어 대조한다. 붙이는 원문은 **이 runbook 의 블록뿐**이다.
+아래 행렬(카탈로그 질의뿐)을 **읽기 확인용으로** SQL Editor 에 붙여 넣어 대조한다(적용 경로가 아니다). 붙이는 원문은 **이 runbook 의 블록뿐**이다.
 (로컬 테스트도 이 표식 사이의 원문을 읽어 그대로 돌린다 — P5-15 astra R3.)
 <!-- P515:0017_MATRIX_SQL:BEGIN -->
 ```sql
@@ -456,7 +491,7 @@ R4 추가: 일회용 표는 **PUBLIC 까지** 회수하고, 매 시도 직전에
 PUBLIC 롤 grant 0 · 따로 부여된 컬럼 ACL 0(`pg_class.relacl`·`pg_attribute.attacl` 을 `aclexplode` 로 전수) — 적용 전후 모두.
 
 ### 적용 경로
-`supabase db push` 또는 SQL Editor. **`psql -f` 를 쓰지 마라**(리뷰 K1).
+**`supabase db push` 만**(맨 위 「적용 경로」 — SQL Editor 는 읽기 확인용). **`psql -f` 를 쓰지 마라**(리뷰 K1).
 ⚠️ 자기검증 ⑦ 이 `set local role` 로 롤을 바꿔 `CREATE TRIGGER` 를 시도한다 — **적용하는 롤이 `anon`·`authenticated`·`service_role` 의 멤버여야 한다**(`postgres`/`supabase_admin` 은 멤버다). 아니면 마이그레이션이 "롤 전환 실패" 로 **명시적으로 멈춘다**(조용히 건너뛰지 않는다).
 ✅ 탐침 뒤 복원은 `reset role` 이 아니라 **캡처한 적용 롤로 `set local role`** 한다(2026-09-17 수정, GPT 검증 P2 — 0018 과 같은 형태). 로컬 실측 세 방식 통과: postgres 로그인 · supabase_admin 로그인 뒤 적용 롤을 postgres 로 전환 · supabase_admin 로그인 그대로. 수정 전 파일은 두 번째 방식에서 멈췄다.
 
@@ -503,7 +538,7 @@ PUBLIC 롤 grant 0 · 따로 부여된 컬럼 ACL 0(`pg_class.relacl`·`pg_attri
 로컬에서 각 항을 **일부러 깨뜨려** 전부 멈추는 것을 확인했다(P5-14 보고서 ⑤ — 7변형, 멈추지 않은 것 0).
 
 ### 적용 경로
-`supabase db push` 또는 SQL Editor. **`psql -f` 를 쓰지 마라**(리뷰 K1). 로컬 단건 적용은 `psql -1`(단일 트랜잭션).
+**`supabase db push` 만**(맨 위 「적용 경로」 — SQL Editor 는 읽기 확인용). **`psql -f` 를 쓰지 마라**(리뷰 K1). 로컬 단건 적용은 `psql -1`(단일 트랜잭션).
 ⚠️ 자기검증 ⑤ 가 `set local role` 로 롤을 바꾼다 — **적용하는 롤이 `anon`·`authenticated` 의 멤버여야 한다**(0017 과 같다). 아니면 "롤 전환 실패" 로 명시적으로 멈춘다.
 ⚠️ ⑤ 의 대조군은 `public.p0018_probe_seq` 를 **만들었다 되돌린다**(커밋되지 않는다). 적용 롤에 public 스키마 CREATE 가 필요하다(`postgres` 는 있다).
 ⚠️ 탐침 뒤 롤 복원은 `reset role` 이 아니라 **캡처한 적용 롤로 `set local role`** 한다(GPT 검증 P2). 로컬 실측 세 방식 모두 통과: postgres 로그인 · supabase_admin 로그인 뒤 적용 롤을 postgres 로 전환 · supabase_admin 로그인 그대로.
@@ -527,7 +562,7 @@ select current_setting('server_version_num');
 부여자(`/postgres`)도 함께 본다 — `supabase_admin` 부여가 섞여 있으면 0018 의 자기검증 ① 이 적용을 멈춘다(위 "부여자" 경고).
 
 ### 적용 전/후 확인
-아래 행렬(카탈로그 질의뿐)을 SQL Editor 에 붙여 넣는다. 붙이는 원문은 **이 runbook 의 블록뿐**이다.
+아래 행렬(카탈로그 질의뿐)을 **읽기 확인용으로** SQL Editor 에 붙여 넣는다(적용 경로가 아니다). 붙이는 원문은 **이 runbook 의 블록뿐**이다.
 (로컬 테스트도 이 표식 사이의 원문을 읽어 그대로 돌린다 — P5-15 astra R3.) 기대 문자열: `SEQ_NONE` · `ADMIN_SEQ_OK` · `SERVICE_SEQ_OK` · `SEQ_PUBLIC_NONE` · `SEQ_COUNT 7`.
 <!-- P515:0018_MATRIX_SQL:BEGIN -->
 ```sql
@@ -588,6 +623,7 @@ select current_setting('server_version_num'), version();
 - `>= 170000` → 0019 가 회수한다. 적용 로그에 `NOTICE: 0019: PostgreSQL 17.x — 공개 롤의 MAINTAIN 회수 완료 · 거동 탐침 N건 거부 확인 · 대조군 성공` 이 나와야 한다(로컬 N=14).
 - `< 170000` → 0019 는 **아무것도 하지 않고** `NOTICE: 0019: PostgreSQL … MAINTAIN 권한이 없는 버전이다(17 부터). 회수를 건너뛴다.` 만 남긴다. **이 조건부가 없으면** 16 이하에서 `revoke maintain` 이 `ERROR: unrecognized privilege type "maintain"` 로 멈추고, `db push` 가 0012~0019 를 한 번에 밀므로 **원격 푸시 전체가 막힌다**(PostgreSQL 15 컨테이너에서 재현).
   그 경우 **17 로 업그레이드한 뒤**에는 기존 표 ACL 에 `m` 이 없을 수 있다(업그레이드는 옛 ACL 을 옮긴다). 그래도 **새로** 만드는 표는 기본 권한으로 `m` 을 받는다 — 고친 게이트가 이름을 대며 잡는다. 그때 0019 를 다시 돌리면 된다(재실행 안전).
+- 🔴 **0016 의 `pg_temp` 판정도 버전 조건을 탄다** (P5-15 R8): `search_path` 항목을 스키마 목록으로 풀 때 **세로 탭(`chr(11)`)을 공백으로 치는 것은 17 이상뿐**이다(실측: 15.17 `{}` · 16.15 `{}` · 17.6 `{public}` · 18.6 `{public}`). 스페이스·탭·LF·CR·FF 는 모든 버전에서 공백이다. 원격이 **15·16 이면** `search_path` 에 세로 탭이 섞인 값만 판정이 달라진다 — 0016 은 `set search_path = public, pg_temp` 라는 **평범한 값**을 쓰므로 이 조건이 적용을 막지 않는다. 같은 판정이 0016 ④·0016 롤백·0016 절 행렬·게이트 네 곳에 있고 모두 서버 버전을 읽어 맞춘다.
 - 자기검증 ⑤ 가 **버전 판정과 서버 능력**(`aclexplode(acldefault('r', …))` 에 MAINTAIN 이 있는가)을 대조한다. 어긋나면 멈춘다 — 버전 번호만 믿고 조용히 건너뛰지 않는다.
 - 위 0018 절의 **적용 직전 스냅샷(표 포함)**을 함께 뜬다 — 0019 롤백 판단에 필요하다.
 
@@ -634,7 +670,7 @@ select evtname, evtevent, evttags, evtfoid::regproc, evtenabled, md5(pg_get_func
 로컬에서 **10변형을 일부러 깨뜨려 전부 멈추는 것**을 확인했다(P5-15 보고서 ⑧). 기준선(원본)은 센티넬에서만 멈췄고 실행 뒤 사실 전수 diff 0.
 
 ### 적용 경로
-`supabase db push` 또는 SQL Editor. **`psql -f` 를 쓰지 마라**(리뷰 K1). 로컬 단건 적용은 `psql -1`.
+**`supabase db push` 만**(맨 위 「적용 경로」 — SQL Editor 는 읽기 확인용). **`psql -f` 를 쓰지 마라**(리뷰 K1). 로컬 단건 적용은 `psql -1`.
 ⚠️ ⑥ 이 `set local role` 로 롤을 바꾼다 — 적용 롤이 `anon`·`authenticated` 의 멤버여야 한다(0017·0018 과 같다). 복원은 `reset role` 이 아니라 **캡처한 적용 롤로 `set local role`**. 로컬 세 방식 모두 통과: postgres 로그인 · supabase_admin 로그인 뒤 적용 롤을 postgres 로 전환 · supabase_admin 로그인 그대로(각각 `after|<session>|<적용 롤>` 유지). `reset role` 로 바꾼 변형은 B 방식에서 `0019: 탐침 뒤 적용 롤(postgres)로 돌아오지 못했다 (current_user=supabase_admin)` 로 멈춘다(실측).
 ⚠️ ⑥ 의 대조군은 `public.p0019_probe_tbl` 을 만들었다 되돌린다 — 적용 롤에 public 스키마 CREATE 가 필요하다. 탐침은 `NOWAIT` 이고 거부되는 시도는 잠금을 잡지 않는다(권한 검사가 먼저다).
 ⚠️ **0019 가 닫지 못하는 것**: `authenticated` 는 콘텐츠 여섯 표를 UPDATE·DELETE 권한으로 여전히 강하게 잠글 수 있다(후속 목록).
@@ -642,7 +678,7 @@ select evtname, evtevent, evttags, evtfoid::regproc, evtenabled, md5(pg_get_func
 ### 적용 전/후 확인
 🔴 **원격에서는 카탈로그 질의만 실행한다** (astra R2 P1-A · 컨트롤러 결정 2026-09-17). 잠금·DDL·DML·롤 전환 문장은 원격 확인 절차에 **하나도 없다**. 로컬 검사가 0017·0018·0019 절의 모든 코드 블록(``` · ~~~ · 언어 무관)과 산문을 문장 모양으로 훑고, 저장소의 검사 파일·검사 절 번호를 붙이라는 안내도 잡는다. ⚠️ **그것은 회귀 방지 보조일 뿐 보증이 아니다** — 정규식 휴리스틱이라 문장을 쪼개거나 풀어 쓰면 빠진다. 원격에 붙이기 전에 사람이 블록을 읽는다(P5-15 astra R4). 적용 시점의 거동 확인(실제 LOCK 거부)은 0019 자기검증 ⑥ 이 이미 했다(시도 직전 사전 검사로 잠금 획득이 구조적으로 불가능한 조합만 친다 — 아래 근거).
 
-아래 행렬(카탈로그 질의뿐)을 SQL Editor 에 붙여 넣는다. 붙이는 원문은 **이 runbook 의 블록뿐**이다.
+아래 행렬(카탈로그 질의뿐)을 **읽기 확인용으로** SQL Editor 에 붙여 넣는다(적용 경로가 아니다). 붙이는 원문은 **이 runbook 의 블록뿐**이다.
 (로컬 테스트도 이 표식 사이의 원문을 읽어 그대로 돌린다.) 기대 문자열: `MAINTAIN_NONE` · `SERVICE_MAINTAIN_OK` · `MAINTAIN_PUBLIC_NONE` · `BASELINE_PRESENT 9`. (17 미만이면 이 질의는 `unrecognized privilege type` 으로 실패한다 — 버전부터 볼 것.)
 <!-- P515:MAINTAIN_MATRIX_SQL:BEGIN -->
 ```sql

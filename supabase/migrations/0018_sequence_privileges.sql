@@ -60,13 +60,25 @@
 --   원격 적용 **직전**에 `pg_event_trigger` 를 읽어 확인한다(runbook "적용 직전 필수"). 적용 롤에 public 스키마 CREATE 가 필요하다.
 -- 재실행 안전: `revoke` 는 없는 권한을 회수해도 오류가 아니다. 조건 분기가 필요 없다.
 -- PostgREST 스키마 캐시: 갱신하지 않는다(권한 변경은 캐시가 아니라 요청마다 평가된다).
--- 적용 경로: `supabase db push` 또는 SQL Editor. **`psql -f` 를 쓰지 마라** — 파일이 원자적이지 않아 자기검증이
+-- 적용 경로: **`supabase db push` 만**(P5-15 R6 — SQL Editor 로 본문을 돌리면 schema_migrations 이력이 남지 않아
+--   다음 db push 가 이 파일을 다시 돌린다. SQL Editor 는 읽기 확인용). **`psql -f` 를 쓰지 마라** — 파일이 원자적이지 않아 자기검증이
 --   `raise` 해도 앞 문장이 남는다(P4-5 리뷰 K1, docs/ops/migration-runbook.md). 로컬 검증은 `psql -1`(단일 트랜잭션).
 -- ⚠️ §3 ⑤ 가 `set local role` 로 롤을 바꾼다 — 적용하는 롤이 `anon`·`authenticated` 의 멤버여야 한다(0017 과 같다).
 --    탐침 뒤에는 `reset role` 이 아니라 **시작할 때 캡처한 적용 롤**로 `set local role` 해서 돌아온다. `reset role` 은 세션 기본 롤로
 --    돌아가므로, 로그인 롤과 적용 롤이 다른 연결(`set role postgres` 후 적용)에서는 권한이 옳아도 마지막 단언이 실패한다
 --    (GPT 검증 P2 — 로컬에서 supabase_admin 로그인 + set role postgres 로 재현하고, 이 방식으로 고친 뒤 통과를 확인했다).
 -- 롤백: supabase/rollbacks/0018_sequence_privileges.down.sql (수동 실행 전용 · 승인 플래그 요구).
+
+-- lock_timeout 상한 (P5-15 R7): CLI 가 이 파일을 한 트랜잭션으로 돌려 set local 은 이 파일에만 걸린다 — 잠금을 5초 넘게 기다리면 파일째 롤백.
+set local lock_timeout = '5s';
+do $$
+begin
+  if current_setting('lock_timeout') <> '5s' then
+    raise exception '0018: 앞 문장의 set local lock_timeout 이 남지 않았다 (지금 %) — 파일이 한 트랜잭션으로 돌지 않는 경로다. 아무것도 바꾸기 전에 멈춘다', current_setting('lock_timeout')
+      using hint = 'supabase db push 로 적용할 것(파일 하나 = 트랜잭션 하나). psql -f 처럼 문장마다 커밋하는 경로에서는 set local 이 그 문장에서 끝난다(PostgreSQL 은 경고만 낸다).';
+  end if;
+end
+$$;
 
 -- =========================================================================
 -- 1. `anon` — 일곱 시퀀스 전부, 세 권한 전부
@@ -269,7 +281,7 @@ begin
       exception when others then
         get stacked diagnostics st = returned_sqlstate, ms = message_text;
         raise exception '0018: 거동 탐침이 롤 %(으)로 전환하지 못했다 — % %', probe_role, st, ms
-          using hint = '이 마이그레이션을 적용하는 롤이 anon·authenticated 의 멤버가 아니다. 보통 postgres(또는 supabase_admin)로 적용하며 그 롤은 둘 모두의 멤버다 — supabase db push 또는 SQL Editor 로 적용할 것. 조용히 건너뛰지 않는다.';
+          using hint = '이 마이그레이션을 적용하는 롤이 anon·authenticated 의 멤버가 아니다. 보통 postgres(또는 supabase_admin)로 적용하며 그 롤은 둘 모두의 멤버다 — supabase db push 로 적용할 것. 조용히 건너뛰지 않는다.';
       end;
       if current_user <> probe_role then
         raise exception '0018: 거동 탐침의 롤 전환이 반영되지 않았다 (current_user=% · 기대=%)', current_user, probe_role

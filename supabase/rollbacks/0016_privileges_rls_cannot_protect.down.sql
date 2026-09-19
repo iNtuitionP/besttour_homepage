@@ -221,7 +221,21 @@ begin
     end if;
 
     select p.proconfig into cfg from pg_proc p where p.oid = fn_oid;
-    if cfg is null or exists (select 1 from unnest(cfg) c where c ~ '^search_path=.*\mpg_temp\M') then
+    -- search_path 항목만 스키마 목록으로 풀어 비교한다(P5-15 R6 — 0016 ④ 와 같은 판정).
+    -- 토큰 앞뒤 공백 = src/backend/parser/scansup.c scanner_isspace — 스페이스·\t·\n·\r·\f 는 모든 버전, \v 는 17 이상에서만
+    -- (P5-15 R8 실측 · chr(11)||'public' 뒤 current_schemas(false): 15.17 {} · 16.15 {} · 17.6 {public} · 18.6 {public} → 경계는 17).
+    -- 스페이스만 지우면 이 **역판정**이
+    -- `public,<탭>pg_temp` 를 놓쳐 pg_temp 가 남은 채 통과했다(R7 실측).
+    if cfg is null or exists (
+         select 1
+           from unnest(cfg) c
+          cross join lateral regexp_split_to_table(substr(c, 13), ',(?=(?:[^"]*"[^"]*")*[^"]*$)') x(tok)
+          cross join lateral (select btrim(x.tok, ' ' || chr(9) || chr(10) || chr(13) || chr(12)
+                                       || case when current_setting('server_version_num')::int >= 170000 then chr(11) else '' end) as t) y
+          where left(c, 12) = 'search_path='
+            and case when y.t like '"%'
+                     then replace(substr(y.t, 2, length(y.t) - 2), '""', '"')
+                     else lower(y.t) end = 'pg_temp') then
       raise exception '0016 롤백: % 의 search_path 가 옛 형태로 돌아가지 않았다 (proconfig=%)', fn_sig, cfg
         using hint = '§2 의 set search_path = public (pg_temp 없이) 을 확인할 것. 되돌리지 않으면 0016 재적용 시 §5 ④ 가 언제나 참이 되어 검사가 눈이 먼다.';
     end if;

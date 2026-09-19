@@ -208,7 +208,7 @@ const AUTH_EXEC: Reasoned = {
 };
 
 /** 객체 소유자 — 마이그레이션은 `postgres` 로 적용된다. 공개 롤이 소유하면 권한 회수가 의미를 잃는다. */
-const OWNERS: Reasoned = { postgres: "supabase db push / SQL Editor 의 적용 롤" };
+const OWNERS: Reasoned = { postgres: "supabase db push 의 적용 롤 (원격 적용 경로는 db push 하나 — P5-15 R6)" };
 
 // ── astra 수정 라운드 (P5-15) — **새 수집기**의 기준선. 기존 목록은 넓히지 않았다. 항목은 전부 2026-09-17 로컬 실측 그대로다.
 
@@ -516,8 +516,37 @@ function parseFacts(output: string): string[] {
 // =============================================================================
 const POLICY_CMD: Record<string, string> = { insert: "a", update: "w", delete: "d", select: "r" };
 
+/**
+ * `search_path` 설정 값을 스키마 목록으로 푼다 (P5-15 R6 — runbook 0016 행렬 · 0016 ④ · 롤백과 **같은 판정**).
+ * 쉼표는 따옴표 밖에서만 가르고, 따옴표 식별자는 풀고(`""` → `"`), 비인용 이름은 소문자로 비교한다
+ * (PostgreSQL src/backend/utils/adt/varlena.c `SplitIdentifierString`). `"x pg_temp"` 는 pg_temp 가 아니다.
+ *
+ * 공백 문자 집합 (P5-15 R7·R8 — astra R6 P2-a · R7 P2): SplitIdentifierString 은 `scanner_isspace()`
+ * (src/backend/parser/scansup.c) 로 공백을 판단한다 — 스페이스·\t·\n·\r·\f 는 모든 버전에서.
+ * **\v 는 버전마다 다르다.** 네 버전 같은 방법으로 실측했다(일회용 컨테이너 · 로컬 스택):
+ * `set_config('search_path', chr(11) || 'public', true)` 뒤 `current_schemas(false)` →
+ *   **15.17 `{}` · 16.15 `{}` · 17.6 `{public}` · 18.6 `{public}`** — 즉 \v 를 공백으로 치는 경계는 **17** 이다
+ * (astra R7 은 16 으로 추정했으나 16.15 실측이 뒤집었다). SQL 세 곳(runbook 행렬·0016 ④·롤백)과 같은 규칙이다.
+ */
+const PG_SPACE = " \t\n\r\f";
+function searchPathSchemas(value: string, serverVersionNum = 0): string[] {
+  const ws = serverVersionNum >= 170000 ? `${PG_SPACE}\v` : PG_SPACE;
+  const trim = (s: string) => {
+    let a = 0;
+    let b = s.length;
+    while (a < b && ws.includes(s[a])) a++;
+    while (b > a && ws.includes(s[b - 1])) b--;
+    return s.slice(a, b);
+  };
+  return value.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map((raw) => {
+    const t = trim(raw);
+    return t.startsWith('"') ? t.slice(1, -1).replace(/""/g, '"') : t.toLowerCase();
+  });
+}
+
 function evaluate(facts: readonly string[]): string[] {
   const rows = facts.map((f) => f.split("|"));
+  const serverVersionNum = Number(rows.find((r) => r[0] === "server" && r[1] === "version_num")?.[2] ?? 0);
   const policies = new Set(
     rows.filter((r) => r[0] === "policy" && (r[3] === "authenticated" || r[3] === "PUBLIC")).map((r) => `${r[1]}|${r[2]}`),
   );
@@ -642,7 +671,7 @@ function evaluate(facts: readonly string[]): string[] {
       case "definer": {
         const config = r.slice(2).join("|");
         const searchPath = config.startsWith("search_path=") ? config.slice("search_path=".length) : "";
-        if (!/\bpg_temp\b/.test(searchPath)) {
+        if (!searchPathSchemas(searchPath, serverVersionNum).includes("pg_temp")) {
           out.push(`${obj} — definer 함수: search_path 에 pg_temp 가 없다 (${config}) — 임시 스키마 섀도잉`);
         }
         break;
@@ -774,6 +803,47 @@ describe("0. 허용 목록 — 사유 필수 · 비어 있지 않음(의도적 �
     }
     expect(text).not.toContain("notices — 표: authenticated");
     expect(text).not.toContain("ok_def()");
+  });
+
+  test("🔴 P5-15 R6 — definer 의 pg_temp 는 search_path 를 스키마 목록으로 풀어 본다 (낱말 검색이 아니다)", () => {
+    const text = evaluate([
+      `definer|quoted_word()|search_path=public, "x pg_temp"`,
+      `definer|quoted_list()|search_path="public, pg_temp"`,
+      `definer|suffix()|search_path=public, pg_temp_3`,
+      `definer|ok_upper()|search_path="$user", public, PG_TEMP`,
+      `definer|ok_quoted()|search_path="public", "pg_temp"`,
+      `definer|ok_comma()|search_path="a,b", pg_temp`,
+    ]).join("\n");
+    for (const bad of ["quoted_word()", "quoted_list()", "suffix()"]) expect(text, bad).toContain(`${bad} — definer 함수: search_path 에 pg_temp 가 없다`);
+    for (const ok of ["ok_upper()", "ok_quoted()", "ok_comma()"]) expect(text, ok).not.toContain(ok);
+    expect(searchPathSchemas(`"a,b", "c""d", PG_TEMP`)).toEqual(["a,b", `c"d`, "pg_temp"]);
+  });
+
+  test("🔴 P5-15 R7 — search_path 의 공백은 PostgreSQL scanner_isspace 집합이다 (\\t·\\n·\\r·\\f · \\v 는 17 이상)", () => {
+    for (const sep of ["\t", "\n", "\r", "\f", " \t \n"]) {
+      expect(searchPathSchemas(`public,${sep}pg_temp${sep}`), JSON.stringify(sep)).toEqual(["public", "pg_temp"]);
+      const text = evaluate([`definer|ws_ok()|search_path=public,${sep}pg_temp`]).join("\n");
+      expect(text, JSON.stringify(sep)).not.toContain("ws_ok()");
+    }
+    // \v — 경계는 17 이다. 네 버전 실측 픽스처(R8): 15.17 {} · 16.15 {} · 17.6 {public} · 18.6 {public}
+    //      (`set_config('search_path', chr(11) || 'public', true)` 뒤 `current_schemas(false)`)
+    //      경계를 16 이나 18 로 옮기면 이 표에서 빨개진다.
+    const VT_MEASURED: ReadonlyArray<readonly [number, string, boolean]> = [
+      [150017, "15.17", false],
+      [160015, "16.15", false],
+      [170006, "17.6", true],
+      [180006, "18.6", true],
+    ];
+    for (const [num, label, isSpace] of VT_MEASURED) {
+      expect(searchPathSchemas("public,\vpg_temp", num), label).toEqual(isSpace ? ["public", "pg_temp"] : ["public", "\vpg_temp"]);
+      const v = evaluate([`server|version_num|${num}`, `definer|vt_${num}()|search_path=public,\vpg_temp`]).join("\n");
+      if (isSpace) expect(v, label).not.toContain(`vt_${num}()`);
+      else expect(v, label).toContain(`vt_${num}() — definer 함수`);
+    }
+    // 버전 사실이 없으면 \v 를 공백으로 치지 않는다 (모르면 거짓 실패 쪽)
+    expect(searchPathSchemas("public,\vpg_temp")).toEqual(["public", "\vpg_temp"]);
+    // 따옴표 안의 공백은 이름의 일부다
+    expect(searchPathSchemas(`"\tpg_temp"`)).toEqual(["\tpg_temp"]);
   });
 
   test("🔴 P5-15 — 옛 하드코딩 목록에 없던 권한 종류도 이름으로 잡는다 (판정은 종류를 가리지 않는다)", () => {
