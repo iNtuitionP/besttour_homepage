@@ -13,7 +13,8 @@ import { isLocalStack } from "./load-env-local";
  *
  * 안전장치: isLocalStack() 이 아니면 throw. `--local` 은 어차피 로컬 컨테이너만 보지만 이중으로 막는다.
  * SQL 은 임시 파일로 넘긴다 — Windows 에서 .cmd 를 shell 로 띄울 때 따옴표·공백 인용 문제를 피한다.
- * 출력(텍스트 표)을 파싱하지 않는다 — 호출자는 부분 문자열만 단언한다(형식이 바뀌어도 깨지지 않게).
+ * 출력 형식은 **CLI 버전마다 다르다**(JSON · ASCII 표). 호출자는 부분 문자열만 단언하거나,
+ * 값·오류 메시지가 필요하면 아래 `sqlCells()` · `sqlErrorText()` 로 형식을 지우고 단언한다 (P5-15 R9).
  */
 export function runLocalSql(sql: string): string {
   const res = execLocalSql(sql);
@@ -75,6 +76,86 @@ function localSuperuserDbUrl(): string {
   return `postgresql://supabase_admin:postgres@127.0.0.1:${port}/postgres`;
 }
 
+/**
+ * CLI 출력에서 **값**만 꺼낸다 — 출력 형식에 기대지 않는다 (P5-15 R9).
+ *
+ * 왜: `supabase db query` 의 출력 형식은 **CLI 버전마다 다르다.** 로컬 2.117.0 은 JSON(`{"rows":[{"a":"…"}]}`)을,
+ * CI(`supabase/setup-cli@v1` · `version: latest`)는 **ASCII 표**(`│ 값 │`)를 낸다. 값 끝의 따옴표나 표 테두리에
+ * 기댄 단언은 **로컬만 통과하고 CI 에서 깨진다**(f696020 의 DB Smoke 실패가 그것이었다).
+ *
+ * 돌려주는 것: 머리글 칸을 포함한 모든 칸의 문자열(값이 하나뿐인 탐침에서는 `["a", "<값>"]` 꼴).
+ * 머리글을 굳이 가려내지 않는다 — 단언은 "이 값이 칸 중에 있다" 로 쓰면 충분하고, 그쪽이 형식 변화에 더 둔하다.
+ */
+export function sqlCells(output: string): string[] {
+  const parsed = tryJson(output) as { rows?: unknown[] } | undefined;
+  if (parsed && Array.isArray(parsed.rows)) {
+    return parsed.rows.flatMap((row) =>
+      row !== null && typeof row === "object" ? Object.values(row as Record<string, unknown>).map(cellText) : [cellText(row)],
+    );
+  }
+  const cells: string[] = [];
+  for (const line of output.replace(/\r\n/g, "\n").split("\n")) {
+    if (isRuleLine(line)) continue;
+    for (const part of splitRow(line)) {
+      const cell = part.trim();
+      if (cell !== "" && !isRuleLine(cell)) cells.push(cell);
+    }
+  }
+  return cells;
+}
+
+/**
+ * 실패 출력에서 **오류 메시지**만 꺼낸다 — 형식에 기대지 않는다 (P5-15 R9).
+ * JSON 이면 `error.message`(이스케이프가 풀린 상태)를, 아니면 표 테두리를 지운 본문을 돌려준다.
+ * 되돌려지는 탐침이 `raise exception '<라벨> <payload>'` 로 실어 보낸 내용을 두 형식에서 **같은 글자**로 만든다.
+ */
+export function sqlErrorText(output: string): string {
+  const parsed = tryJson(output) as { error?: { message?: unknown }; message?: unknown } | undefined;
+  const msg = parsed?.error?.message ?? parsed?.message;
+  if (typeof msg === "string") return msg;
+  return output
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .filter((line) => !isRuleLine(line))
+    .map((line) => splitRow(line).map((p) => p.trim()).filter((p) => p !== "").join(" "))
+    .join("\n");
+}
+
+/**
+ * 표의 한 줄을 칸으로 가른다. 칸 구분자는 **박스 문자 `│` 뿐**이고, ASCII `|` 는 줄 전체가 `|`로 시작·끝나는
+ * 표 모양일 때만 구분자로 본다 — **값 안의 `|`**(예: `PG_TEMP_OK | search_path=…`)를 자르지 않기 위해서다
+ * (P5-15 R9 실측: 이 구분을 두지 않으면 표 형식에서 탐침 하나가 깨졌다).
+ */
+function splitRow(line: string): string[] {
+  if (line.includes("│")) return line.split("│");
+  if (/^\s*\|.*\|\s*$/.test(line)) return line.split("|");
+  return [line];
+}
+
+/** 표 테두리 줄(─ │ ┌ ┼ … · `-` `+` `=` 만으로 된 줄)인가. */
+function isRuleLine(line: string): boolean {
+  return /^[\s─-╿+=-]*$/.test(line) && /[─-╿+=-]/.test(line);
+}
+
+function cellText(v: unknown): string {
+  return v === null || v === undefined ? "" : String(v);
+}
+
+function tryJson(text: string): unknown {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end <= start) return undefined;
+  for (const candidate of [text.slice(start, end + 1), text.trim()]) {
+    try {
+      const v: unknown = JSON.parse(candidate);
+      if (v !== null && typeof v === "object") return v;
+    } catch {
+      // 표 형식이거나 JSON 이 아닌 출력 — 호출자가 표 경로로 간다
+    }
+  }
+  return undefined;
+}
+
 type ExecResult =
   | { ok: true; stdout: string }
   | { ok: false; command: string; status: number | null | undefined; stdout: string; stderr: string };
@@ -103,7 +184,12 @@ function execLocalSql(sql: string, superuserUrl?: string): ExecResult {
     throw new Error("runLocalSql: 슈퍼유저 연결은 127.0.0.1 로컬 스택만 허용한다");
   }
   const target = superuserUrl === undefined ? ["--local"] : ["--db-url", superuserUrl];
-  const args = ["db", "query", ...target, "--yes", "-f"];
+  // 출력 형식 강제 (P5-15 R9 · **실측 전용 손잡이**): 기본은 CLI 기본값이다(로컬 2.117.0 = JSON · CI latest = 표).
+  // `P515_DB_QUERY_OUTPUT=table|csv|json` 을 주면 그 형식으로 받아, 같은 테스트가 **다른 CLI 형식에서도** 통과하는지
+  // 로컬에서 재현할 수 있다. 단언은 형식을 지우고(sqlCells·sqlErrorText) 보므로 어느 값이든 통과해야 한다.
+  const forced = process.env.P515_DB_QUERY_OUTPUT;
+  const outputFlag = forced !== undefined && ["table", "csv", "json"].includes(forced) ? ["-o", forced] : [];
+  const args = ["db", "query", ...target, "--yes", ...outputFlag, "-f"];
   const notFound: string[] = [];
 
   try {

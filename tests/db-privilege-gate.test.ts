@@ -503,9 +503,14 @@ const encodeFacts = (inner: string) =>
 const FACTS_SQL = `select ${encodeFacts(`select string_agg(q.f, ';' order by q.f) from (${FACTS_QUERY}) q`)} as facts;`;
 
 function parseFacts(output: string): string[] {
-  const m = output.match(new RegExp(`${SENTINEL_B}([A-Za-z0-9+/=]*)${SENTINEL_E}`));
+  // 표식 사이는 base64 지만, **CLI 출력 형식마다 사이에 끼는 글자가 다르다** (P5-15 R9):
+  // 로컬 2.117.0 은 JSON 한 줄, CI(`version: latest`)는 ASCII 표라 테두리·공백·줄바꿈이 섞일 수 있다.
+  // 그래서 표식 사이를 통째로 잡은 뒤 base64 글자만 남긴다 — 형식에 기대지 않는다.
+  const m = output.match(new RegExp(`${SENTINEL_B}([\\s\\S]*?)${SENTINEL_E}`));
   if (!m) throw new Error(`사실 수집 출력에서 표식을 찾지 못했다 — CLI 출력 형식이 바뀌었나?\n${output.slice(0, 800)}`);
-  return Buffer.from(m[1], "base64")
+  const b64 = m[1].replace(/[^A-Za-z0-9+/=]/g, "");
+  if (b64 === "") throw new Error(`사실 수집 출력의 표식 사이가 비었다\n${output.slice(0, 800)}`);
+  return Buffer.from(b64, "base64")
     .toString("utf8")
     .split(";")
     .filter((f) => f.length > 0);

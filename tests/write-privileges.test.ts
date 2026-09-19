@@ -73,7 +73,7 @@ import { beforeAll, describe, expect, test } from "vitest";
 import { withGalleryLock, withNotificationsLock, withShowcaseRoutesLock } from "./helpers/db-lock";
 import { expectPermissionDenied } from "./helpers/expect-denied";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
-import { runLocalSql, runLocalSqlExpectingError, runLocalSuperuserSqlExpectingError } from "./helpers/local-stack-sql";
+import { runLocalSql, runLocalSqlExpectingError, runLocalSuperuserSqlExpectingError, sqlCells, sqlErrorText } from "./helpers/local-stack-sql";
 import { type SqlDataMode, sqlView, stripComments } from "./helpers/strip-comments";
 
 // =============================================================================
@@ -95,6 +95,15 @@ const UP18_SQL = "supabase/migrations/0018_sequence_privileges.sql";
 const DOWN18_SQL = "supabase/rollbacks/0018_sequence_privileges.down.sql";
 
 const compact = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
+
+/**
+ * 값 단언용 — CLI 출력 형식(로컬 JSON · CI 의 ASCII 표)을 지우고 **값 칸만** 이어 붙인다 (P5-15 R9).
+ * 따옴표·표 테두리에 기댄 정규식은 CI 에서 깨진다(f696020 DB Smoke).
+ */
+const sqlValue = (sql: string) => sqlCells(runLocalSql(sql)).join(" | ");
+/** 되돌려지는 탐침 — 오류 메시지만 뽑는다(JSON 이스케이프를 풀고 표 테두리를 지운다). 두 CLI 형식에서 같은 글자가 된다. */
+const probeError = (sql: string) => sqlErrorText(runLocalSqlExpectingError(sql));
+const superProbeError = (sql: string) => sqlErrorText(runLocalSuperuserSqlExpectingError(sql));
 
 /*
  * =============================================================================
@@ -1727,7 +1736,7 @@ describe.skipIf(!gate.allowed)("9. DB — 0016 권한·함수 행렬 실측 (로
 
   test("🔴 R5 — 행렬은 NULL proacl(기본 PUBLIC EXECUTE)과 사라진 함수를 실패 라벨로 보고한다 (슈퍼유저 · 되돌림)", () => {
     const matrix = runbookSql("0016").replace(/;\s*$/, "");
-    const out = runLocalSuperuserSqlExpectingError(
+    const out = superProbeError(
       [
         "do $p515n$",
         "declare payload text;",
@@ -1743,7 +1752,7 @@ describe.skipIf(!gate.allowed)("9. DB — 0016 권한·함수 행렬 실측 (로
     expect(out, out).toMatch(/FN_MISSING public\.mark_notification_failed\(bigint, text, boolean, bigint\)/);
     expect(out, out).toMatch(/FN_EXEC_EXTRA [^"\\]*reap_stale_notifications\/PUBLIC/);
     expect(out, out).toMatch(/FN_PUBLIC_ROLE_EXEC [^"\\]*reap_stale_notifications\(\)\/anon/);
-    const after = runLocalSql(
+    const after = sqlValue(
       "select 'P515B ' || coalesce((select proacl::text from pg_proc where oid = to_regprocedure('public.reap_stale_notifications()')), 'NULL') || ' ' || (to_regprocedure('public.mark_notification_failed(bigint, text, boolean, bigint)') is not null)::text as a;",
     );
     expect(after, after).toMatch(/P515B \{[^}]*service_role=X[^}]*\} true/);
@@ -1751,7 +1760,7 @@ describe.skipIf(!gate.allowed)("9. DB — 0016 권한·함수 행렬 실측 (로
 
   test("🔴 R6 P2-2·P2-3 — 행렬은 사라진 anon SELECT · 컬럼 단위 쓰기 · search_path 밖의 pg_temp 를 실패 라벨로 보고한다 (되돌림)", () => {
     const matrix = runbookSql("0016").replace(/;\s*$/, "");
-    const out = runLocalSqlExpectingError(
+    const out = probeError(
       [
         "do $p515r6$",
         "declare payload text;",
@@ -1782,7 +1791,7 @@ describe.skipIf(!gate.allowed)("9. DB — 0016 권한·함수 행렬 실측 (로
     expect(out, out).toMatch(/PG_TEMP_MISSING [^"\\]*mark_notification_sent/);
     expect(out, out).not.toMatch(/PG_TEMP_MISSING [^"\\]*mark_notification_failed/);
     // 되돌려졌다 — 실제 객체는 그대로
-    const after = runLocalSql(
+    const after = sqlValue(
       [
         "select 'P515R6B '",
         "  || has_table_privilege('anon', 'public.notices', 'select')::text || ' '",
@@ -1791,12 +1800,12 @@ describe.skipIf(!gate.allowed)("9. DB — 0016 권한·함수 행렬 실측 (로
         "  || array_to_string((select proconfig from pg_proc where oid = 'public.reap_stale_notifications()'::regprocedure), ';') as a;",
       ].join("\n"),
     );
-    expect(after, after).toMatch(/P515R6B true false false search_path=public, pg_temp"/);
+    expect(after, after).toContain("P515R6B true false false search_path=public, pg_temp");
   }, 300_000);
 
   test("R6 — 정상 상태의 search_path 표기 변형도 pg_temp 로 읽는다 (대문자 비인용 · 따옴표 · 공백) (되돌림)", () => {
     const matrix = runbookSql("0016").replace(/;\s*$/, "");
-    const out = runLocalSqlExpectingError(
+    const out = probeError(
       [
         "do $p515r6ok$",
         "declare payload text;",
@@ -1815,7 +1824,7 @@ describe.skipIf(!gate.allowed)("9. DB — 0016 권한·함수 행렬 실측 (로
 
   test("🔴 R7 P2-a — 행렬의 search_path 분리는 PostgreSQL 공백 집합(\\t 등 · \\v 는 17 이상)을 쓴다 (SET FROM CURRENT · 되돌림)", () => {
     const matrix = runbookSql("0016").replace(/;\s*$/, "");
-    const out = runLocalSqlExpectingError(
+    const out = probeError(
       [
         "do $p515r7$",
         "declare payload text; saved text := current_setting('search_path'); v17 boolean := current_setting('server_version_num')::int >= 170000;",
@@ -1844,8 +1853,8 @@ describe.skipIf(!gate.allowed)("9. DB — 0016 권한·함수 행렬 실측 (로
     expect(out, out).not.toMatch(/PG_TEMP_MISSING [^"\\]*reap_stale_notifications/);
     expect(out, out).not.toMatch(/PG_TEMP_MISSING [^"\\]*mark_notification_sent/);
     expect(out, out).toMatch(/PG_TEMP_MISSING [^"\\]*mark_notification_failed/);
-    const after = runLocalSql("select 'P515R7B ' || array_to_string((select proconfig from pg_proc where oid = 'public.reap_stale_notifications()'::regprocedure), ';') as a;");
-    expect(after, after).toMatch(/P515R7B search_path=public, pg_temp"/);
+    const after = sqlValue("select 'P515R7B ' || array_to_string((select proconfig from pg_proc where oid = 'public.reap_stale_notifications()'::regprocedure), ';') as a;");
+    expect(after, after).toContain("P515R7B search_path=public, pg_temp");
   }, 300_000);
 
   test("1-인자 claim 구버전이 되살아나지 않았다 — 되살아나면 호출이 모호해져 발송기가 멈춘다", () => {
@@ -2203,7 +2212,7 @@ describe.skipIf(!gate.allowed)("12. DB — 0017 권한 행렬 + 거동 실증 (�
    */
   test("🔴 R4 — 행렬은 NULL proacl(기본 PUBLIC EXECUTE)과 사라진 함수를 실패 라벨로 보고한다 (슈퍼유저 · 되돌림)", () => {
     const matrix = runbookSql("0017").replace(/;\s*$/, "");
-    const out = runLocalSuperuserSqlExpectingError(
+    const out = superProbeError(
       [
         "do $p515m$",
         "declare payload text;",
@@ -2220,7 +2229,7 @@ describe.skipIf(!gate.allowed)("12. DB — 0017 권한 행렬 + 거동 실증 (�
     expect(out, out).toMatch(/OUTBOX_FN_EXTRA [^"]*reap_stale_notifications\/PUBLIC/);
     expect(out, out).toMatch(/OUTBOX_FN_PUBLIC_ROLE_EXEC [^"]*reap_stale_notifications\(\)\/anon/);
     // 되돌려졌다
-    const after = runLocalSql(
+    const after = sqlValue(
       "select 'P515A ' || coalesce((select proacl::text from pg_proc where oid = to_regprocedure('public.reap_stale_notifications()')), 'NULL') || ' ' || (to_regprocedure('public.mark_notification_sent(bigint, text)') is not null)::text as a;",
     );
     expect(after, after).toMatch(/P515A \{[^}]*service_role=X[^}]*\} true/);
@@ -2977,16 +2986,16 @@ describe.skipIf(!gate.allowed)("18. DB — 0019 MAINTAIN 행렬 + LOCK 거동 + 
   };
 
   test("16 이하 경로 — 판정 16·능력 없음이면 **아무것도 하지 않고** 건너뛴 사실을 남긴다 (회수 문장까지 가지 않는다)", () => {
-    const out = runLocalSqlExpectingError(variant("160004", "false"));
+    const out = probeError(variant("160004", "false"));
     expect(out, out).toContain("P515_SKIP 0019:");
     expect(out, out).toContain("server_version_num=160004");
     expect(out, "건너뛰지 않고 뒤로 진행했다").not.toMatch(/0019: (공개 롤|PUBLIC|MAINTAIN 말고|service_role|거동|대조군)/);
   });
 
   test("분기 가드 — 판정과 능력이 어긋나면 어느 쪽이든 멈춘다 (16 인데 MAINTAIN 을 안다 · 17 인데 모른다)", () => {
-    const a = runLocalSqlExpectingError(variant("160004", "true"));
+    const a = probeError(variant("160004", "true"));
     expect(a, a).toContain("0019: 버전 분기와 서버 능력이 어긋난다 — server_version_num=160004");
-    const b = runLocalSqlExpectingError(variant("170006", "false"));
+    const b = probeError(variant("170006", "false"));
     expect(b, b).toContain("0019: 버전 분기와 서버 능력이 어긋난다 — server_version_num=170006");
   });
 
@@ -3193,6 +3202,64 @@ describe("19. runbook 0017·0018·0019 — 원격 확인 절차는 카탈로그 
     expect(repairLine).toMatch(/컨트롤러 승인/);
     // 순서 4 도 같은 말을 한다
     expect(top).toMatch(/^4\. 원격에 적용한다[^\n]*`supabase db push`/m);
+  });
+
+  // ---------------------------------------------------------------------------
+  // R9 — CLI 출력 형식(JSON · ASCII 표)에 기대지 않는다 (f696020 CI DB Smoke 실패)
+  //      로컬 CLI 2.117.0 은 JSON, CI(setup-cli `version: latest`)는 표를 낸다. 값 끝 따옴표에 기댄
+  //      단언이 로컬만 통과했다. 여기서는 **두 형식의 픽스처**로 헬퍼와 실제 단언식을 함께 검사한다.
+  // ---------------------------------------------------------------------------
+  const VALUE = "P515R7B search_path=public, pg_temp";
+  const JSON_OUT = JSON.stringify({ boundary: "230f061b69807da4e4378371b69041e5", rows: [{ a: VALUE }], warning: "…untrusted…" }, null, 2);
+  const TABLE_OUT = ["┌──────────────────────────────────────────┐", "│ a                                        │", "├──────────────────────────────────────────┤", `│ ${VALUE}     │`, "└──────────────────────────────────────────┘"].join("\n");
+  const PLAIN_OUT = ["            a             ", " ------------------------ ", `  ${VALUE}  `, "(1 row)"].join("\n");
+
+  test("🔴 R9 — sqlCells 는 JSON·표·평문에서 같은 값을 준다 (따옴표·테두리에 기대지 않는다)", () => {
+    for (const [name, out] of [["JSON(로컬 2.117.0)", JSON_OUT], ["ASCII 표(CI latest)", TABLE_OUT], ["평문", PLAIN_OUT]] as const) {
+      expect(sqlCells(out), name).toContain(VALUE);
+      expect(sqlCells(out).join(" | "), name).toContain("P515R7B search_path=public, pg_temp");
+    }
+    // 옛 단언(값 끝의 따옴표)은 표 형식에서 깨진다 — 그래서 이 단언 형태를 쓰지 않는다
+    expect(new RegExp(`${VALUE}"`).test(TABLE_OUT), "표 형식에는 값 끝에 따옴표가 없다").toBe(false);
+    // 여러 칸·여러 행 · NULL
+    expect(sqlCells(JSON.stringify({ rows: [{ a: "1", b: null }, { a: "2", b: "x" }] }))).toEqual(["1", "", "2", "x"]);
+    expect(sqlCells(["│ a │ b │", "│ 1 │ 2 │"].join("\n"))).toEqual(["a", "b", "1", "2"]);
+  });
+
+  test("🔴 R9 — sqlErrorText 는 두 형식에서 같은 오류 메시지를 준다 (탐침 단언식이 둘 다에서 맞는다)", () => {
+    const message =
+      'failed to execute query: error: P515R6 {"blind":"RLS_BLIND_NONE","anon_read":"ANON_SELECT_LOST public.notices",' +
+      '"places_write":"PLACES_WRITE_LEAK update","anon_extra":"ANON_EXTRA public.vehicles/insert public.gallery/references",' +
+      '"pg_temp":"PG_TEMP_MISSING public.mark_notification_sent(bigint, text) public.reap_stale_notifications()"}';
+    const jsonErr = JSON.stringify({ _tag: "Error", error: { code: "LegacyDbQueryExecError", message } });
+    const tableErr = ["┌───────────────┐", "│ error         │", "├───────────────┤", `│ ${message} │`, "└───────────────┘", "", "Try rerunning the command with --debug"].join("\n");
+    for (const [name, out] of [["JSON(로컬)", jsonErr], ["표(CI)", tableErr], ["평문(stderr)", `${message}\n`]] as const) {
+      const text = sqlErrorText(out);
+      expect(text, name).toContain("P515R6");
+      // §9 탐침이 쓰는 단언식 그대로
+      expect(text, name).toMatch(/ANON_SELECT_LOST [^"\\]*public\.notices/);
+      expect(text, name).toMatch(/PLACES_WRITE_LEAK [^"\\]*update/);
+      expect(text, name).toMatch(/ANON_EXTRA [^"\\]*public\.vehicles\/insert/);
+      expect(text, name).toMatch(/PG_TEMP_MISSING [^"\\]*mark_notification_sent/);
+      expect(text, name).not.toMatch(/PG_TEMP_MISSING [^"\\]*mark_notification_failed/);
+    }
+  });
+
+  test("🔴 R9 — 탐침 단언은 헬퍼를 거친다 · CLI 출력 원문에 따옴표를 기대는 정규식이 없다", () => {
+    const self = read("tests/write-privileges.test.ts");
+    // 실패 출력은 언제나 sqlErrorText 를 거친다 — 원시 호출은 래퍼 두 줄뿐이다
+    for (const fn of ["runLocalSqlExpectingError", "runLocalSuperuserSqlExpectingError"]) {
+      const uses = self.split(`${fn}(`).length - 1;
+      expect(uses, `${fn} 의 원시 호출은 래퍼 정의 하나뿐이어야 한다`).toBe(1);
+    }
+    // P515 라벨을 쓰는 단언식이 CLI 출력의 따옴표에 기대지 않는다(f696020 회귀 방지)
+    for (const f of readdirSync(path.join(ROOT, "tests")).filter((n) => n.endsWith(".test.ts"))) {
+      const src = read(`tests/${f}`);
+      for (const m of src.matchAll(/toMatch\(\/([^\n]*?)\/[gimsuy]*\)/g)) {
+        if (!m[1].includes("P515")) continue;
+        expect(m[1].includes('"'), `${f}: CLI 출력의 따옴표에 기댄 단언 — ${m[1]}`).toBe(false);
+      }
+    }
   });
 
   test("🔴 R7 P2-b — 대기 중인 0012~0019 여덟 파일의 첫 실행문은 `set local lock_timeout = '5s'` · runbook 은 부분 적용을 적는다", () => {
