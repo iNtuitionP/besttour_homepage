@@ -54,7 +54,7 @@ select version, name from supabase_migrations.schema_migrations order by version
 
 ---
 
-## 0012 · 0013 — 쓰기 권한 회수 (적용 대기)
+## 0012 · 0013 — 쓰기 권한 회수 (**원격 적용 완료 2026-09-21**)
 
 **무엇을 하나**: Supabase 가 public 스키마 표에 `anon`·`authenticated` 로 기본 부여한 쓰기 권한을 회수한다. 회수하지 않으면 **RLS 가 유일한 방어선**이 된다(같은 뿌리로 세 번 재발했다).
 - `0012` — `notifications_log` 에서 insert/update/delete/truncate, `reservations` 에서 insert/delete/truncate 를 **anon·authenticated** 에서 회수(reservations 의 UPDATE 는 0010 이 이미 회수).
@@ -183,13 +183,13 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENC
 ### 적용 후 확인 (원격)
 같은 질의 다섯 개를 원격에서 돌려 **위 표와 같은 결과**인지 대조하고, 아래에 날짜·결과를 적는다.
 
-> **원격 적용: 아직 하지 않았다 (2026-09-16).** CI 는 green 이고 적용 전 점검도 끝났다.
+> **원격 적용 완료 (2026-09-21 00:17 KST, 컨트롤러).** `supabase db push --linked` 로 0012~0019 여덟 파일을 한 번에 적용했다 — 전부 성공, 이력 마지막이 `0019`. 상세는 문서 맨 아래 「원격 적용 기록」.
 > `supabase db push --linked` 가 **자동 승인 정책(Production Deploy)에 막혔다.** 우회하지 않는다 — 사람이 판단할 자리다.
 > 진행하려면 사용자가 그 명령을 승인하거나 직접 실행해야 한다. 그때까지 원격은 **0011 상태**이고, 그 상태에서도 사이트는 정상 동작한다(회수는 방어 강화이지 기능 요구사항이 아니다).
 
 ---
 
-## 0014 — claim 채널 필터 (작성 완료, 독립 리뷰 **승인**, 원격 적용 대기)
+## 0014 — claim 채널 필터 (독립 리뷰 **승인** · **원격 적용 완료 2026-09-21**)
 
 `claim_pending_notifications` 에 채널 화이트리스트(`p_channels text[] default null`)를 넣어 **보낼 수 없는 채널의 행을 아예 집지 않게** 한다. 배경은 `docs/ops/known-defects.md` **D3**.
 1-인자 구버전을 **먼저 `drop`** 한 뒤 2-인자를 만든다 — `create or replace` 에 파라미터를 더하면 Postgres 가 새 함수로 보고 구버전이 남아 1-인자 호출이 **모호(42725)** 해진다.
@@ -220,7 +220,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENC
 
 ---
 
-## 0016 — RLS 가 막지 못하는 권한 회수 (작성 완료, 원격 적용 대기)
+## 0016 — RLS 가 막지 못하는 권한 회수 (**원격 적용 완료 2026-09-21**)
 
 **무엇을 하나**: 0012·0013 이 닫은 것은 **쓰기 네 동작**뿐이었다. 남은 `TRUNCATE`·`TRIGGER` 는 RLS 가 관여하는 종류의 권한이 아니다 — TRUNCATE 는 행을 하나씩 보지 않아 정책 평가가 일어나지 않고, TRIGGER 는 `CREATE TRIGGER` 를 허용한다. 즉 그 둘에 대해서는 **"RLS 가 유일한 방어선" 조차 아니고 아무 방어선도 없었다.**
 
@@ -345,11 +345,11 @@ select
 ### 롤백
 `supabase/rollbacks/0016_privileges_rls_cannot_protect.down.sql` · **승인 플래그 요구**(`set bestour.rollback_0016_ack = '1';`). 근거: 되돌린 뒤의 세계가 **조용히** 위험하다(TRUNCATE 는 RLS 밖, TRIGGER 는 외부 유출, `pg_temp` 없는 `search_path` 는 엉뚱한 표를 고치고 성공을 돌려준다). 되돌린 것을 필요로 하는 정상 경로는 하나도 없다.
 
-> **원격 적용: 아직 하지 않았다 (2026-09-16).** 0012~0016 이 함께 대기 중이다(원격은 0011 상태).
+> **원격 적용 완료 (2026-09-21 00:17 KST, 컨트롤러).** `supabase db push --linked` 로 0012~0019 여덟 파일을 한 번에 적용했다 — 전부 성공, 이력 마지막이 `0019`. 상세는 문서 맨 아래 「원격 적용 기록」.
 
 ---
 
-## 0017 — 개인정보 두 표의 TRIGGER·REFERENCES 와 `anon` SELECT 회수 (작성 완료, 원격 적용 대기)
+## 0017 — 개인정보 두 표의 TRIGGER·REFERENCES 와 `anon` SELECT 회수 (**원격 적용 완료 2026-09-21**)
 
 **무엇을 하나**: 0016 은 브리프가 못박은 **콘텐츠 일곱 표**만 다뤘다. 같은 구멍이 `reservations`(고객 성명·전화번호·이메일·문의내용)·`notifications_log`(수신처·문자 본문)에도 남아 있었고, **그쪽이 더 위험하다.**
 
@@ -498,11 +498,11 @@ PUBLIC 롤 grant 0 · 따로 부여된 컬럼 ACL 0(`pg_class.relacl`·`pg_attri
 ### 롤백
 `supabase/rollbacks/0017_pii_tables_trigger_references.down.sql` · **승인 플래그 요구**(`set bestour.rollback_0017_ack = '1';`). 근거: 되돌리면 `http_request` 트리거로 **접수마다 고객 개인정보가 외부로 나가는** 경로가 오류·로그·화면 변화 없이 다시 열린다. 되돌린 것을 필요로 하는 정상 경로는 하나도 없다.
 
-> **원격 적용: 아직 하지 않았다 (2026-09-16).** 0012~0017 이 함께 대기 중이다(원격은 0011 상태).
+> **원격 적용 완료 (2026-09-21 00:17 KST, 컨트롤러).** `supabase db push --linked` 로 0012~0019 여덟 파일을 한 번에 적용했다 — 전부 성공, 이력 마지막이 `0019`. 상세는 문서 맨 아래 「원격 적용 기록」.
 
 ---
 
-## 0018 — 공개 롤의 시퀀스 권한 회수 (작성 완료, 원격 적용 대기)
+## 0018 — 공개 롤의 시퀀스 권한 회수 (**원격 적용 완료 2026-09-21**)
 
 **출처**: 사람이 아니라 **P6-11 게이트**(`tests/db-privilege-gate.test.ts`)가 첫 실행에서 36건을 이름으로 대며 찾았다. 기본 권한이 새 객체를 공개 롤에 여는 같은 뿌리의 **다섯 번째 사례**다.
 
@@ -601,11 +601,11 @@ select
 로컬 실측: 플래그 없이 실행 → 멈춤(exit 3, 권한 불변). 플래그와 함께 실행 → 적용 전 실효 권한으로 복원되고 **게이트가 다시 36건으로 빨개졌다**. 0018 재적용 뒤 사실 전수 diff 동일.
 ⚠️ 관리자 "새 글 저장" 이 죽어서 롤백을 생각한다면 원인은 0018 이 아닐 가능성이 높다 — 0018 은 콘텐츠 여섯의 `authenticated` usage 를 남긴다. 먼저 `has_sequence_privilege('authenticated', 'public.notices_id_seq', 'usage')` 를 볼 것.
 
-> **원격 적용: 아직 하지 않았다 (2026-09-17).** 0012~0018 이 함께 대기 중이다. 로컬 `supabase_migrations.schema_migrations` 에도 0018 은 **기록되지 않았다**(`psql -1` 파일 적용 — `db reset` 금지 조건 때문). 다음 `db reset` 이나 CI 는 파일에서 정상 적용한다.
+> **원격 적용 완료 (2026-09-21 00:17 KST, 컨트롤러).** `supabase db push --linked` 로 0012~0019 여덟 파일을 한 번에 적용했다 — 전부 성공, 이력 마지막이 `0019`. 상세는 문서 맨 아래 「원격 적용 기록」.
 
 ---
 
-## 0019 — 공개 롤의 표 `MAINTAIN` 회수 (작성 완료, 원격 적용 대기 · **PostgreSQL 17+ 전용, 버전 조건부**)
+## 0019 — 공개 롤의 표 `MAINTAIN` 회수 (**원격 적용 완료 2026-09-21** · **PostgreSQL 17+ 전용, 버전 조건부**)
 
 **출처**: P6-13 이 범위 밖에서 발견, 컨트롤러가 재측정. 그리고 **P6-11 게이트가 놓쳤다** — 권한 종류를 하드코딩했기 때문이다(후속 목록의 해당 항목). 기본 권한이 새 표를 `arwdDxtm` 으로 여는 같은 뿌리의 **여섯 번째 사례**다.
 
@@ -732,4 +732,48 @@ static void RangeVarCallbackForLockTable(…)
 ⚠️ **플래그는 기준선이 맞는지를 검증하지 않는다**(astra P2-6). 롤백은 고정 목록(아홉 표 × 두 롤)을 부여한다 — 적용 직전 스냅샷에서 `m` 이 없던 표가 있으면 **파일을 고친 뒤** 실행한다. 롤백 검증의 service_role MAINTAIN 검사는 **경고(WARNING)만** 한다: 롤백은 그 권한을 없앨 수 없고, 업그레이드 DB 에서는 원래 없었을 수 있기 때문이다(로컬 실측: 되돌려지는 트랜잭션에서 places 의 service_role `m` 을 뺀 뒤 롤백 본문 → `WARNING` 후 끝까지 진행).
 로컬 실측: 플래그 없이 → 멈춤(exit 3, ACL 불변). 플래그와 함께 → 사실 전수가 **0019 적용 전과 동일**. 그 상태에서 게이트가 다시 **18건으로 빨개지고** §18·§5-6 도 빨개졌다(`MAINTAIN_LEFT`). 0019 재적용 두 번 → exit 0 · 사실이 최초 적용과 동일(멱등). PostgreSQL 15 컨테이너에서도 롤백은 플래그 없이 멈추고, 플래그와 함께면 notice 만 남기고 ACL 불변.
 
-> **원격 적용: 아직 하지 않았다 (2026-09-17).** 0012~0019 가 함께 대기 중이다. 로컬 `schema_migrations` 에는 0019 가 기록되지 않았다(`psql -1` 파일 적용). **원격 버전은 이 세션에서 확인하지 못했다** — 위 "적용 직전 필수" 가 첫 단계다.
+> **원격 적용 완료 (2026-09-21 00:17 KST, 컨트롤러).** `supabase db push --linked` 로 0012~0019 여덟 파일을 한 번에 적용했다 — 전부 성공, 이력 마지막이 `0019`. 상세는 문서 맨 아래 「원격 적용 기록」.
+
+---
+
+# 원격 적용 기록 — 0012~0019 (2026-09-21 00:17 KST · 컨트롤러)
+
+사장님 지시로 적용했다. 경로는 「적용 경로」대로 **`npx --no-install supabase db push --linked --yes` 하나**(SQL Editor·`psql -f` 안 씀).
+
+## 적용 직전 필수 — 결과
+| # | 확인 | 기대 | 원격 실측 |
+|---|---|---|---|
+| ① | 적용 이력 | 마지막 `0011` | `0001`~`0011` ✅ (0012~0019 없음) |
+| ② | 서버 버전 | — | **PostgreSQL 17.6 (`170006`)** → 0019 의 회수 분기가 실제로 돈다 ✅ |
+| ③ | 이벤트 트리거 | 기준 6개 · CREATE TABLE/SEQUENCE/TRIGGER 태그 없음 | 이름·태그·소유자(`supabase_admin`)·`evtenabled=O` 전부 일치 ✅ / **본문 md5 6개 모두 로컬과 다름** → 조건 ⓒ 대로 본문을 읽었다: 이번에 발동할 수 있는 `pgrst_ddl_watch`·`pgrst_drop_watch` 는 원격도 **`NOTIFY pgrst, 'reload schema'` 뿐**이고 `schema_name is distinct from 'pg_temp'` 분기도 같다. 나머지 넷은 `CREATE/DROP EXTENSION` 전용이라 이번 적용과 무관하다. 차이는 Supabase 버전 차이로 판단하고 진행 ✅ |
+| ④ | 적용 직전 스냅샷 | — | `public` 의 표 10 · 시퀀스 7 `relacl` 전수를 스크래치패드에 저장(저장소 밖) |
+| — | 적용 창 | 접수 적은 시간 · 다른 DDL 없음 | 00:16 KST · `pg_stat_activity` 활성 질의 0 · `wait_event_type='Lock'` 0 ✅ |
+
+## 적용 결과
+여덟 파일 전부 성공(`Finished supabase db push.`) · 시간 초과(55P03) 없음 · 부분 적용 없음.
+**적용 직후 이력**: `0012`~`0019` 여덟 줄이 붙고 마지막이 `0019` ✅
+
+## 적용 전 → 후 (원격 `relacl` 실측)
+| 대상 | 적용 전 | 적용 후 |
+|---|---|---|
+| `reservations` | `anon=arwdDxtm` · `authenticated=arwdDxtm` | **anon 없음** · `authenticated=r` |
+| `notifications_log` | 같음 | **anon 없음** · `authenticated=r` |
+| 콘텐츠 6표(`notices`·`popups`·`gallery`·`gallery_albums`·`showcase_routes`·`vehicles`) | `anon=arwdDxtm` · `authenticated=arwdDxtm` | `anon=r` · `authenticated=arwd` (D·x·t·m 없음) |
+| `places` | 같음 | `anon=r` · `authenticated=r` |
+| 시퀀스 7개 | `anon=rwU` · `authenticated=rwU` | **anon 없음** · `authenticated=U`(`notifications_log_id_seq` 는 authenticated 도 없음) |
+| `admin_users` | `postgres`·`service_role` 만 | 변화 없음 |
+| `service_role`·`postgres` | 전권 | 변화 없음 ✅ |
+
+적용 전 `anon=arwdDxtm` 는 **`D`(TRUNCATE)·`t`(TRIGGER)·`m`(MAINTAIN)** 를 포함한다 — 즉 원격에서도 익명 롤이 개인정보 표를 비우고, 트리거를 걸고, 접수 표를 잠글 수 있는 상태였다. 이번 적용이 그것을 닫았다.
+
+## 함수 (0014·0016·0017)
+- `claim_pending_notifications(p_limit integer, p_channels text[])` **2-인자 1개만** 존재 — 옛 1-인자는 없다 ✅ (모호 호출로 발송기가 멈추는 경우 없음)
+- `mark_notification_sent`·`mark_notification_failed`·`reap_stale_notifications` 모두 `prosecdef=true` ✅
+- EXECUTE 보유자·`pg_temp` search_path 는 **0016·0017 의 자기검증이 적용 시점에 확인**했다(어긋나면 그 파일이 멈춘다 — 여덟 파일 모두 통과했다). 별도 원격 행렬 질의는 이 세션의 자동 승인 정책에 막혀 돌리지 못했다.
+
+## 배포 순서 — 이번에는 문제가 없다
+「0014 원격 적용 → 코드 배포 → 크론 `?dry=0`」 순서가 오픈 게이트였다. 확인 결과 **`main` 에는 `vercel.json` 도 `app/api/cron/*` 도 없다** — 알림 크론과 2-인자 호출은 `feature/implementation` 에만 있다. 따라서 옛 1-인자 호출을 하는 배포본이 존재하지 않고, 0014 를 먼저 적용해도 PGRST202 가 날 곳이 없다. **남은 조건은 그대로다**: 코드 배포 전에 Resend 키와 `OWNER_EMAIL` 실수신 1통을 끝낼 것.
+
+## 남은 것
+- 롤백은 `supabase/rollbacks/` 에 있고 **승인 플래그**를 요구한다. 되돌리려면 적용 직전 스냅샷과 대조할 것(위 ④).
+- **D10**(`authenticated` 는 쓰기 권한만으로 콘텐츠 표를 잠글 수 있다)은 이번 적용으로 닫히지 않는다 — 공개 가입이 막혀 있다는 전제(D2)에 기댄다.
