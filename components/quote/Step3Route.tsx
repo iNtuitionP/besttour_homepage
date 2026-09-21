@@ -1,12 +1,13 @@
 /**
  * 3단계 — 경로 (originCode · destinationCode · waypointCodes[] 최대 5).
- * 선택지 = LOCATION_CODES 를 "도시" 그룹(카탈로그 순, 인천공항 맨 앞) + "그 외 지역(시도)" 그룹으로. 라벨은 locationLabelKo(표시 전용).
+ * 선택지 = LOCATION_CODES 를 "도시" 그룹(카탈로그 순, 인천공항 맨 앞) + "그 외 지역(시도)" 그룹으로. 라벨은 locationLabel(code, locale)
+ * (표시 전용 — ko 는 locationLabelKo 그대로, en 은 영문 지명. P2-6). option 의 value 는 언제나 canonical code 다.
  * 경유지는 같은 name 의 select 를 여러 개 두어 서버가 getAll 로 받는다. 인천공항이 끼면(또는 공항픽업이면) 공항 안내 한 줄.
  */
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { useMemo } from "react";
 
-import { locationLabelKo } from "@/lib/codes";
+import { locationLabel } from "@/lib/codes";
 
 import { F } from "./fields";
 import { Badge, ErrorText, StepShell } from "./FieldBits";
@@ -20,6 +21,7 @@ const AIRPORT_PURPOSE = "airport_pickup";
 
 export function Step3Route({ state, dispatch, active, headingRef, errorFor, idPrefix }: StepProps) {
   const t = useTranslations("quote.steps.route");
+  const locale = useLocale();
   const groups = useMemo(() => locationGroups(), []);
 
   const originErr = errorFor("originCode");
@@ -40,7 +42,7 @@ export function Step3Route({ state, dispatch, active, headingRef, errorFor, idPr
         <optgroup key={g.key} label={t(g.key === "cities" ? "groupCities" : "groupRegions")}>
           {g.codes.map((code) => (
             <option key={code} value={code}>
-              {locationLabelKo(code)}
+              {locationLabel(code, locale)}
             </option>
           ))}
         </optgroup>

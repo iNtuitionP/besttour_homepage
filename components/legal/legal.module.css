@@ -100,6 +100,27 @@
   margin-top: 4px;
 }
 
+/* ── 영문 화면 안내 (P2-6) — 한국어 원장 블록 바로 위. ko 에서는 렌더하지 않는다(OfficialKoreanNotice). ──
+ * 법정 셸 밖(홈·푸터·위저드)에서도 쓰이므로 주변 정렬·배경에 기대지 않는다: 왼쪽 정렬 · 자체 배경 · 본문 색. */
+.officialNotice {
+  margin: 0 0 var(--space-stack-xs);
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-decorative);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.6;
+  text-align: left;
+  color: var(--text-primary);
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+.officialNotice strong {
+  font-weight: 700;
+}
+
 /* ── 표 ─────────────────────────────────────────────────────────────────── */
 .tableWrap {
   width: 100%;

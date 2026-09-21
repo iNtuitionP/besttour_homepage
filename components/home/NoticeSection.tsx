@@ -2,11 +2,12 @@
  * 섹션 9 — 공지 + 고객센터 (#notice, 목업 variant-08 §07). 서버 컴포넌트.
  * 원격 notices 가 비어 있으면 **섹션 자체를 숨긴다**(빈 목록 금지 — 고객센터 카드도 함께; 연락처는 푸터에 있다).
  * 날짜는 KST 달력 날짜(notice-date.ts — /notices 와 같은 함수). 홈 섹션은 링크 없는 요약 목록이고, 상세는 /notices/[id](P6-3).
- * 고객센터 카드의 라벨·연락처는 원장(LEGAL_LABELS.contact · COMPANY)에서만 온다.
+ * 고객센터 카드의 라벨·연락처는 원장에서만 온다 — 라벨은 ledgerUi(locale)(ko 는 LEGAL_LABELS.contact 그대로 — P2-6), 값은 COMPANY.
  */
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 
-import { COMPANY, LEGAL_LABELS } from "@/lib/legal/disclosures";
+import { ledgerUi } from "@/lib/i18n/ledger-ui";
+import { COMPANY } from "@/lib/legal/disclosures";
 import type { Notice } from "@/lib/types";
 
 import h from "./home.module.css";
@@ -17,9 +18,9 @@ import { SectionHead } from "./SectionHead";
 
 export async function NoticeSection({ notices }: { notices: readonly Notice[] }) {
   if (notices.length === 0) return null;
-  const t = await getTranslations("home.notice");
+  const [t, locale] = await Promise.all([getTranslations("home.notice"), getLocale()]);
   const categories = t.raw("category") as Record<string, string | undefined>;
-  const contact = LEGAL_LABELS.contact;
+  const contact = ledgerUi(locale).labels.contact;
 
   return (
     <section id="notice" className={`${h.section} ${h.toneWhite}`} aria-labelledby="notice-h" data-section="notice">

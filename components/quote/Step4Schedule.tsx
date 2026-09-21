@@ -99,7 +99,7 @@ export function Step4Schedule({
     capNote = <p className={s.capNote}>{t("capEmpty")}</p>;
   } else {
     const total = vehicle.capacity * buses;
-    const vars = { vehicle: vehicle.nameKo, buses: String(buses), total: String(total), pax: String(Number.isNaN(pax) ? 0 : pax) };
+    const vars = { vehicle: vehicle.name, buses: String(buses), total: String(total), pax: String(Number.isNaN(pax) ? 0 : pax) };
     if (!Number.isNaN(pax) && pax > total) {
       capNote = (
         <p className={`${s.capNote} ${s.capWarn}`} role="status">

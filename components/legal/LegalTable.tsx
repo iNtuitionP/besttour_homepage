@@ -62,6 +62,7 @@ export function LegalRecordList<K extends string>({
   records,
   titleKey,
   testId,
+  valueLangs,
 }: {
   /** 필드 순서 = 라벨 객체의 키 순서 */
   labels: Readonly<Record<K, string>>;
@@ -69,6 +70,8 @@ export function LegalRecordList<K extends string>({
   /** 이 필드 값을 표 제목(caption)으로 올리고 본문 행에서는 뺀다 */
   titleKey?: K;
   testId?: string;
+  /** 필드별 값 셀의 lang — 영문 화면에서 원장 한국어 값에만 "ko" 를 단다(P2-6). 라벨은 번역된 영문이라 달지 않는다. */
+  valueLangs?: Readonly<Partial<Record<K, string | undefined>>>;
 }) {
   const keys = Object.keys(labels) as K[];
   return (
@@ -85,7 +88,7 @@ export function LegalRecordList<K extends string>({
                 {fields.map((k) => (
                   <tr key={k}>
                     <th scope="row">{labels[k]}</th>
-                    <td>{rec[k]}</td>
+                    <td lang={valueLangs?.[k]}>{rec[k]}</td>
                   </tr>
                 ))}
               </tbody>

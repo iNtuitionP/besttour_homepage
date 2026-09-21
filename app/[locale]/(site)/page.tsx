@@ -28,11 +28,11 @@ import { RecentFeed } from "@/components/home/RecentFeed";
 import { RoutesSection } from "@/components/home/RoutesSection";
 import { ServiceStrip } from "@/components/home/ServiceStrip";
 import { TrustBar } from "@/components/home/TrustBar";
-import { COMPANY } from "@/lib/legal/disclosures";
+import { ledgerUi } from "@/lib/i18n/ledger-ui";
 import { getActivePopup, getGallery, getNotices, getShowcaseRoutes, getVehicles, QUERY_TAGS } from "@/lib/queries";
 import { getRecentReservationsMasked } from "@/lib/queries/recent";
 import { mapRecentRows } from "@/lib/recent-feed";
-import { canonicalUrl } from "@/lib/site-url";
+import { pageAlternates } from "@/lib/site-url";
 
 import h from "@/components/home/home.module.css";
 
@@ -57,10 +57,10 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   const { locale } = await params;
   const t = await getTranslations({ locale, namespace: "home.meta" });
   return {
-    title: t("title", { brand: COMPANY.brandName }),
+    title: t("title", { brand: ledgerUi(locale).brand }),
     description: t("description"),
-    // 정본은 로케일 prefix 없는 한국어 경로. `/en` 도 여기를 가리킨다(en.json 이 비어 있어 같은 문서다 — canonicalUrl 주석).
-    alternates: { canonical: canonicalUrl("/") },
+    // 정본은 요청 로케일의 홈(ko `/` · en `/en`), 언어 대안은 ko·en·x-default — P2-6 (lib/site-url.ts pageAlternates).
+    alternates: pageAlternates("/", locale),
   };
 }
 
@@ -89,12 +89,16 @@ export default async function HomePage({ params, searchParams }: { params: Param
     dev.previewFeed === "1"
       ? mapRecentRows(PREVIEW_RECENT_ROWS, new Map(vehicles.map((v): [string, string] => [v.slug, v.nameKo])))
       : remoteRecent;
+  // 접수 현황 항목의 차종 라벨은 vehicles.name_ko 다(마스킹 계약 — lib/recent-feed.ts). en 화면에서만 같은 차량의 name_en 으로
+  // 바꿔 보인다. 항목 타입(고지 범위와 1:1)은 건드리지 않는다 — 표시 계층의 치환이다(P2-6).
+  const vehicleLabels =
+    locale === "ko" ? undefined : new Map(vehicles.map((v): [string, string] => [v.nameKo, v.nameEn]));
 
   return (
     <main className={h.main} data-testid="home">
       <Hero />
       <RoutesSection routes={routes} />
-      <RecentFeed items={recent} />
+      <RecentFeed items={recent} vehicleLabels={vehicleLabels} />
       <TrustBar />
       <ServiceStrip />
       <HowItWorks />

@@ -8,6 +8,7 @@ import type { Metadata } from "next";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 
 import { Link } from "@/i18n/navigation";
+import { localizeVerbatim } from "@/lib/i18n/ledger-ui";
 import { COMPANY, VERBATIM } from "@/lib/legal/disclosures";
 import { PUBLIC_CODE_PATTERN } from "@/lib/reservations/publicCode";
 
@@ -56,7 +57,7 @@ export default async function QuoteDonePage({ params, searchParams }: { params: 
           )}
 
           <p className={s.doneNote}>
-            {t("body")} <span data-legal="booking-notice">{VERBATIM.bookingNotice}</span>
+            {t("body")} <span data-legal="booking-notice">{localizeVerbatim(locale, VERBATIM.bookingNotice)}</span>
           </p>
           <p className={s.doneSub}>{t("sub", { tel: COMPANY.tel })}</p>
 

@@ -1,1 +1,595 @@
-{}
+{
+  "common": {
+    "siteName": "Bestour",
+    "description": "Bestour — charter bus booking agency"
+  },
+  "layout": {
+    "skipToContent": "Skip to main content",
+    "primaryNav": "Main menu",
+    "mobileNav": "Mobile menu",
+    "footerNav": "Footer menu",
+    "menuOpen": "Open menu",
+    "menuClose": "Close menu",
+    "menuHeading": "Menu",
+    "supportHeading": "Customer support",
+    "contactChannels": "Contact channels",
+    "kakaoChannel": "Chat with us on the KakaoTalk channel",
+    "naverChannel": "Chat with us on Naver TalkTalk",
+    "menu": {
+      "about": "About Us · Greeting",
+      "location": "How to Find Us",
+      "fleet": "Vehicles · Insurance",
+      "fares": "Fares",
+      "quote": "Request a Quote",
+      "reservationCheck": "Check Booking",
+      "notices": "Notices",
+      "guide": "Booking Guide",
+      "gallery": "Gallery",
+      "blog": "Naver Blog"
+    }
+  },
+  "errors": {
+    "notFoundTitle": "Page not found",
+    "notFoundBody": "The address may have changed, or the page does not exist. Please check the address or go to the home page.",
+    "errorTitle": "A temporary error occurred",
+    "errorBody": "Please try again in a moment. If the problem continues, please call our main number.",
+    "errorRef": "Error reference {digest}",
+    "retry": "Try again",
+    "home": "Go to home page"
+  },
+  "home": {
+    "meta": {
+      "title": "{brand} — Charter Bus Hire · Airport Pickup & Drop-off (Transfer Specialists)",
+      "description": "Charter bus hire · Airport Pickup & Drop-off (Transfer Specialists). Sample quotes for popular routes, service nationwide."
+    },
+    "hero": {
+      "sectionLabel": "About Bestour and quote requests",
+      "carouselLabel": "Bestour highlights",
+      "carouselRole": "carousel",
+      "slideRole": "slide",
+      "slideLabel": "{n} / {total} {title}",
+      "prev": "Previous slide",
+      "next": "Next slide",
+      "dotsLabel": "Choose a slide",
+      "dotLabel": "Show slide {n} — {title}",
+      "slides": {
+        "airport": {
+          "title": "Incheon Airport Pickup & Drop-off",
+          "tag": "Airport Pickup & Drop-off (Transfer Specialists)",
+          "heading": "To and from Incheon Airport —\n<em>airport routes,</em>\nhandled with confidence",
+          "body": "Incheon Airport departures and arrivals are covered by our <b>Airport Pickup & Drop-off (Transfer Specialists)</b> service.",
+          "chips": ["Incheon Airport pickup", "Incheon Airport drop-off", "Early-morning & late-night dispatch", "Room for luggage", "Group leader can ride along"],
+          "chipsOn": 2
+        },
+        "nationwide": {
+          "title": "Nationwide service",
+          "tag": "Nationwide · Round trip / One way / One way + one way",
+          "heading": "We go <em>anywhere</em> nationwide",
+          "body": "We arrange buses <b>nationwide</b>, from Seoul to Jeju. Below are sample service areas. For workshops, field trips, religious groups, weddings and funerals, you can choose the trip type that fits your schedule.",
+          "chips": ["Seoul", "Busan", "Daegu", "Incheon", "Gwangju", "Daejeon", "Ulsan", "Gyeonggi", "Gangwon", "North Chungcheong", "South Chungcheong", "North Jeolla", "South Jeolla", "North Gyeongsang", "South Gyeongsang", "Jeju"],
+          "chipsOn": 0
+        },
+        "trust": {
+          "title": "Foreign tour specialty and trust",
+          "tag": "Specialized in VIP transport & sightseeing for foreign visitors",
+          "heading": "Standards for\nforeign tour service",
+          "body": "We are a <b>registered charter bus booking agency</b>. Vehicles are insured, and you can request the insurance documents if you wish. Bus assignments are checked personally by our CEO.",
+          "chips": [],
+          "chipsOn": 0
+        }
+      },
+      "widget": {
+        "label": "Quote request widget",
+        "title": "Request a quote",
+        "sub": "Just choose your schedule and we will send you a quote by text message",
+        "origin": "From",
+        "dest": "To",
+        "date": "Departure date",
+        "pax": "Passengers",
+        "groupAirport": "★ Airport route (specialist)",
+        "groupRegions": "Provinces & metropolitan cities",
+        "groupCities": "Featured route cities",
+        "airNote": "This is an <b>Airport Pickup & Drop-off (Transfer Specialists)</b> route.",
+        "cta": "Request a quote",
+        "note": "There is no online payment."
+      }
+    },
+    "routes": {
+      "eyebrow": "Popular routes",
+      "title": "Popular routes, <ac>quotes at a glance</ac>",
+      "desc": "Sample quotes for frequently requested routes. <b>Incheon Airport routes</b> are served as Airport Pickup & Drop-off (Transfer Specialists)."
+    },
+    "krmap": {
+      "section": "Popular routes",
+      "mapTitle": "Map of popular routes in Korea",
+      "legendAirport": "Gold = Airport Pickup & Drop-off (Transfer Specialists) route",
+      "descEmpty": "A map of South Korea. There are no popular routes to show.",
+      "desc": "The departure and arrival points of {count} popular routes are shown as pins and curves on a map of South Korea. Details for each route are in the list below.",
+      "listLabel": "Sample quotes for popular routes",
+      "airport": "Airport Pickup & Drop-off (Transfer Specialists)",
+      "cta": "Request a quote for your schedule",
+      "empty": "There are no popular routes to show right now. We will give you a quote through a consultation."
+    },
+    "trust": {
+      "label": "Company credentials",
+      "registered": "Registered charter bus booking agency",
+      "airport": "Airport Pickup & Drop-off (Transfer Specialists)",
+      "airportSub": "Early-morning & late-night dispatch · Room for luggage",
+      "since": "Since {year}",
+      "intake": "24-hour online requests",
+      "intakeSub": "We reply after reviewing your request"
+    },
+    "services": {
+      "label": "Bestour strengths",
+      "items": ["Airport Pickup & Drop-off (Transfer Specialists)", "DVD · karaoke system", "Refrigerator · water dispenser", "Vehicle insurance", "Nationwide service"]
+    },
+    "how": {
+      "eyebrow": "How it works",
+      "title": "From request to payment in just <ac>four steps</ac>",
+      "desc": "We take care of the complicated parts. All you need to do is choose a vehicle and a schedule. There is no online payment."
+    },
+    "fleet": {
+      "eyebrow": "Vehicles",
+      "title": "<ac>{count} types</ac> of purple bus — choose one to fit your group",
+      "seat": "{n}-seat",
+      "capacityLabel": "Capacity",
+      "capacity": "Up to <b>{n} people</b>",
+      "cta": "Get a quote for this vehicle",
+      "disc": "Seating capacity and options may vary slightly depending on the vehicle assigned. Whether parking fees and 10% VAT are included will be stated separately on your quote.",
+      "lines": {
+        "bus45": "A large coach used for group workshops, field trips and religious groups.",
+        "bus35": "Sized for medium groups. Used for everything from social gatherings and family trips to commuter service.",
+        "limo28": "Premium seats with generous legroom. Recommended for occasions that call for a touch of class, such as foreign VIP visits, sightseeing, weddings and funerals.",
+        "bus25": "A sensible choice for small groups. Suited to trips of around 20 people, such as university retreats and workshops.",
+        "bus16": "Suited to airport pickup & drop-off and small-group trips. It gets into narrow streets easily, which makes it a strong fit for city itineraries."
+      }
+    },
+    "company": {
+      "eyebrow": "About us",
+      "lead": "Thank you sincerely for visiting the Bestour website.",
+      "body": [
+        "Through thorough vehicle care and safe driving as an everyday habit, Bestour makes \"a safe and happy trip for our customers\" its top management priority.",
+        "Travel gives life a pause. As your companion on that journey, Bestour will keep working hard, today as always."
+      ],
+      "signaturePrefix": "CEO"
+    },
+    "gallery": {
+      "eyebrow": "Gallery",
+      "title": "Places the purple bus <ac>has been</ac>",
+      "desc": "We go anywhere nationwide. See more trip photos on the gallery board.",
+      "more": "View the full gallery"
+    },
+    "notice": {
+      "eyebrow": "Notices",
+      "title": "Customer support <ac>news</ac>",
+      "category": { "info": "Info", "notice": "Notice", "airport": "Airport" },
+      "csTitle": "Customer support"
+    },
+    "popup": {
+      "close": "Close",
+      "closeAria": "Close pop-up",
+      "hideToday": "Don't show again today"
+    },
+    "recentFeed": {
+      "eyebrow": "Recent quote requests",
+      "title": "People who recently <ac>requested quotes</ac>",
+      "listLabel": "Recent quote requests",
+      "statusNew": "Received",
+      "statusConfirmed": "Confirmed",
+      "itemLabel": "{name} · {vehicle} · {date}"
+    }
+  },
+  "reservation": {
+    "errors": {
+      "validation": "Please check the information you entered.",
+      "bot": "Please try again in a moment.",
+      "turnstile": "The security check failed. Please refresh the page and try again.",
+      "ratelimit": "You have submitted several times in a short period. Please try again in a moment, or call {tel}.",
+      "infra": "We could not receive your request because of a temporary error. Please try again in a moment, or if it is urgent, call {tel}.",
+      "server": "We could not receive your request because of a temporary error. Please try again in a moment, or if it is urgent, call {tel}."
+    }
+  },
+  "quote": {
+    "meta": {
+      "title": "Request a Quote — {brand}",
+      "description": "Request a charter bus quote in 6 steps. Just tell us your vehicle and schedule to submit a request; we will review it and send you a quote by text message."
+    },
+    "eyebrow": "Online quote",
+    "title": "Request a charter bus quote in 6 steps",
+    "sub": "Just tell us your vehicle and schedule to submit a request. We will review it and send you a quote by text message.",
+    "progressLabel": "Quote progress",
+    "progressNow": "{n} / {total} · {name}",
+    "kicker": "STEP {n} / {total}",
+    "required": "Required",
+    "optional": "Optional",
+    "errorSummary": "Please check your entries",
+    "nav": {
+      "prev": "← Back",
+      "next": "Next →"
+    },
+    "steps": {
+      "purpose": {
+        "name": "Purpose",
+        "title": "What is the trip for?",
+        "desc": "Choose the trip purpose that is closest to yours.",
+        "label": "Trip purpose",
+        "feature": "Main service",
+        "options": {
+          "airport_pickup": "Airport pickup",
+          "family": "Family trip",
+          "ceremony": "Wedding / funeral",
+          "workshop": "Workshop",
+          "social": "Social gathering",
+          "religious": "Religious group",
+          "univ_mt": "University retreat",
+          "field_trip": "Field trip",
+          "foreign_vip": "Foreign VIP · sightseeing",
+          "etc": "Other"
+        },
+        "error": "Please choose a trip purpose."
+      },
+      "vehicle": {
+        "name": "Vehicle",
+        "title": "Which vehicle do you need?",
+        "desc": "Choose a vehicle that fits your group size. Picking one with a little more capacity than you need makes loading luggage easier.",
+        "label": "Vehicle type",
+        "capacity": "Capacity: {n} people",
+        "lines": {
+          "bus45": "A large coach for group events · Ask about DVD, karaoke, refrigerator and other amenities",
+          "bus35": "Mid-size groups and workshops · A mid-size coach that gets into narrow roads and parking lots easily",
+          "limo28": "Wide seats, comfortable over long distances · Premium seating · Recommended for trips with older passengers",
+          "bus25": "Small gatherings and training trips · A coach suited to all kinds of small-group itineraries",
+          "bus16": "Suited to airport pickup & drop-off · A small bus that gets into narrow streets easily"
+        },
+        "empty": "We could not load the vehicle list. Please refresh the page and try again.",
+        "error": "Please choose one vehicle.",
+        "notice": "This page only takes quote requests. Because the price depends on the route, schedule and vehicle availability, we review your request personally and then send you a quote by text message."
+      },
+      "route": {
+        "name": "Route",
+        "title": "Where are you traveling from and to?",
+        "desc": "If your departure point or destination is Incheon Airport, it is an Airport Pickup & Drop-off (Transfer Specialists) route.",
+        "label": "From · To",
+        "origin": "From",
+        "dest": "To",
+        "originPlaceholder": "Choose a departure point",
+        "destPlaceholder": "Choose a destination",
+        "groupCities": "Cities",
+        "groupRegions": "Other areas (provinces)",
+        "airNote": "This is an Airport Pickup & Drop-off (Transfer Specialists) route.",
+        "waypoints": "Stops",
+        "waypointsHint": "Add any stops along the way. The bus travels in the order you add them. (Up to {max} stops)",
+        "waypointEmpty": "No stops added — the bus goes straight from the departure point to the destination.",
+        "waypointLabel": "Stop {n}",
+        "waypointPlaceholder": "Choose stop {n}",
+        "waypointRemove": "Remove stop {n}",
+        "waypointAdd": "＋ Add a stop",
+        "waypointMax": "You can add up to {max} stops",
+        "error": "Please choose both a departure point and a destination.",
+        "errorWaypoint": "Please choose a place for each stop you added, or remove it."
+      },
+      "schedule": {
+        "name": "Schedule",
+        "title": "When, and how many people?",
+        "desc": "We plan the vehicle around your departure date and time. If your schedule is flexible, an estimate is fine.",
+        "tripType": "Trip type",
+        "trip": {
+          "round": "Round trip",
+          "roundSub": "Go and come back together",
+          "oneway": "One way",
+          "onewaySub": "Outbound only",
+          "oneway_oneway": "One way + one way",
+          "oneway_onewaySub": "Separate trips there and back"
+        },
+        "depart": "Departure date & time",
+        "departDate": "Departure date",
+        "departTime": "Departure time",
+        "return": "Return date & time",
+        "returnHint": "If it is the same day as departure, it is recorded as a same-day round trip; if it is the next day, as a 2-day, 1-night trip.",
+        "returnOptionalHint": "If you don't know your return date and time yet, you can leave them blank.",
+        "returnDate": "Return date",
+        "returnTime": "Return time",
+        "onewayNote": "You chose one way, so no return date or time is needed.",
+        "busCount": "Number of buses",
+        "passengers": "Estimated passengers",
+        "unitBus": "buses",
+        "unitPax": "people",
+        "busMinus": "Fewer buses",
+        "busPlus": "More buses",
+        "paxMinus": "Fewer passengers",
+        "paxPlus": "More passengers",
+        "capBase": "{vehicle} × {buses} · seats up to {total} people.",
+        "capNote": "{vehicle} × {buses} · seats up to {total} people. (Currently {pax})",
+        "capWarn": "{vehicle} × {buses} seats up to {total} people. You have {pax} — add more buses, or adjust with our staff after you submit your request.",
+        "capEmpty": "Choose a vehicle to see its capacity.",
+        "errorTrip": "Please choose a trip type.",
+        "errorDepart": "Please enter the departure date and time.",
+        "errorReturn": "Please enter a return date and time after the departure.",
+        "errorBus": "You can enter 1 to 20 buses.",
+        "errorPax": "Please enter 1 to 900 passengers."
+      },
+      "options": {
+        "name": "Preferences",
+        "title": "How would you like your quote?",
+        "desc": "Everything here is optional. You can leave it all blank and still submit.",
+        "contactMethod": "How to receive your quote",
+        "contact": {
+          "mobile": "Mobile",
+          "phone": "Phone call",
+          "fax": "Fax"
+        },
+        "paymentMethod": "Payment method",
+        "payment": {
+          "cash": "Cash",
+          "card": "Card",
+          "tax_invoice": "Tax invoice"
+        },
+        "conditions": "Quote conditions",
+        "parking": "Include parking fees in the quote",
+        "parkingDesc": "Would you like a quote that includes parking and toll fees?",
+        "vat": "Include 10% VAT in the quote",
+        "vatDesc": "Check this and we will prepare your quote with VAT included.",
+        "message": "Anything else you'd like to tell us",
+        "messagePlaceholder": "e.g. Please come to the main gate by 7:30 a.m. Many of our group are older, so a bus with low steps would be great.",
+        "errorMessage": "Please keep your message to 1,000 characters or fewer."
+      },
+      "contact": {
+        "name": "Contact · Consent",
+        "title": "How can we reach you?",
+        "desc": "We only need your name and mobile number to receive your request. Everything else is optional.",
+        "nameLabel": "Name",
+        "namePlaceholder": "e.g. Jane Smith",
+        "phoneKind": "Phone number type",
+        "phoneKr": "Korean mobile",
+        "phoneIntlKind": "International number",
+        "phoneLabel": "Mobile number",
+        "phoneHint": "Enter it as 010-0000-0000. If you type digits only, hyphens are added automatically.",
+        "phoneIntlLabel": "International phone number",
+        "phoneIntlHint": "Start with + and your country code, then digits only. e.g. +14155550123",
+        "email": "Email",
+        "emailPlaceholder": "e.g. name@example.com",
+        "errorName": "Please enter your name. (Up to 30 characters)",
+        "errorPhone": "Please enter your mobile number as 010-0000-0000.",
+        "errorPhoneIntl": "Please enter an international number as + and your country code, then digits only.",
+        "errorEmail": "Please check your email address.",
+        "consentRequired": "You need to tick the required consent to submit.",
+        "noticeTitle": "Please read before submitting",
+        "cancelTitle": "Cancellation and refund policy",
+        "security": "Security check",
+        "notReadyTitle": "Online requests are being set up",
+        "notReadyBody": "We can't take online requests right now. Please call {tel} and we will help you right away.",
+        "call": "Call",
+        "submit": "Request a quote",
+        "submitting": "Submitting…"
+      }
+    },
+    "consent": {
+      "purpose": "Purpose of collection",
+      "items": "Items collected",
+      "retention": "Retention period",
+      "full": "View the full Privacy Policy",
+      "newTab": "(new tab)"
+    },
+    "done": {
+      "meta": "Quote request received",
+      "title": "Your quote request has been received",
+      "codeLabel": "Request number",
+      "codeHint": "You can look up your request in Check Booking with this number and the last 4 digits of your mobile number.",
+      "noCode": "We will contact you after reviewing your request.",
+      "body": "We will review your request and send you a quote by text message.",
+      "sub": "There is no online payment. You will not be charged anything before your booking is confirmed. If it is urgent, feel free to call {tel}.",
+      "home": "Go to home page",
+      "again": "Request another quote"
+    }
+  },
+  "reservationCheck": {
+    "meta": {
+      "title": "Check Booking — {brand}",
+      "description": "Check the status of your charter bus booking request with the request number from your text message and the last 4 digits of your mobile number."
+    },
+    "eyebrow": "Check Booking",
+    "title": "Check your booking request",
+    "sub": "Enter the request number from your confirmation text and the last 4 digits of your mobile number. You can see your request status and trip schedule.",
+    "form": {
+      "required": "Required",
+      "codeLabel": "Request number",
+      "codeHint": "The 8 letters and numbers we sent you by text. Not case-sensitive.",
+      "codePlaceholder": "8-character request number",
+      "phoneLast4Label": "Last 4 digits of your mobile number",
+      "phoneLast4Hint": "The last 4 digits of the mobile number you entered with your request.",
+      "submit": "Look up booking",
+      "submitting": "Looking up…",
+      "errorSummary": "Please check",
+      "codeError": "Please enter the 8-character request number exactly.",
+      "phoneLast4Error": "Please enter the last 4 digits of your mobile number in numbers.",
+      "help": "If you can't find your request number, we can check it for you by phone."
+    },
+    "card": {
+      "title": "Request details",
+      "code": "Request number",
+      "status": "Status",
+      "name": "Booked by",
+      "phone": "Mobile",
+      "vehicle": "Vehicle",
+      "route": "Route",
+      "routeValue": "{origin} → {destination}",
+      "tripType": "Trip type",
+      "departAt": "Departure",
+      "returnAt": "Return",
+      "busCount": "Buses",
+      "busCountValue": "{n}",
+      "passengers": "Passengers",
+      "passengersValue": "{n}",
+      "createdAt": "Submitted",
+      "help": "To change or cancel your booking, please call {tel}.",
+      "call": "Call",
+      "again": "Look up another booking"
+    },
+    "status": {
+      "new": "Received",
+      "confirmed": "Confirmed",
+      "cancelled": "Cancelled",
+      "done": "Completed"
+    },
+    "tripType": {
+      "round": "Round trip",
+      "oneway": "One way",
+      "oneway_oneway": "One way + one way"
+    },
+    "errors": {
+      "validation": "Please check the information you entered.",
+      "not_found": "We could not find a booking matching the request number and last digits you entered. Please check the request number in your text message.",
+      "ratelimit": "You have looked up several times in a short period. Please try again in a moment, or call {tel}.",
+      "infra": "We could not look up your booking because of a temporary error. Please try again in a moment, or if it is urgent, call {tel}.",
+      "server": "We could not look up your booking because of a temporary error. Please try again in a moment, or if it is urgent, call {tel}."
+    }
+  },
+  "pages": {
+    "common": {
+      "breadcrumb": "You are here",
+      "home": "Home"
+    },
+    "about": {
+      "meta": {
+        "title": "About {brand} · Greeting",
+        "description": "A greeting from Bestour, our business information and directions to our head office."
+      },
+      "more": [
+        "Built on the safety of our staff, whom we treat like family, Bestour will provide service that brings delight and smiles to our valued customers, so that staff and customers alike can be happy.",
+        "For us, the greatest reward comes \"when customers step off the bus with a happy smile.\""
+      ],
+      "facts": {
+        "since": "Opened"
+      },
+      "location": {
+        "desc": "This is our head office address. You can get directions from a map service.",
+        "kakao": "View on Kakao Map",
+        "naver": "View on Naver Map"
+      }
+    },
+    "fleet": {
+      "meta": {
+        "title": "{brand} Vehicles · Insurance",
+        "description": "Seating capacity and features of each Bestour charter bus type, and information on vehicle insurance."
+      },
+      "empty": "Vehicle information is being prepared. You can choose a vehicle type when you request a quote.",
+      "insurance": {
+        "eyebrow": "Insurance"
+      }
+    },
+    "fares": {
+      "meta": {
+        "title": "{brand} Fares",
+        "description": "Charter bus quotes are finalized through consultation, based on vehicle type, passengers, distance, hours and number of days. See how quotes are calculated and sample quotes for popular routes."
+      },
+      "eyebrow": "Quote information",
+      "intro": "Fares are not set in advance — they are worked out for each itinerary. We finalize your quote through consultation, based on the criteria below.",
+      "basis": {
+        "eyebrow": "Calculation basis",
+        "desc": "These are the factors reflected in a quote. For the deposit and balance, please see the notice below."
+      },
+      "routes": {
+        "title": "Examples of frequently requested routes",
+        "desc": "Sample quotes are for reference only. They vary with your schedule, group size and vehicle type, so we give you an exact quote through consultation."
+      },
+      "cta": {
+        "title": "Get a quote for your schedule",
+        "desc": "Leave your departure point, destination, schedule and group size, and we will contact you after reviewing them.",
+        "call": "Call us"
+      }
+    },
+    "notices": {
+      "meta": {
+        "title": "{brand} Notices",
+        "description": "Notices and service updates from Bestour."
+      },
+      "empty": "There are no notices yet.",
+      "listLabel": "Notice list",
+      "detail": {
+        "meta": {
+          "title": "{title} — Notices | {brand}",
+          "description": "A notice from Bestour."
+        },
+        "publishedAt": "Posted",
+        "back": "Back to list"
+      }
+    },
+    "gallery": {
+      "meta": {
+        "title": "{brand} Gallery",
+        "description": "Photos from trips Bestour has served."
+      },
+      "empty": "The gallery is being prepared. Trip photos will appear here once they are posted.",
+      "albumsTitle": "Albums",
+      "albumsLabel": "Album list",
+      "albumPending": "Photos coming soon",
+      "allTitle": "All photos",
+      "detail": {
+        "meta": {
+          "title": "{title} — Gallery | {brand}",
+          "description": "Photos from trips Bestour has served."
+        },
+        "empty": "There are no photos in this album yet.",
+        "back": "Back to gallery",
+        "pager": {
+          "label": "Photo pages",
+          "prev": "Previous",
+          "next": "Next",
+          "page": "Page {page}"
+        }
+      }
+    }
+  },
+  "legal": {
+    "officialNotice": {
+      "lead": "The Korean text below is the official, legally binding version.",
+      "body": "If you need help understanding it, please contact us before booking."
+    },
+    "verbatim": {
+      "bookingNotice": "We will contact you once your booking is confirmed. Payment is taken only for confirmed bookings.",
+      "showcaseNotice": "Sample quotes for popular routes · Based on a 45-seat coach, same-day round trip · Final quote confirmed after consultation"
+    },
+    "pages": {
+      "privacy": "Privacy Policy",
+      "terms": "Terms of Use",
+      "guide": "Booking Guide"
+    },
+    "headings": {
+      "quoteBasis": "Quote calculation criteria",
+      "insurance": "Vehicle insurance",
+      "privacyNotice": "Collection and use of personal information"
+    },
+    "consent": {
+      "privacy": "I agree to the collection and use of my personal information (required)",
+      "marketing": "I agree to receive marketing messages (optional)"
+    },
+    "relatedRole": "Affiliate",
+    "labels": {
+      "effectiveDate": "Effective date",
+      "home": "Home",
+      "legalNav": "Legal notices",
+      "contact": {
+        "tel": "Main number",
+        "mobile": "Mobile",
+        "fax": "Fax",
+        "email": "Email"
+      },
+      "officer": {
+        "phone": "Phone"
+      },
+      "footer": {
+        "companyInfo": "Business information",
+        "operator": "Operator",
+        "representative": "Representative",
+        "bizRegNo": "Business registration no.",
+        "mailOrder": "Mail-order business report no.",
+        "headOffice": "Head office",
+        "branch": "Branch",
+        "bankAccount": "Bank account",
+        "privacyOfficer": "Privacy officer",
+        "hosting": "Hosting",
+        "ftcBizInfo": "Verify business information"
+      }
+    }
+  }
+}

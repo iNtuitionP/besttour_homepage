@@ -6,15 +6,15 @@
  * /about(P6-3)은 같은 컴포넌트를 재사용하고 `extra` 로 안전한 2문장(ko.json pages.about.more)만 본문 뒤에 덧붙인다 —
  * 인사말 lead·body 가 ko.json 에 두 번 있지 않도록(tests/pages.test.ts). 목업 #company 의 강점 6개는 ServiceStrip(섹션 4)이 제목만 옮겼다.
  */
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 
-import { COMPANY } from "@/lib/legal/disclosures";
+import { ledgerUi } from "@/lib/i18n/ledger-ui";
 
 import h from "./home.module.css";
 import s from "./Sections.module.css";
 
 export async function CompanyIntro({ extra = [] }: { extra?: readonly string[] } = {}) {
-  const t = await getTranslations("home.company");
+  const [t, locale] = await Promise.all([getTranslations("home.company"), getLocale()]);
   const body = [...(t.raw("body") as string[]), ...extra];
 
   return (
@@ -31,7 +31,7 @@ export async function CompanyIntro({ extra = [] }: { extra?: readonly string[] }
             </p>
           ))}
           <p className={s.companySign} data-testid="company-signature">
-            <span>{t("signaturePrefix")}</span> <b>{COMPANY.representative}</b>
+            <span>{t("signaturePrefix")}</span> <b>{ledgerUi(locale).representative}</b>
           </p>
         </div>
       </div>

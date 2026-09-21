@@ -266,10 +266,12 @@ describe("4. /gallery/[album] 라우트", () => {
 describe("5. /gallery/[album] generateMetadata", () => {
   const code = codeOf(ALBUM_PAGE);
 
-  test("canonical 은 canonicalUrl('/gallery/<slug>') 한 번뿐이고 원점을 하드코딩하지 않는다", () => {
-    const args = [...code.matchAll(/canonicalUrl\(\s*([^)]*?)\s*\)/g)].map((m) => m[1]);
+  // P2-6: 정본·언어 대안은 pageAlternates(<경로>, locale) 한 번 — ko `/gallery/<slug>` · en `/en/gallery/<slug>` (tests/canonical.test.ts).
+  test("canonical 은 pageAlternates('/gallery/<slug>', locale) 한 번뿐이고 원점을 하드코딩하지 않는다", () => {
+    const args = [...code.matchAll(/pageAlternates\(\s*([^,)]*?)\s*,\s*locale\s*\)/g)].map((m) => m[1]);
     expect(args).toEqual(["`/gallery/${album.slug}`"]);
-    expect(code).toMatch(/alternates:\s*\{\s*canonical:\s*canonicalUrl\(/);
+    expect(code).toMatch(/alternates:\s*pageAlternates\(/);
+    expect(code).not.toMatch(/canonicalUrl\(/);
     expect(code).not.toContain("bestour.co.kr");
     expect(code).not.toMatch(/canonical:\s*new\s+URL/);
   });
@@ -277,7 +279,8 @@ describe("5. /gallery/[album] generateMetadata", () => {
   test("앨범 제목이 title 에, 설명이 description 에 들어간다", () => {
     expect(code).toMatch(/title:\s*album\.title/);
     expect(code).toMatch(/album\.description/);
-    expect(code).toMatch(/COMPANY\.brandName/);
+    // 브랜드는 로케일별 원장 필드(ledgerUi — ko COMPANY.brandName · en COMPANY.brandNameEn)
+    expect(code).toMatch(/ledgerUi\(locale\)\.brand\b/);
   });
 
   test("부재 분기 — noindex 이고 canonical 을 내지 않는다 (없는 문서에는 정본이 없다)", () => {

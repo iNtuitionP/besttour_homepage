@@ -60,7 +60,7 @@ export function Step2Vehicle({
                       </span>
                     </span>
                     <span className={s.vehBody}>
-                      <span className={s.vehName}>{v.nameKo}</span>
+                      <span className={s.vehName}>{v.name}</span>
                       <span className={s.vehMeta}>{t("capacity", { n: String(v.capacity) })}</span>
                       {line ? <span className={s.vehNote}>{line}</span> : null}
                     </span>

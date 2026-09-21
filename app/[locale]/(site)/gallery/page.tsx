@@ -17,12 +17,11 @@ import { GalleryGrid, resolvePictures } from "@/components/home/GalleryGrid";
 import { RICH } from "@/components/home/rich";
 import { AlbumCards } from "@/components/pages/AlbumCards";
 import { buildAlbumCards } from "@/components/pages/albums";
-import { menuLabel } from "@/components/pages/menu-label";
 import { PageHeader } from "@/components/pages/PageHeader";
 import { Link } from "@/i18n/navigation";
-import { COMPANY } from "@/lib/legal/disclosures";
+import { ledgerUi } from "@/lib/i18n/ledger-ui";
 import { getAlbums, getGallery, getGalleryPage } from "@/lib/queries";
-import { canonicalUrl } from "@/lib/site-url";
+import { pageAlternates } from "@/lib/site-url";
 
 import h from "@/components/home/home.module.css";
 import p from "@/components/pages/pages.module.css";
@@ -36,10 +35,10 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   const { locale } = await params;
   const t = await getTranslations({ locale, namespace: "pages.gallery.meta" });
   return {
-    title: t("title", { brand: COMPANY.brandName }),
+    title: t("title", { brand: ledgerUi(locale).brand }),
     description: t("description"),
-    // 옛 게시판(`?bo_table=thema1`)의 301 목적지 — 정본은 쿼리 없는 `/gallery`.
-    alternates: { canonical: canonicalUrl("/gallery") },
+    // 옛 게시판(`?bo_table=thema1`)의 301 목적지 — 정본은 쿼리 없는 `/gallery`(en `/en/gallery`).
+    alternates: pageAlternates("/gallery", locale),
   };
 }
 
@@ -48,13 +47,14 @@ export default async function GalleryPage({ params }: { params: Params }) {
   setRequestLocale(locale);
 
   // 평면 그리드 상한 60 — 앨범을 나눠 담아도 "전체 사진"은 그대로 남는다(앨범에 넣지 않은 사진이 사라지면 안 된다).
-  const [items, albums, t, tc, tGallery, tErrors] = await Promise.all([
+  const [items, albums, t, tc, tGallery, tErrors, tMenu] = await Promise.all([
     getGallery(60),
     getAlbums(),
     getTranslations("pages.gallery"),
     getTranslations("pages.common"),
     getTranslations("home.gallery"),
     getTranslations("errors"),
+    getTranslations("layout.menu"),
   ]);
   const pictures = resolvePictures(items);
 
@@ -68,8 +68,8 @@ export default async function GalleryPage({ params }: { params: Params }) {
       <PageHeader
         navLabel={tc("breadcrumb")}
         homeLabel={tc("home")}
-        current={menuLabel("gallery")}
-        eyebrow={menuLabel("gallery")}
+        current={tMenu("gallery")}
+        eyebrow={tMenu("gallery")}
         title={tGallery.rich("title", RICH)}
       />
 

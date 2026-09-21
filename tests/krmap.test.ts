@@ -17,7 +17,7 @@ import { VERBATIM } from "@/lib/legal/disclosures";
 import { PLACE_POINTS, REGION_POINTS, routeGeometry, routePath } from "@/lib/map-coords";
 import type { PlacePin, ShowcaseRouteView } from "@/lib/types";
 
-import { formatPriceKrw } from "@/components/KrMap/format";
+import { formatPriceKrw, formatPriceKrwEn } from "@/components/KrMap/format";
 import {
   MAP_VIEWBOX,
   collectPins,
@@ -114,6 +114,29 @@ describe("formatPriceKrw — 표시 포맷", () => {
       expect(formatPriceKrw(r.priceFrom)).toMatch(/^\d+만원$/);
     }
     expect(formatPriceKrw(ROUTES[0].priceFrom)).toBe("40만원");
+  });
+});
+
+// P2-6 — 영문 화면의 같은 값 표기. 산술 없이 자릿수에 쉼표만 넣는다(값을 만들지 않는다).
+describe("formatPriceKrwEn — 영문 표시 포맷 (P2-6)", () => {
+  test.each([
+    [400000, "KRW 400,000"],
+    [1300000, "KRW 1,300,000"],
+    [700000, "KRW 700,000"],
+    [1255000, "KRW 1,255,000"],
+    [999, "KRW 999"],
+  ])("%d → %s", (input, expected) => {
+    expect(formatPriceKrwEn(input)).toBe(expected);
+  });
+
+  test("폴백은 ko 와 같다 — null·0·음수·NaN·Infinity 는 빈 문자열(라벨 숨김)", () => {
+    for (const v of [null, 0, -1, Number.NaN, Number.POSITIVE_INFINITY]) expect(formatPriceKrwEn(v)).toBe("");
+  });
+
+  test("저장값 그대로를 보인다 — 쉼표를 뗀 영문 숫자가 price_from 의 십진 표기와 같다(모든 픽스처)", () => {
+    for (const r of ROUTES) {
+      expect(formatPriceKrwEn(r.priceFrom).replace(/^KRW |,/g, "")).toBe(String(r.priceFrom));
+    }
   });
 });
 

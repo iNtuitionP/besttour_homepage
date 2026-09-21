@@ -13,3 +13,19 @@ export function formatPriceKrw(priceKrw: number | null): string {
   const man = priceKrw / 10000; // 유일하게 허용된 산술 — 원 → 만원 단위 표기
   return `${man}만원`;
 }
+
+/**
+ * 영문 화면의 같은 값 표기 (P2-6) — "KRW 400,000". **산술 없음**: 원 단위 정수의 자릿수에 쉼표만 넣는다.
+ * Intl·toLocaleString 을 쓰지 않는다(서버·브라우저 ICU 차이와 무관한 문자열 치환). 폴백 규칙은 formatPriceKrw 와 같다.
+ */
+export function formatPriceKrwEn(priceKrw: number | null): string {
+  if (priceKrw === null || !Number.isFinite(priceKrw) || priceKrw <= 0) return "";
+  return `KRW ${groupThousands(String(priceKrw))}`;
+}
+
+/** 십진 문자열의 정수부에 세 자리마다 쉼표 — 소수부가 있으면 그대로 붙인다. */
+function groupThousands(digits: string): string {
+  const [whole, fraction] = digits.split(".");
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return fraction === undefined ? grouped : `${grouped}.${fraction}`;
+}

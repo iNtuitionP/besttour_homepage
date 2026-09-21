@@ -1,9 +1,10 @@
 "use client";
 
-import { useTranslations } from "next-intl";
+import { useLocale, useMessages, useTranslations } from "next-intl";
 
 import { Link } from "@/i18n/navigation";
-import { COMPANY, LEGAL_LABELS } from "@/lib/legal/disclosures";
+import { LEDGER_UI_KO, type LedgerUi } from "@/lib/i18n/ledger-ui-ko";
+import { COMPANY } from "@/lib/legal/disclosures";
 
 import styles from "@/app/errors.module.css";
 
@@ -16,6 +17,9 @@ import styles from "@/app/errors.module.css";
  * 문구는 messages/ko.json errors — app/[locale]/layout.tsx 의 NextIntlClientProvider 가 서버 메시지를 그대로 넘겨 주므로
  * 클라이언트에서도 useTranslations 가 된다. 실측 경로: 개발 서버 /?boom=1 (홈 page.tsx 의 개발 전용 분기가 일부러 throw —
  * 옛 /dev/krmap?boom=1 은 P2-4 에서 dev 라우트와 함께 삭제됐다).
+ *
+ * 대표전화 라벨 (P2-6): ko 는 원장 그대로(LEDGER_UI_KO — lib/i18n/ledger-ui-ko.ts), 그 밖의 로케일은 공급자가 넘겨 준 카탈로그의
+ * `legal` 네임스페이스(en.json). 서버 전용 ledgerUi 를 여기서 import 하지 않는다 — 영문 카탈로그 전체가 클라이언트 번들에 실린다.
  */
 export default function SiteError({
   error,
@@ -25,6 +29,9 @@ export default function SiteError({
   reset: () => void;
 }) {
   const t = useTranslations("errors");
+  const locale = useLocale();
+  const messages = useMessages() as { legal?: Pick<LedgerUi, "labels"> };
+  const telLabel = (locale === "ko" ? LEDGER_UI_KO : (messages.legal ?? LEDGER_UI_KO)).labels.contact.tel;
 
   return (
     <main className={styles.page} data-testid="error-boundary" role="alert">
@@ -38,11 +45,7 @@ export default function SiteError({
         <Link className={styles.secondary} href="/">
           {t("home")}
         </Link>
-        <a
-          className={styles.secondary}
-          href={`tel:${COMPANY.tel}`}
-          aria-label={`${LEGAL_LABELS.contact.tel} ${COMPANY.tel}`}
-        >
+        <a className={styles.secondary} href={`tel:${COMPANY.tel}`} aria-label={`${telLabel} ${COMPANY.tel}`}>
           {COMPANY.tel}
         </a>
       </p>

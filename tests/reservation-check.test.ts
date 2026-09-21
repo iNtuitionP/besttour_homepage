@@ -1056,12 +1056,14 @@ describe("8. 컴포넌트·페이지 정적", () => {
     const src = codeOf(PAGE);
     expect(/^\s*["']use client["']/m.test(src)).toBe(false);
     expect(ledgerImports(read(PAGE))).toEqual(expect.arrayContaining(["VERBATIM", "COMPANY"]));
-    expect(src).toMatch(/bookingNotice=\{VERBATIM\.bookingNotice\}/);
+    // P2-6: ko 는 원장 문자열 그 자체, en 은 컨트롤러 확정 영문(localizeVerbatim — tests/i18n-en.test.ts §4).
+    expect(src).toMatch(/bookingNotice=\{localizeVerbatim\(locale,\s*VERBATIM\.bookingNotice\)\}/);
     expect(src).toMatch(/tel=\{COMPANY\.tel\}/);
     expect(src).not.toMatch(/force-dynamic/);
     expect(src).toMatch(/generateMetadata/);
     expect(src).toMatch(/namespace:\s*["']reservationCheck\.meta["']/);
-    expect(src).toMatch(/COMPANY\.brandName/);
+    // P2-6: 브랜드는 로케일별 원장 필드(ledgerUi — ko COMPANY.brandName · en COMPANY.brandNameEn)
+    expect(src).toMatch(/ledgerUi\(locale\)\.brand\b/);
     expect(src).not.toMatch(/createServiceClient|checkReservation\(|lib\/reservation-check\/(db|lookup)/);
   });
 

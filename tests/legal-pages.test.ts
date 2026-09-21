@@ -51,6 +51,7 @@ const COMPONENT_FILES = [
   "components/legal/LegalArticle.tsx",
   "components/legal/LegalTable.tsx",
   "components/legal/LegalPageHeader.tsx",
+  "components/legal/OfficialKoreanNotice.tsx",
   "components/legal/legal.module.css",
 ] as const;
 type PagePath = "/privacy" | "/terms" | "/guide" | "(legal)/layout";
@@ -328,12 +329,23 @@ describe("3. 페이지·레이아웃·컴포넌트 소스에 한글 리터럴 0�
     }
   });
 
-  test("페이지 3개 모두 generateMetadata 로 제목을 LEGAL_PAGES 에서 가져오고 robots index/follow 를 선언한다", () => {
+  test("페이지 3개 모두 generateMetadata 로 제목을 원장 제목(ledgerUi — ko 는 LEGAL_PAGES 그대로)에서 가져오고 robots index/follow 를 선언한다", () => {
+    // P2-6: 영문 화면은 제목만 영문(en.json legal.pages)이고 본문은 원장 한국어다. ko 제목은 ledgerUi("ko").pages 가
+    // LEGAL_PAGES.*.title 을 그대로 돌려준다(tests/i18n-en.test.ts §4 가 값 동일을 단언한다).
     for (const rel of [PAGE_FILES.privacy, PAGE_FILES.terms, PAGE_FILES.guide]) {
       const src = read(rel);
       expect(src, rel).toMatch(/export (async )?function generateMetadata/);
-      expect(src, rel).toMatch(/LEGAL_PAGES\.(privacy|terms|guide)\.title/);
+      expect(src, rel).toMatch(/ledgerUi\(locale\)\.pages\.(privacy|terms|guide)\b/);
+      expect(src, rel).toMatch(/import\s*\{[^}]*\bledgerUi\b[^}]*\}\s*from\s*["']@\/lib\/i18n\/ledger-ui["']/);
       expect(src, rel).toMatch(/robots:\s*\{\s*index:\s*true,\s*follow:\s*true/);
+    }
+  });
+
+  test("영문 화면 — 본문 위에 컨트롤러 확정 안내, 본문은 lang=\"ko\" 로 표시한다 (P2-6)", () => {
+    for (const rel of [PAGE_FILES.privacy, PAGE_FILES.terms, PAGE_FILES.guide]) {
+      const src = codeOf(rel);
+      expect(src, rel).toMatch(/<OfficialKoreanNotice\b/);
+      expect(src, rel).toMatch(/lang=\{koLang\(locale\)\}/);
     }
   });
 

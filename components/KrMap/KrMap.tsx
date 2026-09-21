@@ -15,8 +15,14 @@
  * 라벨 레이어 인터페이스(제안, 보고서 §라벨): `labels` 에 `<MapLabels pins={mapGeometry(routes).pins} />` 를 넣고,
  * 각 라벨은 `toPercentPosition(pin)` 의 left/top 으로 absolute 배치한다. MapPin 에는 tone·hub·routeIds 가 있어
  * "어느 6개를 크게" 같은 정책을 라벨 컴포넌트 안에서만 결정할 수 있다 — SVG·카드 레이어는 손대지 않는다.
+ *
+ * 카피 (P2-6): messages home.krmap(ko 는 이전 COPY 상수와 같은 글자). Top-5 고지는 localizeVerbatim —
+ * ko 는 원장 VERBATIM.showcaseNotice 그 자체, en 은 컨트롤러 확정 영문.
  */
 import type { ReactNode } from "react";
+import { getLocale, getTranslations } from "next-intl/server";
+
+import { localizeVerbatim } from "@/lib/i18n/ledger-ui";
 import { VERBATIM } from "@/lib/legal/disclosures";
 import type { ShowcaseRouteView } from "@/lib/types";
 import { mapGeometry } from "./geometry";
@@ -32,30 +38,21 @@ export interface KrMapProps {
   id?: string;
 }
 
-const COPY = {
-  section: "대표 노선",
-  /** 골드 범례 — 강조 노선이 공항 노선일 때만 보인다(데이터가 바뀌면 문장이 거짓이 되지 않도록). */
-  legendAirport: "골드 표시 = 공항 픽업·샌딩 (송영 전문) 노선",
-  descEmpty: "대한민국 지도입니다. 표시할 대표 노선이 없습니다.",
-} as const;
-
-function describe(routes: readonly ShowcaseRouteView[]): string {
-  if (routes.length === 0) return COPY.descEmpty;
-  return `대표 노선 ${routes.length}개의 출발지와 도착지를 대한민국 지도 위에 핀과 곡선으로 표시했습니다. 노선별 내용은 아래 목록에 있습니다.`;
-}
-
-export function KrMap({ routes, labels, id = "krmap" }: KrMapProps) {
+export async function KrMap({ routes, labels, id = "krmap" }: KrMapProps) {
+  const [t, locale] = await Promise.all([getTranslations("home.krmap"), getLocale()]);
   const geometry = mapGeometry(routes);
+  /** 골드 범례 — 강조 노선이 공항 노선일 때만 보인다(데이터가 바뀌면 문장이 거짓이 되지 않도록). */
   const showAirportLegend = routes.some(
     (r) => r.highlight && (r.origin.kind === "airport" || r.destination.kind === "airport"),
   );
+  const description = routes.length === 0 ? t("descEmpty") : t("desc", { count: String(routes.length) });
 
   return (
-    <section className={s.root} aria-label={COPY.section} data-testid="krmap">
+    <section className={s.root} aria-label={t("section")} data-testid="krmap">
       <div className={s.grid}>
         <figure className={s.mapFrame}>
           <div className={s.stage} data-testid="krmap-stage">
-            <MapSvg geometry={geometry} id={id} description={describe(routes)} />
+            <MapSvg geometry={geometry} id={id} title={t("mapTitle")} description={description} />
             {labels ? (
               <div className={s.labelLayer} data-layer="labels">
                 {labels}
@@ -65,16 +62,20 @@ export function KrMap({ routes, labels, id = "krmap" }: KrMapProps) {
           {showAirportLegend ? (
             <figcaption className={s.caption}>
               <i className={s.swatch} aria-hidden="true" />
-              {COPY.legendAirport}
+              {t("legendAirport")}
             </figcaption>
           ) : null}
         </figure>
 
-        <RouteCards routes={routes} />
+        <RouteCards
+          routes={routes}
+          locale={locale}
+          copy={{ listLabel: t("listLabel"), airport: t("airport"), cta: t("cta"), empty: t("empty") }}
+        />
       </div>
 
       <p className={s.notice} data-testid="krmap-notice">
-        {VERBATIM.showcaseNotice}
+        {localizeVerbatim(locale, VERBATIM.showcaseNotice)}
       </p>
     </section>
   );

@@ -22,12 +22,11 @@ import { cache } from "react";
 
 import { GalleryGrid, resolvePictures } from "@/components/home/GalleryGrid";
 import { ALBUM_PAGE_SIZE, albumPageOffset, normalizeAlbumPage } from "@/components/pages/albums";
-import { menuLabel } from "@/components/pages/menu-label";
 import { PageHeader } from "@/components/pages/PageHeader";
 import { Link } from "@/i18n/navigation";
-import { COMPANY } from "@/lib/legal/disclosures";
+import { ledgerUi } from "@/lib/i18n/ledger-ui";
 import { getAlbumBySlug, getGalleryPage, parseAlbumSlug } from "@/lib/queries";
-import { canonicalUrl } from "@/lib/site-url";
+import { pageAlternates } from "@/lib/site-url";
 
 import h from "@/components/home/home.module.css";
 import p from "@/components/pages/pages.module.css";
@@ -57,17 +56,18 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
     getTranslations({ locale, namespace: "pages.gallery.detail.meta" }),
     getTranslations({ locale, namespace: "pages.gallery.meta" }),
   ]);
+  const brand = ledgerUi(locale).brand;
   if (!album) {
     // 404 문서의 제목 — 갤러리 제목으로. 색인 금지.
     // canonical 은 내지 않는다: 색인하지 말라면서 정본을 알려 주는 것은 모순이고, 없는 문서에는 정본이 없다.
-    return { title: tList("title", { brand: COMPANY.brandName }), robots: { index: false, follow: false } };
+    return { title: tList("title", { brand }), robots: { index: false, follow: false } };
   }
   return {
-    title: t("title", { title: album.title, brand: COMPANY.brandName }),
+    title: t("title", { title: album.title, brand }),
     // 사장님이 적은 설명이 있으면 그것이 이 문서의 요약이다. 없으면 갤러리 공통 문구로 — 지어내지 않는다.
     description: album.description ?? t("description"),
-    // 정본은 조회한 행의 slug — 라우트 파라미터(대소문자·유입 쿼리)를 그대로 쓰지 않는다.
-    alternates: { canonical: canonicalUrl(`/gallery/${album.slug}`) },
+    // 정본은 조회한 행의 slug — 라우트 파라미터(대소문자·유입 쿼리)를 그대로 쓰지 않는다. 로케일별 URL + 언어 대안(P2-6).
+    alternates: pageAlternates(`/gallery/${album.slug}`, locale),
   };
 }
 
@@ -92,7 +92,11 @@ export default async function AlbumDetailPage({ params, searchParams }: { params
     ? await getGalleryPage({ albumId: album.id, limit: ALBUM_PAGE_SIZE, offset: 0 })
     : first;
 
-  const [t, tc] = await Promise.all([getTranslations("pages.gallery.detail"), getTranslations("pages.common")]);
+  const [t, tc, tMenu] = await Promise.all([
+    getTranslations("pages.gallery.detail"),
+    getTranslations("pages.common"),
+    getTranslations("layout.menu"),
+  ]);
   const pictures = resolvePictures(shown.items);
   const prevHref = current > 1 ? `/gallery/${album.slug}?page=${current - 1}` : null;
   const nextHref = shown.hasMore ? `/gallery/${album.slug}?page=${current + 1}` : null;
@@ -102,9 +106,9 @@ export default async function AlbumDetailPage({ params, searchParams }: { params
       <PageHeader
         navLabel={tc("breadcrumb")}
         homeLabel={tc("home")}
-        crumbs={[{ href: "/gallery", label: menuLabel("gallery") }]}
+        crumbs={[{ href: "/gallery", label: tMenu("gallery") }]}
         current={album.title}
-        eyebrow={menuLabel("gallery")}
+        eyebrow={tMenu("gallery")}
         title={album.title}
         desc={album.description ?? undefined}
       />

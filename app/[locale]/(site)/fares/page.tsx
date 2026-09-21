@@ -9,18 +9,22 @@
  *      ("더 저렴한 견적")은 비교 광고 표현이라 가져오지 않고 SectionHead 를 직접 조립한다(브리프 §/fares 마지막 줄).
  *   ③ 견적 신청 CTA: /quote(라벨은 홈 위젯 home.hero.widget.cta 재사용) + 원장 COMPANY.tel 전화 링크.
  * 요청 시점 API 0 · 서비스 롤 0 · 가격 계산 0(check:pricing) · 이 파일과 ko.json pages.fares 에 금액 리터럴 0(tests/pages.test.ts).
+ *
+ * 로케일 (P2-6): 산정 기준 제목은 ledgerUi(locale).headings.quoteBasis(ko 는 QUOTE_BASIS.title 그대로), 산정 기준 칩과 대금 지급 줄은
+ * 원장 한국어 그대로 — en 에서는 그 위에 컨트롤러 확정 안내, 한국어 블록에 lang="ko". verbatim 은 localizeVerbatim.
  */
 import type { Metadata } from "next";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 
 import { SectionHead } from "@/components/home/SectionHead";
 import { KrMap } from "@/components/KrMap/KrMap";
-import { menuLabel } from "@/components/pages/menu-label";
+import { OfficialKoreanNotice } from "@/components/legal/OfficialKoreanNotice";
 import { PageHeader } from "@/components/pages/PageHeader";
 import { Link } from "@/i18n/navigation";
-import { COMPANY, LEGAL_LABELS, PAYMENT, QUOTE_BASIS, VERBATIM } from "@/lib/legal/disclosures";
+import { koLang, ledgerUi, localizeVerbatim } from "@/lib/i18n/ledger-ui";
+import { COMPANY, PAYMENT, QUOTE_BASIS, VERBATIM } from "@/lib/legal/disclosures";
 import { getShowcaseRoutes } from "@/lib/queries";
-import { canonicalUrl } from "@/lib/site-url";
+import { pageAlternates } from "@/lib/site-url";
 
 import h from "@/components/home/home.module.css";
 import s from "@/components/home/Sections.module.css";
@@ -35,10 +39,10 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   const { locale } = await params;
   const t = await getTranslations({ locale, namespace: "pages.fares.meta" });
   return {
-    title: t("title", { brand: COMPANY.brandName }),
+    title: t("title", { brand: ledgerUi(locale).brand }),
     description: t("description"),
-    // 옛 요금표(`?bo_page=intro11`)의 301 목적지 — 정본은 쿼리 없는 `/fares`.
-    alternates: { canonical: canonicalUrl("/fares") },
+    // 옛 요금표(`?bo_page=intro11`)의 301 목적지 — 정본은 쿼리 없는 `/fares`(en `/en/fares`).
+    alternates: pageAlternates("/fares", locale),
   };
 }
 
@@ -46,30 +50,34 @@ export default async function FaresPage({ params }: { params: Params }) {
   const { locale } = await params;
   setRequestLocale(locale);
 
-  const [routes, t, tc, tRoutes, tWidget] = await Promise.all([
+  const [routes, t, tc, tRoutes, tWidget, tMenu] = await Promise.all([
     getShowcaseRoutes(),
     getTranslations("pages.fares"),
     getTranslations("pages.common"),
     getTranslations("home.routes"),
     getTranslations("home.hero.widget"),
+    getTranslations("layout.menu"),
   ]);
+  const ui = ledgerUi(locale);
+  const lang = koLang(locale);
 
   return (
     <main className={h.main} data-testid="fares-page">
       <PageHeader
         navLabel={tc("breadcrumb")}
         homeLabel={tc("home")}
-        current={menuLabel("fares")}
+        current={tMenu("fares")}
         eyebrow={t("eyebrow")}
-        title={menuLabel("fares")}
+        title={tMenu("fares")}
         desc={t("intro")}
       />
 
       {/* ① 산정 기준 — 항목·고지 전부 원장 */}
       <section id="basis" className={`${h.section} ${h.toneWhite}`} aria-labelledby="basis-h" data-section="basis">
         <div className={h.wrap}>
-          <SectionHead id="basis-h" eyebrow={t("basis.eyebrow")} title={QUOTE_BASIS.title} desc={t("basis.desc")} />
-          <ul className={s.services} aria-label={QUOTE_BASIS.title} data-testid="basis-factors">
+          <SectionHead id="basis-h" eyebrow={t("basis.eyebrow")} title={ui.headings.quoteBasis} desc={t("basis.desc")} />
+          <OfficialKoreanNotice notice={ui.officialNotice} />
+          <ul className={s.services} aria-label={ui.headings.quoteBasis} data-testid="basis-factors" lang={lang}>
             {QUOTE_BASIS.factors.map((factor) => (
               <li key={factor} className={s.serviceItem}>
                 {factor}
@@ -77,8 +85,10 @@ export default async function FaresPage({ params }: { params: Params }) {
             ))}
           </ul>
           <div className={s.stepsNotes} data-testid="basis-notes">
-            <p className={s.stepsNote}>{VERBATIM.bookingNotice}</p>
-            <p className={s.stepsMeta}>{PAYMENT.line}</p>
+            <p className={s.stepsNote}>{localizeVerbatim(locale, VERBATIM.bookingNotice)}</p>
+            <p className={s.stepsMeta} lang={lang}>
+              {PAYMENT.line}
+            </p>
           </div>
         </div>
       </section>
@@ -94,7 +104,7 @@ export default async function FaresPage({ params }: { params: Params }) {
       {/* ③ 견적 신청 CTA */}
       <section id="cta" className={`${h.section} ${h.toneWhite}`} aria-labelledby="cta-h" data-section="cta">
         <div className={h.wrap}>
-          <SectionHead id="cta-h" eyebrow={menuLabel("quote")} title={t("cta.title")} desc={t("cta.desc")} />
+          <SectionHead id="cta-h" eyebrow={tMenu("quote")} title={t("cta.title")} desc={t("cta.desc")} />
           <p className={p.actions}>
             <Link className={`${h.btnGold} ${h.btnLg}`} href="/quote">
               {tWidget("cta")}
@@ -102,7 +112,7 @@ export default async function FaresPage({ params }: { params: Params }) {
             <a
               className={`${h.btnGhost} ${h.btnLg}`}
               href={`tel:${COMPANY.tel}`}
-              aria-label={`${LEGAL_LABELS.contact.tel} ${COMPANY.tel}`}
+              aria-label={`${ui.labels.contact.tel} ${COMPANY.tel}`}
             >
               {t("cta.call")} {COMPANY.tel}
             </a>

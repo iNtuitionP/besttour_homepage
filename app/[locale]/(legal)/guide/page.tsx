@@ -2,12 +2,17 @@
  * /guide — 이용안내 (전자상거래법 §13② 거래조건 표시 + 기존 메뉴 계승).
  * 절 순서·제목은 원장 GUIDE_SECTIONS. verbatim 2건은 견적 산정 기준 절 위에 VERBATIM 에서 렌더한다(CLAUDE.md §3).
  * 취소·환불은 열 표(4행), basis 가 deposit 이면 표 위에 depositNote. 연락처는 레코드 표 — 빈 필드는 숨긴다.
+ *
+ * 영문(/en/guide · P2-6): 페이지 제목만 영문(ledgerUi)이고 **본문은 원장 한국어 그대로**다(절 제목·표 머리·verbatim 포함 —
+ * 법정 문서 한 벌을 섞지 않는다). 본문 위에 컨트롤러 확정 안내, 본문에 lang="ko". ko 화면은 안내도 lang 도 내지 않는다.
  */
 import type { Metadata } from "next";
 import { setRequestLocale } from "next-intl/server";
 import { LegalList, LegalParagraph, LegalSection } from "@/components/legal/LegalArticle";
 import { LegalPageHeader } from "@/components/legal/LegalPageHeader";
 import { LegalRecordList, LegalTable } from "@/components/legal/LegalTable";
+import { OfficialKoreanNotice } from "@/components/legal/OfficialKoreanNotice";
+import { koLang, ledgerUi } from "@/lib/i18n/ledger-ui";
 import {
   CANCELLATION,
   COMPANY,
@@ -15,21 +20,23 @@ import {
   GUIDE_SECTIONS,
   INSURANCE,
   LEGAL_LABELS,
-  LEGAL_PAGES,
   MINORS,
   PAYMENT,
   QUOTE_BASIS,
   VERBATIM,
 } from "@/lib/legal/disclosures";
-import { canonicalUrl } from "@/lib/site-url";
+import { pageAlternates } from "@/lib/site-url";
 import styles from "@/components/legal/legal.module.css";
 
-export function generateMetadata(): Metadata {
+type Params = Promise<{ locale: string }>;
+
+export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
+  const { locale } = await params;
   return {
-    title: LEGAL_PAGES.guide.title,
+    title: ledgerUi(locale).pages.guide,
     robots: { index: true, follow: true },
-    // 옛 견적 안내(`?bo_page=estimate`)의 301 목적지. `/en/guide` 도 같은 한국어를 렌더하므로 정본은 여기 하나다.
-    alternates: { canonical: canonicalUrl("/guide") },
+    // 옛 견적 안내(`?bo_page=estimate`)의 301 목적지. 정본은 요청 로케일의 경로, 언어 대안은 ko·en·x-default — P2-6.
+    alternates: pageAlternates("/guide", locale),
   };
 }
 
@@ -75,14 +82,16 @@ function SectionBody({ section }: { section: Section }) {
   }
 }
 
-export default async function GuidePage({ params }: { params: Promise<{ locale: string }> }) {
+export default async function GuidePage({ params }: { params: Params }) {
   const { locale } = await params;
   setRequestLocale(locale);
+  const ui = ledgerUi(locale);
 
   return (
     <>
-      <LegalPageHeader title={LEGAL_PAGES.guide.title} />
-      <div data-testid="guide-sections">
+      <LegalPageHeader title={ui.pages.guide} effectiveDateLabel={ui.labels.effectiveDate} />
+      <OfficialKoreanNotice notice={ui.officialNotice} />
+      <div data-testid="guide-sections" lang={koLang(locale)}>
         {GUIDE_SECTIONS.map((s) => (
           <div key={s.key}>
             {s.key === "quoteBasis" ? (

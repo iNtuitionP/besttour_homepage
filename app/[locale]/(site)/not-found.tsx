@@ -1,7 +1,8 @@
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 
 import { Link } from "@/i18n/navigation";
-import { COMPANY, LEGAL_LABELS } from "@/lib/legal/disclosures";
+import { ledgerUi } from "@/lib/i18n/ledger-ui";
+import { COMPANY } from "@/lib/legal/disclosures";
 
 import styles from "@/app/errors.module.css";
 
@@ -10,10 +11,11 @@ import styles from "@/app/errors.module.css";
  *
  * (site) 안의 페이지가 notFound() 를 부를 때 여기로 온다 — 지금은 production 의 /dev/krmap 이 그 예다. 어떤 라우트에도
  * 매칭되지 않는 URL 은 로케일 세그먼트 밖의 app/not-found.tsx 가 받는다. 둘은 같은 문구(messages errors)를 쓴다.
- * 이 파일에 한글 리터럴 없음 — 문구는 i18n, 전화는 원장 COMPANY.tel.
+ * 이 파일에 한글 리터럴 없음 — 문구는 i18n, 전화는 원장 COMPANY.tel, 대표전화 라벨은 ledgerUi(locale)(ko 는 원장 그대로 — P2-6).
  */
 export default async function SiteNotFound() {
-  const t = await getTranslations("errors");
+  const [t, locale] = await Promise.all([getTranslations("errors"), getLocale()]);
+  const telLabel = ledgerUi(locale).labels.contact.tel;
 
   return (
     <main className={styles.page} data-testid="not-found-site">
@@ -24,11 +26,7 @@ export default async function SiteNotFound() {
         <Link className={styles.primary} href="/">
           {t("home")}
         </Link>
-        <a
-          className={styles.secondary}
-          href={`tel:${COMPANY.tel}`}
-          aria-label={`${LEGAL_LABELS.contact.tel} ${COMPANY.tel}`}
-        >
+        <a className={styles.secondary} href={`tel:${COMPANY.tel}`} aria-label={`${telLabel} ${COMPANY.tel}`}>
           {COMPANY.tel}
         </a>
       </p>

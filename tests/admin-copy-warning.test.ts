@@ -130,7 +130,17 @@ const kindsOf = (text: string, field: (typeof COPY_FIELDS)[number] = "body") => 
 // =============================================================================
 // 파일 전수를 읽는 묶음 — 전량 실행(파일 60개 병렬)에서는 단독 실행보다 몇 배 느리다. 기본 5초로는 흔들린다.
 describe("1. 단일 원장 — 정의는 lib/copy/rules.ts 하나", { timeout: 60_000 }, () => {
-  const LIST_NAMES = ["FORBIDDEN_WORDS", "UNPROVEN_CLAIMS", "COMPARATIVE_CLAIMS", "COMPARATIVE_CLAIMS_EN", "PRICE_LITERALS", "CONTACT_LITERALS", "COPY_ALLOWLIST"];
+  const LIST_NAMES = [
+    "FORBIDDEN_WORDS",
+    "UNPROVEN_CLAIMS",
+    "COMPARATIVE_CLAIMS",
+    "COMPARATIVE_CLAIMS_EN",
+    "FORBIDDEN_TERMS_EN", // P2-6
+    "UNPROVEN_CLAIMS_EN", // P2-6
+    "PRICE_LITERALS",
+    "CONTACT_LITERALS",
+    "COPY_ALLOWLIST",
+  ];
   const DEF = new RegExp(`\\b(const|let|var)\\s+(${LIST_NAMES.join("|")}|FORBIDDEN|UNPROVEN|PRICE_TABLE)\\s*[:=]`);
   /** 원문으로 먼저 거르고(빠르다), 걸린 파일만 주석을 걷어 다시 본다 — 전량 실행에서 파일 수백 개를 주석 제거하면 시간 초과가 난다. */
   const definesList = (f: string) => DEF.test(read(f)) && DEF.test(codeOf(f));
@@ -176,6 +186,8 @@ describe("1. 단일 원장 — 정의는 lib/copy/rules.ts 하나", { timeout: 6
     expect(helper.UNPROVEN_CLAIMS).toBe(rules.UNPROVEN_CLAIMS);
     expect(helper.COMPARATIVE_CLAIMS).toBe(rules.COMPARATIVE_CLAIMS);
     expect(helper.COMPARATIVE_CLAIMS_EN).toBe(rules.COMPARATIVE_CLAIMS_EN);
+    expect(helper.FORBIDDEN_TERMS_EN).toBe(rules.FORBIDDEN_TERMS_EN);
+    expect(helper.UNPROVEN_CLAIMS_EN).toBe(rules.UNPROVEN_CLAIMS_EN);
     expect(helper.PRICE_LITERALS).toBe(rules.PRICE_LITERALS);
     expect(helper.CONTACT_LITERALS).toBe(rules.CONTACT_LITERALS);
     expect(helper.COPY_ALLOWLIST).toBe(rules.COPY_ALLOWLIST);

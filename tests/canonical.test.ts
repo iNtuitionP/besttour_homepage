@@ -8,10 +8,12 @@
  *       파일시스템에서 `page.tsx` 를 모으므로(=`tests/redirects.test.ts` 와 같은 방식) 새 페이지를 만들고
  *       canonical 을 빠뜨리면 빨간불이다.
  *   (3) noindex 라우트(`/quote/done`, 부재 공지)에는 canonical 이 **없다** — 색인하지 말라면서 정본을 알려 주는 것은 모순이다.
- *   (4) `hreflang`(`alternates.languages`) 0건 — `messages/en.json` 이 비어 있어 선언할 언어 대안이 실재하지 않는다.
+ *   (4) `hreflang`(`alternates.languages`) — P2-6 에서 **뒤집었다.** `messages/en.json` 에 실제 번역이 들어가 `/en/*` 이
+ *       독립 문서가 됐다(canonicalUrl 주석이 적어 둔 뒤집기 조건). 그래서 ① 각 로케일이 자기 URL 을 canonical 로 내고
+ *       ② ko·en·x-default 대안을 양쪽에 선언하며 ③ sitemap 이 `/en/*` 을 포함한다 — 셋을 함께 바꾼다(`pageAlternates` 한 곳).
  *   (5) 소유확인 메타 — env 두 개가 없으면 `verification` 키 자체가 없고(빈 `content=""` 는 콘솔이 실패로 읽는다),
  *       있으면 값이 그대로 들어간다.
- *   (6) `app/sitemap.ts` 의 정적 라우트 집합 == canonical 을 내는 정적 라우트 집합. 둘이 갈라지면 빨간불.
+ *   (6) `app/sitemap.ts` 의 정적 라우트 집합 × 로케일 == canonical 을 내는 정적 라우트 집합 × 로케일. 둘이 갈라지면 빨간불.
  *
  * 왜 `generateMetadata()` 를 직접 호출하지 않는가
  *   vitest 는 node 환경이고 tsconfig 가 `jsx: "preserve"` 라 `.tsx` 모듈을 import 하면 vite 가
@@ -27,7 +29,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-import { canonicalUrl, siteVerification } from "@/lib/site-url";
+import { canonicalUrl, localizedUrl, pageAlternates, siteVerification } from "@/lib/site-url";
 
 import { stripComments } from "./helpers/strip-comments";
 
@@ -90,10 +92,15 @@ const DYNAMIC_CANONICAL_ARG: Record<string, string> = {
   "/gallery/[album]": "`/gallery/${album.slug}`",
 };
 
-/** **주석을 이미 걷어낸** 소스에서 `canonicalUrl(<인자>)` 호출의 인자 텍스트를 전부 뽑는다. */
+/**
+ * **주석을 이미 걷어낸** 소스에서 정본 헬퍼 호출의 경로 인자 텍스트를 전부 뽑는다.
+ * P2-6 부터 페이지는 `pageAlternates(<경로>, locale)` 로 canonical 과 언어 대안을 함께 낸다 — 두 번째 인자는 요청 로케일이어야 한다.
+ * 페이지에 `canonicalUrl(` 을 직접 쓰면(= 로케일을 잃은 정본) 그것도 뽑아서 아래 단언이 실패하게 한다.
+ */
 function canonicalArgs(code: string): string[] {
   const out: string[] = [];
-  for (const m of code.matchAll(/canonicalUrl\(\s*([^)]*?)\s*\)/g)) out.push(m[1]);
+  for (const m of code.matchAll(/pageAlternates\(\s*([^,)]*?)\s*,\s*locale\s*\)/g)) out.push(m[1]);
+  for (const m of code.matchAll(/canonicalUrl\(\s*([^)]*?)\s*\)/g)) out.push(`canonicalUrl(${m[1]})`);
   return out;
 }
 
@@ -198,6 +205,63 @@ describe("P7-2b — lib/site-url.ts canonicalUrl()", () => {
 });
 
 // =============================================================================
+// 1-b. 로케일 정본 — localizedUrl() · pageAlternates() (P2-6)
+// =============================================================================
+describe("P2-6 — lib/site-url.ts localizedUrl() · pageAlternates()", () => {
+  const SAVED = process.env.NEXT_PUBLIC_SITE_URL;
+  beforeEach(() => {
+    delete process.env.NEXT_PUBLIC_SITE_URL;
+  });
+  afterEach(() => {
+    if (SAVED === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+    else process.env.NEXT_PUBLIC_SITE_URL = SAVED;
+  });
+
+  test("ko 는 prefix 없는 경로(canonicalUrl 과 같다), en 은 /en 을 붙인다 — i18n/routing.ts as-needed", () => {
+    expect(localizedUrl("/about", "ko")).toBe(canonicalUrl("/about"));
+    expect(localizedUrl("/about", "en")).toBe(`${FALLBACK_ORIGIN}/en/about`);
+    expect(localizedUrl("/reservation/check", "en")).toBe(`${FALLBACK_ORIGIN}/en/reservation/check`);
+  });
+
+  test("홈 — ko 는 끝 슬래시 하나, en 은 /en (끝 슬래시 없음)", () => {
+    expect(localizedUrl("/", "ko")).toBe(`${FALLBACK_ORIGIN}/`);
+    expect(localizedUrl("/", "en")).toBe(`${FALLBACK_ORIGIN}/en`);
+  });
+
+  test("입력에 붙은 쿼리·해시·로케일 prefix 는 떼고 다시 붙인다 (정본은 요청 표기를 따르지 않는다)", () => {
+    expect(localizedUrl("/en/about?bo_page=greeting#location", "en")).toBe(`${FALLBACK_ORIGIN}/en/about`);
+    expect(localizedUrl("/en/about", "ko")).toBe(`${FALLBACK_ORIGIN}/about`);
+    expect(localizedUrl("/ko/notices/12?x=1", "en")).toBe(`${FALLBACK_ORIGIN}/en/notices/12`);
+  });
+
+  test("pageAlternates — canonical 은 요청 로케일의 URL, languages 는 ko·en·x-default(=ko)", () => {
+    expect(pageAlternates("/about", "en")).toEqual({
+      canonical: `${FALLBACK_ORIGIN}/en/about`,
+      languages: { ko: `${FALLBACK_ORIGIN}/about`, en: `${FALLBACK_ORIGIN}/en/about`, "x-default": `${FALLBACK_ORIGIN}/about` },
+    });
+    expect(pageAlternates("/about", "ko").canonical).toBe(`${FALLBACK_ORIGIN}/about`);
+    expect(pageAlternates("/about", "ko").languages).toEqual(pageAlternates("/about", "en").languages);
+    expect(pageAlternates("/", "en").languages).toEqual({
+      ko: `${FALLBACK_ORIGIN}/`,
+      en: `${FALLBACK_ORIGIN}/en`,
+      "x-default": `${FALLBACK_ORIGIN}/`,
+    });
+  });
+
+  test("값은 전부 문자열이다 — URL 인스턴스를 넘기면 Next 가 요청 경로·쿼리를 다시 붙인다(resolveAlternateUrl)", () => {
+    const alt = pageAlternates("/fares", "en");
+    expect(typeof alt.canonical).toBe("string");
+    for (const v of Object.values(alt.languages)) expect(typeof v).toBe("string");
+  });
+
+  test("NEXT_PUBLIC_SITE_URL 을 따른다", () => {
+    process.env.NEXT_PUBLIC_SITE_URL = "https://preview.example.com/";
+    expect(localizedUrl("/about", "en")).toBe("https://preview.example.com/en/about");
+    expect(pageAlternates("/", "ko").canonical).toBe("https://preview.example.com/");
+  });
+});
+
+// =============================================================================
 // 2. 라우트 × canonical 유무
 // =============================================================================
 describe("P7-2b — 공개 라우트 전수 × canonical", () => {
@@ -221,10 +285,10 @@ describe("P7-2b — 공개 라우트 전수 × canonical", () => {
   });
 
   test.for(ROUTE_FILES.filter((r) => !NO_CANONICAL.has(r.route)).map((r) => [r.route, r] as const))(
-    "%s — alternates.canonical 자리에 헬퍼로 넣는다 (하드코딩 원점 0)",
+    "%s — alternates 자리에 헬퍼(pageAlternates)로 넣는다 (하드코딩 원점 0)",
     ([, file]) => {
       const src = code(file.rel);
-      expect(src, file.rel).toMatch(/alternates:\s*\{\s*canonical:\s*canonicalUrl\(/);
+      expect(src, file.rel).toMatch(/alternates:\s*pageAlternates\(/);
       expect(src, `${file.rel} — 원점을 하드코딩하지 않는다`).not.toContain("bestour.co.kr");
       // URL 인스턴스를 넘기면 Next 가 그것을 base 로 보고 **요청 pathname·searchParams 를 다시 붙인다**
       // (node_modules/next/dist/lib/metadata/resolvers/resolve-basics.js resolveAlternateUrl). 문자열만 넘긴다.
@@ -232,7 +296,7 @@ describe("P7-2b — 공개 라우트 전수 × canonical", () => {
         /canonical:\s*new\s+URL/,
       );
       expect(src, `${file.rel} — 헬퍼를 lib/site-url 에서 가져온다`).toMatch(
-        /import\s*\{[^}]*\bcanonicalUrl\b[^}]*\}\s*from\s*["']@\/lib\/site-url["']/,
+        /import\s*\{[^}]*\bpageAlternates\b[^}]*\}\s*from\s*["']@\/lib\/site-url["']/,
       );
     },
   );
@@ -261,9 +325,9 @@ describe("P7-2b — 공개 라우트 전수 × canonical", () => {
 });
 
 // =============================================================================
-// 3. hreflang 금지
+// 3. hreflang — 헬퍼 한 곳에서만 (P2-6 에서 "금지" → "헬퍼로만")
 // =============================================================================
-describe("P7-2b — hreflang 을 선언하지 않는다", () => {
+describe("P2-6 — 언어 대안(hreflang)은 pageAlternates 한 곳에서만 만든다", () => {
   /** app/[locale] 아래 전체 파일(관리자 영역은 로케일 밖이라 대상 아님). */
   function walkFiles(absDir: string, relDir: string): string[] {
     const out: string[] = [];
@@ -281,16 +345,18 @@ describe("P7-2b — hreflang 을 선언하지 않는다", () => {
     expect(LOCALE_FILES.length).toBeGreaterThan(0);
   });
 
-  test.for(LOCALE_FILES.map((f) => [f] as const))("%s — alternates.languages · hreflang 0건", ([rel]) => {
+  test.for(LOCALE_FILES.map((f) => [f] as const))("%s — 페이지가 languages 를 손으로 적지 않는다(헬퍼로만)", ([rel]) => {
     const src = code(rel);
-    expect(src, `${rel} — 번역이 없는데 언어 대안을 선언하지 않는다`).not.toMatch(/languages\s*:/);
+    expect(src, `${rel} — 언어 대안은 pageAlternates 가 만든다`).not.toMatch(/languages\s*:/);
     expect(src, rel).not.toMatch(/hreflang/i);
   });
 
-  test("헬퍼도 언어 대안을 만들지 않는다", () => {
+  test("헬퍼가 routing.locales 전부 + x-default 를 만든다 — 로케일을 손으로 나열하지 않는다", () => {
     const src = code(SITE_URL_LIB);
-    expect(src).not.toMatch(/languages\s*:/);
-    expect(src).not.toMatch(/hreflang/i);
+    expect(src).toMatch(/routing\.locales/);
+    expect(src).toMatch(/x-default/);
+    const alt = pageAlternates("/guide", "ko");
+    expect(Object.keys(alt.languages).sort()).toEqual(["en", "ko", "x-default"]);
   });
 });
 
@@ -391,37 +457,44 @@ describe("P7-2b — sitemap 과 canonical 이 같은 집합을 가리킨다", ()
     else process.env.NEXT_PUBLIC_SITE_URL = SAVED;
   });
 
-  test("sitemap 의 정적 라우트 == canonical 을 내는 정적 라우트 (11개)", async () => {
+  /** sitemap URL → 로케일 prefix 를 뗀 라우트 (`/en/about` → `/about`, `/en` → `/`) */
+  const routeOf = (url: string) => new URL(canonicalUrl(new URL(url).pathname)).pathname;
+
+  test("sitemap 의 정적 라우트 == canonical 을 내는 정적 라우트 (11개) — 로케일마다 한 번씩 (ko·en = 22)", async () => {
     const sitemap = (await import("@/app/sitemap")).default;
-    const sitemapPaths = sitemap()
-      .map((entry) => new URL(entry.url).pathname)
-      .sort();
+    const entries = sitemap();
 
     const canonicalRoutes = ROUTE_FILES.filter((r) => !r.dynamic && canonicalArgs(code(r.rel)).length > 0)
       .map((r) => r.route)
       .sort();
-
-    expect(canonicalRoutes).toEqual(sitemapPaths);
     expect(canonicalRoutes.length).toBe(11);
+
+    for (const locale of ["ko", "en"]) {
+      const urls = entries.map((e) => e.url).filter((u) => (locale === "en" ? /\/en(\/|$)/.test(new URL(u).pathname) : !/^\/en(\/|$)/.test(new URL(u).pathname)));
+      expect(urls.map(routeOf).sort(), locale).toEqual(canonicalRoutes);
+    }
+    expect(entries.length).toBe(22);
   });
 
   /**
    * 주의: 이것은 **헬퍼 값**과 sitemap 의 대조다. 렌더된 `<link rel="canonical">` 은 홈에서만 한 글자 다르다 —
    * Next 가 경로 `/` 뿐인 canonical 을 origin 형태로 줄인다(`https://bestour.co.kr`, 실측). 같은 URI 다(RFC 3986 §6.2.3).
    */
-  test("sitemap 의 각 URL 은 그 라우트의 canonical 과 문자 그대로 같다", async () => {
+  test("sitemap 의 각 URL 은 그 라우트·로케일의 canonical 과 문자 그대로 같고, 언어 대안도 페이지와 같다", async () => {
     const sitemap = (await import("@/app/sitemap")).default;
     for (const entry of sitemap()) {
-      const pathname = new URL(entry.url).pathname;
-      expect(canonicalUrl(pathname), pathname).toBe(entry.url);
+      const locale = /^\/en(\/|$)/.test(new URL(entry.url).pathname) ? "en" : "ko";
+      const alt = pageAlternates(routeOf(entry.url), locale);
+      expect(entry.url, entry.url).toBe(alt.canonical);
+      expect(entry.alternates?.languages, entry.url).toEqual(alt.languages);
     }
   });
 
-  test("canonical 을 내지 않는 정적 라우트는 sitemap 에도 없다", async () => {
+  test("canonical 을 내지 않는 정적 라우트는 sitemap 에도 없다 (어느 로케일로도)", async () => {
     const sitemap = (await import("@/app/sitemap")).default;
-    const sitemapPaths = new Set(sitemap().map((entry) => new URL(entry.url).pathname));
+    const routes = new Set(sitemap().map((entry) => routeOf(entry.url)));
     for (const route of NO_CANONICAL) {
-      expect(sitemapPaths.has(route), route).toBe(false);
+      expect(routes.has(route), route).toBe(false);
     }
   });
 });

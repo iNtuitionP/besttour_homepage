@@ -8,12 +8,11 @@
 import type { Metadata } from "next";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 
-import { menuLabel } from "@/components/pages/menu-label";
 import { NoticeList } from "@/components/pages/NoticeList";
 import { PageHeader } from "@/components/pages/PageHeader";
-import { COMPANY } from "@/lib/legal/disclosures";
+import { ledgerUi } from "@/lib/i18n/ledger-ui";
 import { getNotices } from "@/lib/queries";
-import { canonicalUrl } from "@/lib/site-url";
+import { pageAlternates } from "@/lib/site-url";
 
 import h from "@/components/home/home.module.css";
 import p from "@/components/pages/pages.module.css";
@@ -27,10 +26,10 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   const { locale } = await params;
   const t = await getTranslations({ locale, namespace: "pages.notices.meta" });
   return {
-    title: t("title", { brand: COMPANY.brandName }),
+    title: t("title", { brand: ledgerUi(locale).brand }),
     description: t("description"),
-    // 옛 게시판(`?bo_table=notice`)의 301 목적지 — 정본은 쿼리 없는 `/notices`.
-    alternates: { canonical: canonicalUrl("/notices") },
+    // 옛 게시판(`?bo_table=notice`)의 301 목적지 — 정본은 쿼리 없는 `/notices`(en `/en/notices`).
+    alternates: pageAlternates("/notices", locale),
   };
 }
 
@@ -39,11 +38,12 @@ export default async function NoticesPage({ params }: { params: Params }) {
   setRequestLocale(locale);
 
   // 목록 상한 50 — 공지는 늘어나므로 홈(5)보다 넉넉히. 그 이상은 페이지네이션이 생길 때(P4) 나눈다.
-  const [notices, t, tc, tNotice] = await Promise.all([
+  const [notices, t, tc, tNotice, tMenu] = await Promise.all([
     getNotices(50),
     getTranslations("pages.notices"),
     getTranslations("pages.common"),
     getTranslations("home.notice"),
+    getTranslations("layout.menu"),
   ]);
   const categories = tNotice.raw("category") as Record<string, string | undefined>;
 
@@ -52,9 +52,9 @@ export default async function NoticesPage({ params }: { params: Params }) {
       <PageHeader
         navLabel={tc("breadcrumb")}
         homeLabel={tc("home")}
-        current={menuLabel("notices")}
+        current={tMenu("notices")}
         eyebrow={tNotice("csTitle")}
-        title={menuLabel("notices")}
+        title={tMenu("notices")}
       />
 
       <section className={`${h.section} ${h.toneLav}`} data-section="notices">

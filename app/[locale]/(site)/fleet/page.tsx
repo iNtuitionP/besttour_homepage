@@ -7,17 +7,21 @@
  * 보험 문구는 원장 INSURANCE(인벤토리 ★2 "기존 문구 그대로" — tests/pages.test.ts 가 인벤토리 파일을 읽어 대조) —
  * ko.json 에 복제하지 않는다(원장 단일 출처). 차량 대수·연식 주장 0.
  * 요청 시점 API(headers·cookies·searchParams) 사용 0 — 정적 렌더.
+ *
+ * 로케일 (P2-6): 보험 제목은 ledgerUi(locale).headings.insurance(ko 는 INSURANCE.title 그대로), 본문은 원장 한국어 그대로 —
+ * en 에서는 본문 위에 컨트롤러 확정 안내, 본문에 lang="ko". 페이지 제목은 messages layout.menu(ko 는 옛 메뉴 텍스트).
  */
 import type { Metadata } from "next";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 
 import { FleetSection } from "@/components/home/FleetSection";
 import { SectionHead } from "@/components/home/SectionHead";
-import { menuLabel } from "@/components/pages/menu-label";
+import { OfficialKoreanNotice } from "@/components/legal/OfficialKoreanNotice";
 import { PageHeader } from "@/components/pages/PageHeader";
-import { COMPANY, INSURANCE } from "@/lib/legal/disclosures";
+import { koLang, ledgerUi } from "@/lib/i18n/ledger-ui";
+import { INSURANCE } from "@/lib/legal/disclosures";
 import { getVehicles } from "@/lib/queries";
-import { canonicalUrl } from "@/lib/site-url";
+import { pageAlternates } from "@/lib/site-url";
 
 import h from "@/components/home/home.module.css";
 import p from "@/components/pages/pages.module.css";
@@ -31,10 +35,10 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   const { locale } = await params;
   const t = await getTranslations({ locale, namespace: "pages.fleet.meta" });
   return {
-    title: t("title", { brand: COMPANY.brandName }),
+    title: t("title", { brand: ledgerUi(locale).brand }),
     description: t("description"),
-    // 옛 차종 10 페이지(`?bo_page=intro1..10`)가 전부 여기로 301 된다 — 정본은 쿼리 없는 `/fleet` 하나다.
-    alternates: { canonical: canonicalUrl("/fleet") },
+    // 옛 차종 10 페이지(`?bo_page=intro1..10`)가 전부 여기로 301 된다 — 정본은 쿼리 없는 `/fleet`(en `/en/fleet`) 하나다.
+    alternates: pageAlternates("/fleet", locale),
   };
 }
 
@@ -42,21 +46,23 @@ export default async function FleetPage({ params }: { params: Params }) {
   const { locale } = await params;
   setRequestLocale(locale);
 
-  const [vehicles, t, tc, tFleet] = await Promise.all([
+  const [vehicles, t, tc, tFleet, tMenu] = await Promise.all([
     getVehicles(),
     getTranslations("pages.fleet"),
     getTranslations("pages.common"),
     getTranslations("home.fleet"),
+    getTranslations("layout.menu"),
   ]);
+  const ui = ledgerUi(locale);
 
   return (
     <main className={h.main} data-testid="fleet-page">
       <PageHeader
         navLabel={tc("breadcrumb")}
         homeLabel={tc("home")}
-        current={menuLabel("fleet")}
+        current={tMenu("fleet")}
         eyebrow={tFleet("eyebrow")}
-        title={menuLabel("fleet")}
+        title={tMenu("fleet")}
       />
 
       {vehicles.length === 0 ? (
@@ -79,9 +85,10 @@ export default async function FleetPage({ params }: { params: Params }) {
         data-section="insurance"
       >
         <div className={h.wrap}>
-          <SectionHead id="insurance-h" eyebrow={t("insurance.eyebrow")} title={INSURANCE.title} split={false} />
+          <SectionHead id="insurance-h" eyebrow={t("insurance.eyebrow")} title={ui.headings.insurance} split={false} />
           <div className={`${p.card} ${p.prose}`} data-testid="insurance-body">
-            <p>{INSURANCE.body}</p>
+            <OfficialKoreanNotice notice={ui.officialNotice} />
+            <p lang={koLang(locale)}>{INSURANCE.body}</p>
           </div>
         </div>
       </section>

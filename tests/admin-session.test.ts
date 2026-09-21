@@ -90,11 +90,12 @@ describe("0. 산출물", () => {
     expect(src, "클라이언트에서 useTranslations 를 쓸 수 없다").not.toMatch(/useTranslations/);
   });
 
-  test("messages/ko.json — admin.session.signOut 이 생겼고 admin 은 여전히 마지막 최상위 키다. en 은 비어 있다", () => {
+  test("messages/ko.json — admin.session.signOut 이 생겼고 admin 은 여전히 마지막 최상위 키다. en 에는 admin 이 없다", () => {
     const keys = Object.keys(JSON.parse(read("messages/ko.json")) as Record<string, unknown>);
     expect(keys[keys.length - 1]).toBe("admin");
     expect(adminMsg("session", "signOut")).toBeTruthy();
-    expect(JSON.parse(read("messages/en.json"))).toEqual({});
+    // en 카탈로그에는 관리자 문구가 없다(관리자 화면은 로케일 밖 · 한국어 전용). P2-6 에서 en.json 이 공개 네임스페이스로 채워졌다.
+    expect(JSON.parse(read("messages/en.json")).admin).toBeUndefined();
   });
 
   test("CSS — 로그아웃 버튼 클래스가 admin.module.css 에 있고 색은 역할 토큰뿐이다", () => {

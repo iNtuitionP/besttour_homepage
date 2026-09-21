@@ -239,11 +239,19 @@ describe("3. components/layout/** — 한글 리터럴 0건 + 원장 import", ()
     expect(hits, "문구는 원장(lib/legal/disclosures.ts) 또는 messages/ 에서만 온다").toEqual([]);
   });
 
-  test("원장 상수 5종을 import 한다 (VERBATIM·COMPANY·RELATED_COMPANY·LEGAL_LINKS·LEGAL_LABELS)", () => {
+  test("원장 상수 4종을 import 하고, 원장 라벨(LEGAL_LABELS)은 ledgerUi 로 받는다 (P2-6)", () => {
     const imported = new Set(layoutSources.flatMap(({ text }) => ledgerImports(text)));
-    for (const name of ["VERBATIM", "COMPANY", "RELATED_COMPANY", "LEGAL_LINKS", "LEGAL_LABELS"]) {
+    for (const name of ["VERBATIM", "COMPANY", "RELATED_COMPANY", "LEGAL_LINKS"]) {
       expect(imported, `${name} import 없음`).toContain(name);
     }
+    // 라벨은 로케일에 따라 원장 한국어(ko — LEGAL_LABELS 그대로) 또는 en.json legal.labels 가 된다.
+    // ko 값이 LEGAL_LABELS 와 같은 글자라는 것은 tests/i18n-en.test.ts §4 가 잠근다. 셸은 라벨 리터럴을 갖지 않는다.
+    const viaLedgerUi = layoutSources.filter(({ text }) =>
+      /import\s*\{[^}]*\bledgerUi\b[^}]*\}\s*from\s*["']@\/lib\/i18n\/ledger-ui["']/.test(text),
+    );
+    expect(viaLedgerUi.map((s) => s.file).sort()).toEqual(
+      ["components/layout/FloatingContact.tsx", "components/layout/Footer.tsx", "components/layout/Header.tsx"].sort(),
+    );
   });
 
   test("푸터는 사업자 정보 3종(사업자등록번호·통신판매업신고·보호책임자)을 원장 필드로 렌더한다", () => {

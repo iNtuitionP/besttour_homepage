@@ -12,8 +12,9 @@ import { getTranslations, setRequestLocale } from "next-intl/server";
 
 import { CheckForm } from "@/components/reservation-check/CheckForm";
 import { parsePreviewResult } from "@/components/reservation-check/preview-result";
+import { ledgerUi, localizeVerbatim } from "@/lib/i18n/ledger-ui";
 import { COMPANY, VERBATIM } from "@/lib/legal/disclosures";
-import { canonicalUrl } from "@/lib/site-url";
+import { pageAlternates } from "@/lib/site-url";
 
 import s from "@/components/quote/quote.module.css";
 import c from "@/components/reservation-check/check.module.css";
@@ -25,10 +26,10 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   const { locale } = await params;
   const t = await getTranslations({ locale, namespace: "reservationCheck.meta" });
   return {
-    title: t("title", { brand: COMPANY.brandName }),
+    title: t("title", { brand: ledgerUi(locale).brand }),
     description: t("description"),
-    // 옛 게시판(`?bo_table=confirm`)의 301 목적지 — 정본은 쿼리 없는 `/reservation/check`.
-    alternates: { canonical: canonicalUrl("/reservation/check") },
+    // 옛 게시판(`?bo_table=confirm`)의 301 목적지 — 정본은 쿼리 없는 `/reservation/check`(en `/en/reservation/check`).
+    alternates: pageAlternates("/reservation/check", locale),
   };
 }
 
@@ -51,7 +52,7 @@ export default async function ReservationCheckPage({ params, searchParams }: { p
             <p className={s.sub}>{t("sub")}</p>
           </header>
 
-          <CheckForm bookingNotice={VERBATIM.bookingNotice} tel={COMPANY.tel} previewResult={previewResult} />
+          <CheckForm bookingNotice={localizeVerbatim(locale, VERBATIM.bookingNotice)} tel={COMPANY.tel} previewResult={previewResult} />
         </div>
       </div>
     </main>

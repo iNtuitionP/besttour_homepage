@@ -21,9 +21,10 @@ import { parsePreviewSubmit } from "@/components/quote/preview-submit";
 import { QuoteWizard } from "@/components/quote/QuoteWizard";
 import { WithdrawalNotice } from "@/components/quote/WithdrawalNotice";
 import { TURNSTILE_ACTION } from "@/lib/guard";
+import { koLang, ledgerUi } from "@/lib/i18n/ledger-ui";
 import { COMPANY, LEGAL_LINKS, PRIVACY_NOTICE } from "@/lib/legal/disclosures";
 import { getVehicles } from "@/lib/queries/vehicles";
-import { canonicalUrl } from "@/lib/site-url";
+import { pageAlternates } from "@/lib/site-url";
 
 import s from "@/components/quote/quote.module.css";
 
@@ -36,10 +37,10 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   const { locale } = await params;
   const t = await getTranslations({ locale, namespace: "quote.meta" });
   return {
-    title: t("title", { brand: COMPANY.brandName }),
+    title: t("title", { brand: ledgerUi(locale).brand }),
     description: t("description"),
-    // 프리필 쿼리(`?vehicle=`·`?from=` — components/quote/prefill.ts)가 붙어도 정본은 `/quote` 하나다.
-    alternates: { canonical: canonicalUrl("/quote") },
+    // 프리필 쿼리(`?vehicle=`·`?from=` — components/quote/prefill.ts)가 붙어도 정본은 `/quote`(en `/en/quote`) 하나다.
+    alternates: pageAlternates("/quote", locale),
   };
 }
 
@@ -54,6 +55,7 @@ export default async function QuotePage({ params, searchParams }: { params: Para
   const [vehicles, t] = await Promise.all([getVehicles(), getTranslations("quote")]);
   const formToken = previewNotReady ? null : issueQuoteFormToken();
   const turnstileSiteKey = previewNotReady ? "" : (process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "");
+  const ui = ledgerUi(locale);
 
   return (
     <main className={s.main} data-testid="quote-page">
@@ -66,20 +68,25 @@ export default async function QuotePage({ params, searchParams }: { params: Para
 
         <QuoteWizard
           locale={locale}
-          vehicles={vehicles.map((v) => ({ slug: v.slug, nameKo: v.nameKo, capacity: v.capacity }))}
+          // 차량 이름은 DB 행의 로케일 필드(name_ko · name_en). 선택값은 언제나 slug(코드)다 — P2-6.
+          vehicles={vehicles.map((v) => ({ slug: v.slug, name: locale === "en" ? v.nameEn : v.nameKo, capacity: v.capacity }))}
           formToken={formToken}
           turnstileSiteKey={turnstileSiteKey}
           turnstileAction={TURNSTILE_ACTION}
           consent={{
-            title: PRIVACY_NOTICE.title,
+            // 제목·체크박스 라벨은 ledgerUi(ko 는 PRIVACY_NOTICE 그대로, en 은 컨트롤러 확정 영문). 4대 고지 본문은 원장 한국어 그대로 —
+            // en 에서는 위에 컨트롤러 확정 안내(officialNotice), 본문에 lang="ko"(bodyLang). P2-6 브리프 §3.
+            title: ui.headings.privacyNotice,
             purpose: PRIVACY_NOTICE.purpose,
             itemsLine: PRIVACY_NOTICE.itemsLine,
             retention: PRIVACY_NOTICE.retention,
             refusal: PRIVACY_NOTICE.refusal,
-            consentLabel: PRIVACY_NOTICE.consentLabel,
-            marketingConsentLabel: PRIVACY_NOTICE.marketingConsentLabel,
+            consentLabel: ui.consent.privacy,
+            marketingConsentLabel: ui.consent.marketing,
             publicFeedNotice: PRIVACY_NOTICE.publicFeedNotice,
             privacyHref: LEGAL_LINKS.privacy,
+            officialNotice: ui.officialNotice,
+            bodyLang: koLang(locale),
           }}
           withdrawalNotice={<WithdrawalNotice />}
           tel={COMPANY.tel}

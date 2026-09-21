@@ -583,7 +583,8 @@ describe("4. 정적 규약", () => {
     expect(routes.delete).toBeUndefined();
     expect((ko.admin.popups as Record<string, unknown>).title).toBeTruthy();
     expect((ko.admin.notices as Record<string, unknown>).title).toBeTruthy();
-    expect(JSON.parse(read("messages/en.json"))).toEqual({});
+    // en 카탈로그에는 관리자 문구가 없다(관리자 화면은 로케일 밖 · 한국어 전용). P2-6 에서 en.json 이 공개 네임스페이스로 채워졌다.
+    expect(JSON.parse(read("messages/en.json")).admin).toBeUndefined();
   });
 
   test("화면 — 두 페이지 모두 첫 문장이 게이트다", () => {

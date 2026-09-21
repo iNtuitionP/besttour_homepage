@@ -18,10 +18,11 @@ describe("i18n/routing.ts — 라우트 골격 계약", () => {
   });
 });
 
-describe("메시지 폴백 — en.json이 비어 있어도 ko 문자열이 나온다", () => {
-  test("messages/en.json은 빈 객체다 (폴백 검증 전제)", async () => {
+describe("메시지 폴백 — en 은 공개 네임스페이스를 갖고, 없는 네임스페이스(admin)는 ko 로 떨어진다", () => {
+  test("messages/en.json 에는 admin 이 없다 (관리자 화면은 로케일 밖 · 한국어 전용 — P2-6)", async () => {
     const en = JSON.parse(readSource("messages/en.json"));
-    expect(en).toEqual({});
+    expect(en.admin).toBeUndefined();
+    expect(en.common?.siteName).toBe("Bestour");
   });
 
   test("messages/ko.json에는 최소 키가 있다", async () => {
@@ -29,14 +30,16 @@ describe("메시지 폴백 — en.json이 비어 있어도 ko 문자열이 나�
     expect(ko.common?.siteName).toBe("베스트투어");
   });
 
-  test("병합 결과: locale='en'에서도 ko 키가 살아 있다 (loadMessages)", async () => {
+  test("병합 결과: locale='en' 은 영문 공개 문구 + ko 의 admin (loadMessages — 최상위 shallow 병합)", async () => {
     const { loadMessages } = await import("@/i18n/messages");
+    const ko = JSON.parse(readSource("messages/ko.json"));
 
     const messages = loadMessages("en") as Record<
       string,
-      Record<string, string>
+      Record<string, unknown>
     >;
-    expect(messages.common.siteName).toBe("베스트투어");
+    expect(messages.common.siteName).toBe("Bestour");
+    expect(messages.admin).toEqual(ko.admin);
   });
 
   test("ko는 자기 자신과 병합돼도 동일하다", async () => {

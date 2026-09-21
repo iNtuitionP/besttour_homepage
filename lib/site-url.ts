@@ -13,6 +13,8 @@
  */
 import type { Metadata } from "next";
 
+import { routing } from "@/i18n/routing";
+
 export const FALLBACK_SITE_ORIGIN = "https://bestour.co.kr";
 
 export function siteOrigin(): string {
@@ -37,11 +39,11 @@ const LOCALE_PREFIX = /^\/(?:ko|en)(?=\/|$)/;
  *
  * 규칙
  *   - **쿼리·해시를 뗀다.** 어떤 경우에도 canonical 에 들어가지 않는다.
- *   - **로케일 prefix 를 뗀다** — `/en/about` 의 정본은 `/about` 이다. 지금 `messages/en.json` 이 비어 있어
- *     영문 경로는 같은 한국어를 렌더한다(별개 문서가 아니다).
- *     **이 결정을 뒤집어야 할 조건: `messages/en.json` 에 실제 번역이 들어가는 날.** 그때는 `/en/*` 이 독립 문서가 되므로
- *     ① 각 로케일이 자기 URL 을 canonical 로 내고 ② `alternates.languages`(hreflang)를 ko/en 양쪽에 선언하며
- *     ③ `app/sitemap.ts` 가 `/en/*` 을 다시 포함해야 한다. 셋을 함께 바꾸지 않으면 상태가 더 나빠진다.
+ *   - **로케일 prefix 를 뗀다** — 이 함수가 돌려주는 것은 언제나 **한국어(기본 로케일) 경로**의 URL 이다.
+ *     P2-6 에서 `messages/en.json` 에 실제 번역이 들어가 `/en/*` 이 독립 문서가 됐다 — 여기 적어 두었던 뒤집기 조건이 왔다.
+ *     그래서 페이지는 이 함수를 직접 쓰지 않고 아래 `pageAlternates(pathname, locale)` 를 쓴다:
+ *     ① 각 로케일이 자기 URL 을 canonical 로 내고 ② `alternates.languages`(hreflang)를 ko/en/x-default 로 선언하며
+ *     ③ `app/sitemap.ts` 가 `/en/*` 을 포함한다 — 셋이 같은 헬퍼에서 나온다(tests/canonical.test.ts).
  *   - 끝 슬래시를 정규화한다(홈만 `/`). sitemap 의 표기와 문자 그대로 같아야 한다 — `tests/canonical.test.ts` 가 대조한다.
  *     단 **렌더 결과의 홈만 다르다**: Next 는 경로가 `/` 뿐인 canonical 을 origin 형태로 줄여 낸다
  *     (`resolve-url.js`: `result.pathname === '/' ? result.origin : result.href`) — 실측 `https://bestour.co.kr`.
@@ -61,6 +63,36 @@ export function canonicalUrl(pathname: string): string {
   const unlocalized = collapsed.replace(LOCALE_PREFIX, "");
   const trimmed = unlocalized.replace(/\/+$/, "");
   return `${siteOrigin()}${trimmed === "" ? "/" : trimmed}`;
+}
+
+/**
+ * 로케일의 정본 URL (P2-6). `i18n/routing.ts` 의 `localePrefix: "as-needed"` 그대로 — 기본 로케일(ko)은 prefix 없음,
+ * 그 밖의 로케일은 `/<locale>` 을 붙인다. 입력의 쿼리·해시·기존 로케일 prefix 는 canonicalUrl 이 먼저 뗀다.
+ *   localizedUrl("/about", "en") → https://bestour.co.kr/en/about
+ *   localizedUrl("/", "en")      → https://bestour.co.kr/en        (영문 홈 — 끝 슬래시 없음, Next trailingSlash 기본값)
+ *   localizedUrl("/", "ko")      → https://bestour.co.kr/          (canonicalUrl 과 같다 — sitemap 관례)
+ */
+export function localizedUrl(pathname: string, locale: string): string {
+  const base = canonicalUrl(pathname);
+  if (locale === routing.defaultLocale) return base;
+  const origin = siteOrigin();
+  const rest = base.slice(origin.length);
+  return `${origin}/${locale}${rest === "/" ? "" : rest}`;
+}
+
+/**
+ * 페이지 메타데이터 `alternates` 값 (P2-6) — canonical 은 요청 로케일의 URL, languages 는 모든 로케일 + x-default(기본 로케일).
+ * 전부 **문자열**이다(URL 인스턴스를 넘기면 Next 가 요청 경로·쿼리를 다시 붙인다 — 위 canonicalUrl 주석).
+ * sitemap 도 같은 languages 를 싣는다 — 페이지의 hreflang 과 sitemap 의 대안이 갈라질 수 없다.
+ */
+export function pageAlternates(
+  pathname: string,
+  locale: string,
+): { canonical: string; languages: Record<string, string> } {
+  const languages: Record<string, string> = {};
+  for (const l of routing.locales) languages[l] = localizedUrl(pathname, l);
+  languages["x-default"] = localizedUrl(pathname, routing.defaultLocale);
+  return { canonical: localizedUrl(pathname, locale), languages };
 }
 
 /**

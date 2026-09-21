@@ -4,37 +4,46 @@
  * 서버 컴포넌트. 카드마다 "출발 → 도착", 가격(표시 포맷만), 공항 배지. 목록 아래 견적 CTA(i18n Link → /quote).
  * 카드 hover 로 지도 노선을 강조하는 인터랙션은 이번 범위 밖 — 카드는 정적 <li> 다.
  *
- * 카피는 ko 고정(목업 variant-08 §대표 노선). 영문 카피 수령 전(en.json = {})이라 messages 로 올리지 않았다 —
- * P2-4 가 홈에 넣을 때 COPY 를 messages/*.json 으로 옮기면 된다(한 곳에 모아 둔 이유).
+ * 카피는 부모 KrMap 이 messages home.krmap 에서 풀어 `copy` 로 넣는다(P2-6 — 이 파일에 한글 리터럴 없음).
+ * 지명은 DB 행의 로케일 필드(ko: name_ko · en: name_en — 둘 다 places 시드), 금액은 표시 포맷만(ko "40만원" · en "KRW 400,000").
+ * CLAUDE.md §3 확정 표기(copy.airport)는 원가 구조를 드러내는 표현을 쓰지 않는다.
  */
 import { Link } from "@/i18n/navigation";
 import type { ShowcaseRouteView } from "@/lib/types";
-import { formatPriceKrw } from "./format";
+import { formatPriceKrw, formatPriceKrwEn } from "./format";
 import s from "./KrMap.module.css";
 
-const COPY = {
-  listLabel: "대표 노선 예시 견적",
-  /** CLAUDE.md §3 확정 표기 — 원가 구조를 드러내는 표현은 쓰지 않는다. */
-  airport: "공항 픽업·샌딩 (송영 전문)",
-  cta: "우리 일정으로 견적 신청하기",
-  empty: "지금은 보여 드릴 대표 노선이 없습니다. 견적은 상담으로 안내드립니다.",
-} as const;
+export interface RouteCardsCopy {
+  listLabel: string;
+  airport: string;
+  cta: string;
+  empty: string;
+}
 
 function touchesAirport(r: ShowcaseRouteView): boolean {
   return r.origin.kind === "airport" || r.destination.kind === "airport";
 }
 
-export function RouteCards({ routes }: { routes: readonly ShowcaseRouteView[] }) {
+export function RouteCards({
+  routes,
+  locale,
+  copy,
+}: {
+  routes: readonly ShowcaseRouteView[];
+  locale: string;
+  copy: RouteCardsCopy;
+}) {
+  const en = locale === "en";
   return (
     <div className={s.cards}>
       {routes.length === 0 ? (
         <p className={s.empty} role="status" data-testid="krmap-empty">
-          {COPY.empty}
+          {copy.empty}
         </p>
       ) : (
-        <ol className={s.cardList} aria-label={COPY.listLabel} data-testid="krmap-cards">
+        <ol className={s.cardList} aria-label={copy.listLabel} data-testid="krmap-cards">
           {routes.map((r, i) => {
-            const amount = formatPriceKrw(r.priceFrom);
+            const amount = en ? formatPriceKrwEn(r.priceFrom) : formatPriceKrw(r.priceFrom);
             return (
               <li
                 key={r.id}
@@ -47,9 +56,9 @@ export function RouteCards({ routes }: { routes: readonly ShowcaseRouteView[] })
                 </span>
                 <span className={s.cardMain}>
                   <b className={s.cardRoute}>
-                    {r.origin.nameKo} → {r.destination.nameKo}
+                    {en ? r.origin.nameEn : r.origin.nameKo} → {en ? r.destination.nameEn : r.destination.nameKo}
                   </b>
-                  {touchesAirport(r) ? <em className={s.cardBadge}>{COPY.airport}</em> : null}
+                  {touchesAirport(r) ? <em className={s.cardBadge}>{copy.airport}</em> : null}
                 </span>
                 {/* 빈 문자열 = 실값 미수령 → 라벨 숨김 폴백 (CLAUDE.md §3) */}
                 {amount ? (
@@ -64,7 +73,7 @@ export function RouteCards({ routes }: { routes: readonly ShowcaseRouteView[] })
       )}
 
       <Link href="/quote" className={s.cta}>
-        {COPY.cta} <span aria-hidden="true">→</span>
+        {copy.cta} <span aria-hidden="true">→</span>
       </Link>
     </div>
   );

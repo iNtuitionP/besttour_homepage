@@ -8,7 +8,8 @@ import type { WizardAction, WizardState } from "./wizard-state";
 /** 서버 페이지가 getVehicles() 결과에서 화면에 필요한 세 필드만 골라 내린다. */
 export interface WizardVehicle {
   slug: string;
-  nameKo: string;
+  /** 현재 로케일의 표시 이름(ko: name_ko · en: name_en) — 서버 페이지가 고른다(P2-6). 저장값은 slug 다. */
+  name: string;
   capacity: number;
 }
 

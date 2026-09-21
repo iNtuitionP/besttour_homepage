@@ -194,15 +194,17 @@ describe("3. 법정 문구는 원장 참조로만", () => {
     expect(src).toMatch(/PAYMENT\.line/);
   });
 
+  // P2-6: 대표자 표기는 ledgerUi(locale).representative — ko 는 COMPANY.representative, en 은 원장의 COMPANY.representativeEn.
+  // 값 동일(지어낸 영문 0)은 tests/i18n-en.test.ts §4 가 잠근다.
   test("TrustBar 는 연도를 COMPANY.establishedYear 에서 계산하고, 신고번호·대표자도 원장 필드다", () => {
     const src = read(`${HOME_DIR}/TrustBar.tsx`);
     expect(src).toMatch(/COMPANY\.establishedYear/);
     expect(src).toMatch(/COMPANY\.mailOrderNo/);
-    expect(src).toMatch(/COMPANY\.representative/);
+    expect(src).toMatch(/\bui\.representative\b/);
   });
 
-  test("CompanyIntro 의 대표 서명은 COMPANY.representative", () => {
-    expect(read(`${HOME_DIR}/CompanyIntro.tsx`)).toMatch(/COMPANY\.representative/);
+  test("CompanyIntro 의 대표 서명은 원장 대표자(ledgerUi().representative)", () => {
+    expect(read(`${HOME_DIR}/CompanyIntro.tsx`)).toMatch(/\bledgerUi\(locale\)\.representative\b/);
   });
 
   test("RoutesSection 은 KrMap 을 그대로 쓰고 showcaseNotice 를 중복 렌더하지 않는다", () => {
@@ -475,9 +477,10 @@ describe("8. app/[locale]/(site)/page.tsx", () => {
     expect(PREVIEW_POPUP.active).toBe(true);
   });
 
-  test("generateMetadata 가 있고 제목에 브랜드명은 원장(COMPANY.brandName)에서 온다", () => {
+  test("generateMetadata 가 있고 제목에 브랜드명은 원장(ledgerUi — ko 는 COMPANY.brandName, en 은 COMPANY.brandNameEn)에서 온다", () => {
     expect(page).toMatch(/export\s+async\s+function\s+generateMetadata/);
-    expect(page).toMatch(/COMPANY\.brandName/);
+    // P2-6: 브랜드 표기는 로케일별 원장 필드다. 값 동일은 tests/i18n-en.test.ts §4 가 잠근다.
+    expect(page).toMatch(/brand:\s*ledgerUi\(locale\)\.brand\b/);
   });
 
   test("gallery · notice 는 비어 있으면 섹션 자체를 숨긴다 (빈 그리드 금지)", () => {

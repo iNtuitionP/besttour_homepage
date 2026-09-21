@@ -1053,7 +1053,8 @@ describe("7. 정적 규약", () => {
     for (const k of ["count", "size", "type", "empty", "decode", "encode", "upload", "record", "needsCheck"]) {
       expect(reject[k], `admin.gallery.reject.${k}`).toBeTruthy();
     }
-    expect(JSON.parse(read("messages/en.json"))).toEqual({});
+    // en 카탈로그에는 관리자 문구가 없다(관리자 화면은 로케일 밖 · 한국어 전용). P2-6 에서 en.json 이 공개 네임스페이스로 채워졌다.
+    expect(JSON.parse(read("messages/en.json")).admin).toBeUndefined();
   });
 
   test("로컬 스택 config.toml 에 버킷 두 개가 선언돼 있다 — CI db-test 가 정책을 실제로 시험할 수 있어야 한다", () => {

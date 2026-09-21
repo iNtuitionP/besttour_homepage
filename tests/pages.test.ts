@@ -177,7 +177,8 @@ describe("1. 라우트 파일 — 존재 · revalidate = 600 · 요청 시점 AP
     const code = codeOf(rel);
     expect(code).toMatch(/export\s+(async\s+)?function\s+generateMetadata/);
     expect(code).toMatch(/setRequestLocale\(/);
-    expect(code).toMatch(/COMPANY\.brandName/);
+    // P2-6: 브랜드는 로케일별 원장 필드(ledgerUi — ko COMPANY.brandName · en COMPANY.brandNameEn, tests/i18n-en.test.ts §4)
+    expect(code).toMatch(/ledgerUi\(locale\)\.brand\b/);
   });
 
   test("상세 페이지 — 동적 세그먼트 + ISR: dynamicParams = true · generateStaticParams 없음 · notFound() · getNotice(", () => {
@@ -407,10 +408,14 @@ describe("4. /about", () => {
     expect(code.includes(COMPANY.representative)).toBe(false);
   });
 
-  test("회사 정보 표는 원장 COMPANY 필드 + 라벨(LEGAL_LABELS) 로만 — 리터럴 0", () => {
+  test("회사 정보 표는 원장 COMPANY 필드 + 원장 라벨(ledgerUi — ko 는 LEGAL_LABELS 그대로) 로만 — 리터럴 0", () => {
     const imported = ledgerImports(src);
-    expect(imported).toEqual(expect.arrayContaining(["COMPANY", "LEGAL_LABELS"]));
-    for (const f of ["legalName", "representative", "bizRegNo", "mailOrderNo", "address", "tel", "email", "establishedYear"]) {
+    expect(imported).toEqual(expect.arrayContaining(["COMPANY"]));
+    // P2-6: 라벨과 대표자 표기는 로케일에 따라 원장 한국어(ko) 또는 원장의 영문 필드·en.json legal(en)이다.
+    // ko 값이 LEGAL_LABELS·COMPANY.representative 와 같은 글자라는 것은 tests/i18n-en.test.ts §4 가 잠근다.
+    expect(src).toMatch(/import\s*\{[^}]*\bledgerUi\b[^}]*\}\s*from\s*["']@\/lib\/i18n\/ledger-ui["']/);
+    expect(code).toMatch(/\bui\.representative\b/);
+    for (const f of ["legalName", "bizRegNo", "mailOrderNo", "address", "tel", "email", "establishedYear"]) {
       expect(code, `COMPANY.${f}`).toMatch(new RegExp(`COMPANY\\.${f}\\b`));
     }
     expect(code).toMatch(/LegalRecordList/);
@@ -476,7 +481,9 @@ describe("5. /fleet", () => {
 
   test("페이지는 INSURANCE 를 원장에서 import 해 title·body 를 렌더한다 (ko.json 에 복제 0)", () => {
     expect(ledgerImports(src)).toContain("INSURANCE");
-    expect(code).toMatch(/INSURANCE\.title/);
+    // P2-6: 제목은 ledgerUi(locale).headings.insurance — ko 는 INSURANCE.title 그대로(tests/i18n-en.test.ts §4), en 은 영문 제목.
+    // 본문은 로케일과 무관하게 원장 한국어다(en 에서는 컨트롤러 확정 안내 아래 lang="ko").
+    expect(code).toMatch(/\.headings\.insurance\b/);
     expect(code).toMatch(/INSURANCE\.body/);
     expect(koText.includes(INSURANCE.body)).toBe(false);
     expect(koText.includes("손해보험회사")).toBe(false);

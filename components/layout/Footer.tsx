@@ -11,33 +11,33 @@
  *
  * 빈 값 규칙(P1-6 과 동일): 원장 필드가 "" 인 줄은 렌더하지 않는다. 미확인 값을 지어내지 않기로
  * 했으므로 빈 값이 실제로 들어올 수 있고, 그때 빈 칸이 화면에 남으면 안 된다.
+ *
+ * 로케일 (P2-6): 라벨·배지·링크 제목·대표자·verbatim 은 ledgerUi(locale) · localizeVerbatim(ko 는 원장 그대로).
+ * 사업자 정보의 **값**(상호·주소·계좌·보호책임자·관계사 고지)은 원장 한국어 그대로다 — 영문판은 컨트롤러가 따로 확정한다.
+ * en 에서는 그 블록 위에 컨트롤러 확정 안내를 두고, 한국어 값에 lang="ko" 를 단다(ko 화면은 둘 다 내지 않는다).
  */
 
 import Image from "next/image";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 
+import { OfficialKoreanNotice } from "@/components/legal/OfficialKoreanNotice";
 import { Link } from "@/i18n/navigation";
-import {
-  COMPANY,
-  LEGAL_LABELS,
-  LEGAL_LINKS,
-  LEGAL_PAGES,
-  RELATED_COMPANY,
-  VERBATIM,
-} from "@/lib/legal/disclosures";
-import { MENU_BY_GROUP } from "@/lib/legacy-menu-map";
+import { koLang, ledgerUi, localizeVerbatim } from "@/lib/i18n/ledger-ui";
+import { COMPANY, LEGAL_LINKS, RELATED_COMPANY, VERBATIM } from "@/lib/legal/disclosures";
+import { LEGACY_MENU, MENU_BY_GROUP } from "@/lib/legacy-menu-map";
 
 import Nav from "./Nav";
 import styles from "./Footer.module.css";
 
-type Fact = { label?: string; value: string; strong?: boolean; href?: string };
+/** `ko: true` — 값이 원장 한국어다(en 에서 lang="ko" 를 단다). */
+type Fact = { label?: string; value: string; strong?: boolean; href?: string; ko?: boolean };
 
 /** 빈 값 줄은 지운다 — 원장에 "" 로 남겨 둔 미확인 필드가 화면에 빈 칸으로 새지 않도록 */
 function present(facts: readonly Fact[]): Fact[] {
   return facts.filter((fact) => fact.value.trim() !== "");
 }
 
-function FactList({ facts, className }: { facts: readonly Fact[]; className: string }) {
+function FactList({ facts, className, valueLang }: { facts: readonly Fact[]; className: string; valueLang?: string }) {
   return (
     <p className={className}>
       {present(facts).map((fact) => (
@@ -48,7 +48,9 @@ function FactList({ facts, className }: { facts: readonly Fact[]; className: str
               {fact.value}
             </a>
           ) : (
-            <span className={fact.strong ? styles.factStrong : undefined}>{fact.value}</span>
+            <span className={fact.strong ? styles.factStrong : undefined} lang={fact.ko ? valueLang : undefined}>
+              {fact.value}
+            </span>
           )}
         </span>
       ))}
@@ -57,40 +59,45 @@ function FactList({ facts, className }: { facts: readonly Fact[]; className: str
 }
 
 export default async function Footer() {
-  const t = await getTranslations("layout");
-  const labels = LEGAL_LABELS.footer;
+  const [t, locale] = await Promise.all([getTranslations("layout"), getLocale()]);
+  const ui = ledgerUi(locale);
+  const labels = ui.labels.footer;
+  const contactLabels = ui.labels.contact;
+  const valueLang = koLang(locale);
+  const menuLabels = Object.fromEntries(LEGACY_MENU.map((m) => [m.key, t(`menu.${m.key}`)]));
   const year = new Date().getFullYear();
 
   const operator: Fact[] = [
-    { value: COMPANY.legalName, strong: true },
-    { label: labels.representative, value: COMPANY.representative },
+    { value: COMPANY.legalName, strong: true, ko: true },
+    { label: labels.representative, value: ui.representative, ko: true },
     { label: labels.bizRegNo, value: COMPANY.bizRegNo },
     {
       label: labels.mailOrder,
       value: [COMPANY.mailOrderNo, COMPANY.mailOrderIssuer].filter((part) => part.trim() !== "").join(" "),
+      ko: true,
     },
   ];
 
   const contact: Fact[] = [
-    { label: labels.headOffice, value: COMPANY.address },
-    { label: labels.branch, value: COMPANY.branchAddress },
-    { label: LEGAL_LABELS.contact.tel, value: COMPANY.tel },
-    { label: LEGAL_LABELS.contact.mobile, value: COMPANY.mobile },
-    { label: LEGAL_LABELS.contact.fax, value: COMPANY.fax },
-    { label: LEGAL_LABELS.contact.email, value: COMPANY.email, href: `mailto:${COMPANY.email}` },
-    { label: labels.bankAccount, value: COMPANY.bankAccount },
+    { label: labels.headOffice, value: COMPANY.address, ko: true },
+    { label: labels.branch, value: COMPANY.branchAddress, ko: true },
+    { label: contactLabels.tel, value: COMPANY.tel },
+    { label: contactLabels.mobile, value: COMPANY.mobile },
+    { label: contactLabels.fax, value: COMPANY.fax },
+    { label: contactLabels.email, value: COMPANY.email, href: `mailto:${COMPANY.email}` },
+    { label: labels.bankAccount, value: COMPANY.bankAccount, ko: true },
   ];
 
   const officer: Fact[] = [
-    { label: labels.privacyOfficer, value: COMPANY.privacyOfficer.name, strong: true },
-    { label: LEGAL_LABELS.officer.phone, value: COMPANY.privacyOfficer.phone },
+    { label: labels.privacyOfficer, value: COMPANY.privacyOfficer.name, strong: true, ko: true },
+    { label: ui.labels.officer.phone, value: COMPANY.privacyOfficer.phone },
   ];
 
   const related: Fact[] = [
-    { value: RELATED_COMPANY.legalName, strong: true },
-    { label: labels.representative, value: RELATED_COMPANY.representative },
+    { value: RELATED_COMPANY.legalName, strong: true, ko: true },
+    { label: labels.representative, value: RELATED_COMPANY.representative, ko: true },
     { label: labels.bizRegNo, value: RELATED_COMPANY.bizRegNo },
-    { value: RELATED_COMPANY.address },
+    { value: RELATED_COMPANY.address, ko: true },
   ];
 
   const hosting = present([{ label: labels.hosting, value: COMPANY.hostingProvider }]);
@@ -103,14 +110,14 @@ export default async function Footer() {
             <Image
               className={styles.logo}
               src="/brand/logo-bestour.png"
-              alt={COMPANY.brandName}
+              alt={ui.brand}
               width={165}
               height={32}
             />
             <a
               className={styles.tel}
               href={`tel:${COMPANY.tel}`}
-              aria-label={`${LEGAL_LABELS.contact.tel} ${COMPANY.tel}`}
+              aria-label={`${contactLabels.tel} ${COMPANY.tel}`}
             >
               {COMPANY.tel}
             </a>
@@ -120,6 +127,7 @@ export default async function Footer() {
             <h2 className={styles.colTitle}>{t("menuHeading")}</h2>
             <Nav
               items={MENU_BY_GROUP.company}
+              labels={menuLabels}
               ariaLabel={t("menuHeading")}
               classes={{ list: styles.menuList, link: styles.menuLink, disabled: styles.menuDisabled }}
             />
@@ -129,6 +137,7 @@ export default async function Footer() {
             <h2 className={styles.colTitle}>{t("supportHeading")}</h2>
             <Nav
               items={MENU_BY_GROUP.support}
+              labels={menuLabels}
               ariaLabel={t("supportHeading")}
               classes={{ list: styles.menuList, link: styles.menuLink, disabled: styles.menuDisabled }}
             />
@@ -136,39 +145,42 @@ export default async function Footer() {
         </div>
 
         <section className={styles.legal} aria-label={labels.companyInfo}>
+          <OfficialKoreanNotice notice={ui.officialNotice} />
           <p className={styles.badgeRow}>
             <span className={styles.badge}>{labels.operator}</span>
           </p>
-          <FactList facts={operator} className={styles.row} />
-          <FactList facts={contact} className={styles.row} />
-          <FactList facts={officer} className={styles.row} />
+          <FactList facts={operator} className={styles.row} valueLang={valueLang} />
+          <FactList facts={contact} className={styles.row} valueLang={valueLang} />
+          <FactList facts={officer} className={styles.row} valueLang={valueLang} />
 
           <div className={styles.related}>
             <p className={styles.badgeRow}>
-              <span className={styles.badgeRelated}>{RELATED_COMPANY.role}</span>
+              <span className={styles.badgeRelated}>{ui.relatedRole}</span>
             </p>
-            <FactList facts={related} className={styles.row} />
+            <FactList facts={related} className={styles.row} valueLang={valueLang} />
           </div>
 
-          <p className={styles.note}>{RELATED_COMPANY.note}</p>
-          <p className={styles.note}>{VERBATIM.bookingNotice}</p>
+          <p className={styles.note} lang={valueLang}>
+            {RELATED_COMPANY.note}
+          </p>
+          <p className={styles.note}>{localizeVerbatim(locale, VERBATIM.bookingNotice)}</p>
         </section>
 
-        <nav className={styles.legalNav} aria-label={LEGAL_LABELS.legalNav}>
+        <nav className={styles.legalNav} aria-label={ui.labels.legalNav}>
           <ul className={styles.legalLinks}>
             <li>
               <Link className={styles.legalLink} href={LEGAL_LINKS.privacy}>
-                {LEGAL_PAGES.privacy.title}
+                {ui.pages.privacy}
               </Link>
             </li>
             <li>
               <Link className={styles.legalLink} href={LEGAL_LINKS.terms}>
-                {LEGAL_PAGES.terms.title}
+                {ui.pages.terms}
               </Link>
             </li>
             <li>
               <Link className={styles.legalLink} href={LEGAL_LINKS.guide}>
-                {LEGAL_PAGES.guide.title}
+                {ui.pages.guide}
               </Link>
             </li>
             <li>
@@ -191,7 +203,10 @@ export default async function Footer() {
               <span>{fact.value}</span>
             </span>
           ))}
-          <span className={styles.fact}>© {year} {COMPANY.legalName}</span>
+          {/* ko 마크업은 이전과 같게(감싸는 span 없이) — en 에서만 한국어 상호에 lang="ko" 를 단다 */}
+          <span className={styles.fact}>
+            © {year} {valueLang ? <span lang={valueLang}>{COMPANY.legalName}</span> : COMPANY.legalName}
+          </span>
         </p>
       </div>
     </footer>

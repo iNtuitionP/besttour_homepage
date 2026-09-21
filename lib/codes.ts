@@ -188,6 +188,30 @@ export const REGION_LABELS_KO: Readonly<Record<RegionCode, string>> = {
   JJ: "제주",
 };
 
+/**
+ * 시도 라벨(영문 표시용, P2-6). ICN 은 PLACES.nameEn 과 같은 "Incheon Airport". 광역시는 도시 이름, 도는 영문 통용 명칭
+ * (충북 North Chungcheong 처럼 방위 + 도명)이다. 화면 표시에만 쓴다 — DB 에는 언제나 코드를 저장한다(파일 상단 규칙).
+ */
+export const REGION_LABELS_EN: Readonly<Record<RegionCode, string>> = {
+  ICN: "Incheon Airport",
+  SEL: "Seoul",
+  BSN: "Busan",
+  INC: "Incheon",
+  DGU: "Daegu",
+  GWJ: "Gwangju",
+  DJN: "Daejeon",
+  ULS: "Ulsan",
+  GG: "Gyeonggi",
+  GW: "Gangwon",
+  CN: "South Chungcheong",
+  CB: "North Chungcheong",
+  GB: "North Gyeongsang",
+  GN: "South Gyeongsang",
+  JN: "South Jeolla",
+  JB: "North Jeolla",
+  JJ: "Jeju",
+};
+
 /** 접수 폼이 받는 장소 코드 — 도시(PlaceCode) 또는 시도(RegionCode). */
 export type LocationCode = PlaceCode | RegionCode;
 
@@ -227,4 +251,15 @@ export function locationRegion(code: LocationCode): RegionCode {
 export function locationLabelKo(code: LocationCode): string {
   const place = PLACE_BY_CODE.get(code);
   return place ? place.nameKo : REGION_LABELS_KO[code as RegionCode];
+}
+
+/** 표시용 영문 라벨 — 도시면 nameEn, 시도면 REGION_LABELS_EN. 표시 전용, DB 저장 금지 (P2-6). */
+export function locationLabelEn(code: LocationCode): string {
+  const place = PLACE_BY_CODE.get(code);
+  return place ? place.nameEn : REGION_LABELS_EN[code as RegionCode];
+}
+
+/** 로케일별 표시 라벨 — en 이면 영문, 그 밖(기본 로케일 ko 포함)은 한글. 저장값은 언제나 코드다. */
+export function locationLabel(code: LocationCode, locale: string): string {
+  return locale === "en" ? locationLabelEn(code) : locationLabelKo(code);
 }

@@ -21,8 +21,10 @@ import {
   COMPARATIVE_CLAIMS_EN,
   CONTACT_LITERALS,
   COPY_ALLOWLIST,
+  FORBIDDEN_TERMS_EN,
   FORBIDDEN_WORDS,
   UNPROVEN_CLAIMS,
+  UNPROVEN_CLAIMS_EN,
   type CopyRule,
 } from "./helpers/forbidden-copy";
 import { stripComments } from "./helpers/strip-comments";
@@ -81,6 +83,9 @@ const codeSources = CODE_DIRS.flatMap((dir) =>
 /** 세 목록을 한 번에 — 한글 표면(ko.json · 코드)에 거는 규칙 전부. */
 const KO_RULES: readonly CopyRule[] = [...UNPROVEN_CLAIMS, ...COMPARATIVE_CLAIMS];
 
+/** 영문 표면(en.json)에 거는 규칙 전부 — P2-6 에서 금지어·실증 불가 두 목록을 더했다(빼기 금지, 더하기만). */
+const EN_RULES: readonly CopyRule[] = [...COMPARATIVE_CLAIMS_EN, ...FORBIDDEN_TERMS_EN, ...UNPROVEN_CLAIMS_EN];
+
 // =============================================================================
 // 1. 빈 배열 통과 방지 — 목록이 비면 아래 모든 검사가 전면 green 이 된다
 // =============================================================================
@@ -89,7 +94,9 @@ describe("1. 통합 목록 자체 — 비어 있지 않다 · 허용 항목마�
     expect(FORBIDDEN_WORDS.length, "FORBIDDEN_WORDS").toBeGreaterThanOrEqual(6);
     expect(UNPROVEN_CLAIMS.length, "UNPROVEN_CLAIMS").toBeGreaterThanOrEqual(20);
     expect(COMPARATIVE_CLAIMS.length, "COMPARATIVE_CLAIMS").toBeGreaterThanOrEqual(6);
-    expect(COMPARATIVE_CLAIMS_EN.length, "COMPARATIVE_CLAIMS_EN").toBeGreaterThanOrEqual(5);
+    expect(COMPARATIVE_CLAIMS_EN.length, "COMPARATIVE_CLAIMS_EN").toBeGreaterThanOrEqual(15);
+    expect(FORBIDDEN_TERMS_EN.length, "FORBIDDEN_TERMS_EN").toBeGreaterThanOrEqual(8);
+    expect(UNPROVEN_CLAIMS_EN.length, "UNPROVEN_CLAIMS_EN").toBeGreaterThanOrEqual(7);
     expect(CONTACT_LITERALS.length, "CONTACT_LITERALS").toBeGreaterThanOrEqual(6);
   });
 
@@ -100,13 +107,13 @@ describe("1. 통합 목록 자체 — 비어 있지 않다 · 허용 항목마�
   });
 
   test("정규식에 g 플래그가 없다 (lastIndex 잔류로 두 번째 검사가 빗나가는 것을 막는다)", () => {
-    for (const [label, re] of [...UNPROVEN_CLAIMS, ...COMPARATIVE_CLAIMS, ...COMPARATIVE_CLAIMS_EN]) {
+    for (const [label, re] of [...UNPROVEN_CLAIMS, ...COMPARATIVE_CLAIMS, ...EN_RULES]) {
       expect(re.global, label).toBe(false);
     }
   });
 
   test("허용 목록 — 항목마다 경로·라벨·사유가 있고, 라벨은 실재하는 규칙이다", () => {
-    const known = new Set([...UNPROVEN_CLAIMS, ...COMPARATIVE_CLAIMS, ...COMPARATIVE_CLAIMS_EN].map(([l]) => l));
+    const known = new Set([...UNPROVEN_CLAIMS, ...COMPARATIVE_CLAIMS, ...EN_RULES].map(([l]) => l));
     for (const e of COPY_ALLOWLIST) {
       expect(e.path.length, `허용 항목 경로`).toBeGreaterThan(0);
       expect(e.reason.trim().length, `허용 항목 ${e.path} 사유 누락`).toBeGreaterThan(10);
@@ -215,18 +222,29 @@ describe("2. ko.json 전 네임스페이스 — 금지어 · 실증 불가 · �
 // =============================================================================
 // 3. messages/en.json — 지금까지 검사 0. 영문 카피를 지어내지 않고 **검사만** 먼저 건다
 // =============================================================================
-describe("3. en.json — 영문 비교 광고 검사 + ko 와의 키 관계", () => {
-  test("en.json 은 비어 있거나(현재 TEMP 정책) ko 와 키 집합이 정확히 같다", () => {
+describe("3. en.json — 영문 카피 규칙 + ko 와의 키 관계", () => {
+  test("en.json 은 채워져 있고(P2-6) 네임스페이스마다 ko 와 잎 경로가 정확히 같다 — admin 은 없고 legal 은 원장 UI 문구", () => {
     // i18n/messages.ts 는 최상위 키 기준 shallow 병합이다 — 부분 네임스페이스를 넣으면 그 안의 빠진 키가
-    // ko 로 폴백되지 않고 사라진다. 그래서 en.json 은 `{}` 이거나 ko 와 완전히 같은 키 집합이어야 한다.
-    if (enLeaves.length === 0) {
-      expect(en).toEqual({});
-      return;
+    // ko 로 폴백되지 않고 사라진다. 그래서 en 에 넣은 네임스페이스는 ko 와 완전히 같은 잎 경로를 가져야 한다.
+    // admin 은 로케일 밖(한국어 전용)이라 en 에 넣지 않는다. legal 은 ko 에서 원장 상수로 오는 문구의 영문이다
+    // (tests/i18n-en.test.ts §4 가 원장과 구조를 대조한다).
+    expect(enLeaves.length, "en.json 이 비었다").toBeGreaterThan(350);
+    expect(en).not.toHaveProperty("admin");
+    for (const ns of Object.keys(en).filter((n) => n !== "legal")) {
+      const koPaths = koLeaves.filter((l) => namespaceOf(l.path) === ns).map((l) => l.path);
+      const enPaths = enLeaves.filter((l) => namespaceOf(l.path) === ns).map((l) => l.path);
+      expect(new Set(enPaths), ns).toEqual(new Set(koPaths));
     }
-    expect(new Set(enLeaves.map((l) => l.path))).toEqual(new Set(koLeaves.map((l) => l.path)));
   });
 
-  test.for(COMPARATIVE_CLAIMS_EN.map((r) => [r[0], r[1]] as const))("영문 비교·최상급 0건 — %s", ([label, re]) => {
+  test("영문 규칙의 검사 범위에 legal 을 포함한 en.json 전 네임스페이스가 들어 있다", () => {
+    const scanned = new Set(enLeaves.map((l) => namespaceOf(l.path)));
+    for (const ns of ["common", "layout", "errors", "home", "reservation", "quote", "reservationCheck", "pages", "legal"]) {
+      expect(scanned.has(ns), `${ns} 가 검사되지 않는다`).toBe(true);
+    }
+  });
+
+  test.for(EN_RULES.map((r) => [r[0], r[1]] as const))("영문 금지어·실증 불가·비교·최상급 0건 — %s", ([label, re]) => {
     const hits = enLeaves.filter((l) => re.test(l.value) && !isAllowed(l.path, label)).map((l) => `${l.path} :: ${l.value}`);
     expect(hits, `${label}\n${hits.join("\n")}`).toEqual([]);
   });
@@ -239,6 +257,80 @@ describe("3. en.json — 영문 비교 광고 검사 + ko 와의 키 관계", ()
         expect(re.test(l.value), `${l.path} :: ${label}`).toBe(false);
       }
     }
+  });
+});
+
+// =============================================================================
+// 3-b. 영문 규칙의 이빨 — P2-6 에서 더한 규칙이 잡아야 할 것을 잡고, 정당한 영문은 놓아 준다
+// =============================================================================
+describe("3-b. 영문 규칙 — 양성 픽스처(잡는다) · 음성 픽스처(놓아 준다)", () => {
+  /** 브리프 P2-6 §5 의 금지 표현 전부 + 흔한 변형. [문장, 잡아야 할 규칙 라벨] */
+  const CATCHES_EN: ReadonlyArray<readonly [text: string, label: string]> = [
+    ["A licensed charter bus company", "license / licensed (등록제 — registered 를 쓴다)"],
+    ["Fully licenced operator", "license / licensed (등록제 — registered 를 쓴다)"],
+    ["We are the No. 1 choice", "No.1 / #1"],
+    ["The number one airport transfer", "number one"],
+    ["The best charter bus in Korea", "best (최상급)"],
+    ["A leading tour bus provider", "leading (최상급)"],
+    ["Korea's largest coach network", "largest"],
+    ["Lowest price in Seoul", "lowest"],
+    ["The cheapest airport bus", "cheap / cheaper / cheapest"],
+    ["Price guarantee on every trip", "guaranteed (price)"],
+    ["We guarantee on-time arrival", "guarantee (보장 주장)"],
+    ["Accident-free since day one", "accident-free"],
+    ["Zero accidents on record", "zero / no accidents (안전 실적 주장)"],
+    ["A spotless safety record", "accident / safety record (안전 실적 주장)"],
+    ["Years of experience with foreign tours", "years of experience (기간 주장 — since 2013 만 쓴다)"],
+    ["Serving travelers for decades", "decades (기간 주장)"],
+    ["13 years on the road", "N years (연차 주장)"],
+    ["A fleet of 40 buses", "fleet size (차량 대수 주장)"],
+    ["Over 4800 bookings handled", "cumulative counts (누적 건수 주장)"],
+    ["Cumulative quotes this year", "cumulative counts (누적 건수 주장)"],
+    ["Trusted by 700,000 tourists", "tourist counts (관광객 수치)"],
+    ["Empty buses heading back to Seoul", "empty bus / empty run (BM 비노출)"],
+    ["Deadhead trips cost less", "deadhead (BM 비노출)"],
+    ["We fill the return leg", "return leg (BM 비노출)"],
+    ["Pick you up on the way back", "on the way back (BM 비노출)"],
+    ["Backhaul pricing", "backhaul (BM 비노출)"],
+    ["Our fleet is modern", "our fleet / our buses (알선업체 — 소유 주장)"],
+    ["Ride our buses", "our fleet / our buses (알선업체 — 소유 주장)"],
+    ["We operate 30 coaches", "we operate / we own (알선업체 — 운영·소유 주장)"],
+  ];
+
+  /** 실제 en.json 에 쓰였거나 쓰일 수 있는 정당한 문장 — 어느 규칙에도 걸리면 안 된다. */
+  const LEGIT_EN: readonly string[] = [
+    "Since {year}",
+    "Bestour — charter bus booking agency", // 브랜드 'Bestour' 는 'best' 가 아니다
+    "Registered charter bus booking agency",
+    "Airport Pickup & Drop-off (Transfer Specialists)",
+    "Return date & time", // 손님의 귀가 일정 — 'return leg' 가 아니다
+    "One way + one way",
+    "Separate trips there and back",
+    "You can enter 1 to 20 buses.", // 입력 범위 안내 — 보유 대수 주장이 아니다
+    "Based on a 45-seat coach, same-day round trip",
+    "Up to <b>{n} people</b>",
+    "Include 10% VAT in the quote",
+    "Choose the trip purpose that is closest to yours.",
+    "We arrange buses nationwide, from Seoul to Jeju.",
+    "Bus assignments are checked personally by our CEO.",
+    "2 days, 1 night", // 일정 길이 — 연차 주장이 아니다
+  ];
+
+  test.for(CATCHES_EN.map((c) => [c[0], c[1]] as const))("잡는다 — %s", ([text, label]) => {
+    const rule = EN_RULES.find(([l]) => l === label);
+    expect(rule, `"${label}" 라벨의 규칙이 목록에 없다`).toBeTruthy();
+    expect(rule![1].test(text), `${label} 이 "${text}" 를 놓쳤다`).toBe(true);
+  });
+
+  test.for(LEGIT_EN.map((s) => [s] as const))("놓아 준다 — %s", ([text]) => {
+    const hit = EN_RULES.filter(([, re]) => re.test(text)).map(([l]) => l);
+    expect(hit, `오탐: ${hit.join(", ")}`).toEqual([]);
+  });
+
+  test("영문 규칙은 사장님 글(관리자 입력) 경고에는 걸지 않는다 — 관리자 화면은 한국어 전용", async () => {
+    const { OWNER_COPY_RULES } = await import("@/lib/copy/rules");
+    const labels = new Set(OWNER_COPY_RULES.map((r) => r.label));
+    for (const [label] of EN_RULES) expect(labels.has(label), label).toBe(false);
   });
 });
 

@@ -12,7 +12,8 @@ export interface MapSvgProps {
   geometry: MapGeometry;
   /** aria-labelledby 용 id 접두사. 한 페이지에 지도를 두 번 그리면 서로 다르게 준다. */
   id?: string;
-  title?: string;
+  /** SVG <title> — 문구는 호출부(KrMap)가 messages home.krmap.mapTitle 에서 넣는다(P2-6 — 이 파일에 한글 리터럴 없음). */
+  title: string;
   description: string;
 }
 
@@ -38,7 +39,7 @@ function Pin({ pin }: { pin: MapPin }) {
   );
 }
 
-export function MapSvg({ geometry, id = "krmap", title = "대한민국 대표 노선 지도", description }: MapSvgProps) {
+export function MapSvg({ geometry, id = "krmap", title, description }: MapSvgProps) {
   const titleId = `${id}-title`;
   const descId = `${id}-desc`;
 

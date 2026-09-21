@@ -155,9 +155,8 @@ export const COMPARATIVE_CLAIMS: readonly CopyRule[] = [
 ];
 
 // ── (3-EN) 영문 대응 — messages/en.json 용 ─────────────────────────────────────
-// en.json 은 지금 `{}` 다(i18n/messages.ts 의 shallow 병합 TEMP — /en 도 ko 카탈로그로 렌더된다).
-// 그래서 한글 목록으로는 **영문 주장을 구조적으로 못 잡는다**. 영문 카피를 지어내지 않고 검사만 먼저 건다 —
-// 영문이 채워지는 순간부터 같은 규칙이 적용되게 하려는 것이다(감사 §6-9).
+// 한글 목록으로는 **영문 주장을 구조적으로 못 잡는다**. P6-6 은 영문 카피를 지어내지 않고 검사만 먼저 걸었고(감사 §6-9),
+// P2-6 에서 en.json 이 실제로 채워졌다 — 아래 세 목록이 en.json 전 네임스페이스에 걸린다(tests/copy-rules.test.ts §3·§3-b).
 export const COMPARATIVE_CLAIMS_EN: readonly CopyRule[] = [
   ["cheap / cheaper / cheapest", /\bcheap(er|est)?\b/i],
   ["lowest", /\blowest\b/i],
@@ -171,6 +170,43 @@ export const COMPARATIVE_CLAIMS_EN: readonly CopyRule[] = [
   ["most popular / most used", /\bmost\s+(popular|used|requested|booked)\b/i],
   ["transparent pricing / rates", /\btransparent\s+(pric|rate|fare)/i],
   ["one-minute quote", /\b(one|1)[-\s]minute\b/i],
+  // ── P2-6 (브리프 §5) — 최상급·순위·보장. 브랜드 'Bestour' 는 `\bbest\b` 에 걸리지 않는다(뒤가 단어 문자).
+  ["number one", /\bnumber\s*(?:one|1)\b/i],
+  ["best (최상급)", /\bbest\b/i],
+  ["leading (최상급)", /\bleading\b/i],
+  ["top-rated / top-ranked (순위 주장)", /\btop[-\s]?(?:rated|ranked|class)\b/i],
+  ["guarantee (보장 주장)", /\bguarantee(?:d|s)?\b/i],
+];
+
+// ── (3-EN-b) 영문 금지어 — P2-6 (브리프 §5). 한글 (1) 금지어의 영문 대응 + 알선업체 규칙 ─────────────
+// 등록제(면허 아님) · BM 비노출(원가 구조) · **알선업체** — 차량을 소유·운영한다는 뜻의 표현을 쓰지 않는다(CLAUDE.md §3).
+// 손님의 귀가 일정("Return date & time")은 정당하다 — 원가 구조를 드러내는 `return leg` 만 잡는다.
+export const FORBIDDEN_TERMS_EN: readonly CopyRule[] = [
+  ["license / licensed (등록제 — registered 를 쓴다)", /\blicen[cs](?:e|ed|es|ing)\b/i],
+  ["empty bus / empty run (BM 비노출)", /\bempty\s+(?:bus|buses|coach|coaches|vehicle|vehicles|run|runs|leg|legs)\b/i],
+  ["deadhead (BM 비노출)", /\bdead[-\s]?head/i],
+  ["return leg (BM 비노출)", /\breturn\s+legs?\b/i],
+  ["on the way back (BM 비노출)", /\bon\s+the\s+way\s+back\b/i],
+  ["backhaul (BM 비노출)", /\bback[-\s]?haul/i],
+  ["our fleet / our buses (알선업체 — 소유 주장)", /\bour\s+(?:own\s+)?(?:fleet|buses|coaches|vehicles|drivers)\b/i],
+  ["we operate / we own (알선업체 — 운영·소유 주장)", /\bwe\s+(?:operate|own|run)\b/i],
+];
+
+// ── (3-EN-c) 영문 실증 불가 주장 — P2-6 (브리프 §5). 한글 (2) 의 영문 대응 ─────────────────────────
+// 쓸 수 있는 기간 표현은 `Since {year}`(원장 establishedYear 보간)뿐이다. 차량 대수·누적 건수·관광객 수·안전 실적은 근거가 없다.
+// `N years` 는 연차 주장만 잡는다 — "1 to 20 buses" 같은 입력 범위 안내는 대상이 아니다.
+export const UNPROVEN_CLAIMS_EN: readonly CopyRule[] = [
+  ["zero / no accidents (안전 실적 주장)", /\b(?:zero|no)\s+accidents?\b/i],
+  ["accident / safety record (안전 실적 주장)", /\b(?:accident|safety)\s+record\b/i],
+  ["years of experience (기간 주장 — since 2013 만 쓴다)", /\byears?\s+of\s+(?:experience|expertise|service|history|operation)\b/i],
+  ["decades (기간 주장)", /\bdecades?\b/i],
+  ["N years (연차 주장)", /\b\d+\+?\s*years?\b/i],
+  ["fleet size (차량 대수 주장)", /\bfleet\s+of\s+\d|\b\d+\s*(?:buses|coaches|vehicles)\s+in\s+(?:our|the)\s+fleet\b/i],
+  [
+    "cumulative counts (누적 건수 주장)",
+    /\bcumulative\b|\b(?:over|more\s+than)\s+[\d,]+\+?\s*(?:customers|clients|bookings|trips|quotes|passengers|tourists|visitors)\b/i,
+  ],
+  ["tourist counts (관광객 수치)", /\b\d[\d,.]*\s*(?:thousand|million|k)?\s+(?:foreign\s+)?(?:tourists|visitors|travell?ers)\b/i],
 ];
 
 // ── (4) 금액 리터럴 — `pages.fares` 전용 ───────────────────────────────────────
@@ -222,7 +258,7 @@ export const COPY_ALLOWLIST: readonly CopyAllowEntry[] = [];
 //
 // 대조하는 것: (1) 금지어 · (2) 실증 불가 · (3) 비교·최상급 — 셋 다.
 // 대조하지 않는 것:
-//   · (3-EN) — 관리자 화면은 한국어 전용이다. 영문 규칙은 en.json 카탈로그 몫이다.
+//   · (3-EN)·(3-EN-b)·(3-EN-c) — 관리자 화면은 한국어 전용이다. 영문 규칙은 en.json 카탈로그 몫이다.
 //   · (4) 금액 — 소스 카피의 무가격 규칙(/fares)이다. "성수기 요금 안내"·"주차료 별도"는 사장님이 쓸 수 있는 사실 안내다.
 //   · (5) 연락처 — 카탈로그가 원장 보간을 쓰게 하려는 규칙이다. 공지에 "대표전화 1566-6188"을 적는 것은 정당하다.
 //   · 아래 OWNER_TEXT_EXEMPT 의 두 규칙 — 소스 카피에서만 의미가 있다.

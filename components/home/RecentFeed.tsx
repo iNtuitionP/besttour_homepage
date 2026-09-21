@@ -7,9 +7,14 @@
  * 고지의 열거와 항목 키의 대응은 tests/feed-notice-parity.test.ts 가 잠근다(항목에 키를 더하면 고지부터 고쳐야 컴파일된다).
  * 목업의 "오늘 접수 N건 · 이번 주 N건" 줄은 실증 불가 수치라 없다(CLAUDE.md §3) — 개수는 어디에도 렌더하지 않는다.
  * 0건이면 섹션 자체를 숨긴다(빈 목록 금지). 문구는 ko.json home.recentFeed 키만 쓴다 — 이 파일에 한글 리터럴 없음.
+ *
+ * 로케일 (P2-6): 고지는 원장 한국어 그대로 — en 에서는 그 위에 컨트롤러 확정 안내, 고지에 lang="ko".
+ * 차종 라벨은 항목의 vehicles.name_ko 를 `vehicleLabels`(name_ko → name_en, en 화면에서만 페이지가 넘긴다)로 바꿔 보인다.
  */
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 
+import { OfficialKoreanNotice } from "@/components/legal/OfficialKoreanNotice";
+import { koLang, ledgerUi } from "@/lib/i18n/ledger-ui";
 import { PRIVACY_NOTICE } from "@/lib/legal/disclosures";
 import { recentStatusKey, type RecentFeedItem } from "@/lib/recent-feed";
 
@@ -18,9 +23,16 @@ import s from "./RecentFeed.module.css";
 import { RICH } from "./rich";
 import { SectionHead } from "./SectionHead";
 
-export async function RecentFeed({ items }: { items: readonly RecentFeedItem[] }) {
+export async function RecentFeed({
+  items,
+  vehicleLabels,
+}: {
+  items: readonly RecentFeedItem[];
+  /** 표시용 차종 라벨 치환(name_ko → 현재 로케일 이름). 없으면 항목 값 그대로. */
+  vehicleLabels?: ReadonlyMap<string, string>;
+}) {
   if (items.length === 0) return null;
-  const t = await getTranslations("home.recentFeed");
+  const [t, locale] = await Promise.all([getTranslations("home.recentFeed"), getLocale()]);
 
   return (
     <section id="recent" className={`${h.sectionTight} ${h.toneLav}`} aria-labelledby="recent-h" data-section="recent">
@@ -33,12 +45,17 @@ export async function RecentFeed({ items }: { items: readonly RecentFeedItem[] }
                 {t(recentStatusKey(item.status))}
               </span>
               <span className={s.text}>
-                {t("itemLabel", { name: item.maskedName, vehicle: item.vehicleLabel, date: item.departDateKst })}
+                {t("itemLabel", {
+                  name: item.maskedName,
+                  vehicle: vehicleLabels?.get(item.vehicleLabel) ?? item.vehicleLabel,
+                  date: item.departDateKst,
+                })}
               </span>
             </li>
           ))}
         </ul>
-        <p className={s.notice} data-testid="recent-feed-notice">
+        <OfficialKoreanNotice notice={ledgerUi(locale).officialNotice} />
+        <p className={s.notice} data-testid="recent-feed-notice" lang={koLang(locale)}>
           {PRIVACY_NOTICE.publicFeedNotice}
         </p>
       </div>

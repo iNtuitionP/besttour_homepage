@@ -23,10 +23,12 @@ const PANEL_ID = "site-mobile-menu";
 
 type MobileMenuProps = {
   items: readonly MenuItem[];
+  /** 메뉴 키 → 현재 로케일의 라벨 — Nav 에 그대로 넘긴다 */
+  itemLabels: Readonly<Record<string, string>>;
   labels: { open: string; close: string; nav: string };
 };
 
-export default function MobileMenu({ items, labels }: MobileMenuProps) {
+export default function MobileMenu({ items, itemLabels, labels }: MobileMenuProps) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -63,6 +65,7 @@ export default function MobileMenu({ items, labels }: MobileMenuProps) {
       <div id={PANEL_ID} className={styles.panel} hidden={!open}>
         <Nav
           items={items}
+          labels={itemLabels}
           ariaLabel={labels.nav}
           classes={{
             list: styles.panelList,

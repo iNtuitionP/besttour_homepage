@@ -4,10 +4,16 @@
  * 문구는 전부 props(ConsentText)로 받는다 — 원장 PRIVACY_NOTICE·LEGAL_LINKS 는 서버 페이지(app/[locale]/(site)/quote/page.tsx)가 읽어
  * 내린다. 이 파일에는 원장 import 도, 법정 문구 리터럴도 없다(클라이언트 번들에 원장이 실리지 않는다).
  * 체크박스 2종은 **기본 해제**(defaultChecked 없음, 상태 초기값 false, 초안에서 복원하지 않음). 필수 미체크면 제출이 닫힌다(submit-gate).
+ *
+ * 영문 화면 (P2-6 브리프 §3): 제목·체크박스 라벨은 영문(컨트롤러 확정 — page.tsx 가 ledgerUi 에서 넣는다), 고지 본문(목적·항목·기간·
+ * 거부 안내·접수 현황 공개)은 원장 한국어 그대로 — 본문 위에 컨트롤러 확정 안내(officialNotice), 본문에 lang="ko"(bodyLang).
+ * ko 에서는 officialNotice 가 null · bodyLang 이 undefined 라 이전과 같은 마크업이다.
  */
 import { useTranslations } from "next-intl";
 
+import { OfficialKoreanNotice } from "@/components/legal/OfficialKoreanNotice";
 import { Link } from "@/i18n/navigation";
+import type { OfficialNotice } from "@/lib/i18n/ledger-ui-ko";
 
 import { F } from "./fields";
 import { ErrorText } from "./FieldBits";
@@ -24,6 +30,10 @@ export interface ConsentText {
   marketingConsentLabel: string;
   publicFeedNotice: string;
   privacyHref: string;
+  /** en 전용 컨트롤러 확정 안내 — ko 는 null */
+  officialNotice: OfficialNotice | null;
+  /** 원장 한국어 본문의 lang — ko 는 undefined(속성 없음), en 은 "ko" */
+  bodyLang?: string;
 }
 
 export function ConsentBlock({
@@ -52,21 +62,24 @@ export function ConsentBlock({
       <h3 className={s.consentTitle} id={titleId}>
         {text.title}
       </h3>
+      <OfficialKoreanNotice notice={text.officialNotice} />
       <dl className={s.consentList}>
         <div>
           <dt>{t("purpose")}</dt>
-          <dd>{text.purpose}</dd>
+          <dd lang={text.bodyLang}>{text.purpose}</dd>
         </div>
         <div>
           <dt>{t("items")}</dt>
-          <dd>{text.itemsLine}</dd>
+          <dd lang={text.bodyLang}>{text.itemsLine}</dd>
         </div>
         <div>
           <dt>{t("retention")}</dt>
-          <dd>{text.retention}</dd>
+          <dd lang={text.bodyLang}>{text.retention}</dd>
         </div>
       </dl>
-      <p className={s.consentNote}>{text.refusal}</p>
+      <p className={s.consentNote} lang={text.bodyLang}>
+        {text.refusal}
+      </p>
 
       <label className={s.consentRow} data-checked={privacyConsent}>
         <input
@@ -92,7 +105,7 @@ export function ConsentBlock({
       </label>
       <ErrorText id={errId} message={error} />
 
-      <p className={s.consentNote} data-testid="consent-public-feed">
+      <p className={s.consentNote} data-testid="consent-public-feed" lang={text.bodyLang}>
         {text.publicFeedNotice}
       </p>
       <Link href={text.privacyHref} target="_blank" rel="noreferrer noopener" className={s.consentLink}>

@@ -13,13 +13,12 @@ import { getTranslations, setRequestLocale } from "next-intl/server";
 import { cache } from "react";
 
 import { noticeDate } from "@/components/home/notice-date";
-import { menuLabel } from "@/components/pages/menu-label";
 import { PageHeader } from "@/components/pages/PageHeader";
 import { splitParagraphs } from "@/components/pages/paragraphs";
 import { Link } from "@/i18n/navigation";
-import { COMPANY } from "@/lib/legal/disclosures";
+import { ledgerUi } from "@/lib/i18n/ledger-ui";
 import { getNotice } from "@/lib/queries";
-import { canonicalUrl } from "@/lib/site-url";
+import { pageAlternates } from "@/lib/site-url";
 
 import h from "@/components/home/home.module.css";
 import s from "@/components/home/Sections.module.css";
@@ -42,16 +41,17 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
     getTranslations({ locale, namespace: "pages.notices.detail.meta" }),
     getTranslations({ locale, namespace: "pages.notices.meta" }),
   ]);
+  const brand = ledgerUi(locale).brand;
   if (!notice) {
     // 404 문서의 제목 — 목록 제목으로. 색인 금지.
     // canonical 은 내지 않는다: 색인하지 말라면서 정본을 알려 주는 것은 모순이고, 없는 문서에는 정본이 없다.
-    return { title: tList("title", { brand: COMPANY.brandName }), robots: { index: false, follow: false } };
+    return { title: tList("title", { brand }), robots: { index: false, follow: false } };
   }
   return {
-    title: t("title", { title: notice.title, brand: COMPANY.brandName }),
+    title: t("title", { title: notice.title, brand }),
     description: t("description"),
-    // 정본은 조회한 행의 id — 라우트 파라미터(`?from=list` 같은 유입 쿼리·비정규 표기)를 그대로 쓰지 않는다.
-    alternates: { canonical: canonicalUrl(`/notices/${notice.id}`) },
+    // 정본은 조회한 행의 id — 라우트 파라미터(`?from=list` 같은 유입 쿼리·비정규 표기)를 그대로 쓰지 않는다. 로케일별 URL + 언어 대안(P2-6).
+    alternates: pageAlternates(`/notices/${notice.id}`, locale),
   };
 }
 
@@ -62,10 +62,11 @@ export default async function NoticeDetailPage({ params }: { params: Params }) {
   const notice = await getNoticeOnce(id);
   if (!notice) notFound();
 
-  const [t, tc, tNotice] = await Promise.all([
+  const [t, tc, tNotice, tMenu] = await Promise.all([
     getTranslations("pages.notices.detail"),
     getTranslations("pages.common"),
     getTranslations("home.notice"),
+    getTranslations("layout.menu"),
   ]);
   const categories = tNotice.raw("category") as Record<string, string | undefined>;
   const date = noticeDate(notice.publishedAt);
@@ -76,9 +77,9 @@ export default async function NoticeDetailPage({ params }: { params: Params }) {
       <PageHeader
         navLabel={tc("breadcrumb")}
         homeLabel={tc("home")}
-        crumbs={[{ href: "/notices", label: menuLabel("notices") }]}
+        crumbs={[{ href: "/notices", label: tMenu("notices") }]}
         current={notice.title}
-        eyebrow={menuLabel("notices")}
+        eyebrow={tMenu("notices")}
         title={notice.title}
       />
 

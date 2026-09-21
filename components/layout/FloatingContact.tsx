@@ -12,9 +12,10 @@
  *   아이콘 + aria-label 로만 이름을 갖는다(WCAG 1.4.3 은 로고·브랜드 그래픽을 대비 요구에서 제외).
  */
 
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 
-import { COMPANY, LEGAL_LABELS } from "@/lib/legal/disclosures";
+import { ledgerUi } from "@/lib/i18n/ledger-ui";
+import { COMPANY } from "@/lib/legal/disclosures";
 
 import styles from "./FloatingContact.module.css";
 
@@ -46,13 +47,15 @@ const TalkIcon = (
 );
 
 export default async function FloatingContact() {
-  const t = await getTranslations("layout");
+  const [t, locale] = await Promise.all([getTranslations("layout"), getLocale()]);
+  // 대표전화 라벨 — ko 는 원장 LEGAL_LABELS.contact.tel 그대로, en 은 en.json legal.labels (P2-6)
+  const telLabel = ledgerUi(locale).labels.contact.tel;
 
   const channels: Channel[] = [
     {
       key: "tel",
       href: COMPANY.tel.trim() === "" ? "" : `tel:${COMPANY.tel}`,
-      label: `${LEGAL_LABELS.contact.tel} ${COMPANY.tel}`,
+      label: `${telLabel} ${COMPANY.tel}`,
       className: styles.fbtnTel,
       icon: PhoneIcon,
       external: false,

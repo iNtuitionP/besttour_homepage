@@ -875,7 +875,8 @@ describe("6. 정적 규약", () => {
     for (const k of ["confirmed", "cancelled", "completed", "memoUpdated", "alreadyHandled", "failed"]) {
       expect(result[k], `admin.detail.result.${k}`).toBeTruthy();
     }
-    expect(JSON.parse(read("messages/en.json"))).toEqual({});
+    // en 카탈로그에는 관리자 문구가 없다(관리자 화면은 로케일 밖 · 한국어 전용). P2-6 에서 en.json 이 공개 네임스페이스로 채워졌다.
+    expect(JSON.parse(read("messages/en.json")).admin).toBeUndefined();
   });
 
   test("CSS — 색은 역할 토큰만(HEX·rgb 0). 간격 px 리터럴 0 (tests/layout.test.ts §4 와 같은 규약)", () => {

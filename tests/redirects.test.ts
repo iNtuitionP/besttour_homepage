@@ -364,11 +364,16 @@ describe("P7-2 — app/sitemap.ts", () => {
     else process.env.NEXT_PUBLIC_SITE_URL = SAVED;
   });
 
-  test("파일시스템의 정적 공개 라우트와 1:1 (제외: /quote/done · 동적 세그먼트)", async () => {
+  test("파일시스템의 정적 공개 라우트 × 로케일(ko·en)과 1:1 (제외: /quote/done · 동적 세그먼트)", async () => {
     const sitemap = (await import("@/app/sitemap")).default;
     const { paths, dynamic } = collectRoutes();
-    // 홈은 `https://bestour.co.kr/` — 끝 슬래시를 붙인 형태가 sitemap 관례다.
-    const expected = paths.filter((p) => !SITEMAP_EXCLUDED.has(p)).map((p) => `${FALLBACK_ORIGIN}${p}`);
+    const kept = paths.filter((p) => !SITEMAP_EXCLUDED.has(p));
+    // 홈은 `https://bestour.co.kr/` — 끝 슬래시를 붙인 형태가 sitemap 관례다. 영문 홈은 `/en`(as-needed prefix).
+    // P2-6: messages/en.json 이 채워져 `/en/*` 이 독립 문서가 됐다 — 영문 경로도 색인시킨다.
+    const expected = [
+      ...kept.map((p) => `${FALLBACK_ORIGIN}${p}`),
+      ...kept.map((p) => `${FALLBACK_ORIGIN}/en${p === "/" ? "" : p}`),
+    ];
 
     const urls = sitemap().map((e) => e.url);
     expect([...urls].sort()).toEqual([...expected].sort());
@@ -384,14 +389,27 @@ describe("P7-2 — app/sitemap.ts", () => {
     }
   });
 
-  test("전부 절대 URL 이고 로케일 prefix 가 없다", async () => {
+  test("전부 절대 URL 이고 ko 는 prefix 없음, en 은 `/en` 하나 — `/ko` prefix 는 없다 (as-needed)", async () => {
     const sitemap = (await import("@/app/sitemap")).default;
     const entries = sitemap();
     expect(entries.length).toBeGreaterThan(0);
+    let en = 0;
     for (const entry of entries) {
       expect(entry.url.startsWith(`${FALLBACK_ORIGIN}`), entry.url).toBe(true);
       const rest = entry.url.slice(FALLBACK_ORIGIN.length);
-      expect(rest).not.toMatch(/^\/(ko|en)(\/|$)/);
+      expect(rest).not.toMatch(/^\/ko(\/|$)/);
+      expect(rest).not.toMatch(/^\/en\/en(\/|$)/);
+      if (/^\/en(\/|$)/.test(rest)) en += 1;
+    }
+    expect(en * 2, "ko 와 en 이 같은 수다").toBe(entries.length);
+  });
+
+  test("항목마다 언어 대안(ko·en·x-default)을 싣는다 — 페이지의 hreflang 과 같은 헬퍼(pageAlternates)", async () => {
+    const sitemap = (await import("@/app/sitemap")).default;
+    for (const entry of sitemap()) {
+      const langs = entry.alternates?.languages ?? {};
+      expect(Object.keys(langs).sort(), entry.url).toEqual(["en", "ko", "x-default"]);
+      expect(Object.values(langs), entry.url).toContain(entry.url);
     }
   });
 

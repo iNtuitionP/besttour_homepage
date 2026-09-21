@@ -5,7 +5,7 @@
  * 차량이 0대면 섹션을 숨긴다.
  */
 import Image from "next/image";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 
 import { Link } from "@/i18n/navigation";
 import type { Vehicle } from "@/lib/types";
@@ -27,8 +27,10 @@ const FLEET_IMAGES: Readonly<Record<string, string>> = {
 
 export async function FleetSection({ vehicles }: { vehicles: readonly Vehicle[] }) {
   if (vehicles.length === 0) return null;
-  const t = await getTranslations("home.fleet");
+  const [t, locale] = await Promise.all([getTranslations("home.fleet"), getLocale()]);
   const lines = t.raw("lines") as Record<string, string | undefined>;
+  /** 차량 이름 — DB 행의 로케일 필드(vehicles.name_ko · name_en, 0001 시드). P2-6 */
+  const nameOf = (v: Vehicle) => (locale === "en" ? v.nameEn : v.nameKo);
 
   return (
     <section id="fleet" className={`${h.section} ${h.toneLav}`} aria-labelledby="fleet-h" data-section="fleet">
@@ -51,14 +53,14 @@ export async function FleetSection({ vehicles }: { vehicles: readonly Vehicle[] 
                     <Image
                       className={s.busImg}
                       src={image}
-                      alt={v.nameKo}
+                      alt={nameOf(v)}
                       fill
                       sizes="(min-width: 1024px) 33vw, (min-width: 560px) 50vw, 100vw"
                     />
                   ) : null}
                 </div>
                 <div className={s.busBody}>
-                  <h3 className={s.busName}>{v.nameKo}</h3>
+                  <h3 className={s.busName}>{nameOf(v)}</h3>
                   {line ? <p className={s.busSpec}>{line}</p> : null}
                   <dl className={s.busMeta}>
                     <div>
