@@ -24,6 +24,7 @@ select version, name from supabase_migrations.schema_migrations order by version
 **⑤ 0020 은 코드 배포와 짝이다** — 0020 절 「배포 순서」. **적용 → 배포** 순서를 어기면 관리자 화면의 저장이 전부 실패한다.
 
 ### 🔴 적용 경로 — `supabase db push` 하나 (P5-15 R6 · 컨트롤러 결정 2026-09-17)
+- 🔴 **2026-09-21 부터: 시험 프로젝트(`gjnieoojgmhulkohdcnl`)에 먼저, 운영에 나중.** 시험 프로젝트가 생겼다(`docs/ops/environments.md`). 새 마이그레이션은 CI green 뒤 **시험 프로젝트에 `db push --db-url` 로 먼저** 적용하고, 자기검증 통과·프리뷰 정상을 본 뒤 운영에 아래 절차대로 적용한다. 저장소의 `supabase link` 는 운영을 가리키므로 **시험 프로젝트로 다시 link 하지 않는다.**
 - **0012~0020 의 원격 적용 경로는 `supabase db push` 하나다.** CLI 는 마이그레이션 파일 하나를 한 트랜잭션으로 돌리고, 성공한 버전을 `supabase_migrations.schema_migrations` 에 기록한다.
 - **SQL Editor 는 읽기 확인 전용이다** — 적용 전·후 행렬, 이력 조회처럼 카탈로그를 읽는 질의만 붙인다. **마이그레이션 본문을 SQL Editor 에 붙여 적용하지 않는다**: 그러면 이력이 남지 않아, 다음 `supabase db push` 가 **같은 마이그레이션을 다시 돌린다**(두 번 도는 것을 전제로 검토한 파일이 아니다).
 - **`psql -f` 도 쓰지 않는다**(리뷰 K1 — 파일이 원자적이지 않다. 이력도 남지 않는다).
