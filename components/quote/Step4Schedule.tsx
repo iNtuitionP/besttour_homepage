@@ -71,6 +71,11 @@ function Stepper({
   );
 }
 
+/** 스테퍼 단위 라벨의 수(ICU plural 의 count) — 입력칸의 현재 값. 비었거나 숫자가 아니면 0(영문 복수형 "buses"). */
+function countOf(value: string): number {
+  return /^\d+$/.test(value) ? Number(value) : 0;
+}
+
 export function Step4Schedule({
   state,
   dispatch,
@@ -99,7 +104,9 @@ export function Step4Schedule({
     capNote = <p className={s.capNote}>{t("capEmpty")}</p>;
   } else {
     const total = vehicle.capacity * buses;
-    const vars = { vehicle: vehicle.name, buses: String(buses), total: String(total), pax: String(Number.isNaN(pax) ? 0 : pax) };
+    // 숫자로 넘긴다 — en 은 ICU plural(`{buses, plural, one {# bus} …}`)로 단·복수를 고른다(P2-6b "1 buses" 수정).
+    // ko 의 단순 치환 `{buses}` 는 숫자를 String() 그대로 내므로 한국어 렌더 결과는 같다(tests/header-locale.test.ts §4).
+    const vars = { vehicle: vehicle.name, buses, total, pax: Number.isNaN(pax) ? 0 : pax };
     if (!Number.isNaN(pax) && pax > total) {
       capNote = (
         <p className={`${s.capNote} ${s.capWarn}`} role="status">
@@ -243,7 +250,7 @@ export function Step4Schedule({
             value={state.busCount}
             min={BUS_COUNT_RANGE.min}
             max={BUS_COUNT_RANGE.max}
-            unit={t("unitBus")}
+            unit={t("unitBus", { count: countOf(state.busCount) })}
             minusLabel={t("busMinus")}
             plusLabel={t("busPlus")}
             onChange={(v) => dispatch({ type: "set", field: "busCount", value: v })}
@@ -262,7 +269,7 @@ export function Step4Schedule({
             value={state.passengers}
             min={PASSENGERS_RANGE.min}
             max={PASSENGERS_RANGE.max}
-            unit={t("unitPax")}
+            unit={t("unitPax", { count: countOf(state.passengers) })}
             minusLabel={t("paxMinus")}
             plusLabel={t("paxPlus")}
             onChange={(v) => dispatch({ type: "set", field: "passengers", value: v })}

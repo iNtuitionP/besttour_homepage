@@ -139,6 +139,46 @@ export function findUnmarkedHangul(html: string, allowTestIds: readonly string[]
   return hits;
 }
 
+export interface FoundElement {
+  tag: string;
+  attrs: Map<string, string>;
+  /** 가까운 조상부터 */
+  ancestors: Array<{ tag: string; attrs: Map<string, string> }>;
+}
+
+/**
+ * 조건에 맞는 요소를 조상 사슬과 함께 돌려준다 (P2-6b — 렌더된 DOM 구조 단언용).
+ * findUnmarkedHangul 과 같은 토크나이저 규칙(void·self-closing·script/style 건너뛰기·느슨한 닫기)을 쓴다.
+ */
+export function findElements(html: string, match: (tag: string, attrs: Map<string, string>) => boolean): FoundElement[] {
+  const stack: Array<{ tag: string; attrs: Map<string, string> }> = [];
+  const out: FoundElement[] = [];
+  const token = /<!--[\s\S]*?-->|<![^>]*>|<\/([a-zA-Z][\w:-]*)\s*>|<([a-zA-Z][\w:-]*)((?:\s+[^\s"'>/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>]+))?)*)\s*(\/?)>|[^<]+|</g;
+  let m: RegExpExecArray | null;
+  while ((m = token.exec(html)) !== null) {
+    const [whole, closeTag, openTag, rawAttrs, selfClose] = m;
+    if (whole.startsWith("<!")) continue;
+    if (closeTag !== undefined) {
+      const name = closeTag.toLowerCase();
+      const at = stack.map((f) => f.tag).lastIndexOf(name);
+      if (at >= 0) stack.length = at;
+      continue;
+    }
+    if (openTag === undefined) continue;
+    const name = openTag.toLowerCase();
+    const attrs = parseAttrs(rawAttrs ?? "");
+    if (match(name, attrs)) out.push({ tag: name, attrs, ancestors: [...stack].reverse() });
+    if (RAW_TEXT.has(name)) {
+      const end = html.toLowerCase().indexOf(`</${name}`, token.lastIndex);
+      token.lastIndex = end === -1 ? html.length : end;
+      continue;
+    }
+    if (VOID.has(name) || selfClose === "/") continue;
+    stack.push({ tag: name, attrs });
+  }
+  return out;
+}
+
 /** `<title>` 의 텍스트(없으면 null). */
 export function documentTitle(html: string): string | null {
   const m = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);

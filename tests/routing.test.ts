@@ -16,6 +16,13 @@ describe("i18n/routing.ts — 라우트 골격 계약", () => {
     expect(routing.defaultLocale).toBe("ko");
     expect(routing.localePrefix).toBe("as-needed");
   });
+
+  test("로케일은 경로만 정한다 — localeDetection·localeCookie 끔 (P2-6b · 동작은 tests/header-locale.test.ts §2)", async () => {
+    const { routing } = await import("@/i18n/routing");
+
+    expect(routing.localeDetection).toBe(false);
+    expect(routing.localeCookie).toBe(false);
+  });
 });
 
 describe("메시지 폴백 — en 은 공개 네임스페이스를 갖고, 없는 네임스페이스(admin)는 ko 로 떨어진다", () => {

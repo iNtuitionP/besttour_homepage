@@ -18,6 +18,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parse as parseIcu, TYPE, type MessageFormatElement } from "@formatjs/icu-messageformat-parser";
 import { describe, expect, test } from "vitest";
 
 import { loadMessages } from "@/i18n/messages";
@@ -34,7 +35,7 @@ import {
   VERBATIM,
 } from "@/lib/legal/disclosures";
 
-import { documentTitle, findUnmarkedHangul, HANGUL, metaDescription } from "./helpers/hangul-html";
+import { documentTitle, findElements, findUnmarkedHangul, HANGUL, metaDescription } from "./helpers/hangul-html";
 import { stripComments } from "./helpers/strip-comments";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -74,8 +75,26 @@ function leafMap(node: unknown, prefix = "", out = new Map<string, unknown>()): 
   return out;
 }
 
-/** ICU 인자 이름(`{name}` · `{name, …}`) */
-const icuArgs = (s: string) => [...s.matchAll(/\{\s*([A-Za-z0-9_]+)\s*[,}]/g)].map((m) => m[1]).sort();
+/**
+ * ICU 인자 이름 집합 — **실제 ICU 파서**(next-intl 이 쓰는 @formatjs/icu-messageformat-parser)의 AST 에서 뽑는다 (P2-6b).
+ * 예전의 정규식(`{name}`·`{name, …}` 찾기)은 plural 가지의 본문(`one {bus}`)을 인자로 잘못 읽었다.
+ * 이름의 **집합**을 비교한다 — plural 가지마다 같은 인자가 다시 나오는 것은 정상이다(`{n, plural, one {# … {vehicle}} …}`).
+ * 인자 종류(plural 인지 단순 치환인지)는 비교하지 않는다: ko 는 복수형이 없어 `{buses}` 로 두고 en 만 plural 을 쓴다.
+ */
+function icuArgs(s: string): string[] {
+  const names = new Set<string>();
+  const visit = (els: MessageFormatElement[]) => {
+    for (const el of els) {
+      // 값을 받는 요소만 — literal(글자)·pound(#)·tag(리치 태그 이름)는 인자가 아니다
+      const takesValue = [TYPE.argument, TYPE.number, TYPE.date, TYPE.time, TYPE.select, TYPE.plural].includes(el.type);
+      if (takesValue && "value" in el && typeof el.value === "string") names.add(el.value);
+      if (el.type === TYPE.plural || el.type === TYPE.select) for (const o of Object.values(el.options)) visit(o.value);
+      if (el.type === TYPE.tag) visit(el.children);
+    }
+  };
+  visit(parseIcu(s, { ignoreTag: false }));
+  return [...names].sort();
+}
 /** 리치 텍스트 태그 이름(`<b>` · `<em>` · `<ac>`) — 여는 태그와 닫는 태그 수까지 */
 const richTags = (s: string) => [...s.matchAll(/<(\/?)([A-Za-z][A-Za-z0-9]*)>/g)].map((m) => `${m[1]}${m[2]}`).sort();
 
@@ -580,5 +599,62 @@ describe.runIf(Boolean(EN_BASE))("8-b. 렌더 실측 — /en (GET)", { timeout: 
     const { html } = await fetchHtml("/en");
     for (const lang of ["ko", "en", "x-default"]) expect(html, lang).toMatch(new RegExp(`<link[^>]*hrefLang="${lang}"`, "i"));
     expect(html).toMatch(/<link[^>]*rel="canonical"[^>]*href="[^"]*\/en"/);
+  });
+
+  // ── P2-6b ────────────────────────────────────────────────────────────────
+  /** [현재 경로, 전환 링크가 가야 할 경로] — 같은 경로의 다른 로케일(as-needed: ko 는 접두사 없음) */
+  const SWITCH_CASES: ReadonlyArray<readonly [string, string, string]> = [
+    ["/", "/en", "en"],
+    ["/fleet", "/en/fleet", "en"],
+    ["/reservation/check", "/en/reservation/check", "en"],
+    ["/notices", "/en/notices", "en"],
+    ["/en", "/", "ko"],
+    ["/en/fleet", "/fleet", "ko"],
+    ["/en/reservation/check", "/reservation/check", "ko"],
+    ["/en/notices", "/notices", "ko"],
+  ];
+
+  test.for(SWITCH_CASES.map((c) => [c[0], c] as const))("%s — 언어 전환 링크 2개(헤더·패널)가 같은 경로의 다른 로케일로 간다", async ([, c]) => {
+    const [route, target, lang] = c;
+    const { html } = await fetchHtml(route);
+    const links = findElements(html, (tag, a) => tag === "a" && a.has("data-locale-switch"));
+    expect(links.length, `${route} 전환 링크 수`).toBe(2);
+    for (const l of links) {
+      expect(l.attrs.get("href"), route).toBe(target);
+      expect(l.attrs.get("hreflang"), route).toBe(lang);
+      expect(l.attrs.get("lang"), route).toBe(lang);
+    }
+  });
+
+  test.for([["/"], ["/en"], ["/en/fleet"]] as const)("%s — 모바일 패널(#site-mobile-menu)은 헤더 줄 밖, header 의 직계 자식이다", async ([route]) => {
+    const { html } = await fetchHtml(route);
+    const [panel] = findElements(html, (_t, a) => a.get("id") === "site-mobile-menu");
+    expect(panel, `${route} 에 패널이 없다`).toBeDefined();
+    expect(panel.attrs.has("hidden"), "닫힌 상태로 시작한다").toBe(true);
+    expect(panel.ancestors[0]?.tag, "패널의 부모는 <header>").toBe("header");
+    expect(panel.ancestors.some((a) => /__inner\b/.test(a.attrs.get("class") ?? "")), "패널이 헤더 줄(.inner) 안에 있다").toBe(false);
+  });
+
+  test("로케일 쿠키가 있어도 `/` 는 리다이렉트되지 않고, `/en` 은 쿠키를 심지 않는다", async () => {
+    const root = await fetch(`${EN_BASE}/`, { redirect: "manual", headers: { cookie: "NEXT_LOCALE=en", "accept-language": "en-US,en;q=0.9" } });
+    expect(root.status).toBe(200);
+    await root.text();
+    const enPage = await fetch(`${EN_BASE}/en`, { redirect: "manual" });
+    expect(enPage.headers.get("set-cookie") ?? "").not.toMatch(/NEXT_LOCALE/);
+    await enPage.text();
+  });
+});
+
+describe("8-c. icuArgs — 실제 ICU 파서로 인자 이름만 뽑는다 (P2-6b)", () => {
+  test("plural 가지 본문의 낱말을 인자로 읽지 않는다", () => {
+    expect(icuArgs("{count, plural, one {bus} other {buses}}")).toEqual(["count"]);
+    expect(icuArgs("{count, plural, other {대}}")).toEqual(["count"]);
+  });
+  test("가지 안의 인자와 단순 인자를 함께 모은다 · 같은 이름은 한 번", () => {
+    expect(icuArgs("{buses, plural, one {# bus ({vehicle})} other {# buses ({vehicle})}} · {total}")).toEqual(["buses", "total", "vehicle"]);
+    expect(icuArgs("{vehicle} {buses}대 · 최대 {total}명")).toEqual(["buses", "total", "vehicle"]);
+  });
+  test("리치 태그 안의 인자도 본다", () => {
+    expect(icuArgs("Up to <b>{n} people</b>")).toEqual(["n"]);
   });
 });

@@ -498,7 +498,8 @@ describe("5. semantic.css — 역할 토큰 계약", () => {
 // =============================================================================
 // 6. 서버 컴포넌트 경계 — 'use client' 는 토글/경로 인지 컴포넌트만
 // =============================================================================
-const CLIENT_ALLOWED = ["components/layout/Nav.tsx", "components/layout/MobileMenu.tsx"];
+// P2-6b: LocaleSwitch — 같은 경로의 다른 로케일로 가려면 현재 경로(usePathname)가 필요하다. 원장 import 0 은 아래 단언이 함께 본다.
+const CLIENT_ALLOWED = ["components/layout/Nav.tsx", "components/layout/MobileMenu.tsx", "components/layout/LocaleSwitch.tsx"];
 
 describe("6. 'use client' 경계", () => {
   test("Header.tsx · Footer.tsx · FloatingContact.tsx 최상위에 'use client' 가 없다", () => {

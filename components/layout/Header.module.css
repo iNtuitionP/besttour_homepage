@@ -162,6 +162,33 @@
   }
 }
 
+/* ── 언어 전환 (P2-6b) ─────────────────────────────────────────────────────
+ * 작은 텍스트 링크 하나. 데스크톱(≥1280px)은 줄 오른쪽 끝, 그 아래 폭은 모바일 패널 맨 위(.panelLocale).
+ * 1280px 미만의 줄에 두지 않는 이유: 375px 줄은 로고 132 + 전화 + 햄버거 44 로 이미 차 있다(가로 스크롤이 생긴다). */
+.localeDesktop {
+  display: none;
+  flex: 0 0 auto;
+}
+@media (min-width: 1280px) {
+  .localeDesktop {
+    display: block;
+  }
+}
+
+.localeLink {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-link);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+.localeLink:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}
+
 /* ── 햄버거 ────────────────────────────────────────────────────────────── */
 .burger {
   display: grid;
@@ -194,7 +221,9 @@
   stroke-linecap: round;
 }
 
-/* ── 모바일 패널 ───────────────────────────────────────────────────────── */
+/* ── 모바일 패널 ───────────────────────────────────────────────────────────
+ * 헤더 줄(.inner)의 **형제**다(MobileMenu) — 헤더 전체 폭으로 줄 바로 아래에 펼쳐진다(목업 .drawer).
+ * 예전에는 줄 안의 flex 항목이라 폭 없이 오른쪽 띠로 렌더됐다(P2-6b). 여기 폭·위치 규칙을 더하지 않는다 — 구조가 폭을 정한다. */
 .panel {
   border-top: 1px solid var(--border-decorative);
   background: var(--bg-surface);
@@ -210,6 +239,40 @@
   .panel {
     display: none;
   }
+}
+
+/* ── 영문 화면은 데스크톱에서도 햄버거 패널 (P2-6b 실측) ───────────────────────
+ * 영문 메뉴 10개는 라벨이 길어 한 줄에 901px 가 든다(국문 765px). 헤더 줄은 --layout-maxw(1280px)에서 더 넓어지지 않으므로
+ * 로고·전화·언어 전환을 뺀 메뉴 칸이 어느 폭에서도 831px 를 넘지 못한다 — 1280·1440px 실측 모두 마지막 항목이 대표전화 밑으로 겹쳤다
+ * (언어 전환이 없던 P2-6 에서도 6px 모자랐다). 항목을 지우거나 라벨을 줄이지 않고(삭제 금지 · 번역 유지) 영문만 패널을 쓴다.
+ * 국문 화면의 분기점(1280px)은 그대로다. 언어 전환은 데스크톱 줄 오른쪽에 남는다. <html lang> 은 로케일 레이아웃이 정한다. */
+@media (min-width: 1280px) {
+  :global(html[lang="en"]) .nav {
+    display: none;
+  }
+  :global(html[lang="en"]) .burger {
+    display: grid;
+  }
+  :global(html[lang="en"]) .panel:not([hidden]) {
+    display: block;
+  }
+  /* 넓은 화면에서 패널 목록이 헤더 줄의 내용 폭과 같은 선에 서게 한다 */
+  :global(html[lang="en"]) .panel > * {
+    max-width: calc(var(--layout-maxw) - 2 * var(--space-page-x));
+    margin-inline: auto;
+  }
+  /* 데스크톱에서는 줄 오른쪽에 언어 전환이 이미 있다 — 패널 맨 위의 같은 링크는 겹치므로 숨긴다 */
+  :global(html[lang="en"]) .panelLocale {
+    display: none;
+  }
+}
+
+/* 패널 맨 위 — 언어 전환 링크 한 줄 */
+.panelLocale {
+  margin: 0;
+  padding: var(--space-stack-xs) 0;
+  border-bottom: 1px solid var(--border-decorative);
+  text-align: right;
 }
 
 .panelList {
