@@ -20,7 +20,7 @@
  *   - 인자는 폼이 아니라 **직렬화 가능한 객체**다. 이 탭의 화면은 전부 클라이언트 컴포넌트고(업로더가 JS 없이는
  *     동작하지 않는다), 업로드 기록은 폼 제출이 아니라 업로드 루프의 결과다. 신뢰하지 않는 값인 것은 FormData 와 같아서
  *     전부 zod 를 지난다(lib/admin/galleryInput.ts).
- *   - 서비스 롤을 쓰지 않는다(ADR-2). 0009 의 gallery·gallery_albums 정책과 0011 의 storage 정책이 DB 에서 한 번 더 막는다.
+ *   - 서비스 롤을 쓰지 않는다(ADR-2). 0020 의 definer 함수 첫 문장 `is_admin()` 가드(표 행)와 0011 의 storage 정책(파일)이 DB 에서 한 번 더 막는다.
  *   - 예외는 여기서 끝난다(단 requireAdmin() 의 redirect 는 throw 로 전파돼야 하므로 게이트는 try 밖이다).
  *   - 로그에 남기는 것은 id 와 결과 코드뿐이다. 경로·캡션은 싣지 않는다.
  *   - **사진 설명·앨범 이름은 저장 전에 카피 목록과 대조한다**(P6-12 · known-defects D4). 걸리면 저장하지 않고 확인을 요청하고,
@@ -109,7 +109,7 @@ function invalidate(): void {
   });
 }
 
-/** 쓰기 한 번 → 결과 매핑 → 바뀌었으면 무효화. 0행 = 정책에 막혔거나 그런 행이 없다. */
+/** 쓰기 한 번 → 결과 매핑 → 바뀌었으면 무효화. 0행 = 그런 행이 없거나 0020 함수의 관리자 가드에 막혔다. */
 async function apply(
   action: GalleryAction,
   id: number | null,

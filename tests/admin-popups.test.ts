@@ -2,9 +2,10 @@
  * P5-4 Part 2 — 관리자 팝업 관리 탭 (플랜 v4 P5-4 · ADR-2·ADR-3·ADR-4 · CLAUDE.md §3·§7).
  *
  * 이 태스크가 지키는 것:
- *   1. **쓰기에도 definer 함수가 필요 없다.** popups 는 0009 가 `for all to authenticated using (is_admin()) with check (is_admin())`
- *      를 이미 걸었고 컬럼이 전부 콘텐츠다(개인정보·보유기간 없음). 예약처럼 원자적 전이·통지가 얽히지 않으므로
- *      SSR 세션 클라이언트 + RLS 로 곧장 CRUD 한다 — 마이그레이션 0건.
+ *   1. ~~쓰기에도 definer 함수가 필요 없다 (0009 정책만으로 CRUD)~~ — **P5-16(0020)이 뒤집었다.** 세션 롤이 표에
+ *      UPDATE·DELETE 를 가지면 로그인만 한 사람이 표를 ACCESS EXCLUSIVE 로 잠글 수 있어서(known-defects D10),
+ *      0020 이 `authenticated` 의 표 쓰기를 회수하고 쓰기를 `admin_*_popup*` definer 함수 4개로 옮겼다.
+ *      읽기는 그대로 표에서(0020 `popups_admin_select`). SSR 세션 클라이언트 그대로 — 서비스 롤 0(ADR-2).
  *   2. **기간은 KST 벽시계 날짜다.** 폼은 `YYYY-MM-DD` 를 받고 서버는 그 문자열을 그대로 `date` 컬럼에 넣는다.
  *      노출 판정은 0004 의 정책(Asia/Seoul)과 lib/queries/popups.ts `isActiveOn` 이 한다 — 그 파일은 건드리지 않는다.
  *   3. **액션의 첫 문장은 게이트다.** scripts/check-admin-gate.sh 가 구조로 강제하고, 여기서는 거동으로 확인한다
@@ -17,7 +18,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import { expectRlsInsertDenied } from "./helpers/expect-denied";
+import { expectRaisedDenied, expectTablePrivilegeDenied } from "./helpers/expect-denied";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
 
 vi.mock("server-only", () => ({}));
@@ -40,6 +41,7 @@ import {
   ADMIN_POPUPS_PATH,
   POPUP_ADMIN_COLUMNS,
   POPUP_ADMIN_SELECT,
+  POPUP_RPC,
   POPUP_TABLE,
   deletePopupRow,
   getAdminPopup,
@@ -116,14 +118,21 @@ const validForm = (over: Record<string, string> = {}): FormData =>
 interface Chain {
   [method: string]: ReturnType<typeof vi.fn>;
 }
-function dbStub(result: { data: unknown; error: unknown }): { client: { from: ReturnType<typeof vi.fn> }; chain: Chain; from: ReturnType<typeof vi.fn> } {
+function dbStub(result: { data: unknown; error: unknown }): {
+  client: { from: ReturnType<typeof vi.fn>; rpc: ReturnType<typeof vi.fn> };
+  chain: Chain;
+  from: ReturnType<typeof vi.fn>;
+  rpc: ReturnType<typeof vi.fn>;
+} {
   const chain: Record<string, unknown> = {};
   for (const m of ["select", "order", "limit", "eq", "insert", "update", "delete", "maybeSingle", "overrideTypes"]) {
     chain[m] = vi.fn(() => chain);
   }
   chain.then = (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) => Promise.resolve(result).then(resolve, reject);
   const from = vi.fn(() => chain);
-  return { client: { from }, chain: chain as Chain, from };
+  // 0020(P5-16) 뒤 쓰기는 definer 함수 RPC 다 — 표 체인(from)은 읽기만 탄다.
+  const rpc = vi.fn(async () => result);
+  return { client: { from, rpc }, chain: chain as Chain, from, rpc };
 }
 
 const ROW = {
@@ -266,37 +275,54 @@ describe("2. 쿼리 계층", () => {
     await expect(listAdminPopups(client as never)).rejects.toThrow(/42501/);
   });
 
-  test("insert — 컬럼 이름으로 바꿔 넣고, 돌아온 행이 없으면 changed=false (RLS 에 막힌 경우)", async () => {
+  test("insert — 0020 의 admin_create_popup 에 화이트리스트 인자만 넘기고, 돌아온 행이 없으면 changed=false", async () => {
     const ok = dbStub({ data: [{ id: 9 }], error: null });
     expect(await insertPopup(VALUES, ok.client as never)).toBe(true);
-    expect(ok.chain.insert).toHaveBeenCalledWith({
-      title: VALUES.title,
-      body: VALUES.body,
-      image_path: VALUES.imagePath,
-      starts_at: VALUES.startsAt,
-      ends_at: VALUES.endsAt,
-      active: VALUES.active,
-    });
+    expect(POPUP_RPC.create).toBe("admin_create_popup");
+    // 인자 = 컬럼 화이트리스트(0020 §2). created_at 은 DB default — 넘기지 않는다.
+    expect(ok.rpc.mock.calls).toEqual([
+      [
+        POPUP_RPC.create,
+        {
+          p_title: VALUES.title,
+          p_body: VALUES.body,
+          p_image_path: VALUES.imagePath,
+          p_starts_at: VALUES.startsAt,
+          p_ends_at: VALUES.endsAt,
+          p_active: VALUES.active,
+        },
+      ],
+    ]);
+    expect(ok.from, "표에 직접 쓴다 — 0020 뒤로 GRANT 가 없다").not.toHaveBeenCalled();
 
     const blocked = dbStub({ data: [], error: null });
     expect(await insertPopup(VALUES, blocked.client as never)).toBe(false);
   });
 
-  test("update · delete · 활성 토글 — id 로 거르고 바뀐 행이 있어야 true", async () => {
+  test("update · delete · 활성 토글 — id 를 인자로 넘기고 바뀐 행이 있어야 true", async () => {
     const up = dbStub({ data: [{ id: 7 }], error: null });
     expect(await updatePopupRow(7, VALUES, up.client as never)).toBe(true);
-    expect(up.chain.eq).toHaveBeenCalledWith("id", 7);
+    expect(up.rpc).toHaveBeenCalledWith("admin_update_popup", expect.objectContaining({ p_id: 7, p_starts_at: VALUES.startsAt, p_ends_at: VALUES.endsAt }));
 
     const del = dbStub({ data: [{ id: 7 }], error: null });
     expect(await deletePopupRow(7, del.client as never)).toBe(true);
-    expect(del.chain.delete).toHaveBeenCalled();
+    expect(del.rpc.mock.calls).toEqual([["admin_delete_popup", { p_id: 7 }]]);
 
     const toggle = dbStub({ data: [{ id: 7 }], error: null });
     expect(await setPopupActive(7, false, toggle.client as never)).toBe(true);
-    expect(toggle.chain.update).toHaveBeenCalledWith({ active: false });
+    expect(toggle.rpc.mock.calls).toEqual([["admin_set_popup_active", { p_id: 7, p_active: false }]]);
+
+    for (const s of [up, del, toggle]) expect(s.from).not.toHaveBeenCalled();
 
     const gone = dbStub({ data: [], error: null });
     expect(await deletePopupRow(7, gone.client as never)).toBe(false);
+  });
+
+  test("가드 거부(명단 밖 세션)는 changed=false · EXECUTE 거부와 그 밖의 오류는 던진다 (lib/admin/adminRpc.ts)", async () => {
+    const guard = dbStub({ data: null, error: { code: "42501", message: "admin_delete_popup: 관리자 명단에 없는 호출자다" } });
+    expect(await deletePopupRow(7, guard.client as never)).toBe(false);
+    const exec = dbStub({ data: null, error: { code: "42501", message: "permission denied for function admin_delete_popup" } });
+    await expect(deletePopupRow(7, exec.client as never)).rejects.toThrow(/42501.*permission denied for function/);
   });
 });
 
@@ -310,10 +336,11 @@ describe("3. 서버액션", () => {
   });
 
   test("등록 — requireAdmin 이 DB 보다 먼저 돈다", async () => {
-    const { client, from } = dbStub({ data: [{ id: 9 }], error: null });
+    const { client, rpc } = dbStub({ data: [{ id: 9 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
     await createPopup(validForm());
-    expect(vi.mocked(requireAdmin).mock.invocationCallOrder[0]).toBeLessThan(from.mock.invocationCallOrder[0]);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(requireAdmin).mock.invocationCallOrder[0]).toBeLessThan(rpc.mock.invocationCallOrder[0]);
   });
 
   test("등록 — 성공하면 태그와 경로를 무효화한다", async () => {
@@ -341,27 +368,31 @@ describe("3. 서버액션", () => {
   });
 
   test("등록 — 검증에 걸리면 DB 를 부르지 않는다", async () => {
-    const { client, from } = dbStub({ data: [{ id: 9 }], error: null });
+    const { client, from, rpc } = dbStub({ data: [{ id: 9 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
 
     const result = await createPopup(validForm({ [POPUP_FIELDS.title]: "" }));
     expect(result.ok).toBe(false);
     expect(result.code).toBe("validation");
+    // 0020 뒤 쓰기는 rpc 다 — from 만 보면 이 단언은 공허하게 통과한다
     expect(from).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
     expect(vi.mocked(revalidate)).not.toHaveBeenCalled();
     expect(vi.mocked(revalidatePath)).not.toHaveBeenCalled();
   });
 
   test("수정 — id 가 함께 와야 한다. 없거나 형식이 틀리면 DB 를 부르지 않는다", async () => {
-    const { client, from } = dbStub({ data: [{ id: 7 }], error: null });
+    const { client, from, rpc } = dbStub({ data: [{ id: 7 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
 
     expect((await updatePopup(validForm())).code).toBe("validation");
     expect((await updatePopup(validForm({ [POPUP_FIELDS.id]: "abc" }))).code).toBe("validation");
     expect(from).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
 
     const result = await updatePopup(validForm({ [POPUP_FIELDS.id]: "7" }));
     expect(result).toEqual({ ok: true, changed: true, code: "updated" });
+    expect(rpc).toHaveBeenCalledWith("admin_update_popup", expect.objectContaining({ p_id: 7 }));
     expect(vi.mocked(revalidate).mock.calls.map((c) => c[0])).toEqual([QUERY_TAGS.popups]);
   });
 
@@ -378,17 +409,19 @@ describe("3. 서버액션", () => {
     const del = dbStub({ data: [{ id: 7 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(del.client as never);
     expect(await deletePopup(7)).toEqual({ ok: true, changed: true, code: "deleted" });
-    expect(del.chain.delete).toHaveBeenCalled();
+    expect(del.rpc.mock.calls).toEqual([["admin_delete_popup", { p_id: 7 }]]);
 
     vi.clearAllMocks();
     const on = dbStub({ data: [{ id: 7 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(on.client as never);
     expect(await togglePopupActive(7, true)).toEqual({ ok: true, changed: true, code: "activated" });
+    expect(on.rpc.mock.calls).toEqual([["admin_set_popup_active", { p_id: 7, p_active: true }]]);
 
     vi.clearAllMocks();
     const off = dbStub({ data: [{ id: 7 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(off.client as never);
     expect(await togglePopupActive(7, false)).toEqual({ ok: true, changed: true, code: "deactivated" });
+    expect(off.rpc.mock.calls).toEqual([["admin_set_popup_active", { p_id: 7, p_active: false }]]);
 
     vi.clearAllMocks();
     const bad = dbStub({ data: [{ id: 7 }], error: null });
@@ -396,6 +429,7 @@ describe("3. 서버액션", () => {
     expect((await deletePopup(-1)).code).toBe("validation");
     expect((await togglePopupActive(0, true)).code).toBe("validation");
     expect(bad.from).not.toHaveBeenCalled();
+    expect(bad.rpc).not.toHaveBeenCalled();
   });
 
   test("DB 오류 — 예외를 밖으로 던지지 않고 failed 로 닫는다", async () => {
@@ -407,12 +441,13 @@ describe("3. 서버액션", () => {
   });
 
   test("requireAdmin 이 리다이렉트(throw)하면 DB 는 돌지 않는다", async () => {
-    const { client, from } = dbStub({ data: [{ id: 9 }], error: null });
+    const { client, from, rpc } = dbStub({ data: [{ id: 9 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
     vi.mocked(requireAdmin).mockRejectedValue(new Error("NEXT_REDIRECT"));
 
     await expect(createPopup(validForm())).rejects.toThrow("NEXT_REDIRECT");
     expect(from).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
   });
 });
 
@@ -435,6 +470,15 @@ describe("4. 정적 규약", () => {
     for (const name of ["createPopup", "updatePopup", "deletePopup", "togglePopupActive"]) {
       const body = new RegExp(`export async function ${name}\\([^)]*\\)[^{]*\\{\\s*await requireAdmin\\(\\);`);
       expect(codeOf(ACTION), `${name} 의 첫 문장이 게이트가 아니다`).toMatch(body);
+    }
+  });
+
+  test("표에 직접 쓰지 않는다 — 쓰기는 0020 의 definer 함수(rpc)뿐이다 (known-defects D10)", () => {
+    const code = codeOf(LIB_DB);
+    expect(code, "lib/admin/popups.ts 가 표에 직접 쓴다 — 0020 뒤로 GRANT 가 없어 42501 로 실패한다").not.toMatch(/\.(insert|update|delete|upsert)\(/);
+    expect(code).toMatch(/\.rpc\(/);
+    for (const fn of Object.values(POPUP_RPC)) {
+      expect(read("supabase/migrations/0020_admin_content_writes.sql"), `${fn} 이 0020 에 없다`).toContain(`create or replace function ${fn}(`);
     }
   });
 
@@ -615,39 +659,64 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("5. DB — popups RLS 실�
     expect(add.status, JSON.stringify(add.body).slice(0, 300)).toBeLessThan(300);
   });
 
-  test("관리자 세션 — insert · update · delete 가 전부 통한다 (definer 함수 없이 정책만으로)", async () => {
-    const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
-    const ins = await asUser(
-      adminToken,
-      "POST",
-      "/popups",
-      { title: TITLE, body: "P5-4", image_path: null, starts_at: today, ends_at: today, active: true },
-      "return=representation",
-    );
-    expect(ins.status, JSON.stringify(ins.body).slice(0, 300)).toBe(201);
-    popupId = (ins.body as { id: number }[])[0].id;
-
-    const up = await asUser(adminToken, "PATCH", `/popups?id=eq.${popupId}`, { title: `${TITLE} edited` }, "return=representation");
-    expect(up.status, JSON.stringify(up.body).slice(0, 300)).toBeLessThan(300);
-    expect((up.body as { title: string }[])[0].title).toBe(`${TITLE} edited`);
-
-    // 비활성으로 내렸다가 되살린다 — 관리자는 비활성 행도 보여야 한다(공개 정책은 active 만 본다)
-    await asUser(adminToken, "PATCH", `/popups?id=eq.${popupId}`, { active: false });
-    const hidden = await asUser(adminToken, "GET", `/popups?select=id,active&id=eq.${popupId}`);
-    expect((hidden.body as { active: boolean }[])[0].active, "관리자가 비활성 행을 못 보면 되살릴 수 없다").toBe(false);
-    await asUser(adminToken, "PATCH", `/popups?id=eq.${popupId}`, { active: true });
+  /** 0020 뒤 관리자 쓰기의 유일한 경로 — lib/admin/popups.ts 가 부르는 것과 같은 definer 함수 RPC. */
+  const rpcAs = (token: string, fn: string, args: Record<string, unknown>) => asUser(token, "POST", `/rpc/${fn}`, args);
+  const kstToday = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+  const argsOf = (over: Record<string, unknown> = {}) => ({
+    p_title: TITLE,
+    p_body: "P5-4",
+    p_image_path: null,
+    p_starts_at: kstToday(),
+    p_ends_at: kstToday(),
+    p_active: true,
+    ...over,
   });
 
-  test("명단에 없는 로그인 세션 — insert·update·delete 전부 거부된다", async () => {
-    const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
-    const ins = await asUser(plainToken, "POST", "/popups", { title: `${TITLE} intruder`, body: "x", starts_at: today, ends_at: today });
-    // P6-13 실측: 403 · 42501 · `new row violates row-level security policy for table "popups"` — 0009 popups_admin_all 의 with check.
-    expectRlsInsertDenied(ins, "popups", "명단 밖 세션의 popups INSERT");
+  test("관리자 세션 — 만들기 · 고치기 · 내리기 · 되살리기가 통하고 비활성 행도 보인다 (0020 definer 함수)", async () => {
+    const ins = await rpcAs(adminToken, POPUP_RPC.create, argsOf());
+    expect(ins.status, JSON.stringify(ins.body).slice(0, 300)).toBe(200);
+    const made = ins.body as { id: number }[];
+    expect(made.length, "만들기가 새 id 를 돌려주지 않았다").toBe(1);
+    popupId = made[0].id;
 
-    await asUser(plainToken, "PATCH", `/popups?id=eq.${popupId}`, { title: "hijacked" });
-    await asUser(plainToken, "DELETE", `/popups?id=eq.${popupId}`);
-    const still = await rest("GET", `/popups?select=title&id=eq.${popupId}`);
-    expect((still.body as { title: string }[]).map((p) => p.title)).toEqual([`${TITLE} edited`]);
+    const up = await rpcAs(adminToken, POPUP_RPC.update, { p_id: popupId, ...argsOf({ p_title: `${TITLE} edited` }) });
+    expect(up.status, JSON.stringify(up.body).slice(0, 300)).toBe(200);
+    expect(up.body).toEqual([{ id: popupId }]);
+    const edited = await rest("GET", `/popups?select=title&id=eq.${popupId}`);
+    expect((edited.body as { title: string }[])[0].title).toBe(`${TITLE} edited`);
+
+    // 비활성으로 내렸다가 되살린다 — 관리자는 비활성 행도 보여야 한다(공개 정책은 active 만 본다 · 0020 popups_admin_select)
+    const off = await rpcAs(adminToken, POPUP_RPC.setActive, { p_id: popupId, p_active: false });
+    expect(off.body, JSON.stringify(off.body).slice(0, 200)).toEqual([{ id: popupId }]);
+    const hidden = await asUser(adminToken, "GET", `/popups?select=id,active&id=eq.${popupId}`);
+    expect((hidden.body as { active: boolean }[])[0]?.active, "관리자가 비활성 행을 못 보면 되살릴 수 없다").toBe(false);
+    const back = await rpcAs(adminToken, POPUP_RPC.setActive, { p_id: popupId, p_active: true });
+    expect(back.body, JSON.stringify(back.body).slice(0, 200)).toEqual([{ id: popupId }]);
+  });
+
+  test("명단에 없는 로그인 세션 — 표 직접 쓰기는 GRANT 층, 함수는 가드가 거부한다", async () => {
+    // 표 직접 쓰기 — 0020 이 authenticated 의 insert·update·delete 를 회수했다: 403 · 42501 · permission denied for table popups.
+    expectTablePrivilegeDenied(
+      await asUser(plainToken, "POST", "/popups", { title: `${TITLE} intruder`, body: "x", starts_at: kstToday(), ends_at: kstToday() }),
+      "popups",
+      "명단 밖 세션의 popups INSERT",
+    );
+    expectTablePrivilegeDenied(await asUser(plainToken, "PATCH", `/popups?id=eq.${popupId}`, { title: "hijacked" }), "popups", "명단 밖 세션의 popups UPDATE");
+    expectTablePrivilegeDenied(await asUser(plainToken, "DELETE", `/popups?id=eq.${popupId}`), "popups", "명단 밖 세션의 popups DELETE");
+
+    for (const [fn, args] of [
+      [POPUP_RPC.create, argsOf({ p_title: `${TITLE} intruder` })],
+      [POPUP_RPC.update, { p_id: popupId, ...argsOf({ p_title: "hijacked" }) }],
+      [POPUP_RPC.setActive, { p_id: popupId, p_active: false }],
+      [POPUP_RPC.delete, { p_id: popupId }],
+    ] as const) {
+      expectRaisedDenied(await rpcAs(plainToken, fn, args), `${fn}: 관리자 명단에 없는 호출자다`, `명단 밖 세션의 ${fn}`);
+    }
+
+    const still = await rest("GET", `/popups?select=title,active&id=eq.${popupId}`);
+    expect(still.body).toEqual([{ title: `${TITLE} edited`, active: true }]);
+    const intruder = await rest("GET", `/popups?select=id&title=eq.${encodeURIComponent(`${TITLE} intruder`)}`);
+    expect(intruder.body, "명단 밖 세션이 팝업을 만들었다").toEqual([]);
   });
 
   test("anon — 활성·기간 안의 행만 보인다 (공개 정책 회귀)", async () => {
@@ -666,11 +735,15 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("5. DB — popups RLS 실�
     expect((off.body as unknown[]).length).toBe(0);
   });
 
-  test("관리자 세션 — delete 로 자기가 만든 행을 지운다", async () => {
-    const del = await asUser(adminToken, "DELETE", `/popups?id=eq.${popupId}`, undefined, "return=representation");
-    expect(del.status, JSON.stringify(del.body).slice(0, 200)).toBeLessThan(300);
+  test("관리자 세션 — 자기가 만든 행을 지운다 · 두 번째 지우기는 0행이다", async () => {
+    const del = await rpcAs(adminToken, POPUP_RPC.delete, { p_id: popupId });
+    expect(del.status, JSON.stringify(del.body).slice(0, 200)).toBe(200);
+    expect(del.body).toEqual([{ id: popupId }]);
     const left = await rest("GET", `/popups?select=id&id=eq.${popupId}`);
     expect(left.body).toEqual([]);
+    const again = await rpcAs(adminToken, POPUP_RPC.delete, { p_id: popupId });
+    expect(again.status).toBe(200);
+    expect(again.body, "없는 id 의 삭제가 0행이 아니다").toEqual([]);
   });
 
   test("정리 — 만든 것을 전부 지운다", async () => {

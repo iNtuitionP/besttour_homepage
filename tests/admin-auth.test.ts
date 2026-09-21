@@ -37,7 +37,7 @@ import {
   type AdminLoginResult,
 } from "@/lib/auth/adminLogin";
 import { withNotificationsLock } from "./helpers/db-lock";
-import { expectFunctionPrivilegeDenied, expectRlsInsertDenied, expectTablePrivilegeDenied } from "./helpers/expect-denied";
+import { expectFunctionPrivilegeDenied, expectRaisedDenied, expectRlsInsertDenied, expectTablePrivilegeDenied } from "./helpers/expect-denied";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
 
 // server-only 는 vitest(node) 에서 import 즉시 throw 한다 — 빈 모듈로 바꿔치기(guard.test.ts·reservation-check.test.ts 선례).
@@ -1103,7 +1103,14 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("7. DB — is_admin() RLS 
    * 막는 것은 `<table>_admin_all` 정책의 using·with check 뿐이다. 그 한 줄이 빠지면 로그인만 한 사람이 공지를 쓴다.
    * 그래서 명단에 없는 세션으로 실제 쓰기를 시도해 DB 가 거부하는지 본다(정책 텍스트가 아니라 거동으로).
    */
-  test("명단에 없는 로그인 사용자는 콘텐츠 표에 쓰지 못한다 — notices·popups insert/update/delete (M5)", async () => {
+  /**
+   * P5-16(0020) 개정 — 콘텐츠 여섯 표의 insert·update·delete 는 **이제 `authenticated` 에게 GRANT 가 없다**(known-defects D10).
+   * 그래서 명단 밖 세션의 직접 쓰기는 정책까지 가지 않고 **GRANT 층**에서 막힌다: 셋 다 `permission denied for table <표>`.
+   * 옛 판(0009 정책만)은 insert 만 명시적 거부였고 update·delete 는 "0행" 으로 조용히 지나갔다 — 이제 셋 다 명시적이다.
+   * 관리자의 쓰기는 0020 의 definer 함수로 가고, 명단 밖 세션이 그 함수를 부르면 **함수 첫 문장의 `is_admin()` 가드**가
+   * 42501 로 막는다(EXECUTE 는 있다 — 그래서 메시지로 판정한다). 대조군: 명단에 있는 세션은 같은 함수로 같은 행을 고친다.
+   */
+  test("명단에 없는 로그인 사용자는 콘텐츠 표에 쓰지 못한다 — notices·popups insert/update/delete (M5 · 0020 뒤 GRANT 층 + 함수 가드)", async () => {
     const seedNotice = await rest("POST", "/notices", { title: `P51 ${RUN}`, body: "seed", active: true }, "return=representation");
     expect(seedNotice.status, JSON.stringify(seedNotice.body).slice(0, 200)).toBe(201);
     const noticeId = (seedNotice.body as { id: number }[])[0].id;
@@ -1118,31 +1125,41 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("7. DB — is_admin() RLS 
     expect(seedPopup.status, JSON.stringify(seedPopup.body).slice(0, 200)).toBe(201);
     const popupId = (seedPopup.body as { id: number }[])[0].id;
 
-    // insert — with check (is_admin()) 위반이라 명시적 오류여야 한다.
-    // P6-13 실측: 403 · 42501 · `new row violates row-level security policy for table "<표>"` — 권한(GRANT)은 있고 **정책**이 막는다.
-    for (const [table, row] of [
-      ["notices", { title: `P51 ${RUN} intruder`, body: "x" }],
-      ["popups", { title: `P51 ${RUN} intruder`, body: "x", starts_at: today, ends_at: today }],
+    // ① 직접 쓰기 — insert·update·delete 셋 다 GRANT 층 거부(403 · 42501 · permission denied for table <표>).
+    for (const [table, row, id] of [
+      ["notices", { title: `P51 ${RUN} intruder`, body: "x" }, noticeId],
+      ["popups", { title: `P51 ${RUN} intruder`, body: "x", starts_at: today, ends_at: today }, popupId],
     ] as const) {
-      const r = await asUser(plainToken, "POST", `/${table}`, row);
-      expectRlsInsertDenied(r, table, `명단 밖 세션의 ${table} INSERT`);
+      expectTablePrivilegeDenied(await asUser(plainToken, "POST", `/${table}`, row), table, `명단 밖 세션의 ${table} INSERT`);
+      expectTablePrivilegeDenied(await asUser(plainToken, "PATCH", `/${table}?id=eq.${id}`, { title: "hijacked" }), table, `명단 밖 세션의 ${table} UPDATE`);
+      expectTablePrivilegeDenied(await asUser(plainToken, "DELETE", `/${table}?id=eq.${id}`), table, `명단 밖 세션의 ${table} DELETE`);
     }
 
-    // update·delete — using (is_admin()) 이 행을 아예 안 보여 주므로 0행 처리된다(오류가 아닐 수 있다).
-    // 판정은 상태 코드가 아니라 **행이 그대로인가** 로 한다.
-    await asUser(plainToken, "PATCH", `/notices?id=eq.${noticeId}`, { title: "hijacked" });
-    await asUser(plainToken, "DELETE", `/notices?id=eq.${noticeId}`);
-    await asUser(plainToken, "PATCH", `/popups?id=eq.${popupId}`, { title: "hijacked" });
-    await asUser(plainToken, "DELETE", `/popups?id=eq.${popupId}`);
+    // ② 관리자 경로(definer 함수) — 함수 가드가 42501 로 막는다. 메시지까지 맞춰야 "EXECUTE 는 있었고 가드가 막았다" 가 증명된다.
+    const rpc = (token: string, fn: string, args: Record<string, unknown>) => asUser(token, "POST", `/rpc/${fn}`, args);
+    const noticeArgs = { p_id: noticeId, p_title: "hijacked", p_body: "x", p_category: "info", p_published_at: today, p_active: true };
+    for (const [fn, args] of [
+      ["admin_create_notice", { p_title: `P51 ${RUN} intruder`, p_body: "x", p_category: "info", p_published_at: today, p_active: true }],
+      ["admin_update_notice", noticeArgs],
+      ["admin_delete_notice", { p_id: noticeId }],
+      ["admin_update_popup", { p_id: popupId, p_title: "hijacked", p_body: "x", p_image_path: null, p_starts_at: today, p_ends_at: today, p_active: true }],
+      ["admin_delete_popup", { p_id: popupId }],
+    ] as const) {
+      expectRaisedDenied(await rpc(plainToken, fn, args), `${fn}: 관리자 명단에 없는 호출자다`, `명단 밖 세션의 ${fn}`);
+    }
 
+    // 행이 그대로다 — 거부 응답만이 아니라 결과로도 본다.
     const notice = await rest("GET", `/notices?select=id,title&id=eq.${noticeId}`);
     expect((notice.body as { title: string }[]).map((n) => n.title)).toEqual([`P51 ${RUN}`]);
     const popup = await rest("GET", `/popups?select=id,title&id=eq.${popupId}`);
     expect((popup.body as { title: string }[]).map((p) => p.title)).toEqual([`P51 ${RUN}`]);
+    const intruderRows = await rest("GET", `/notices?select=id&title=eq.${encodeURIComponent(`P51 ${RUN} intruder`)}`);
+    expect(intruderRows.body, "명단 밖 세션이 공지를 만들었다").toEqual([]);
 
-    // 대조군: 명단에 있는 세션은 같은 쓰기가 통한다(정책이 통째로 막고 있는 것이 아니라 명단으로 갈린다)
-    const asAdmin = await asUser(adminToken, "PATCH", `/notices?id=eq.${noticeId}`, { title: `P51 ${RUN} by admin` });
-    expect(asAdmin.status, JSON.stringify(asAdmin.body).slice(0, 200)).toBeLessThan(300);
+    // 대조군: 명단에 있는 세션은 **같은 함수**로 같은 행을 고친다(함수가 통째로 막는 것이 아니라 명단으로 갈린다)
+    const asAdmin = await rpc(adminToken, "admin_update_notice", { ...noticeArgs, p_title: `P51 ${RUN} by admin`, p_body: "seed" });
+    expect(asAdmin.status, JSON.stringify(asAdmin.body).slice(0, 200)).toBe(200);
+    expect(asAdmin.body, "관리자 update 가 바뀐 행을 돌려주지 않았다").toEqual([{ id: noticeId }]);
     const after = await rest("GET", `/notices?select=title&id=eq.${noticeId}`);
     expect((after.body as { title: string }[])[0].title).toBe(`P51 ${RUN} by admin`);
 
@@ -1151,23 +1168,49 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("7. DB — is_admin() RLS 
   });
 
   /**
-   * 대조군 (P6-13) — 같은 42501 이라도 **무엇이 막았는지**는 메시지로 갈리고, 부재는 아예 다른 응답이다.
-   * GRANT 거부(`permission denied for table …`) · RLS 거부(`new row violates row-level security policy …`) · 없는 표(404 PGRST205).
-   * 판정 헬퍼가 셋을 서로 받아들이지 않는지 실제 응답으로 보인다 — 옛 `>= 400` 은 셋 모두를 "보안 성공" 으로 읽었다.
+   * 대조군 (P6-13 · P5-16 개정) — 같은 42501 이라도 **무엇이 막았는지**는 메시지로 갈리고, 부재는 아예 다른 응답이다.
+   * GRANT 거부(`permission denied for table …`) · 함수 가드 거부(definer 의 `raise … 42501`) · EXECUTE 거부
+   * (`permission denied for function …`) · 없는 표(404 PGRST205). 판정 헬퍼가 서로를 받아들이지 않는지 실제 응답으로 보인다.
+   *
+   * 옛 판은 둘째 자리에 **RLS with-check 거부**(명단 밖 세션의 notices insert)를 썼다. 0020 뒤로는 그 응답을
+   * 실제 스키마에서 만들 수 없다 — `authenticated` 에게 insert 가 있는 표가 public 에 하나도 남지 않았다
+   * (tests/db-privilege-gate.test.ts 의 AUTH_WRITE 가 비었다). 같은 요청이 이제 GRANT 거부로 온다는 것을 여기서 함께 단언한다.
+   * RLS 판정 자체의 이빨은 합성 응답으로 tests/expect-denied.test.ts 가 계속 본다.
    */
-  test("대조군 — GRANT 거부·RLS 거부·부재는 서로 다른 응답이고 판정이 섞이지 않는다", async () => {
+  test("대조군 — GRANT 거부·함수 가드 거부·EXECUTE 거부·부재는 서로 다른 응답이고 판정이 섞이지 않는다", async () => {
     const grantDenied = await asUser(adminToken, "POST", "/reservations", { public_code: `P51Y${RUN.slice(0, 4).toUpperCase()}` });
     expectTablePrivilegeDenied(grantDenied, "reservations", "관리자 세션의 reservations INSERT");
     expect(() => expectRlsInsertDenied(grantDenied, "reservations", "대조"), "RLS 판정이 GRANT 거부를 받아들였다").toThrow();
+    expect(() => expectRaisedDenied(grantDenied, "admin_create_notice: 관리자 명단에 없는 호출자다", "대조"), "가드 판정이 GRANT 거부를 받아들였다").toThrow();
 
-    const rlsDenied = await asUser(plainToken, "POST", "/notices", { title: `P51 ${RUN} control`, body: "x" });
-    expectRlsInsertDenied(rlsDenied, "notices", "명단 밖 세션의 notices INSERT");
-    expect(() => expectTablePrivilegeDenied(rlsDenied, "notices", "대조"), "GRANT 판정이 RLS 거부를 받아들였다").toThrow();
+    // 옛 RLS 거부 자리 — 0020 뒤로는 GRANT 층이 먼저 막는다(위 머리 주석).
+    const formerRls = await asUser(plainToken, "POST", "/notices", { title: `P51 ${RUN} control`, body: "x" });
+    expectTablePrivilegeDenied(formerRls, "notices", "명단 밖 세션의 notices INSERT (0020 뒤)");
+    expect(() => expectRlsInsertDenied(formerRls, "notices", "대조"), "RLS 판정이 GRANT 거부를 받아들였다").toThrow();
+
+    const today = new Date().toISOString().slice(0, 10);
+    const args = { p_title: `P51 ${RUN} control`, p_body: "x", p_category: "info", p_published_at: today, p_active: false };
+    const guardDenied = await asUser(plainToken, "POST", "/rpc/admin_create_notice", args);
+    expectRaisedDenied(guardDenied, "admin_create_notice: 관리자 명단에 없는 호출자다", "명단 밖 세션의 admin_create_notice");
+    expect(() => expectFunctionPrivilegeDenied(guardDenied, "admin_create_notice", "대조"), "EXECUTE 판정이 가드 거부를 받아들였다").toThrow();
+    expect(() => expectTablePrivilegeDenied(guardDenied, "notices", "대조"), "GRANT 판정이 가드 거부를 받아들였다").toThrow();
+
+    const execDenied = await call("POST", `${env.restRoot}/rpc/admin_create_notice`, {
+      apikey: env.anonKey as string,
+      Authorization: `Bearer ${env.anonKey}`,
+      "Content-Type": "application/json",
+    }, args);
+    expectFunctionPrivilegeDenied(execDenied, "admin_create_notice", "anon 의 admin_create_notice");
+    expect(() => expectRaisedDenied(execDenied, "admin_create_notice: 관리자 명단에 없는 호출자다", "대조"), "가드 판정이 EXECUTE 거부를 받아들였다").toThrow();
 
     const missing = await asUser(plainToken, "POST", "/p613_no_such_table", { x: 1 });
     expect(missing.status, JSON.stringify(missing.body).slice(0, 200)).toBe(404);
     expect((missing.body as { code?: string } | null)?.code).toBe("PGRST205");
     expect(() => expectRlsInsertDenied(missing, "p613_no_such_table", "대조"), "거부 판정이 '없는 표' 를 받아들였다").toThrow();
+    expect(() => expectTablePrivilegeDenied(missing, "p613_no_such_table", "대조"), "GRANT 판정이 '없는 표' 를 받아들였다").toThrow();
+
+    const left = await rest("GET", `/notices?select=id&title=eq.${encodeURIComponent(`P51 ${RUN} control`)}`);
+    expect(left.body, "대조군 요청이 공지를 만들었다").toEqual([]);
   });
 
   test("관리자도 admin_users 는 못 읽는다 — 명단 자체가 권한 상승 경로다", async () => {

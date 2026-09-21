@@ -14,7 +14,7 @@
  *
  * 경계 규칙 (actions/admin/popup.ts 와 같은 규약)
  *   - 두 함수 모두 본문 첫 문장이 `await requireAdmin();` 이고, 게이트는 별칭 없이 정본 이름으로 가져온다.
- *   - 서비스 롤을 쓰지 않는다(ADR-2). 0009 의 `showcase_routes_admin_all` 정책이 DB 에서 한 번 더 막는다.
+ *   - 서비스 롤을 쓰지 않는다(ADR-2). DB 에서 한 번 더 막는 것은 0020 의 definer 함수 첫 문장 `is_admin()` 가드다(P5-16 · D10).
  *   - 예외는 여기서 끝난다. 단 requireAdmin() 의 redirect 는 throw 로 전파돼야 하므로 게이트는 try 밖에 있다.
  *   - 로그에 남기는 것은 노선 id 와 결과 코드뿐이다(가격·코드는 싣지 않는다).
  *   - **바뀐 것이 없으면 무효화하지 않는다.**

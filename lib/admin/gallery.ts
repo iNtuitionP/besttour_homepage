@@ -1,9 +1,12 @@
 /**
  * 관리자 갤러리 읽기·쓰기 — SSR 세션 + RLS (플랜 v4 P6-2 · ADR-2·ADR-3).
  *
- * **definer 함수를 만들지 않은 이유**는 공지·팝업과 같다(lib/admin/notices.ts 헤더) — 컬럼이 전부 콘텐츠고,
- * 상태 전이표가 없고, 쓰기가 통지를 만들지 않는다. 0009 의 `gallery_admin_all`·`gallery_albums_admin_all`
- * (`for all to authenticated using (is_admin()) with check (is_admin())`)이 곧 방어선이고 여기서는 세션 클라이언트로 곧장 CRUD 한다.
+ * **읽기는 표에서, 행 쓰기는 definer 함수로** (P5-16 · 마이그레이션 0020 · known-defects **D10**) —
+ * 판단이 뒤집힌 경위는 lib/admin/notices.ts 헤더와 같다. 정책이 부족해서가 아니라 **GRANT** 때문이다:
+ * 세션 롤(`authenticated`)이 표에 UPDATE·DELETE 를 가지면 PostgreSQL 이 그 롤에게 `ACCESS EXCLUSIVE` 잠금도
+ * 허용해(`LockTableAclCheck`) 로그인만 한 사람이 갤러리·앨범 표를 잠글 수 있었다. RLS 는 그것을 막지 못한다.
+ * 0020 이 표 쓰기 권한을 회수했고 행 쓰기는 `admin_*_gallery_photo`·`admin_*_album` definer 함수로 간다.
+ * 읽기는 그대로 표에서 한다(`gallery_admin_select`·`gallery_albums_admin_select` — 0020 이 0009 의 `_admin_all` 을 좁힌 것).
  *
  * **파일도 같은 세션으로 지운다.** 0011 의 `storage.objects` 정책이 `is_admin()` 을 요구하므로, 서비스 롤 없이
  * (ADR-2) 관리자 쿠키 세션 그대로 Storage 를 부른다. 업로드는 여기 없다 — 브라우저가 직접 한다(ADR-9,
@@ -18,6 +21,7 @@ import "server-only";
 import { cookies } from "next/headers";
 
 import { createSsrClient } from "../supabase/ssr";
+import { isAdminGuardDenial, rpcChangedRows } from "./adminRpc";
 import {
   GALLERY_BUCKET,
   GALLERY_ORIGINALS_BUCKET,
@@ -33,6 +37,18 @@ export type AdminDbClient = ReturnType<typeof createSsrClient>;
 
 export const GALLERY_TABLE = "gallery";
 export const ALBUM_TABLE = "gallery_albums";
+
+/** 쓰기 경로 — 0020 의 definer 함수 이름(lib/admin/notices.ts NOTICE_RPC 와 같은 규약). */
+export const GALLERY_RPC = {
+  createPhoto: "admin_create_gallery_photo",
+  updatePhoto: "admin_update_gallery_photo",
+  setPhotoActive: "admin_set_gallery_photo_active",
+  deletePhoto: "admin_delete_gallery_photo",
+  createAlbum: "admin_create_album",
+  updateAlbum: "admin_update_album",
+  setAlbumActive: "admin_set_album_active",
+  deleteAlbum: "admin_delete_album",
+} as const;
 
 /** 관리자 화면 경로 — 무효화 대상과 탭의 링크가 갈리지 않게 한 곳에 둔다(components/admin/tabs.ts 가 이 값을 쓴다). */
 export const ADMIN_GALLERY_PATH = "/admin/gallery";
@@ -108,9 +124,18 @@ export async function adminGalleryClient(): Promise<AdminDbClient> {
   return sessionClient();
 }
 
-/** 돌아온 행이 하나라도 있으면 실제로 바뀐 것이다. 0행 = 정책에 막혔거나 그런 행이 없다. */
-function changedRows(data: unknown): boolean {
-  return Array.isArray(data) && data.length > 0;
+/**
+ * 쓰기 한 번 — 0020 의 definer 함수를 세션 클라이언트로 부른다(lib/admin/notices.ts 와 같은 규약).
+ * 가드 거부(명단 밖 세션)는 **바뀐 행 0** 으로, 그 밖의 오류는 던진다(lib/admin/adminRpc.ts).
+ */
+async function write(op: string, fn: string, args: Record<string, unknown>, client?: AdminDbClient): Promise<boolean> {
+  const db = client ?? (await sessionClient());
+  const { data, error } = await db.rpc(fn, args);
+  if (error) {
+    if (isAdminGuardDenial(error, fn)) return false;
+    fail(op, error);
+  }
+  return rpcChangedRows(data);
 }
 
 // =============================================================================
@@ -197,52 +222,43 @@ export async function galleryUsage(client?: AdminDbClient): Promise<GalleryUsage
 
 /** 업로드 기록. 파일은 이미 브라우저가 올렸고, 이 행이 그 파일을 화면에 잇는다. */
 export async function insertGalleryPhoto(values: GalleryUploadValues, client?: AdminDbClient): Promise<boolean> {
-  const db = client ?? (await sessionClient());
-  const { data, error } = await db
-    .from(GALLERY_TABLE)
-    .insert({
-      image_path: values.imagePath,
-      original_path: values.originalPath,
-      width: values.width,
-      height: values.height,
-      bytes: values.bytes,
-      album_id: values.albumId,
-      caption: values.caption,
-      sort: values.sort,
-      active: values.active,
-      // created_at 은 DB default(now()) — 건드리지 않는다(P6-1 §7-1)
-    })
-    .select("id");
-  if (error) fail("insertPhoto", error);
-  return changedRows(data);
+  return write(
+    "insertPhoto",
+    GALLERY_RPC.createPhoto,
+    {
+      p_image_path: values.imagePath,
+      p_original_path: values.originalPath,
+      p_width: values.width,
+      p_height: values.height,
+      p_bytes: values.bytes,
+      p_album_id: values.albumId,
+      p_caption: values.caption,
+      p_sort: values.sort,
+      p_active: values.active,
+      // created_at 은 DB default(now()) — 함수가 인자로 받지 않는다(P6-1 §7-1 · 0020 §3)
+    },
+    client,
+  );
 }
 
 /** 캡션·앨범·순서만 고친다. 파일은 그대로다 — 앨범 이동이 UPDATE 한 줄인 이유(P6-1 §7-2). */
 export async function updateGalleryPhotoRow(values: GalleryPatchValues, client?: AdminDbClient): Promise<boolean> {
-  const db = client ?? (await sessionClient());
-  const { data, error } = await db
-    .from(GALLERY_TABLE)
-    .update({ caption: values.caption, album_id: values.albumId, sort: values.sort })
-    .eq("id", values.id)
-    .select("id");
-  if (error) fail("updatePhoto", error);
-  return changedRows(data);
+  return write(
+    "updatePhoto",
+    GALLERY_RPC.updatePhoto,
+    { p_id: values.id, p_caption: values.caption, p_album_id: values.albumId, p_sort: values.sort },
+    client,
+  );
 }
 
 /** 노출/중지만 바꾼다 — 목록에서 한 번에 내리기 위한 좁은 쓰기. 삭제의 첫 걸음이기도 하다. */
 export async function setGalleryPhotoActive(id: number, active: boolean, client?: AdminDbClient): Promise<boolean> {
-  const db = client ?? (await sessionClient());
-  const { data, error } = await db.from(GALLERY_TABLE).update({ active }).eq("id", id).select("id");
-  if (error) fail("setPhotoActive", error);
-  return changedRows(data);
+  return write("setPhotoActive", GALLERY_RPC.setPhotoActive, { p_id: id, p_active: active }, client);
 }
 
 /** 행 삭제 — 파일을 먼저 지운 뒤에만 부른다(actions/admin/gallery.ts deleteGalleryPhoto). */
 export async function deleteGalleryPhotoRow(id: number, client?: AdminDbClient): Promise<boolean> {
-  const db = client ?? (await sessionClient());
-  const { data, error } = await db.from(GALLERY_TABLE).delete().eq("id", id).select("id");
-  if (error) fail("deletePhoto", error);
-  return changedRows(data);
+  return write("deletePhoto", GALLERY_RPC.deletePhoto, { p_id: id }, client);
 }
 
 // =============================================================================
@@ -250,31 +266,25 @@ export async function deleteGalleryPhotoRow(id: number, client?: AdminDbClient):
 // =============================================================================
 
 export async function insertAlbum(values: AlbumValues, client?: AdminDbClient): Promise<boolean> {
-  const db = client ?? (await sessionClient());
-  const { data, error } = await db
-    .from(ALBUM_TABLE)
-    .insert({ slug: values.slug, title: values.title, sort: values.sort, active: values.active })
-    .select("id");
-  if (error) fail("insertAlbum", error);
-  return changedRows(data);
+  return write(
+    "insertAlbum",
+    GALLERY_RPC.createAlbum,
+    { p_slug: values.slug, p_title: values.title, p_sort: values.sort, p_active: values.active },
+    client,
+  );
 }
 
 export async function updateAlbumRow(id: number, values: AlbumValues, client?: AdminDbClient): Promise<boolean> {
-  const db = client ?? (await sessionClient());
-  const { data, error } = await db
-    .from(ALBUM_TABLE)
-    .update({ slug: values.slug, title: values.title, sort: values.sort, active: values.active })
-    .eq("id", id)
-    .select("id");
-  if (error) fail("updateAlbum", error);
-  return changedRows(data);
+  return write(
+    "updateAlbum",
+    GALLERY_RPC.updateAlbum,
+    { p_id: id, p_slug: values.slug, p_title: values.title, p_sort: values.sort, p_active: values.active },
+    client,
+  );
 }
 
 export async function setAlbumActive(id: number, active: boolean, client?: AdminDbClient): Promise<boolean> {
-  const db = client ?? (await sessionClient());
-  const { data, error } = await db.from(ALBUM_TABLE).update({ active }).eq("id", id).select("id");
-  if (error) fail("setAlbumActive", error);
-  return changedRows(data);
+  return write("setAlbumActive", GALLERY_RPC.setAlbumActive, { p_id: id, p_active: active }, client);
 }
 
 /**
@@ -283,10 +293,7 @@ export async function setAlbumActive(id: number, active: boolean, client?: Admin
  * 여기서 사진 행이나 파일을 함께 지우는 코드를 쓰지 않는다. 앨범 하나로 사진 수백 장이 사라지는 경로를 만들지 않는다.
  */
 export async function deleteAlbumRow(id: number, client?: AdminDbClient): Promise<boolean> {
-  const db = client ?? (await sessionClient());
-  const { data, error } = await db.from(ALBUM_TABLE).delete().eq("id", id).select("id");
-  if (error) fail("deleteAlbum", error);
-  return changedRows(data);
+  return write("deleteAlbum", GALLERY_RPC.deleteAlbum, { p_id: id }, client);
 }
 
 // =============================================================================

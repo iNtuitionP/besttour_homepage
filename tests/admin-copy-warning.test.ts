@@ -501,7 +501,19 @@ function dbStub(result: DbResult) {
   for (const m of ["select", "order", "limit", "eq", "is", "insert", "update", "delete", "maybeSingle"]) chain[m] = vi.fn(() => chain);
   chain.then = (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) => Promise.resolve(result).then(resolve, reject);
   const from = vi.fn(() => chain);
-  return { client: { from, storage: { from: vi.fn() } }, chain: chain as Record<string, ReturnType<typeof vi.fn>>, from };
+  // 0020(P5-16) 뒤 관리자 쓰기는 definer 함수 RPC 다. "저장했다/안 했다" 는 이제 이 호출로 판정한다.
+  const rpc = vi.fn(async (fn: string, args?: Record<string, unknown>) => {
+    void fn;
+    void args;
+    return result;
+  });
+  return { client: { from, rpc, storage: { from: vi.fn() } }, chain: chain as Record<string, ReturnType<typeof vi.fn>>, from, rpc };
+}
+
+/** 저장 RPC 한 번의 인자 — 함수 이름과 함께. 저장이 없었으면 undefined. */
+function writtenArgs(rpc: ReturnType<typeof vi.fn>, index = 0): { fn: string; args: Record<string, unknown> } | undefined {
+  const call = rpc.mock.calls[index] as [string, Record<string, unknown>] | undefined;
+  return call ? { fn: call[0], args: call[1] } : undefined;
 }
 
 const form = (values: Record<string, string | string[]>): FormData => {
@@ -542,8 +554,13 @@ describe("7. 서버액션 — 저장 전 확인, 확인하면 저장", () => {
     vi.mocked(requireAdmin).mockResolvedValue({ userId: "admin-uuid", email: "owner@example.test" });
   });
 
-  const expectNothingWritten = (from: ReturnType<typeof vi.fn>) => {
-    expect(from).not.toHaveBeenCalled();
+  /**
+   * DB 를 한 번도 부르지 않았다 — 읽기(from)도 쓰기(rpc)도.
+   * 0020 뒤로 쓰기는 rpc 로 간다. from 만 보면 이 단언은 **공허하게 통과한다**(쓰기가 from 을 부르지 않으므로) — 그래서 둘 다 본다.
+   */
+  const expectNothingWritten = (stub: { from: ReturnType<typeof vi.fn>; rpc: ReturnType<typeof vi.fn> }) => {
+    expect(stub.from).not.toHaveBeenCalled();
+    expect(stub.rpc).not.toHaveBeenCalled();
     expect(vi.mocked(revalidatePath)).not.toHaveBeenCalled();
     expect(vi.mocked(revalidate)).not.toHaveBeenCalled();
   };
@@ -559,9 +576,9 @@ describe("7. 서버액션 — 저장 전 확인, 확인하면 저장", () => {
     ["updateNotice", () => updateNotice(noticeForm({ id: "12" })), (ack: string[]) => updateNotice(noticeForm({ id: "12", [COPY_ACK_FIELD]: ack })), [{ id: 12 }]],
     ["createPopup", () => createPopup(popupForm()), (ack: string[]) => createPopup(popupForm({ [COPY_ACK_FIELD]: ack })), [{ id: 3 }]],
     ["updatePopup", () => updatePopup(popupForm({ id: "5" })), (ack: string[]) => updatePopup(popupForm({ id: "5", [COPY_ACK_FIELD]: ack })), [{ id: 5 }]],
-  ] as const)("%s — 확인 전에는 DB 를 부르지 않고, 확인하면 입력 그대로 저장한다", async ([, first, confirmed, rows]) => {
-    const { client, from, chain } = dbStub({ data: rows, error: null });
-    vi.mocked(createSsrClient).mockReturnValue(client as never);
+  ] as const)("%s — 확인 전에는 DB 를 부르지 않고, 확인하면 입력 그대로 저장한다", async ([name, first, confirmed, rows]) => {
+    const stub = dbStub({ data: rows, error: null });
+    vi.mocked(createSsrClient).mockReturnValue(stub.client as never);
 
     const held = await first();
     expect(held.code).toBe("copyWarning");
@@ -572,32 +589,43 @@ describe("7. 서버액션 — 저장 전 확인, 확인하면 저장", () => {
       ["body", "license", W_LICENSE],
     ]);
     expect(vi.mocked(requireAdmin)).toHaveBeenCalledTimes(1);
-    expectNothingWritten(from);
+    expectNothingWritten(stub);
     expectLogHasNoText();
 
     // 일부만 확인 → 여전히 멈춘다
     const partial = await confirmed([ACK_BOTH[0]]);
     expect(partial.code).toBe("copyWarning");
-    expect(from).not.toHaveBeenCalled();
+    expect(stub.from).not.toHaveBeenCalled();
+    expect(stub.rpc).not.toHaveBeenCalled();
 
     // 전부 확인 → 저장된다. 저장되는 글자는 입력 그대로다(경고 표식이 섞이지 않는다 — 공개 화면에 새지 않는다)
     const saved = await confirmed([...ACK_BOTH]);
     expect(saved.ok).toBe(true);
     expect(saved.changed).toBe(true);
     expect(saved.copyWarnings).toBeUndefined();
-    const written = (chain.insert.mock.calls[0] ?? chain.update.mock.calls[0])[0] as Record<string, unknown>;
-    expect(written.title).toBe(RISKY_TITLE);
-    expect(written.body).toBe(RISKY_BODY);
-    expect(JSON.stringify(written)).not.toMatch(/copyAck|copyWarning/);
+    // 저장은 정확히 한 번, 그 액션에 맞는 0020 함수로
+    expect(stub.rpc).toHaveBeenCalledTimes(1);
+    const expectedFn = {
+      createNotice: "admin_create_notice",
+      updateNotice: "admin_update_notice",
+      createPopup: "admin_create_popup",
+      updatePopup: "admin_update_popup",
+    }[name];
+    const written = writtenArgs(stub.rpc);
+    expect(written?.fn).toBe(expectedFn);
+    expect(written?.args.p_title).toBe(RISKY_TITLE);
+    expect(written?.args.p_body).toBe(RISKY_BODY);
+    expect(JSON.stringify(written?.args)).not.toMatch(/copyAck|copyWarning/);
     expect(vi.mocked(revalidatePath)).toHaveBeenCalled();
   });
 
   test("걸린 것이 없는 글은 한 번에 저장된다 (기존 흐름 그대로)", async () => {
-    const { client, chain } = dbStub({ data: [{ id: 3 }], error: null });
+    const { client, rpc } = dbStub({ data: [{ id: 3 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
     const r = await createNotice(noticeForm({ [NOTICE_FIELDS.title]: "추석 연휴 운행 안내", [NOTICE_FIELDS.body]: `문의는 ${COMPANY.tel} 로 주세요.` }));
     expect(r).toEqual({ ok: true, changed: true, code: "created" });
-    expect(chain.insert).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(writtenArgs(rpc)?.fn).toBe("admin_create_notice");
   });
 
   test("검증 실패가 먼저다 — 형식이 틀리면 경고 대신 validation", async () => {
@@ -607,45 +635,48 @@ describe("7. 서버액션 — 저장 전 확인, 확인하면 저장", () => {
   });
 
   test("사진 설명 — updateGalleryPhoto", async () => {
-    const { client, from, chain } = dbStub({ data: [{ id: 7 }], error: null });
-    vi.mocked(createSsrClient).mockReturnValue(client as never);
+    const stub = dbStub({ data: [{ id: 7 }], error: null });
+    vi.mocked(createSsrClient).mockReturnValue(stub.client as never);
     const input = { id: 7, caption: "DVD·노래방 시스템 완비", albumId: null, sort: 0 };
     const held = await updateGalleryPhoto(input);
     expect(held).toMatchObject({ ok: true, changed: false, code: "copyWarning" });
     expect(held.copyWarnings?.map((w) => [w.field, w.text])).toEqual([["caption", "완비"]]);
-    expectNothingWritten(from);
+    expectNothingWritten(stub);
     expectLogHasNoText();
 
     const saved = await updateGalleryPhoto({ ...input, [COPY_ACK_FIELD]: [ackKey("caption", input.caption, "완비")] });
     expect(saved).toMatchObject({ ok: true, changed: true, code: "updated" });
-    const written = chain.update.mock.calls[0][0] as Record<string, unknown>;
-    expect(written.caption).toBe("DVD·노래방 시스템 완비");
-    expect(Object.keys(written)).not.toContain(COPY_ACK_FIELD);
+    const written = writtenArgs(stub.rpc);
+    expect(written?.fn).toBe("admin_update_gallery_photo");
+    expect(written?.args.p_caption).toBe("DVD·노래방 시스템 완비");
+    expect(Object.keys(written?.args ?? {})).not.toContain(COPY_ACK_FIELD);
+    expect(JSON.stringify(written?.args)).not.toMatch(/copyAck|copyWarning/);
   });
 
   test("앨범 이름 — createGalleryAlbum · updateGalleryAlbum", async () => {
-    const { client, from, chain } = dbStub({ data: [{ id: 1 }], error: null });
-    vi.mocked(createSsrClient).mockReturnValue(client as never);
+    const stub = dbStub({ data: [{ id: 1 }], error: null });
+    vi.mocked(createSsrClient).mockReturnValue(stub.client as never);
     const album = { title: "업계 1위 단체여행", slug: "trip", sort: 0, active: true };
     const key = ackKey("albumTitle", album.title, "업계 1위");
 
     expect((await createGalleryAlbum(album)).code).toBe("copyWarning");
     expect((await updateGalleryAlbum({ id: 1, ...album })).code).toBe("copyWarning");
-    expectNothingWritten(from);
+    expectNothingWritten(stub);
 
     expect(await createGalleryAlbum({ ...album, [COPY_ACK_FIELD]: [key] })).toMatchObject({ ok: true, changed: true, code: "albumCreated" });
-    expect(chain.insert.mock.calls[0][0]).toMatchObject({ title: "업계 1위 단체여행", slug: "trip" });
+    expect(writtenArgs(stub.rpc)).toEqual({ fn: "admin_create_album", args: expect.objectContaining({ p_title: "업계 1위 단체여행", p_slug: "trip" }) });
     expect(await updateGalleryAlbum({ id: 1, ...album, [COPY_ACK_FIELD]: [key] })).toMatchObject({ ok: true, changed: true, code: "albumUpdated" });
+    expect(writtenArgs(stub.rpc, 1)).toEqual({ fn: "admin_update_album", args: expect.objectContaining({ p_id: 1, p_title: "업계 1위 단체여행" }) });
   });
 
   test("업로드 기록 — 설명이 걸리면 멈추고, 업로더는 그것을 성공으로 읽지 않는다(파일을 되돌린다)", async () => {
-    const { client, from } = dbStub({ data: [{ id: 9 }], error: null });
-    vi.mocked(createSsrClient).mockReturnValue(client as never);
+    const stub = dbStub({ data: [{ id: 9 }], error: null });
+    vi.mocked(createSsrClient).mockReturnValue(stub.client as never);
     const paths = buildUploadPaths("0f9c1a2b-3d4e-4f60-8a1b-2c3d4e5f6071", "jpg", new Date("2026-09-17T09:00:00+09:00"));
     const meta = { width: 1600, height: 1200, bytes: 1000, albumId: null, caption: "업계 1위", sort: 0, active: true };
     const held = await recordGalleryUpload({ ...meta, imagePath: paths.imagePath, originalPath: paths.originalPath });
     expect(held.code).toBe("copyWarning");
-    expectNothingWritten(from);
+    expectNothingWritten(stub);
 
     const removed: string[] = [];
     const outcome = await commitUpload({
@@ -851,7 +882,7 @@ describe("10. Codex 재현 — 보지 못한 것을 승인하지 않는다", () 
 
   test("R2c — 대조용 사본만 바뀐다: 저장되는 값(액션이 DB 에 쓰는 글자)은 입력 그대로", async () => {
     vi.clearAllMocks();
-    const { client, chain } = dbStub({ data: [{ id: 3 }], error: null });
+    const { client, rpc } = dbStub({ data: [{ id: 3 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
     const title = "업계 １위​ 안내";
     const fields = { title, body: "안내드립니다." };
@@ -859,7 +890,9 @@ describe("10. Codex 재현 — 보지 못한 것을 승인하지 않는다", () 
     expect(ack.length).toBe(1);
     const r = await createNotice(noticeForm({ [NOTICE_FIELDS.title]: title, [NOTICE_FIELDS.body]: "안내드립니다.", [COPY_ACK_FIELD]: ack }));
     expect(r.changed).toBe(true);
-    expect((chain.insert.mock.calls[0][0] as Record<string, unknown>).title).toBe(title);
+    // 0020 의 admin_create_notice 에 실린 글자 — 정규화 사본이 아니라 입력 그대로(전각·폭 없는 문자 포함)
+    expect(writtenArgs(rpc)?.fn).toBe("admin_create_notice");
+    expect(writtenArgs(rpc)?.args.p_title).toBe(title);
   });
 
   test("R3 — '업계' + 공백 201개 + '1위' 도 확인하면 저장된다 (키 길이가 고정)", () => {
@@ -926,30 +959,33 @@ describe("11. 확인 위조는 막지 않는다 — 실수 방지 장치이지 �
   });
 
   test("관리자가 키 계산법대로 첫 요청에 확인을 실어 보내면 저장된다 (알려진 한계)", async () => {
-    const { client, chain } = dbStub({ data: [{ id: 3 }], error: null });
+    const { client, rpc } = dbStub({ data: [{ id: 3 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
     const r = await createNotice(noticeForm({ [COPY_ACK_FIELD]: [...ACK_BOTH] }));
     expect(r.changed).toBe(true);
-    expect(chain.insert).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(writtenArgs(rpc)?.fn).toBe("admin_create_notice");
     // 그래도 게이트는 먼저 돈다 — 이 경로의 주체는 requireAdmin() 을 통과한 관리자뿐이다
     expect(vi.mocked(requireAdmin)).toHaveBeenCalledTimes(1);
   });
 
   test("옛 모양 키(`칸:글자`)를 지어내도 통하지 않는다 — 키는 글 전체의 해시에 묶인다", async () => {
-    const { client, from } = dbStub({ data: [{ id: 3 }], error: null });
+    const { client, from, rpc } = dbStub({ data: [{ id: 3 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
     const r = await createNotice(noticeForm({ [COPY_ACK_FIELD]: ["title:업계 1위", `body:${W_LICENSE}`] }));
     expect(r.code).toBe("copyWarning");
     expect(from).not.toHaveBeenCalled();
+    expect(rpc, "0020 뒤 쓰기는 rpc 다 — 위조 키로 저장됐다").not.toHaveBeenCalled();
   });
 
   test("다른 글에 대해 받은 진짜 확인 키도 이 글에는 통하지 않는다", async () => {
-    const { client, from } = dbStub({ data: [{ id: 3 }], error: null });
+    const { client, from, rpc } = dbStub({ data: [{ id: 3 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
     const other = [ackKey("title", "업계 1위 다른 글", "업계 1위"), ackKey("body", `${W_LICENSE} 다른 글`, W_LICENSE)];
     const r = await createNotice(noticeForm({ [COPY_ACK_FIELD]: other }));
     expect(r.code).toBe("copyWarning");
     expect(from).not.toHaveBeenCalled();
+    expect(rpc, "0020 뒤 쓰기는 rpc 다 — 다른 글의 키로 저장됐다").not.toHaveBeenCalled();
   });
 
   test("헤더가 이 판단을 적어 두었다", () => {

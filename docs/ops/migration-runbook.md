@@ -7,7 +7,7 @@
 1. 로컬 스택(`supabase db reset`)에 적용하고 **DB 테스트 전량**이 통과한다.
 2. **CI 가 green** 이다(푸시된 커밋 기준). red 인 채로 원격에 적용하지 않는다.
 3. 아래 **적용 전 확인**을 로컬에서 실행해 기대값과 일치하는지 본다.
-4. 원격에 적용한다 — **`supabase db push` 로만**(아래 「적용 경로」). 적용 직후 이력 마지막이 `0019` 인지 본다.
+4. 원격에 적용한다 — **`supabase db push` 로만**(아래 「적용 경로」). 적용 직후 이력 마지막이 `0020` 인지 본다.
 5. 같은 확인을 **원격에서** 다시 실행해 로컬과 같은 결과인지 대조한다.
 6. 결과를 이 파일에 날짜와 함께 적는다.
 
@@ -16,23 +16,24 @@
 ```sql
 select version, name from supabase_migrations.schema_migrations order by version;
 ```
-기대(2026-09-16 원격 덤프 기준): 마지막이 `0011`. **0012~0019 중 하나라도 이미 있으면 멈추고 컨트롤러에게 보고한다.**
-⚠️ **이미 원격에 적용된 파일을 고쳐도 `supabase db push` 는 그 파일을 다시 돌리지 않는다**(이력에 있는 버전은 건너뛴다). P5-15 가 0016·0017·0018·0019 본문을 고친 것은 **네 파일 모두 원격 미적용**이라는 전제 위의 일이다 — 이미 적용됐다면 수정분은 **새 번호의 마이그레이션**으로 따로 내야 한다.
+기대(**2026-09-21 0012~0019 적용 완료 기준**): 마지막이 `0019`. **`0020` 이 이미 있으면 멈추고 컨트롤러에게 보고한다.**
+⚠️ **이미 원격에 적용된 파일을 고쳐도 `supabase db push` 는 그 파일을 다시 돌리지 않는다**(이력에 있는 버전은 건너뛴다). P5-15 가 0016·0017·0018·0019 본문을 고친 것은 **네 파일 모두 원격 미적용**이라는 전제 위의 일이었다 — **그 전제는 2026-09-21 로 끝났다.** 0012~0019 는 원격에 들어갔으므로 그 여덟 파일은 이제 **고치지 않는다**. 수정분은 **새 번호의 마이그레이션**으로 낸다(P5-16 이 0020 을 그렇게 냈다).
 **② 원격 PostgreSQL 버전** — 0019 절 "적용 직전 필수 — 원격 버전 확인".
-**③ 이벤트 트리거** — 0019 절 "적용 직전 필수 — 이벤트 트리거 확인"(0017·0018·0019 의 일회용 객체 생성이 CREATE TABLE·CREATE TRIGGER·CREATE SEQUENCE 태그를 낸다).
+**③ 이벤트 트리거** — 0019 절 "적용 직전 필수 — 이벤트 트리거 확인"(0017·0018·0019·**0020** 의 일회용 객체 생성이 CREATE TABLE·CREATE TRIGGER·CREATE SEQUENCE 태그를 낸다. 0020 은 함수 18개도 만든다 — `pgrst_ddl_watch` 가 스키마 캐시를 갱신해야 관리자 화면이 새 RPC 를 찾는다).
 **④ 0018 절의 적용 직전 스냅샷**(시퀀스·표 `relacl`) — 롤백 판단에 필요하다.
+**⑤ 0020 은 코드 배포와 짝이다** — 0020 절 「배포 순서」. **적용 → 배포** 순서를 어기면 관리자 화면의 저장이 전부 실패한다.
 
 ### 🔴 적용 경로 — `supabase db push` 하나 (P5-15 R6 · 컨트롤러 결정 2026-09-17)
-- **0012~0019 의 원격 적용 경로는 `supabase db push` 하나다.** CLI 는 마이그레이션 파일 하나를 한 트랜잭션으로 돌리고, 성공한 버전을 `supabase_migrations.schema_migrations` 에 기록한다.
+- **0012~0020 의 원격 적용 경로는 `supabase db push` 하나다.** CLI 는 마이그레이션 파일 하나를 한 트랜잭션으로 돌리고, 성공한 버전을 `supabase_migrations.schema_migrations` 에 기록한다.
 - **SQL Editor 는 읽기 확인 전용이다** — 적용 전·후 행렬, 이력 조회처럼 카탈로그를 읽는 질의만 붙인다. **마이그레이션 본문을 SQL Editor 에 붙여 적용하지 않는다**: 그러면 이력이 남지 않아, 다음 `supabase db push` 가 **같은 마이그레이션을 다시 돌린다**(두 번 도는 것을 전제로 검토한 파일이 아니다).
 - **`psql -f` 도 쓰지 않는다**(리뷰 K1 — 파일이 원자적이지 않다. 이력도 남지 않는다).
 - 🔴 **적용 직후 필수 — 이력 확인**(읽기 질의):
   ```sql
   select version, name from supabase_migrations.schema_migrations order by version;
   ```
-  기대: 적용 전 목록(마지막 `0011`) 뒤에 `0012`~`0019` 여덟 줄이 붙고, **마지막이 `0019`**. 한 줄이라도 빠졌거나 마지막이 `0019` 가 아니면 **멈추고 컨트롤러에게 보고한다**(`db push` 는 실패한 파일에서 멈추고 그 뒤 버전을 돌리지 않는다 — 어디서 멈췄는지가 이 목록에 보인다).
+  기대: 적용 전 목록(2026-09-21 이후 마지막 `0019`) 뒤에 `0020` 한 줄이 붙고, **마지막이 `0020`**. 한 줄이라도 빠졌거나 마지막이 `0020` 이 아니면 **멈추고 컨트롤러에게 보고한다**(`db push` 는 실패한 파일에서 멈추고 그 뒤 버전을 돌리지 않는다 — 어디서 멈췄는지가 이 목록에 보인다). (2026-09-21 의 첫 적용에서는 `0011` 뒤에 `0012`~`0019` 여덟 줄이 붙는 것이 기대였고 그대로 됐다 — 맨 아래 「원격 적용 기록」.)
 - **예외 — 이미 수동 적용(SQL Editor·psql)을 해 버렸다면**: 본문이 실제로 전부 적용됐는지 해당 절의 행렬로 먼저 확인한 뒤, `supabase migration repair --status applied <번호>` 로 이력을 맞춘다 — **이 경로는 컨트롤러 승인이 있을 때만 쓴다.** `repair` 는 이력만 고치고 본문을 돌리지 않으므로, 적용되지 않은 버전을 `applied` 로 적으면 그 마이그레이션은 **영영 건너뛰어진다**.
-- **잠금 대기 상한 — 파일 안의 `set local lock_timeout = '5s';`** (P5-15 R7 · 컨트롤러 결정): 0012~0019 여덟 파일 모두 **첫 실행문**이 이것이고, 둘째 실행문이 **그 시점에 `lock_timeout` 이 실제로 `5s` 인지**만 확인한다 — 아니면 아무것도 바꾸기 전에 멈춘다. ⚠️ 이 확인은 **원자성을 증명하지 않는다**(astra R7 P2-b): 자동 커밋 세션이라도 서버·롤·DB 기본값이 이미 5초면 통과한다. 잡아 주는 것은 "`set local` 이 그 문장에서 끝나 설정이 남지 않은 경우"(예: 기본값이 5초가 아닌 서버에서 `psql -f`)뿐이다. **파일 하나가 한 트랜잭션이라는 보장은 적용 경로(`supabase db push`)에서 오고**, 아래 실측이 그것을 확인한 것이다. CLI 는 파일 하나를 한 트랜잭션으로 보내므로 이 설정은 **그 파일에만** 걸리고 다음 파일로 새지 않는다. 어떤 문장이 잠금을 5초 넘게 기다리면 `ERROR: canceling statement due to lock timeout (SQLSTATE 55P03)` 로 그 파일이 실패한다 — 접수 트랜잭션을 줄 세우지 않는다.
+- **잠금 대기 상한 — 파일 안의 `set local lock_timeout = '5s';`** (P5-15 R7 · 컨트롤러 결정): 0012 이후 아홉 파일 모두 **첫 실행문**이 이것이고, 둘째 실행문이 **그 시점에 `lock_timeout` 이 실제로 `5s` 인지**만 확인한다 — 아니면 아무것도 바꾸기 전에 멈춘다. ⚠️ 이 확인은 **원자성을 증명하지 않는다**(astra R7 P2-b): 자동 커밋 세션이라도 서버·롤·DB 기본값이 이미 5초면 통과한다. 잡아 주는 것은 "`set local` 이 그 문장에서 끝나 설정이 남지 않은 경우"(예: 기본값이 5초가 아닌 서버에서 `psql -f`)뿐이다. **파일 하나가 한 트랜잭션이라는 보장은 적용 경로(`supabase db push`)에서 오고**, 아래 실측이 그것을 확인한 것이다. CLI 는 파일 하나를 한 트랜잭션으로 보내므로 이 설정은 **그 파일에만** 걸리고 다음 파일로 새지 않는다. 어떤 문장이 잠금을 5초 넘게 기다리면 `ERROR: canceling statement due to lock timeout (SQLSTATE 55P03)` 로 그 파일이 실패한다 — 접수 트랜잭션을 줄 세우지 않는다.
 - **부분 적용 — push 전체는 원자적이지 않다**: 한 파일이 시간 초과(또는 다른 오류)로 실패하면 **앞 파일들은 커밋·기록된 채 남고**, **그 파일은 롤백되며**(이력에도 없다), 뒤 파일은 돌지 않는다. 막던 세션이 끝난 뒤 **다음 `supabase db push` 가 그 파일부터** 이어서 적용한다. 시간 초과는 **멈추고 보고할 일**이다 — 수동 적용이나 `repair` 로 건너뛰지 않는다. 어디서 멈췄는지는 적용 직후 이력 확인이 보여 준다.
 - **실측** (2026-09-17 · supabase CLI 2.117.0 · 로컬 전용 `--db-url postgresql://…@127.0.0.1:…`):
   - 합성 마이그레이션(PG 15.17 일회용 컨테이너 · PG 17.6 로컬 스택의 일회용 DB 둘 다): 한 파일의 행들이 **같은 xid**, `set local` 뒤 `lock_timeout=5s`, 다음 파일에서는 `0`(새지 않음). 다른 세션이 표를 쥔 채 push → 약 5초 뒤 `55P03` · 그 파일의 표·행·이력 없음 · 앞 파일 이력 유지 → 풀린 뒤 push 가 그 파일부터 재개. 대조군(`set local` 없음)은 잠금이 풀릴 때까지 **기다렸다**(20초 잡음 → 20초 걸림).
@@ -305,7 +306,7 @@ select
        then 'CLAIM_ONE_ARG_BACK' else 'CLAIM_ONE_ARG_GONE' end as claim_old,
   coalesce((select 'ADMIN_BROKEN ' || string_agg(format('%s/%s', t.tbl, p.priv), ' ')
      from (values ('public.notices'),('public.popups'),('public.gallery'),('public.gallery_albums'),('public.showcase_routes'),('public.vehicles')) t(tbl)
-     cross join (values ('select'),('insert'),('update'),('delete')) p(priv)
+     cross join (values ('select')) p(priv)
     where not has_table_privilege('authenticated', t.tbl, p.priv)), 'ADMIN_OK') as admin_crud,
   coalesce((select 'SEQ_BROKEN ' || string_agg(s.seq, ' ')
      from (values ('public.notices_id_seq'),('public.popups_id_seq'),('public.gallery_id_seq'),('public.gallery_albums_id_seq'),('public.showcase_routes_id_seq'),('public.vehicles_id_seq')) s(seq)
@@ -322,7 +323,7 @@ select
 | ⑤ | `FN_ALL_PRESENT` · `FN_EXEC_ONLY_SERVICE` · `FN_NO_PUBLIC_ROLE_EXEC` | 세 시그니처가 **전부 있고**(없으면 `FN_MISSING …`), EXECUTE 보유자는 `service_role`(+소유자) 뿐이며(NULL ACL 은 기본값 = PUBLIC EXECUTE 로 읽는다), 공개 롤의 **유효** EXECUTE 0 (P5-15 R5) |
 | ⑥ | `FN_SERVICE_OK` | `service_role` 이 여전히 실행할 수 있다(발송기) |
 | ⑦ | `CLAIM_ONE_ARG_GONE` | 1-인자 claim 이 되살아나지 않았다 |
-| ⑧ | `ADMIN_OK` · `SEQ_OK` | 콘텐츠 6표 CRUD 와 시퀀스 usage 생존 = **관리자 화면이 살아 있다** |
+| ⑧ | `ADMIN_OK` · `SEQ_OK` | 콘텐츠 6표의 `authenticated` **select** 와 시퀀스 usage 생존 = **관리자 화면이 읽을 수 있다**. ⚠️ **2026-09-21 갱신(P5-16)**: 원래 이 칸은 6표 × **CRUD 네 동작**을 봤다. 0020 이 insert·update·delete 를 회수했으므로(`known-defects` D10) 이제 select 만 본다 — 관리자 **쓰기**의 생존은 0020 절 행렬의 `FN_OK` 가 본다. 시퀀스 usage 는 0020 뒤로 쓰이지 않는 잔여 부여다(0020 절 「남은 것」) |
 
 ### 로컬 실측 (2026-09-16, P5-12 구현)
 적용 전 → 후, `has_table_privilege` 전수:
@@ -673,7 +674,7 @@ select evtname, evtevent, evttags, evtfoid::regproc, evtenabled, md5(pg_get_func
 **`supabase db push` 만**(맨 위 「적용 경로」 — SQL Editor 는 읽기 확인용). **`psql -f` 를 쓰지 마라**(리뷰 K1). 로컬 단건 적용은 `psql -1`.
 ⚠️ ⑥ 이 `set local role` 로 롤을 바꾼다 — 적용 롤이 `anon`·`authenticated` 의 멤버여야 한다(0017·0018 과 같다). 복원은 `reset role` 이 아니라 **캡처한 적용 롤로 `set local role`**. 로컬 세 방식 모두 통과: postgres 로그인 · supabase_admin 로그인 뒤 적용 롤을 postgres 로 전환 · supabase_admin 로그인 그대로(각각 `after|<session>|<적용 롤>` 유지). `reset role` 로 바꾼 변형은 B 방식에서 `0019: 탐침 뒤 적용 롤(postgres)로 돌아오지 못했다 (current_user=supabase_admin)` 로 멈춘다(실측).
 ⚠️ ⑥ 의 대조군은 `public.p0019_probe_tbl` 을 만들었다 되돌린다 — 적용 롤에 public 스키마 CREATE 가 필요하다. 탐침은 `NOWAIT` 이고 거부되는 시도는 잠금을 잡지 않는다(권한 검사가 먼저다).
-⚠️ **0019 가 닫지 못하는 것**: `authenticated` 는 콘텐츠 여섯 표를 UPDATE·DELETE 권한으로 여전히 강하게 잠글 수 있다(후속 목록).
+⚠️ **0019 가 닫지 못한 것**: `authenticated` 는 콘텐츠 여섯 표를 UPDATE·DELETE 권한으로 여전히 강하게 잠글 수 있었다(`known-defects` D10). → **0020(P5-16)이 닫았다** — 아래 0020 절.
 
 ### 적용 전/후 확인
 🔴 **원격에서는 카탈로그 질의만 실행한다** (astra R2 P1-A · 컨트롤러 결정 2026-09-17). 잠금·DDL·DML·롤 전환 문장은 원격 확인 절차에 **하나도 없다**. 로컬 검사가 0017·0018·0019 절의 모든 코드 블록(``` · ~~~ · 언어 무관)과 산문을 문장 모양으로 훑고, 저장소의 검사 파일·검사 절 번호를 붙이라는 안내도 잡는다. ⚠️ **그것은 회귀 방지 보조일 뿐 보증이 아니다** — 정규식 휴리스틱이라 문장을 쪼개거나 풀어 쓰면 빠진다. 원격에 붙이기 전에 사람이 블록을 읽는다(P5-15 astra R4). 적용 시점의 거동 확인(실제 LOCK 거부)은 0019 자기검증 ⑥ 이 이미 했다(시도 직전 사전 검사로 잠금 획득이 구조적으로 불가능한 조합만 친다 — 아래 근거).
@@ -733,6 +734,145 @@ static void RangeVarCallbackForLockTable(…)
 로컬 실측: 플래그 없이 → 멈춤(exit 3, ACL 불변). 플래그와 함께 → 사실 전수가 **0019 적용 전과 동일**. 그 상태에서 게이트가 다시 **18건으로 빨개지고** §18·§5-6 도 빨개졌다(`MAINTAIN_LEFT`). 0019 재적용 두 번 → exit 0 · 사실이 최초 적용과 동일(멱등). PostgreSQL 15 컨테이너에서도 롤백은 플래그 없이 멈추고, 플래그와 함께면 notice 만 남기고 ACL 불변.
 
 > **원격 적용 완료 (2026-09-21 00:17 KST, 컨트롤러).** `supabase db push --linked` 로 0012~0019 여덟 파일을 한 번에 적용했다 — 전부 성공, 이력 마지막이 `0019`. 상세는 문서 맨 아래 「원격 적용 기록」.
+
+---
+
+## 0020 — 관리자 콘텐츠 쓰기를 definer 함수로 (**D10 을 닫는다** · 원격 적용 대기)
+
+**무엇을 하나**: 콘텐츠 여섯 표(`notices`·`popups`·`gallery`·`gallery_albums`·`showcase_routes`·`vehicles`)에서
+`authenticated` 의 **쓰기 세 동작을 회수**하고, 관리자 화면의 쓰기를 **security definer 함수 18개**로 옮긴다.
+0009 의 `*_admin_all` 정책은 같은 조건(`is_admin()`)의 `*_admin_select` 로 좁힌다 — **관리자 읽기는 그대로**다.
+
+**왜**(`known-defects` D10): PostgreSQL 은 `ACCESS EXCLUSIVE` 같은 강한 표 잠금을 **MAINTAIN·UPDATE·DELETE·TRUNCATE
+중 하나**로 허용한다(0019 절 맨 아래 `LockTableAclCheck` 인용). 0019 가 MAINTAIN 을 걷었지만 관리자 화면 때문에
+`authenticated` 에 UPDATE·DELETE 가 남아 있었고, 그래서 **로그인만 하면(관리자 명단에 없어도)** 그 여섯 표를 잠가
+공개 화면과 관리자 화면을 함께 멈출 수 있었다. RLS 는 이것을 보지 않는다. 0020 적용 직전 로컬 실측에서 여섯 표 전부
+실제로 잠겼다. 지금까지의 결정은 "공개 가입이 막혀 있다(D2)" 에 기댄 **C(기록하고 둠)** 였고, 사장님 지시로 **A** 를 구현했다.
+
+**정상 경로가 막히지 않는 이유**: 관리자 쓰기는 definer 함수가 소유자 권한으로 수행하고, 함수 첫 문장이 `is_admin()`
+가드다(0010 이 예약 전이에 쓴 것과 같은 구조). 공개 접수·아웃박스 적재·파기 크론은 서비스 롤이라 무관하다.
+`vehicles` 는 **관리자 쓰기 경로가 저장소에 없다**(읽기 전용) — 함수를 만들지 않고 회수만 했다.
+
+### 🔴 배포 순서 — **원격 적용이 코드 배포보다 먼저다**
+이 마이그레이션과 앱 코드(`lib/admin/*.ts`)는 **짝**이다. 한쪽만 하면 관리자 화면의 저장이 전부 실패한다:
+- 코드를 먼저 배포하면 → 새 RPC 가 아직 없어 `PGRST202`
+- 적용만 하고 옛 코드가 남으면 → 표 쓰기 권한이 없어 `42501`
+순서: **0020 적용 → 스키마 캐시 갱신 확인(아래) → 코드 배포.** 되돌릴 때는 반대다(0020 절 「롤백」).
+🔴 **적용 직전 필수 — 옛 쓰기 코드가 어디에도 돌고 있지 않은가** (GPT astra P2, P5-16). 위 두 실패는 **어느 순서로 해도 그 사이 창에서는 생긴다** — 짝을 동시에 바꿀 방법이 없다. 그래서 창을 짧게 하는 것이 아니라 **창에서 저장하는 사람이 없음**을 확인하고 적용한다:
+- **운영 배포본**: 2026-09-21 기준 `main` 에는 관리자 쓰기 경로가 없다(`git ls-tree main` 에 `lib/admin/*` 쓰기 없음 — 0014 때와 같은 확인). 적용 직전에 **Vercel 운영 배포본이 어느 커밋인지** 다시 본다.
+- **프리뷰 배포본**: `feature/implementation` 의 옛 커밋으로 만든 프리뷰가 **운영 DB 를 가리키면** 그 프리뷰의 관리자 저장이 적용 순간부터 42501 로 실패한다. 프리뷰 env 가 별도 프로젝트(P0-2)인지 확인한다. 같다면 적용 전에 프리뷰를 새 코드로 다시 배포하거나 사용하지 않음을 확인한다.
+- **사람**: 사장님이 그 시간에 관리자 화면에서 저장하지 않는다(관리자 화면은 아직 운영에 공개되지 않았다 — 오늘은 해당 없음).
+이 셋이 확인되면 창은 무해하다. 하나라도 불명이면 **멈추고 컨트롤러에게 보고한다.**
+⚠️ **스키마 캐시** — PostgREST 는 함수 목록을 캐시한다. 이 DB 의 `pgrst_ddl_watch` 이벤트 트리거가
+`NOTIFY pgrst, 'reload schema'` 를 내므로 자동 갱신되지만(2026-09-21 원격 본문 확인), 적용 직후 아래 행렬의 `FN_OK` 와
+관리자 화면 저장 한 번으로 실제 반영을 확인한다.
+
+### 적용 경로
+**`supabase db push` 만**(맨 위 「적용 경로」 — SQL Editor 는 읽기 확인용). **`psql -f` 를 쓰지 마라**(리뷰 K1). 로컬 단건 적용은 `psql -1`.
+⚠️ 자기검증 ⑧ 이 롤을 바꾼다 — 적용 롤이 `anon`·`authenticated` 의 멤버여야 한다(0017·0018·0019 와 같다). 복원은 `reset role` 이 아니라 **캡처한 적용 롤**이다. 로컬 세 방식 모두 통과: postgres 로그인 · supabase_admin 로그인 뒤 적용 롤을 postgres 로 전환 · supabase_admin 로그인 그대로.
+⚠️ 자기검증 ⑧ 의 대조군은 `public.p0020_probe_tbl` 을 만들었다 되돌린다 — 적용 롤에 public 스키마 CREATE 가 필요하고, 그 DDL 이 이벤트 트리거를 태운다(맨 위 ③).
+⚠️ 탐침은 `NOWAIT` 이고, 시도 직전 사전 검사를 통과한 조합은 잠금을 **얻을 수 없다**(권한 검사가 잠금 획득보다 먼저다 — 0019 절의 `lockcmds.c` 인용과 같은 근거).
+
+### 적용 전/후 확인
+🔴 **원격에서는 카탈로그 질의만 실행한다** (astra R2 P1-A · 컨트롤러 결정 2026-09-17). 잠금·DDL·DML·롤 전환 문장은 원격 확인 절차에 **하나도 없다**. ⚠️ 로컬 스캐너는 회귀 방지 보조일 뿐 보증이 아니다 — 원격에 붙이기 전에 사람이 블록을 읽는다.
+
+아래 행렬(카탈로그 질의뿐)을 **읽기 확인용으로** SQL Editor 에 붙여 넣는다(적용 경로가 아니다). 붙이는 원문은 **이 runbook 의 블록뿐**이다.
+(로컬 검사도 이 표식 사이의 원문을 읽어 그대로 돌린다.)
+- **적용 전** 기대: `CONTENT_EXTRA …`(여섯 표 × `authenticated` 에 쓰기 셋이 보인다) · `FN …`(18개가 전부 없다) · `POLICY …`(`*_admin_all` 이 있다)
+- **적용 후** 기대: `CONTENT_SELECT_ONLY` · `CONTENT_SELECT_OK` · `CONTENT_PUBLIC_NONE` · `SERVICE_OK` · `FN_OK` · `POLICY_OK` · `CONTENT_COUNT 6`
+
+<!-- P515:0020_MATRIX_SQL:BEGIN -->
+```sql
+select
+  coalesce((select 'CONTENT_EXTRA ' || string_agg(format('%s/%s/%s', r.role, c.relname, lower(d.privilege_type)), ' ' order by c.relname, r.role, d.privilege_type)
+     from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     cross join (values ('anon'),('authenticated')) r(role)
+     cross join lateral aclexplode(acldefault('r', c.relowner)) d
+    where n.nspname = 'public'
+      and c.relname = any (array['notices','popups','gallery','gallery_albums','showcase_routes','vehicles'])
+      and d.privilege_type <> 'SELECT'
+      and has_table_privilege(r.role, c.oid, d.privilege_type)), 'CONTENT_SELECT_ONLY') as content,
+  coalesce((select 'CONTENT_SELECT_LOST ' || string_agg(format('%s/%s', r.role, c.relname), ' ' order by c.relname, r.role)
+     from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     cross join (values ('anon'),('authenticated')) r(role)
+    where n.nspname = 'public'
+      and c.relname = any (array['notices','popups','gallery','gallery_albums','showcase_routes','vehicles'])
+      and not has_table_privilege(r.role, c.oid, 'SELECT')), 'CONTENT_SELECT_OK') as reads,
+  coalesce((select 'CONTENT_PUBLIC_ACL ' || string_agg(format('%s/%s', c.relname, lower(a.privilege_type)), ' ' order by c.relname, a.privilege_type)
+     from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     cross join lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+    where n.nspname = 'public'
+      and c.relname = any (array['notices','popups','gallery','gallery_albums','showcase_routes','vehicles'])
+      and a.grantee = 0), 'CONTENT_PUBLIC_NONE') as pub,
+  coalesce((select 'SERVICE_LOST ' || string_agg(format('%s/%s/%s', w.role, c.relname, lower(d.privilege_type)), ' ' order by c.relname, w.role, d.privilege_type)
+     from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     cross join (values ('service_role'),('postgres')) w(role)
+     cross join lateral aclexplode(acldefault('r', c.relowner)) d
+    where n.nspname = 'public'
+      and c.relname = any (array['notices','popups','gallery','gallery_albums','showcase_routes','vehicles'])
+      and not has_table_privilege(w.role, c.oid, d.privilege_type)), 'SERVICE_OK') as service,
+  coalesce((select 'FN ' || string_agg(x, ' ' order by x) from (
+     select format('MISSING:%s', s.sig) as x
+       from unnest(array['public.admin_create_notice(text,text,text,date,boolean)','public.admin_update_notice(integer,text,text,text,date,boolean)','public.admin_delete_notice(integer)','public.admin_set_notice_active(integer,boolean)','public.admin_create_popup(text,text,text,date,date,boolean)','public.admin_update_popup(integer,text,text,text,date,date,boolean)','public.admin_delete_popup(integer)','public.admin_set_popup_active(integer,boolean)','public.admin_create_gallery_photo(text,text,integer,integer,integer,integer,text,integer,boolean)','public.admin_update_gallery_photo(integer,text,integer,integer)','public.admin_set_gallery_photo_active(integer,boolean)','public.admin_delete_gallery_photo(integer)','public.admin_create_album(text,text,integer,boolean)','public.admin_update_album(integer,text,text,integer,boolean)','public.admin_set_album_active(integer,boolean)','public.admin_delete_album(integer)','public.admin_update_route(integer,text,text,integer,integer,boolean)','public.admin_set_route_active(integer,boolean)']) s(sig)
+      where to_regprocedure(s.sig) is null
+     union all
+     select format('OPEN:%s/%s', s.sig, w.role)
+       from unnest(array['public.admin_create_notice(text,text,text,date,boolean)','public.admin_update_notice(integer,text,text,text,date,boolean)','public.admin_delete_notice(integer)','public.admin_set_notice_active(integer,boolean)','public.admin_create_popup(text,text,text,date,date,boolean)','public.admin_update_popup(integer,text,text,text,date,date,boolean)','public.admin_delete_popup(integer)','public.admin_set_popup_active(integer,boolean)','public.admin_create_gallery_photo(text,text,integer,integer,integer,integer,text,integer,boolean)','public.admin_update_gallery_photo(integer,text,integer,integer)','public.admin_set_gallery_photo_active(integer,boolean)','public.admin_delete_gallery_photo(integer)','public.admin_create_album(text,text,integer,boolean)','public.admin_update_album(integer,text,text,integer,boolean)','public.admin_set_album_active(integer,boolean)','public.admin_delete_album(integer)','public.admin_update_route(integer,text,text,integer,integer,boolean)','public.admin_set_route_active(integer,boolean)']) s(sig)
+       cross join (values ('anon'),('service_role')) w(role)
+      where to_regprocedure(s.sig) is not null and has_function_privilege(w.role, to_regprocedure(s.sig), 'execute')
+     union all
+     select format('NOADMIN:%s', s.sig)
+       from unnest(array['public.admin_create_notice(text,text,text,date,boolean)','public.admin_update_notice(integer,text,text,text,date,boolean)','public.admin_delete_notice(integer)','public.admin_set_notice_active(integer,boolean)','public.admin_create_popup(text,text,text,date,date,boolean)','public.admin_update_popup(integer,text,text,text,date,date,boolean)','public.admin_delete_popup(integer)','public.admin_set_popup_active(integer,boolean)','public.admin_create_gallery_photo(text,text,integer,integer,integer,integer,text,integer,boolean)','public.admin_update_gallery_photo(integer,text,integer,integer)','public.admin_set_gallery_photo_active(integer,boolean)','public.admin_delete_gallery_photo(integer)','public.admin_create_album(text,text,integer,boolean)','public.admin_update_album(integer,text,text,integer,boolean)','public.admin_set_album_active(integer,boolean)','public.admin_delete_album(integer)','public.admin_update_route(integer,text,text,integer,integer,boolean)','public.admin_set_route_active(integer,boolean)']) s(sig)
+      where to_regprocedure(s.sig) is not null and not has_function_privilege('authenticated', to_regprocedure(s.sig), 'execute')
+     union all
+     select format('PUBLIC:%s', s.sig)
+       from unnest(array['public.admin_create_notice(text,text,text,date,boolean)','public.admin_update_notice(integer,text,text,text,date,boolean)','public.admin_delete_notice(integer)','public.admin_set_notice_active(integer,boolean)','public.admin_create_popup(text,text,text,date,date,boolean)','public.admin_update_popup(integer,text,text,text,date,date,boolean)','public.admin_delete_popup(integer)','public.admin_set_popup_active(integer,boolean)','public.admin_create_gallery_photo(text,text,integer,integer,integer,integer,text,integer,boolean)','public.admin_update_gallery_photo(integer,text,integer,integer)','public.admin_set_gallery_photo_active(integer,boolean)','public.admin_delete_gallery_photo(integer)','public.admin_create_album(text,text,integer,boolean)','public.admin_update_album(integer,text,text,integer,boolean)','public.admin_set_album_active(integer,boolean)','public.admin_delete_album(integer)','public.admin_update_route(integer,text,text,integer,integer,boolean)','public.admin_set_route_active(integer,boolean)']) s(sig)
+       join pg_proc p on p.oid = to_regprocedure(s.sig)
+       cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+      where a.grantee = 0 and a.privilege_type = 'EXECUTE'
+     union all
+     select format('MODE:%s(prosecdef=%s,config=%s)', s.sig, p.prosecdef, coalesce(array_to_string(p.proconfig, ' '), '(none)'))
+       from unnest(array['public.admin_create_notice(text,text,text,date,boolean)','public.admin_update_notice(integer,text,text,text,date,boolean)','public.admin_delete_notice(integer)','public.admin_set_notice_active(integer,boolean)','public.admin_create_popup(text,text,text,date,date,boolean)','public.admin_update_popup(integer,text,text,text,date,date,boolean)','public.admin_delete_popup(integer)','public.admin_set_popup_active(integer,boolean)','public.admin_create_gallery_photo(text,text,integer,integer,integer,integer,text,integer,boolean)','public.admin_update_gallery_photo(integer,text,integer,integer)','public.admin_set_gallery_photo_active(integer,boolean)','public.admin_delete_gallery_photo(integer)','public.admin_create_album(text,text,integer,boolean)','public.admin_update_album(integer,text,text,integer,boolean)','public.admin_set_album_active(integer,boolean)','public.admin_delete_album(integer)','public.admin_update_route(integer,text,text,integer,integer,boolean)','public.admin_set_route_active(integer,boolean)']) s(sig)
+       join pg_proc p on p.oid = to_regprocedure(s.sig)
+      where not p.prosecdef or coalesce(array_to_string(p.proconfig, ' '), '') <> 'search_path=public, pg_temp'
+   ) y), 'FN_OK') as fns,
+  coalesce((select 'POLICY ' || string_agg(x, ' ' order by x) from (
+     select format('NO_ADMIN_SELECT:%s', t.n) as x
+       from unnest(array['notices','popups','gallery','gallery_albums','showcase_routes','vehicles']) t(n)
+      where not exists (select 1 from pg_policy p join pg_class c on c.oid = p.polrelid
+                         where c.relname = t.n and p.polname = t.n || '_admin_select' and p.polcmd = 'r')
+     union all
+     select format('OLD_ADMIN_ALL:%s', t.n)
+       from unnest(array['notices','popups','gallery','gallery_albums','showcase_routes','vehicles']) t(n)
+      where exists (select 1 from pg_policy p join pg_class c on c.oid = p.polrelid
+                     where c.relname = t.n and p.polname = t.n || '_admin_all')
+     union all
+     select format('NO_PUBLIC_SELECT:%s', t.n)
+       from unnest(array['notices','popups','gallery','gallery_albums','showcase_routes','vehicles']) t(n)
+      where not exists (select 1 from pg_policy p join pg_class c on c.oid = p.polrelid
+                         where c.relname = t.n and p.polname = t.n || '_select_active')
+     union all
+     select format('WRITE_POLICY:%s/%s', c.relname, p.polname)
+       from pg_policy p join pg_class c on c.oid = p.polrelid
+      where c.relname = any (array['notices','popups','gallery','gallery_albums','showcase_routes','vehicles'])
+        and p.polcmd <> 'r'
+        and 'authenticated' = any (select r.rolname from pg_roles r where r.oid = any (p.polroles))
+   ) z), 'POLICY_OK') as policies,
+  (select 'CONTENT_COUNT ' || count(*) from unnest(array['public.notices','public.popups','public.gallery','public.gallery_albums','public.showcase_routes','public.vehicles']) t(n) where to_regclass(t.n) is not null) as cnt;
+```
+<!-- P515:0020_MATRIX_SQL:END -->
+
+⛔ **거동 확인(실제 잠금 시도)은 로컬 테스트 전용이다 — 원격에 붙이지 마라.** 적용 시점의 거동 확인은 0020 자기검증 ⑧ 이 이미 한다(시도 직전 사전 검사로 잠금 획득이 구조적으로 불가능한 조합만 친다 · 대조군은 일회용 표).
+
+**남은 것 (후속)**: 0018 이 남긴 `authenticated` 의 콘텐츠 여섯 시퀀스 `usage` 는 0020 뒤로 **쓰이지 않는다**(표 insert 가 없으니 serial 기본값도 부르지 않는다. definer 함수는 소유자 권한으로 돈다). 시퀀스 권한으로는 표를 잠글 수 없어 D10 과 무관하므로 0020 의 범위에서 뺐다 — 다음 권한 정리 때 함께 걷는다.
+
+### 롤백
+`supabase/rollbacks/0020_admin_content_writes.down.sql` · **승인 플래그 요구**(`set bestour.rollback_0020_ack = '1';`), 조건 없이 먼저.
+되돌리는 것: 여섯 표의 `authenticated` 쓰기 세 동작 · 0009 의 `*_admin_all` 정책 · definer 함수 18개 제거.
+🔴 **되돌리면 D10 이 다시 열린다** — 오류도 로그도 화면 변화도 없이. 그것이 플래그를 조건 없이 요구하는 이유다.
+⚠️ **코드 롤백과 짝이다**: 앱을 0020 이전 코드로 먼저 되돌린 뒤 이 파일을 돌린다. 한쪽만 하면 관리자 저장이 `PGRST202`(함수 없음) 또는 `42501`(표 권한 없음)로 전부 실패한다.
+재실행 가능: 로컬 실측(2026-09-21 P5-16) — 플래그 없이 멈춤 · 플래그 있으면 복원(ACL·정책·함수 스냅샷이 0020 이전과 **한 줄도 다르지 않다**) · 두 번 연달아 돌려도 오류 없음 · 그 뒤 0020 재적용 스냅샷이 첫 적용과 같다.
+(처음 판은 되살리는 `*_admin_all` 을 먼저 지우지 않아 **두 번째 실행이 `policy … already exists` 로 멈췄다** — 인계 뒤 고쳤다.)
 
 ---
 

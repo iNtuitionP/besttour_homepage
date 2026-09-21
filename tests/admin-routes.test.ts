@@ -20,7 +20,7 @@ import path from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { withShowcaseRoutesLock } from "./helpers/db-lock";
-import { expectRlsInsertDenied } from "./helpers/expect-denied";
+import { expectRaisedDenied, expectTablePrivilegeDenied } from "./helpers/expect-denied";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
 
 vi.mock("server-only", () => ({}));
@@ -52,6 +52,7 @@ import {
   ADMIN_ROUTES_PATH,
   ROUTE_ADMIN_COLUMNS,
   ROUTE_ADMIN_SELECT,
+  ROUTE_RPC,
   ROUTE_TABLE,
   getAdminRoute,
   listAdminRoutes,
@@ -115,14 +116,21 @@ const validForm = (over: Record<string, string> = {}): FormData =>
 interface Chain {
   [method: string]: ReturnType<typeof vi.fn>;
 }
-function dbStub(result: { data: unknown; error: unknown }): { client: { from: ReturnType<typeof vi.fn> }; chain: Chain; from: ReturnType<typeof vi.fn> } {
+function dbStub(result: { data: unknown; error: unknown }): {
+  client: { from: ReturnType<typeof vi.fn>; rpc: ReturnType<typeof vi.fn> };
+  chain: Chain;
+  from: ReturnType<typeof vi.fn>;
+  rpc: ReturnType<typeof vi.fn>;
+} {
   const chain: Record<string, unknown> = {};
   for (const m of ["select", "order", "limit", "eq", "insert", "update", "delete", "maybeSingle", "overrideTypes"]) {
     chain[m] = vi.fn(() => chain);
   }
   chain.then = (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) => Promise.resolve(result).then(resolve, reject);
   const from = vi.fn(() => chain);
-  return { client: { from }, chain: chain as Chain, from };
+  // 0020(P5-16) 뒤 쓰기는 definer 함수 RPC 다 — 표 체인(from)은 읽기만 탄다.
+  const rpc = vi.fn(async () => result);
+  return { client: { from, rpc }, chain: chain as Chain, from, rpc };
 }
 
 const ROW = {
@@ -259,15 +267,28 @@ describe("2. 쿼리 계층", () => {
   test("수정 — 다섯 컬럼만 쓴다. highlight 는 스펙이 정한 값이라 건드리지 않는다", async () => {
     const up = dbStub({ data: [{ id: 2 }], error: null });
     expect(await updateRouteRow(2, VALUES, up.client as never)).toBe("changed");
-    expect(up.chain.update).toHaveBeenCalledWith({
-      origin_code: VALUES.originCode,
-      destination_code: VALUES.destinationCode,
-      price_from: VALUES.priceFrom,
-      sort: VALUES.sort,
-      active: VALUES.active,
-    });
-    expect(up.chain.eq).toHaveBeenCalledWith("id", 2);
-    expect(JSON.stringify(up.chain.update.mock.calls)).not.toContain("highlight");
+    expect(ROUTE_RPC.update).toBe("admin_update_route");
+    // 인자 = 컬럼 화이트리스트(0020 §5). highlight 는 함수가 받지도 않는다.
+    expect(up.rpc.mock.calls).toEqual([
+      [
+        ROUTE_RPC.update,
+        {
+          p_id: 2,
+          p_origin_code: VALUES.originCode,
+          p_destination_code: VALUES.destinationCode,
+          p_price_from: VALUES.priceFrom,
+          p_sort: VALUES.sort,
+          p_active: VALUES.active,
+        },
+      ],
+    ]);
+    expect(JSON.stringify(up.rpc.mock.calls)).not.toContain("highlight");
+    expect(up.from, "표에 직접 쓴다 — 0020 뒤로 GRANT 가 없다").not.toHaveBeenCalled();
+    // 함수 쪽도 highlight 를 받지 않는다
+    const fnSrc = read("supabase/migrations/0020_admin_content_writes.sql");
+    const sig = fnSrc.match(/create or replace function admin_update_route\(([^)]*)\)/)?.[1] ?? "";
+    expect(sig, "admin_update_route 시그니처를 찾지 못했다").not.toBe("");
+    expect(sig).not.toContain("highlight");
   });
 
   test("수정 — 바뀐 행이 0이면 unchanged (RLS 에 막혔거나 없는 id)", async () => {
@@ -283,12 +304,23 @@ describe("2. 쿼리 계층", () => {
   test("그 밖의 DB 오류는 던진다 — 행 내용을 섞지 않고 code·message 만", async () => {
     const { client } = dbStub({ data: null, error: { code: "42501", message: "permission denied" } });
     await expect(updateRouteRow(2, VALUES, client as never)).rejects.toThrow(/42501.*permission denied/);
+    // EXECUTE 거부도 같은 42501 이지만 가드 거부가 아니다 — 던진다(lib/admin/adminRpc.ts)
+    const exec = dbStub({ data: null, error: { code: "42501", message: "permission denied for function admin_update_route" } });
+    await expect(updateRouteRow(2, VALUES, exec.client as never)).rejects.toThrow(/permission denied for function/);
+  });
+
+  test("가드 거부(명단 밖 세션)는 unchanged — 0020 이전 정책에 가려 0행이던 것과 같은 결과", async () => {
+    const guard = dbStub({ data: null, error: { code: "42501", message: "admin_update_route: 관리자 명단에 없는 호출자다" } });
+    expect(await updateRouteRow(2, VALUES, guard.client as never)).toBe("unchanged");
+    const guardToggle = dbStub({ data: null, error: { code: "42501", message: "admin_set_route_active: 관리자 명단에 없는 호출자다" } });
+    expect(await setRouteActive(2, true, guardToggle.client as never)).toBe("unchanged");
   });
 
   test("노출 토글 — active 만 쓴다(가격·코드를 건드리지 않는다)", async () => {
     const off = dbStub({ data: [{ id: 2 }], error: null });
     expect(await setRouteActive(2, false, off.client as never)).toBe("changed");
-    expect(off.chain.update).toHaveBeenCalledWith({ active: false });
+    expect(off.rpc.mock.calls).toEqual([["admin_set_route_active", { p_id: 2, p_active: false }]]);
+    expect(off.from).not.toHaveBeenCalled();
   });
 
   test("추가·삭제 경로가 아예 없다 — 16개는 고정 집합이다 (스펙 §13.2 · 0002 FK)", async () => {
@@ -298,7 +330,13 @@ describe("2. 쿼리 계층", () => {
     const src = codeOf(LIB_DB);
     expect(src, "쿼리 모듈에 insert 가 있다").not.toMatch(/\.insert\(/);
     expect(src, "쿼리 모듈에 delete 가 있다").not.toMatch(/\.delete\(/);
+    expect(src, "쿼리 모듈이 표에 직접 update 한다 — 0020 뒤로 GRANT 가 없다").not.toMatch(/\.update\(/);
     expect(SHOWCASE_ROUTE_SEED.length, "스펙 §13.2 대표 노선은 16개다").toBe(16);
+    // 쓰기 함수도 둘뿐이다 — 0020 에 노선을 만들거나 지우는 함수가 없다
+    expect(Object.values(ROUTE_RPC).sort()).toEqual(["admin_set_route_active", "admin_update_route"]);
+    const mig = read("supabase/migrations/0020_admin_content_writes.sql");
+    expect(mig, "0020 에 노선 추가 함수").not.toMatch(/function admin_(create|insert|add)_route/);
+    expect(mig, "0020 에 노선 삭제 함수").not.toMatch(/function admin_(delete|remove)_route/);
   });
 });
 
@@ -312,10 +350,11 @@ describe("3. 서버액션", () => {
   });
 
   test("수정 — requireAdmin 이 DB 보다 먼저 돈다", async () => {
-    const { client, from } = dbStub({ data: [{ id: 2 }], error: null });
+    const { client, rpc } = dbStub({ data: [{ id: 2 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
     await updateRoute(validForm({ [ROUTE_FIELDS.id]: "2" }));
-    expect(vi.mocked(requireAdmin).mock.invocationCallOrder[0]).toBeLessThan(from.mock.invocationCallOrder[0]);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(requireAdmin).mock.invocationCallOrder[0]).toBeLessThan(rpc.mock.invocationCallOrder[0]);
   });
 
   test("수정 — 성공하면 홈 노선 태그와 관리자 경로를 무효화한다", async () => {
@@ -351,20 +390,23 @@ describe("3. 서버액션", () => {
   });
 
   test("수정 — id 가 없거나 형식이 틀리면 DB 를 부르지 않는다", async () => {
-    const { client, from } = dbStub({ data: [{ id: 2 }], error: null });
+    const { client, from, rpc } = dbStub({ data: [{ id: 2 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
     expect((await updateRoute(validForm())).code).toBe("validation");
     expect((await updateRoute(validForm({ [ROUTE_FIELDS.id]: "abc" }))).code).toBe("validation");
+    // 0020 뒤 쓰기는 rpc 다 — from 만 보면 이 단언은 공허하게 통과한다
     expect(from).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   test("수정 — 검증에 걸리면 DB 를 부르지 않는다 (잘못된 가격·코드)", async () => {
-    const { client, from } = dbStub({ data: [{ id: 2 }], error: null });
+    const { client, from, rpc } = dbStub({ data: [{ id: 2 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
 
     expect((await updateRoute(validForm({ [ROUTE_FIELDS.id]: "2", [ROUTE_FIELDS.priceFrom]: "-1" }))).code).toBe("validation");
     expect((await updateRoute(validForm({ [ROUTE_FIELDS.id]: "2", [ROUTE_FIELDS.originCode]: "XXX" }))).code).toBe("validation");
     expect(from).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
     expect(vi.mocked(revalidate)).not.toHaveBeenCalled();
   });
 
@@ -385,11 +427,13 @@ describe("3. 서버액션", () => {
     const on = dbStub({ data: [{ id: 2 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(on.client as never);
     expect(await toggleRouteActive(2, true)).toEqual({ ok: true, changed: true, code: "activated" });
+    expect(on.rpc.mock.calls).toEqual([["admin_set_route_active", { p_id: 2, p_active: true }]]);
 
     vi.clearAllMocks();
     const off = dbStub({ data: [{ id: 2 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(off.client as never);
     expect(await toggleRouteActive(2, false)).toEqual({ ok: true, changed: true, code: "deactivated" });
+    expect(off.rpc.mock.calls).toEqual([["admin_set_route_active", { p_id: 2, p_active: false }]]);
     expect(vi.mocked(revalidate).mock.calls.map((c) => c[0])).toEqual([QUERY_TAGS.showcase]);
 
     vi.clearAllMocks();
@@ -397,6 +441,7 @@ describe("3. 서버액션", () => {
     vi.mocked(createSsrClient).mockReturnValue(bad.client as never);
     expect((await toggleRouteActive(0, true)).code).toBe("validation");
     expect(bad.from).not.toHaveBeenCalled();
+    expect(bad.rpc).not.toHaveBeenCalled();
   });
 
   test("DB 오류 — 예외를 밖으로 던지지 않고 failed 로 닫는다", async () => {
@@ -407,12 +452,13 @@ describe("3. 서버액션", () => {
   });
 
   test("requireAdmin 이 리다이렉트(throw)하면 DB 는 돌지 않는다", async () => {
-    const { client, from } = dbStub({ data: [{ id: 2 }], error: null });
+    const { client, from, rpc } = dbStub({ data: [{ id: 2 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
     vi.mocked(requireAdmin).mockRejectedValue(new Error("NEXT_REDIRECT"));
 
     await expect(updateRoute(validForm({ [ROUTE_FIELDS.id]: "2" }))).rejects.toThrow("NEXT_REDIRECT");
     expect(from).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
   });
 });
 
@@ -670,20 +716,38 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("5. DB — showcase_routes
     expect(add.status, JSON.stringify(add.body).slice(0, 300)).toBeLessThan(300);
   });
 
-  test("관리자 세션 — 가격·정렬·노출을 고칠 수 있다 (definer 함수 없이 정책만으로)", async () => {
+  /** 0020 뒤 관리자 쓰기의 유일한 경로 — lib/admin/routes.ts 가 부르는 것과 같은 definer 함수 RPC. */
+  const rpcAs = (token: string, fn: string, args: Record<string, unknown>) => asUser(token, "POST", `/rpc/${fn}`, args);
+  /** 화면이 보내는 다섯 값 — 대상 행의 현재 값에서 시작해 바꿀 것만 덮어쓴다(화면의 저장과 같은 모양). */
+  const routeArgs = (row: RouteRow, over: Record<string, unknown> = {}) => ({
+    p_id: row.id,
+    p_origin_code: row.origin_code,
+    p_destination_code: row.destination_code,
+    p_price_from: row.price_from,
+    p_sort: row.sort,
+    p_active: row.active,
+    ...over,
+  });
+
+  test("관리자 세션 — 가격·정렬·노출을 고칠 수 있다 (0020 definer 함수 admin_update_route · admin_set_route_active)", async () => {
     const row = target as RouteRow;
-    const up = await asUser(adminToken, "PATCH", `/showcase_routes?id=eq.${row.id}`, { price_from: 123456, sort: 99 }, "return=representation");
-    expect(up.status, JSON.stringify(up.body).slice(0, 300)).toBeLessThan(300);
-    expect((up.body as RouteRow[])[0].price_from).toBe(123456);
+    const up = await rpcAs(adminToken, ROUTE_RPC.update, routeArgs(row, { p_price_from: 123456, p_sort: 99 }));
+    expect(up.status, JSON.stringify(up.body).slice(0, 300)).toBe(200);
+    expect(up.body).toEqual([{ id: row.id }]);
+    const mid = await rest("GET", `/showcase_routes?select=price_from,sort,highlight&id=eq.${row.id}`);
+    expect((mid.body as RouteRow[])[0]).toEqual({ price_from: 123456, sort: 99, highlight: row.highlight });
 
     // 가격을 비우는 것(null)이 라벨 숨김 폴백의 입력이다
-    const cleared = await asUser(adminToken, "PATCH", `/showcase_routes?id=eq.${row.id}`, { price_from: null }, "return=representation");
-    expect((cleared.body as RouteRow[])[0].price_from).toBeNull();
+    const cleared = await rpcAs(adminToken, ROUTE_RPC.update, routeArgs(row, { p_price_from: null, p_sort: 99 }));
+    expect(cleared.body).toEqual([{ id: row.id }]);
+    const after = await rest("GET", `/showcase_routes?select=price_from&id=eq.${row.id}`);
+    expect((after.body as RouteRow[])[0].price_from).toBeNull();
 
-    // 비활성으로 내려도 관리자에게는 보인다(되살릴 수 있어야 한다)
-    await asUser(adminToken, "PATCH", `/showcase_routes?id=eq.${row.id}`, { active: false });
+    // 비활성으로 내려도 관리자에게는 보인다(되살릴 수 있어야 한다 — 0020 showcase_routes_admin_select)
+    const off = await rpcAs(adminToken, ROUTE_RPC.setActive, { p_id: row.id, p_active: false });
+    expect(off.body).toEqual([{ id: row.id }]);
     const hidden = await asUser(adminToken, "GET", `/showcase_routes?select=id,active&id=eq.${row.id}`);
-    expect((hidden.body as RouteRow[])[0].active).toBe(false);
+    expect((hidden.body as RouteRow[])[0]?.active, "관리자가 비활성 노선을 못 보면 되살릴 수 없다").toBe(false);
   });
 
   test("anon — 비활성 노선은 보이지 않는다 (공개 정책 회귀)", async () => {
@@ -692,30 +756,52 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("5. DB — showcase_routes
     expect(off.status, JSON.stringify(off.body).slice(0, 200)).toBe(200);
     expect((off.body as unknown[]).length, "비활성 노선이 anon 에게 보인다").toBe(0);
 
-    await asUser(adminToken, "PATCH", `/showcase_routes?id=eq.${row.id}`, { active: true });
+    const back = await rpcAs(adminToken, ROUTE_RPC.setActive, { p_id: row.id, p_active: true });
+    expect(back.body).toEqual([{ id: row.id }]);
     const on = await asAnon(`/showcase_routes?select=id&id=eq.${row.id}`);
     expect((on.body as unknown[]).length).toBe(1);
   });
 
-  test("명단에 없는 로그인 세션 — 수정이 통하지 않는다", async () => {
+  test("명단에 없는 로그인 세션 — 표 직접 쓰기는 GRANT 층, 함수는 가드가 거부한다", async () => {
     const row = target as RouteRow;
-    await asUser(plainToken, "PATCH", `/showcase_routes?id=eq.${row.id}`, { price_from: 1 });
-    const still = await rest("GET", `/showcase_routes?select=price_from&id=eq.${row.id}`);
-    expect((still.body as RouteRow[])[0].price_from, "명단 밖 세션이 가격을 바꿨다").toBeNull();
+    // 표 직접 쓰기 — 0020 이 authenticated 의 insert·update·delete 를 회수했다: 403 · 42501 · permission denied for table showcase_routes.
+    expectTablePrivilegeDenied(await asUser(plainToken, "PATCH", `/showcase_routes?id=eq.${row.id}`, { price_from: 1 }), "showcase_routes", "명단 밖 세션의 showcase_routes UPDATE");
+    expectTablePrivilegeDenied(
+      await asUser(plainToken, "POST", "/showcase_routes", { origin_code: "SEL", destination_code: "PHG" }),
+      "showcase_routes",
+      "명단 밖 세션의 showcase_routes INSERT",
+    );
+    expectTablePrivilegeDenied(await asUser(plainToken, "DELETE", `/showcase_routes?id=eq.${row.id}`), "showcase_routes", "명단 밖 세션의 showcase_routes DELETE");
 
-    const ins = await asUser(plainToken, "POST", "/showcase_routes", { origin_code: "SEL", destination_code: "PHG" });
-    // P6-13 실측: 403 · 42501 · `new row violates row-level security policy for table "showcase_routes"` — 0009 의 with check.
-    expectRlsInsertDenied(ins, "showcase_routes", "명단 밖 세션의 showcase_routes INSERT");
+    // 함수 — 가드가 42501 로 막는다(메시지로 EXECUTE 거부와 갈린다)
+    expectRaisedDenied(
+      await rpcAs(plainToken, ROUTE_RPC.update, routeArgs(row, { p_price_from: 1, p_active: true })),
+      "admin_update_route: 관리자 명단에 없는 호출자다",
+      "명단 밖 세션의 admin_update_route",
+    );
+    expectRaisedDenied(
+      await rpcAs(plainToken, ROUTE_RPC.setActive, { p_id: row.id, p_active: false }),
+      "admin_set_route_active: 관리자 명단에 없는 호출자다",
+      "명단 밖 세션의 admin_set_route_active",
+    );
+
+    const still = await rest("GET", `/showcase_routes?select=price_from,active&id=eq.${row.id}`);
+    expect((still.body as RouteRow[])[0], "명단 밖 세션이 노선을 바꿨다").toEqual({ price_from: null, active: true });
+    const all = await rest("GET", "/showcase_routes?select=id");
+    expect((all.body as unknown[]).length, "명단 밖 세션이 노선을 만들거나 지웠다").toBe(16);
   });
 
   test("같은 쌍은 두 번 쓸 수 없다 — 23505 (앱이 duplicate 로 읽는 오류)", async () => {
     const all = await rest("GET", "/showcase_routes?select=id,origin_code,destination_code&order=id.asc");
     const rows = all.body as RouteRow[];
     const other = rows.find((r) => r.id !== (target as RouteRow).id) as RouteRow;
-    const dup = await asUser(adminToken, "PATCH", `/showcase_routes?id=eq.${(target as RouteRow).id}`, {
-      origin_code: other.origin_code,
-      destination_code: other.destination_code,
-    });
+    // 화면과 같은 경로(definer 함수) — 함수는 23505 를 잡지 않고 그대로 올려 보낸다(0020 §5).
+    const cur = await rest("GET", `/showcase_routes?select=${ROUTE_ADMIN_SELECT}&id=eq.${(target as RouteRow).id}`);
+    const dup = await rpcAs(
+      adminToken,
+      ROUTE_RPC.update,
+      routeArgs((cur.body as RouteRow[])[0], { p_origin_code: other.origin_code, p_destination_code: other.destination_code }),
+    );
     // **권한 문제가 아니다** — 관리자는 이 행을 고칠 권한이 있고, 막는 것은 (origin_code, destination_code) unique 제약이다.
     // 그래서 권한 판정을 쓰지 않는다(쓰면 테스트의 뜻이 "관리자가 거부된다" 로 바뀐다).
     // P6-13 실측: 409 · 23505 · `duplicate key value violates unique constraint "showcase_routes_origin_code_destination_code_key"`.

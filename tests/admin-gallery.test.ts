@@ -22,9 +22,10 @@ import { withGalleryLock } from "./helpers/db-lock";
 import {
   STORAGE_DELETE_DENIED_MESSAGE,
   STORAGE_RLS_MESSAGE,
-  expectRlsInsertDenied,
+  expectRaisedDenied,
   expectStorageDenied,
   expectStorageNotFound,
+  expectTablePrivilegeDenied,
 } from "./helpers/expect-denied";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
 
@@ -137,10 +138,15 @@ function dbStub(results: DbResult | DbResult[], storage?: { error: unknown } | {
   for (const m of ["select", "order", "limit", "range", "eq", "is", "insert", "update", "delete", "maybeSingle", "overrideTypes"]) {
     chain[m] = vi.fn(() => chain);
   }
-  chain.then = (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) => {
-    const next = queue ? (queue.shift() ?? { data: [], error: null }) : (results as DbResult);
-    return Promise.resolve(next).then(resolve, reject);
-  };
+  const nextResult = (): DbResult => (queue ? (queue.shift() ?? { data: [], error: null }) : (results as DbResult));
+  chain.then = (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) => Promise.resolve(nextResult()).then(resolve, reject);
+  // 0020(P5-16) 뒤 쓰기는 definer 함수 RPC 다. 읽기(from)와 **같은 결과 줄**에서 차례로 꺼낸다 —
+  // 한 액션이 읽기 → 쓰기 → 쓰기를 섞어 부를 때(사진 삭제) 결과 순서가 호출 순서와 그대로 맞아야 한다.
+  const rpc = vi.fn(async (fn: string, args?: Record<string, unknown>) => {
+    void fn;
+    void args;
+    return nextResult();
+  });
   const storageQueue = Array.isArray(storage) ? [...storage] : null;
   const storageOne: { error: unknown } = Array.isArray(storage) ? { error: null } : (storage ?? { error: null });
   const remove = vi.fn(async (keys: string[]) => {
@@ -155,7 +161,7 @@ function dbStub(results: DbResult | DbResult[], storage?: { error: unknown } | {
     void table;
     return chain;
   });
-  return { client: { from, storage: { from: storageFrom } }, chain: chain as Chain, from, remove, storageFrom };
+  return { client: { from, rpc, storage: { from: storageFrom } }, chain: chain as Chain, from, rpc, remove, storageFrom };
 }
 
 const PHOTO_ROW = {
@@ -458,28 +464,39 @@ describe("4. 서버액션", () => {
   });
 
   test("업로드 기록 — 게이트가 DB 보다 먼저 돈다", async () => {
-    const { client, from } = dbStub({ data: [{ id: 1 }], error: null });
+    const { client, rpc } = dbStub({ data: [{ id: 1 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
     await recordGalleryUpload(UPLOAD);
-    expect(vi.mocked(requireAdmin).mock.invocationCallOrder[0]).toBeLessThan(from.mock.invocationCallOrder[0]);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(requireAdmin).mock.invocationCallOrder[0]).toBeLessThan(rpc.mock.invocationCallOrder[0]);
   });
 
   test("업로드 기록 — 성공하면 공개 화면을 한 번 무효화한다", async () => {
-    const { client, chain } = dbStub({ data: [{ id: 1 }], error: null });
+    const { client, from, rpc } = dbStub({ data: [{ id: 1 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
     const r = await recordGalleryUpload(UPLOAD);
     expect(r).toMatchObject({ ok: true, changed: true, code: "recorded" });
     expect(vi.mocked(revalidatePath)).toHaveBeenCalledWith(PUBLIC_CACHE_PATH, PUBLIC_CACHE_SCOPE);
     expect(vi.mocked(revalidatePath).mock.calls.filter((c) => c[0] === PUBLIC_CACHE_PATH)).toHaveLength(1);
-    // insert 에 실린 컬럼 — bytes 는 원본 크기, image_path 는 공개 상대경로
-    const row = chain.insert.mock.calls[0][0] as Record<string, unknown>;
-    expect(row).toMatchObject({
-      image_path: UPLOAD.imagePath,
-      original_path: UPLOAD.originalPath,
-      width: 1600,
-      height: 1200,
-      bytes: UPLOAD.bytes,
-    });
+    // 0020 의 admin_create_gallery_photo 에 실린 인자 — bytes 는 원본 크기, image_path 는 공개 상대경로.
+    // 인자 = 컬럼 화이트리스트: id·created_at 은 넘기지 않는다(0020 §3).
+    expect(rpc.mock.calls).toEqual([
+      [
+        "admin_create_gallery_photo",
+        {
+          p_image_path: UPLOAD.imagePath,
+          p_original_path: UPLOAD.originalPath,
+          p_width: 1600,
+          p_height: 1200,
+          p_bytes: UPLOAD.bytes,
+          p_album_id: UPLOAD.albumId,
+          p_caption: UPLOAD.caption,
+          p_sort: UPLOAD.sort,
+          p_active: UPLOAD.active,
+        },
+      ],
+    ]);
+    expect(from, "표에 직접 쓴다 — 0020 뒤로 GRANT 가 없다").not.toHaveBeenCalled();
   });
 
   test("zod 실패 — DB 를 한 번도 부르지 않고 무효화도 없다", async () => {
@@ -501,18 +518,20 @@ describe("4. 서버액션", () => {
     ];
     for (const bad of cases) {
       vi.clearAllMocks();
-      const { client, from } = dbStub({ data: [{ id: 1 }], error: null });
+      const { client, from, rpc } = dbStub({ data: [{ id: 1 }], error: null });
       vi.mocked(createSsrClient).mockReturnValue(client as never);
       const r = await recordGalleryUpload(bad);
       expect(r.ok, JSON.stringify(bad)).toBe(false);
       expect(r.code, JSON.stringify(bad)).toBe("validation");
       expect(from, JSON.stringify(bad)).not.toHaveBeenCalled();
+      // 0020 뒤 쓰기는 rpc 다 — from 만 보면 이 단언은 공허하게 통과한다
+      expect(rpc, JSON.stringify(bad)).not.toHaveBeenCalled();
       expect(vi.mocked(revalidatePath)).not.toHaveBeenCalled();
     }
   });
 
   test("requireAdmin 이 리다이렉트(throw)하면 DB 는 돌지 않는다", async () => {
-    const { client, from } = dbStub({ data: [{ id: 1 }], error: null });
+    const { client, from, rpc } = dbStub({ data: [{ id: 1 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
     vi.mocked(requireAdmin).mockRejectedValue(new Error("NEXT_REDIRECT"));
     for (const call of [
@@ -528,23 +547,34 @@ describe("4. 서버액션", () => {
       await expect(call()).rejects.toThrow("NEXT_REDIRECT");
     }
     expect(from).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
   });
 
-  test("0행 = 정책에 막혔거나 그런 행이 없다 → notFound (무효화 없음)", async () => {
-    const { client } = dbStub({ data: [], error: null });
+  test("0행 = 그런 행이 없거나 가드에 막혔다 → notFound (무효화 없음)", async () => {
+    const { client, rpc } = dbStub({ data: [], error: null });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
     const r = await toggleGalleryPhotoActive({ id: 7, active: false });
     expect(r).toEqual({ ok: false, changed: false, code: "notFound" });
+    expect(rpc.mock.calls).toEqual([["admin_set_gallery_photo_active", { p_id: 7, p_active: false }]]);
+    expect(vi.mocked(revalidatePath)).not.toHaveBeenCalled();
+
+    // 함수의 is_admin() 가드 거부(42501 + 가드 문구)도 같은 결과다 — 0020 이전 "정책에 가려 0행" 과 같은 뜻(lib/admin/adminRpc.ts)
+    vi.clearAllMocks();
+    const guard = dbStub({ data: null, error: { code: "42501", message: "admin_set_gallery_photo_active: 관리자 명단에 없는 호출자다" } });
+    vi.mocked(createSsrClient).mockReturnValue(guard.client as never);
+    expect(await toggleGalleryPhotoActive({ id: 7, active: false })).toEqual({ ok: false, changed: false, code: "notFound" });
     expect(vi.mocked(revalidatePath)).not.toHaveBeenCalled();
   });
 
   test("앨범 — 만들기·이름 바꾸기·내리기. slug 는 0008 CHECK 와 같은 규칙으로 먼저 거른다", async () => {
-    const { client, chain } = dbStub({ data: [{ id: 3 }], error: null });
+    const { client, rpc } = dbStub({ data: [{ id: 3 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
 
     const ok = await createGalleryAlbum({ title: "45인승", slug: "bus-45", sort: 1, active: true });
     expect(ok).toMatchObject({ ok: true, code: "albumCreated" });
-    expect(chain.insert.mock.calls[0][0]).toMatchObject({ slug: "bus-45", title: "45인승", sort: 1, active: true });
+    // 인자 = 화이트리스트(slug·title·sort·active). description 은 화면에 입력란이 없어 함수가 받지 않는다(0020 §4).
+    expect(rpc.mock.calls[0]).toEqual(["admin_create_album", { p_slug: "bus-45", p_title: "45인승", p_sort: 1, p_active: true }]);
+    rpc.mockClear();
 
     for (const bad of [
       { title: "x", slug: "Bus-45", sort: 0, active: true },
@@ -557,6 +587,8 @@ describe("4. 서버액션", () => {
       const r = await createGalleryAlbum(bad);
       expect(r.code, JSON.stringify(bad)).toBe("validation");
     }
+    // 검증에 걸린 여섯 건은 DB 를 부르지 않았다
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   test("앨범 slug 규칙은 공개 읽기(lib/queries/albums.ts)와 같은 판정이다", async () => {
@@ -744,11 +776,15 @@ describe("5. 삭제 순서와 부분 실패", () => {
     expect(stub.remove.mock.calls[0][0]).toEqual([`2026/09/${UUID}.heic`]);
     expect(stub.remove.mock.calls[1][0]).toEqual([`2026/09/${UUID}-1600.webp`]);
 
+    // 쓰기 두 번 — 노출 끄기 → 행 삭제(0020 definer 함수). 읽기는 표에서 한 번(getAdminPhoto).
+    expect(stub.rpc.mock.calls).toEqual([
+      ["admin_set_gallery_photo_active", { p_id: 7, p_active: false }],
+      ["admin_delete_gallery_photo", { p_id: 7 }],
+    ]);
     // 파일이 행보다 먼저다
-    expect(stub.remove.mock.invocationCallOrder[1]).toBeLessThan(stub.chain.delete.mock.invocationCallOrder[0]);
+    expect(stub.remove.mock.invocationCallOrder[1]).toBeLessThan(stub.rpc.mock.invocationCallOrder[1]);
     // 공개 화면에서 먼저 내린다 — 파일이 사라진 뒤 행이 남는 순간에도 방문자는 깨진 이미지를 보지 않는다
-    expect(stub.chain.update.mock.calls[0][0]).toEqual({ active: false });
-    expect(stub.chain.update.mock.invocationCallOrder[0]).toBeLessThan(stub.remove.mock.invocationCallOrder[0]);
+    expect(stub.rpc.mock.invocationCallOrder[0]).toBeLessThan(stub.remove.mock.invocationCallOrder[0]);
     expect(vi.mocked(revalidatePath)).toHaveBeenCalledWith(PUBLIC_CACHE_PATH, PUBLIC_CACHE_SCOPE);
   });
 
@@ -765,7 +801,8 @@ describe("5. 삭제 순서와 부분 실패", () => {
 
     const r = await deleteGalleryPhoto({ id: 7 });
     expect(r).toEqual({ ok: false, changed: false, code: "fileFailed" });
-    expect(stub.chain.delete).not.toHaveBeenCalled();
+    // 노출은 껐고(되살릴 수 있다) 행은 지우지 않았다
+    expect(stub.rpc.mock.calls.map((c) => c[0])).toEqual(["admin_set_gallery_photo_active"]);
   });
 
   test("원본 경로가 비어 있어도(옛 행) 공개본만 지우고 행을 지운다", async () => {
@@ -779,7 +816,7 @@ describe("5. 삭제 순서와 부분 실패", () => {
     const r = await deleteGalleryPhoto({ id: 7 });
     expect(r).toMatchObject({ ok: true, code: "deleted" });
     expect(stub.storageFrom.mock.calls.map((c) => c[0])).toEqual([GALLERY_BUCKET]);
-    expect(stub.chain.delete).toHaveBeenCalled();
+    expect(stub.rpc.mock.calls.map((c) => c[0])).toEqual(["admin_set_gallery_photo_active", "admin_delete_gallery_photo"]);
   });
 
   test("우리 버킷 밖 경로(옛 시드 행·로컬 파일)는 지우려 들지 않는다", async () => {
@@ -793,6 +830,7 @@ describe("5. 삭제 순서와 부분 실패", () => {
     const r = await deleteGalleryPhoto({ id: 7 });
     expect(r).toMatchObject({ ok: true, code: "deleted" });
     expect(stub.remove).not.toHaveBeenCalled();
+    expect(stub.rpc.mock.calls.map((c) => c[0])).toEqual(["admin_set_gallery_photo_active", "admin_delete_gallery_photo"]);
   });
 
   test("행이 없으면 스토리지를 건드리지 않는다", async () => {
@@ -801,7 +839,9 @@ describe("5. 삭제 순서와 부분 실패", () => {
     const r = await deleteGalleryPhoto({ id: 7 });
     expect(r).toEqual({ ok: false, changed: false, code: "notFound" });
     expect(stub.remove).not.toHaveBeenCalled();
+    // 0020 뒤 쓰기는 rpc 다 — chain.delete 만 보면 이 단언은 공허하게 통과한다
     expect(stub.chain.delete).not.toHaveBeenCalled();
+    expect(stub.rpc).not.toHaveBeenCalled();
   });
 
   test("앨범 삭제는 사진을 지우지 않는다 — 0008 의 on delete set null (미분류로 남는다)", async () => {
@@ -810,7 +850,9 @@ describe("5. 삭제 순서와 부분 실패", () => {
     const r = await deleteGalleryAlbum({ id: 3 });
     expect(r).toMatchObject({ ok: true, code: "albumDeleted" });
     expect(stub.remove, "앨범을 지우면서 파일을 지우면 사진이 통째로 사라진다").not.toHaveBeenCalled();
-    expect(stub.from.mock.calls.map((c) => c[0])).toEqual(["gallery_albums"]);
+    // 부르는 것은 앨범 삭제 함수 하나 — 사진 행을 건드리는 호출이 없다
+    expect(stub.rpc.mock.calls).toEqual([["admin_delete_album", { p_id: 3 }]]);
+    expect(stub.from).not.toHaveBeenCalled();
   });
 });
 
@@ -856,6 +898,17 @@ describe("6. 사용량", () => {
 // 7. 정적 규약
 // =============================================================================
 describe("7. 정적 규약", () => {
+  test("표에 직접 쓰지 않는다 — 사진·앨범 쓰기는 0020 의 definer 함수(rpc)뿐이다 (known-defects D10)", async () => {
+    const code = codeOf(LIB_DB);
+    expect(code, "lib/admin/gallery.ts 가 표에 직접 쓴다 — 0020 뒤로 GRANT 가 없어 42501 로 실패한다").not.toMatch(/\.(insert|update|delete|upsert)\(/);
+    expect(code).toMatch(/\.rpc\(/);
+    const { GALLERY_RPC } = await import("@/lib/admin/gallery");
+    expect(Object.keys(GALLERY_RPC).length).toBe(8);
+    for (const fn of Object.values(GALLERY_RPC)) {
+      expect(read("supabase/migrations/0020_admin_content_writes.sql"), `${fn} 이 0020 에 없다`).toContain(`create or replace function ${fn}(`);
+    }
+  });
+
   test("서비스 롤 0 · unstable_cache 0 (ADR-2·ADR-3)", () => {
     for (const rel of TS_TARGETS) {
       expect(read(rel), rel).not.toMatch(/createServiceClient|SUPABASE_SERVICE_ROLE_KEY|supabase\/server/);
@@ -1290,48 +1343,75 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("8. DB — 0011 스토리�
     expect((await removeObject(adminToken, "gallery-originals", KEY("orig"))).status).toBeLessThan(300);
   });
 
-  test("표 — 관리자 세션이 사진 행을 만들고 고치고 지운다 (0009 gallery_admin_all)", async () => {
-    const album = await asUser(
-      adminToken,
-      "POST",
-      "/gallery_albums",
-      { slug: `p62-${RUN}`, title: `P6-2 ${RUN}`, sort: 1, active: true },
-      "return=representation",
-    );
-    expect(album.status, JSON.stringify(album.body).slice(0, 300)).toBe(201);
-    albumId = (album.body as { id: number }[])[0].id;
+  /** 0020 뒤 관리자 쓰기의 유일한 경로 — lib/admin/gallery.ts 가 부르는 것과 같은 definer 함수 RPC. */
+  const rpcAs = (token: string, fn: string, args: Record<string, unknown>) => asUser(token, "POST", `/rpc/${fn}`, args);
+  async function rpcOne(token: string, fn: string, args: Record<string, unknown>): Promise<number> {
+    const r = await rpcAs(token, fn, args);
+    expect(r.status, `${fn}: ${JSON.stringify(r.body).slice(0, 300)}`).toBe(200);
+    const rows = r.body as { id: number }[];
+    expect(rows.length, `${fn} 가 바뀐 행 하나를 돌려주지 않았다: ${JSON.stringify(r.body).slice(0, 200)}`).toBe(1);
+    return rows[0].id;
+  }
 
-    const ins = await asUser(
-      adminToken,
-      "POST",
-      "/gallery",
-      {
-        image_path: `gallery/p62-${RUN}/a-1600.webp`,
-        original_path: `gallery-originals/p62-${RUN}/a.heic`,
-        width: 1600,
-        height: 1200,
-        bytes: 4_200_000,
-        album_id: albumId,
-        sort: 1,
-        active: true,
-      },
-      "return=representation",
-    );
-    expect(ins.status, JSON.stringify(ins.body).slice(0, 300)).toBe(201);
-    photoId = (ins.body as { id: number }[])[0].id;
+  test("표 — 관리자 세션이 앨범·사진 행을 만들고 고치고 내렸다 되살린다 (0020 definer 함수)", async () => {
+    albumId = await rpcOne(adminToken, "admin_create_album", { p_slug: `p62-${RUN}`, p_title: `P6-2 ${RUN}`, p_sort: 1, p_active: true });
+    expect(await rpcOne(adminToken, "admin_update_album", { p_id: albumId, p_slug: `p62-${RUN}`, p_title: `P6-2 ${RUN} edit`, p_sort: 1, p_active: true })).toBe(albumId);
+    expect(await rpcOne(adminToken, "admin_set_album_active", { p_id: albumId, p_active: false })).toBe(albumId);
+    // 비공개 앨범 읽기 — 0020 이 0009 `_admin_all` 을 좁힌 `gallery_albums_admin_select` 로 관리자가 표에서 직접 읽는다
+    const hiddenAlbum = await asUser(adminToken, "GET", `/gallery_albums?select=id,title,active&id=eq.${albumId}`);
+    expect(hiddenAlbum.body, "관리자가 내린 앨범을 못 보면 되살릴 수 없다").toEqual([{ id: albumId, title: `P6-2 ${RUN} edit`, active: false }]);
+    expect(await rpcOne(adminToken, "admin_set_album_active", { p_id: albumId, p_active: true })).toBe(albumId);
 
-    const up = await asUser(adminToken, "PATCH", `/gallery?id=eq.${photoId}`, { caption: "p62" }, "return=representation");
-    expect(up.status).toBeLessThan(300);
+    photoId = await rpcOne(adminToken, "admin_create_gallery_photo", {
+      p_image_path: `gallery/p62-${RUN}/a-1600.webp`,
+      p_original_path: `gallery-originals/p62-${RUN}/a.heic`,
+      p_width: 1600,
+      p_height: 1200,
+      p_bytes: 4_200_000,
+      p_album_id: albumId,
+      p_caption: null,
+      p_sort: 1,
+      p_active: true,
+    });
+
+    expect(await rpcOne(adminToken, "admin_update_gallery_photo", { p_id: photoId, p_caption: "p62", p_album_id: albumId, p_sort: 1 })).toBe(photoId);
+    expect(await rpcOne(adminToken, "admin_set_gallery_photo_active", { p_id: photoId, p_active: false })).toBe(photoId);
+    const hiddenPhoto = await asUser(adminToken, "GET", `/gallery?select=id,caption,active&id=eq.${photoId}`);
+    expect(hiddenPhoto.body, "관리자가 내린 사진을 못 보면 되살릴 수 없다").toEqual([{ id: photoId, caption: "p62", active: false }]);
+    expect(await rpcOne(adminToken, "admin_set_gallery_photo_active", { p_id: photoId, p_active: true })).toBe(photoId);
   });
 
-  test("표 — 명단에 없는 로그인 세션은 사진을 만들지도 고치지도 못한다", async () => {
-    const ins = await asUser(plainToken, "POST", "/gallery", { image_path: `gallery/p62-${RUN}/x.webp`, sort: 1, active: true });
-    // P6-13 실측: 403 · 42501 · `new row violates row-level security policy for table "gallery"` — 0009 gallery_admin_all 의 with check.
-    expectRlsInsertDenied(ins, "gallery", "명단 밖 세션의 gallery INSERT");
-    await asUser(plainToken, "PATCH", `/gallery?id=eq.${photoId}`, { caption: "hijacked" });
-    await asUser(plainToken, "DELETE", `/gallery?id=eq.${photoId}`);
-    const still = await rest("GET", `/gallery?select=caption&id=eq.${photoId}`);
-    expect((still.body as { caption: string }[])[0].caption).toBe("p62");
+  test("표 — 명단에 없는 로그인 세션은 사진·앨범을 만들지도 고치지도 지우지도 못한다 (GRANT 층 + 함수 가드)", async () => {
+    // 표 직접 쓰기 — 0020 이 authenticated 의 insert·update·delete 를 회수했다: 403 · 42501 · permission denied for table <표>.
+    expectTablePrivilegeDenied(
+      await asUser(plainToken, "POST", "/gallery", { image_path: `gallery/p62-${RUN}/x.webp`, sort: 1, active: true }),
+      "gallery",
+      "명단 밖 세션의 gallery INSERT",
+    );
+    expectTablePrivilegeDenied(await asUser(plainToken, "PATCH", `/gallery?id=eq.${photoId}`, { caption: "hijacked" }), "gallery", "명단 밖 세션의 gallery UPDATE");
+    expectTablePrivilegeDenied(await asUser(plainToken, "DELETE", `/gallery?id=eq.${photoId}`), "gallery", "명단 밖 세션의 gallery DELETE");
+    expectTablePrivilegeDenied(await asUser(plainToken, "DELETE", `/gallery_albums?id=eq.${albumId}`), "gallery_albums", "명단 밖 세션의 gallery_albums DELETE");
+
+    // 함수 — 가드가 42501 로 막는다(메시지로 EXECUTE 거부와 갈린다)
+    for (const [fn, args] of [
+      ["admin_create_gallery_photo", { p_image_path: `gallery/p62-${RUN}/x.webp`, p_original_path: null, p_width: 1, p_height: 1, p_bytes: 1, p_album_id: null, p_caption: null, p_sort: 1, p_active: true }],
+      ["admin_update_gallery_photo", { p_id: photoId, p_caption: "hijacked", p_album_id: null, p_sort: 1 }],
+      ["admin_set_gallery_photo_active", { p_id: photoId, p_active: false }],
+      ["admin_delete_gallery_photo", { p_id: photoId }],
+      ["admin_create_album", { p_slug: `p62x-${RUN}`, p_title: "x", p_sort: 1, p_active: true }],
+      ["admin_update_album", { p_id: albumId, p_slug: `p62-${RUN}`, p_title: "hijacked", p_sort: 1, p_active: true }],
+      ["admin_set_album_active", { p_id: albumId, p_active: false }],
+      ["admin_delete_album", { p_id: albumId }],
+    ] as const) {
+      expectRaisedDenied(await rpcAs(plainToken, fn, args), `${fn}: 관리자 명단에 없는 호출자다`, `명단 밖 세션의 ${fn}`);
+    }
+
+    const still = await rest("GET", `/gallery?select=caption,active,album_id&id=eq.${photoId}`);
+    expect(still.body).toEqual([{ caption: "p62", active: true, album_id: albumId }]);
+    const album = await rest("GET", `/gallery_albums?select=title,active&id=eq.${albumId}`);
+    expect(album.body).toEqual([{ title: `P6-2 ${RUN} edit`, active: true }]);
+    const intruder = await rest("GET", `/gallery?select=id&image_path=eq.${encodeURIComponent(`gallery/p62-${RUN}/x.webp`)}`);
+    expect(intruder.body, "명단 밖 세션이 사진 행을 만들었다").toEqual([]);
   });
 
   test("anon — 활성 앨범의 활성 사진만 보인다 (0008 회귀)", async () => {
@@ -1351,8 +1431,17 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("8. DB — 0011 스토리�
     await rest("PATCH", `/gallery?id=eq.${photoId}`, { active: true });
   });
 
+  test("표 — 관리자 세션이 사진·앨범을 지운다 · 두 번째 지우기는 0행이다 (0020 definer 함수)", async () => {
+    expect(await rpcOne(adminToken, "admin_delete_gallery_photo", { p_id: photoId })).toBe(photoId);
+    const again = await rpcAs(adminToken, "admin_delete_gallery_photo", { p_id: photoId });
+    expect(again.status).toBe(200);
+    expect(again.body, "없는 id 의 삭제가 0행이 아니다").toEqual([]);
+    expect(await rpcOne(adminToken, "admin_delete_album", { p_id: albumId })).toBe(albumId);
+    expect((await rest("GET", `/gallery?select=id&id=eq.${photoId}`)).body).toEqual([]);
+    expect((await rest("GET", `/gallery_albums?select=id&id=eq.${albumId}`)).body).toEqual([]);
+  });
+
   test("정리 — 만든 것을 전부 지운다", async () => {
-    await asUser(adminToken, "DELETE", `/gallery?id=eq.${photoId}`);
     await rest("DELETE", `/gallery?image_path=like.${encodeURIComponent(`*p62-${RUN}*`)}`);
     await rest("DELETE", `/gallery_albums?slug=like.${encodeURIComponent(`*p62-${RUN}*`)}`);
     await rest("DELETE", `/admin_users?user_id=eq.${adminId}`);

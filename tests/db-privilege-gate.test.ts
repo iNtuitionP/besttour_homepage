@@ -165,27 +165,27 @@ const AUTH_SELECT: Reasoned = {
 };
 
 /**
- * `authenticated` 가 INSERT·UPDATE·DELETE 할 수 있는 표 — **관리자 쓰기 정책(0009 `…_admin_all`)이 있는 콘텐츠 6표만.**
- * 게이트는 목록에 더해 **그 동작을 허용하는 정책이 카탈로그에 실제로 있는지**도 본다(정책 없는 쓰기 권한 = RLS 만 믿는 상태).
+ * `authenticated` 가 INSERT·UPDATE·DELETE 할 수 있는 표 — **0020(P5-16) 뒤로 하나도 없다.**
+ *
+ * 0019 까지는 콘텐츠 6표가 여기 있었다(0009 `…_admin_all` 정책이 받치는 관리자 편집). 그런데 PostgreSQL 은
+ * `ACCESS EXCLUSIVE` 잠금을 **MAINTAIN·UPDATE·DELETE·TRUNCATE 중 하나**로 허용하므로(`LockTableAclCheck`),
+ * 그 목록이 곧 **로그인만 하면 공지·갤러리 표를 잠글 수 있는 문**이었다(`known-defects` D10).
+ * 0020 이 그 세 동작을 회수하고 관리자 쓰기를 definer 함수 18개로 옮겼다 — 아래 AUTH_EXEC 가 그 목록이다.
+ * **목록을 넓혀서 통과시키지 마라**: 여기 이름이 다시 생긴다는 것은 그 표를 다시 잠글 수 있게 됐다는 뜻이다.
+ * (판정 코드의 "정책이 실제로 있는가" 가지는 남겨 둔다 — 넓히려는 시도가 있어도 정책 없는 쓰기 권한은 그 자리에서 잡힌다.)
  */
-const AUTH_WRITE_REASON = "관리자 콘텐츠 편집(P5-4~6·P6-2) — 0009 …_admin_all 정책 (is_admin)";
-const AUTH_WRITE: Readonly<Record<string, readonly string[]>> = {
-  notices: ["insert", "update", "delete"],
-  popups: ["insert", "update", "delete"],
-  gallery: ["insert", "update", "delete"],
-  gallery_albums: ["insert", "update", "delete"],
-  showcase_routes: ["insert", "update", "delete"],
-  vehicles: ["insert", "update", "delete"],
-};
+const AUTH_WRITE_REASON = "0020(P5-16) 뒤로 **의도적으로 0** — 관리자 콘텐츠 쓰기는 definer 함수(AUTH_EXEC)로 간다 · known-defects D10";
+const AUTH_WRITE: Readonly<Record<string, readonly string[]>> = {};
 
 /**
- * 시퀀스 — 관리자 insert 가 `serial` 기본값(nextval)을 부르려면 USAGE 가 필요하다. 그 밖(SELECT·UPDATE=setval)은 필요 없다.
+ * 시퀀스 — 원래 근거는 "관리자 insert 가 `serial` 기본값(nextval)을 부르려면 USAGE 가 필요하다" 였다.
  * **이 게이트가 첫 실행에서 찾은 36건**(공개 7개 시퀀스의 anon usage·select·update, authenticated select·update,
- * `notifications_log_id_seq` 의 authenticated usage)을 0018 이 회수했다. 목록은 그때도 지금도 **이 여섯 항목뿐**이다 —
- * 넓혀서 통과시키지 않고 회수로 초록이 됐다. `notifications_log_id_seq` 는 여기 없다: 그 표에 넣는 것은 서비스 롤과
- * 소유자 권한으로 도는 definer 함수뿐이다.
+ * `notifications_log_id_seq` 의 authenticated usage)을 0018 이 회수하고 이 여섯만 남겼다 — 넓혀서 통과시키지 않고 회수로 초록이 됐다.
+ * 🔴 **0020(P5-16) 뒤로 이 여섯은 쓰이지 않는다**: `authenticated` 에게 표 insert 가 없으므로 serial 기본값도 부르지 않고,
+ * definer 함수는 소유자 권한으로 돈다. 시퀀스 USAGE 로는 표를 잠글 수 없어(D10 과 무관) 0020 의 범위에서 뺐고,
+ * **다음 권한 정리 때 함께 걷는다**(docs/ops/migration-runbook.md 0020 절 「남은 것」). 그때 이 목록은 비워진다.
  */
-const SEQ_REASON = "관리자 insert 의 serial 기본값 nextval (0009 §6 의 grant · 0016 ⑧ SEQ_OK · 0018 이 이것만 남기고 회수)";
+const SEQ_REASON = "0018 이 이것만 남기고 회수한 잔여 부여 — 0020 뒤로 쓰이지 않는다(후속으로 회수 예정 · runbook 0020 절 「남은 것」)";
 const SEQ_ALLOW: Readonly<Record<string, readonly string[]>> = {
   "notices_id_seq|authenticated": ["usage"],
   "popups_id_seq|authenticated": ["usage"],
@@ -205,6 +205,26 @@ const AUTH_EXEC: Reasoned = {
   "admin_complete_reservation(uuid,text)": "관리자 예약 완료 전이 (0010)",
   "admin_update_memo(uuid,text)": "관리자 메모 수정 (0010)",
   "is_admin()": "RLS 정책이 부르는 관리자 판정 (0009) — 정책 평가가 호출자 권한으로 돈다",
+  // 0020(P5-16) — 관리자 콘텐츠 쓰기 18개. 표 GRANT 를 회수한 대가로 생긴 경로다(AUTH_WRITE 가 비어 있는 이유).
+  // 전부 definer + 첫 문장 is_admin() 가드 + search_path `public, pg_temp`. 그 셋은 아래 별도 검사가 본다.
+  "admin_create_notice(text,text,text,date,boolean)": "관리자 공지 만들기 (0020, definer · 내부 is_admin 검사)",
+  "admin_update_notice(integer,text,text,text,date,boolean)": "관리자 공지 고치기 (0020)",
+  "admin_delete_notice(integer)": "관리자 공지 지우기 (0020)",
+  "admin_set_notice_active(integer,boolean)": "관리자 공지 노출 토글 (0020)",
+  "admin_create_popup(text,text,text,date,date,boolean)": "관리자 팝업 만들기 (0020)",
+  "admin_update_popup(integer,text,text,text,date,date,boolean)": "관리자 팝업 고치기 (0020)",
+  "admin_delete_popup(integer)": "관리자 팝업 지우기 (0020)",
+  "admin_set_popup_active(integer,boolean)": "관리자 팝업 노출 토글 (0020)",
+  "admin_create_gallery_photo(text,text,integer,integer,integer,integer,text,integer,boolean)": "관리자 사진 기록 만들기 (0020 · 파일은 브라우저가 올린다)",
+  "admin_update_gallery_photo(integer,text,integer,integer)": "관리자 사진 캡션·앨범·순서 고치기 (0020)",
+  "admin_set_gallery_photo_active(integer,boolean)": "관리자 사진 노출 토글 (0020)",
+  "admin_delete_gallery_photo(integer)": "관리자 사진 행 지우기 (0020 · 파일은 호출부가 먼저 지운다)",
+  "admin_create_album(text,text,integer,boolean)": "관리자 앨범 만들기 (0020)",
+  "admin_update_album(integer,text,text,integer,boolean)": "관리자 앨범 고치기 (0020)",
+  "admin_set_album_active(integer,boolean)": "관리자 앨범 노출 토글 (0020)",
+  "admin_delete_album(integer)": "관리자 앨범 지우기 (0020 · 사진은 미분류로 남는다)",
+  "admin_update_route(integer,text,text,integer,integer,boolean)": "관리자 대표 노선 값 고치기 (0020 · 만들기·지우기는 없다)",
+  "admin_set_route_active(integer,boolean)": "관리자 대표 노선 노출 토글 (0020)",
 };
 
 /** 객체 소유자 — 마이그레이션은 `postgres` 로 적용된다. 공개 롤이 소유하면 권한 회수가 의미를 잃는다. */
@@ -549,7 +569,12 @@ function searchPathSchemas(value: string, serverVersionNum = 0): string[] {
   });
 }
 
-function evaluate(facts: readonly string[]): string[] {
+/**
+ * `authWrite` — 쓰기 허용 목록. 기본값은 실제 목록(AUTH_WRITE — 0020 뒤로 비어 있다).
+ * 인자로 받는 이유(P5-16): 목록이 비면 "허용 목록 안이지만 정책이 없다" 가지는 실제 판정에서 닿을 수 없게 되고,
+ * 그 가지의 이빨을 확인하던 테스트도 뜻을 잃는다. 합성 목록을 주입해 **가지 자체**는 계속 잡히는지 본다.
+ */
+function evaluate(facts: readonly string[], authWrite: Readonly<Record<string, readonly string[]>> = AUTH_WRITE): string[] {
   const rows = facts.map((f) => f.split("|"));
   const serverVersionNum = Number(rows.find((r) => r[0] === "server" && r[1] === "version_num")?.[2] ?? 0);
   const policies = new Set(
@@ -607,7 +632,7 @@ function evaluate(facts: readonly string[]): string[] {
           out.push(`${obj} — 표: anon 에게 ${priv} (허용 목록 밖)`);
         } else if (role === "authenticated") {
           if (priv === "select" && own(AUTH_SELECT, obj)) break;
-          if (["insert", "update", "delete"].includes(priv) && own(AUTH_WRITE, obj) && AUTH_WRITE[obj].includes(priv)) {
+          if (["insert", "update", "delete"].includes(priv) && own(authWrite, obj) && authWrite[obj].includes(priv)) {
             if (!hasAuthPolicy(obj, priv)) out.push(`${obj} — 표: authenticated 의 ${priv} 를 허용하는 정책이 없다 (RLS 만 믿는 쓰기 권한)`);
             break;
           }
@@ -776,7 +801,6 @@ describe("0. 허용 목록 — 사유 필수 · 비어 있지 않음(의도적 �
   test("허용 목록이 비어 있지 않다 — 비면 '전부 금지' 가 아니라 판정이 무의미해진 것일 수 있다", () => {
     expect(Object.keys(ANON_SELECT).length).toBeGreaterThan(0);
     expect(Object.keys(AUTH_SELECT).length).toBeGreaterThan(Object.keys(ANON_SELECT).length);
-    expect(Object.keys(AUTH_WRITE).length).toBeGreaterThan(0);
     expect(Object.keys(SEQ_ALLOW).length).toBeGreaterThan(0);
     expect(Object.keys(AUTH_EXEC).length).toBeGreaterThan(0);
   });
@@ -785,11 +809,26 @@ describe("0. 허용 목록 — 사유 필수 · 비어 있지 않음(의도적 �
     expect(ANON_EXEC).toEqual({});
   });
 
+  /**
+   * 0020(P5-16) — `authenticated` 의 표 쓰기도 **의도적으로 0** 이다(ANON_EXEC 와 같은 형태로 못박는다).
+   * "비어 있으니 판정이 무의미해졌나" 와 "정말로 아무도 못 쓴다" 를 구분하기 위해, 관리자 쓰기가 **어디로 갔는지**도 함께 본다:
+   * 콘텐츠 여섯 표를 건드리는 definer 함수가 AUTH_EXEC 에 실제로 있어야 한다.
+   */
+  test("🔴 authenticated 가 표에 직접 쓸 수 있는 것은 **의도적으로 0** 이다 — 관리자 쓰기는 0020 의 definer 함수로 간다", () => {
+    expect(AUTH_WRITE).toEqual({});
+    const adminFns = Object.keys(AUTH_EXEC).filter((f) => f.startsWith("admin_"));
+    expect(adminFns.length, "관리자 쓰기 경로가 표에도 함수에도 없다 — 목록이 비어 판정이 무의미해진 상태일 수 있다").toBeGreaterThanOrEqual(22);
+    for (const t of ["notice", "popup", "gallery_photo", "album", "route"]) {
+      expect(adminFns.some((f) => f.includes(t)), `${t} 쓰기 함수가 AUTH_EXEC 에 없다`).toBe(true);
+    }
+  });
+
   test("판정 자체의 이빨 — 합성 사실에서 허용 목록 밖을 이름으로 잡는다", () => {
     const v = evaluate([
       "table|new_table|anon|select",
       "table|notices|anon|insert",
       "table|reservations|authenticated|truncate",
+      // 0020(P5-16) 뒤로 이것도 위반이다 — 정책이 있어도(아래 policy 사실) 표 쓰기 권한 자체가 허용 목록 밖이다.
       "table|notices|authenticated|insert",
       "policy|notices|*|authenticated",
       "table|places|authenticated|update",
@@ -803,10 +842,11 @@ describe("0. 허용 목록 — 사유 필수 · 비어 있지 않음(의도적 �
       "rls|new_table|off",
     ]);
     const text = v.join("\n");
-    for (const needle of ["new_table — 표: anon 에게 select", "notices — 표: anon 에게 insert", "reservations — 표: authenticated 에게 truncate", "places — 표: authenticated 에게 update", "reservations — 컬럼 단위", "new_seq — 시퀀스", "new_fn() — 함수", "new_def() — definer", "new_table — PUBLIC", "new_table — 소유자", "new_table — 공개 롤에 권한이 있는데 RLS 가 꺼져"]) {
+    for (const needle of ["new_table — 표: anon 에게 select", "notices — 표: anon 에게 insert", "reservations — 표: authenticated 에게 truncate", "notices — 표: authenticated 에게 insert", "places — 표: authenticated 에게 update", "reservations — 컬럼 단위", "new_seq — 시퀀스", "new_fn() — 함수", "new_def() — definer", "new_table — PUBLIC", "new_table — 소유자", "new_table — 공개 롤에 권한이 있는데 RLS 가 꺼져"]) {
       expect(text, needle).toContain(needle);
     }
-    expect(text).not.toContain("notices — 표: authenticated");
+    // 허용된 것은 조용하다 — select 는 AUTH_SELECT 에 있고, pg_temp 가 붙은 definer 는 문제가 아니다.
+    expect(text).not.toContain("notices — 표: authenticated 에게 select");
     expect(text).not.toContain("ok_def()");
   });
 
@@ -1084,8 +1124,12 @@ describe("0. 허용 목록 — 사유 필수 · 비어 있지 않음(의도적 �
   });
 
   test("정책 없는 쓰기 권한은 허용 목록에 있어도 잡힌다", () => {
-    expect(evaluate(["table|notices|authenticated|delete"]).join("\n")).toContain("notices — 표: authenticated 의 delete 를 허용하는 정책이 없다");
-    expect(evaluate(["table|notices|authenticated|delete", "policy|notices|d|PUBLIC"])).toEqual([]);
+    // 0020(P5-16) 뒤로 실제 AUTH_WRITE 는 비어 있다 — 가지의 이빨은 합성 허용 목록으로 본다(evaluate 머리 주석).
+    const synthetic = { notices: ["delete"] } as const;
+    expect(evaluate(["table|notices|authenticated|delete"], synthetic).join("\n")).toContain("notices — 표: authenticated 의 delete 를 허용하는 정책이 없다");
+    expect(evaluate(["table|notices|authenticated|delete", "policy|notices|d|PUBLIC"], synthetic)).toEqual([]);
+    // 실제 목록에서는 정책이 있어도 **허용 목록 밖**이다 — D10 의 문(표 delete 권한)이 다시 열리면 그 자리에서 빨강.
+    expect(evaluate(["table|notices|authenticated|delete", "policy|notices|d|PUBLIC"]).join("\n")).toContain("notices — 표: authenticated 에게 delete (허용 목록 밖)");
   });
 });
 
