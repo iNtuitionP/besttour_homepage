@@ -2,7 +2,7 @@
  * 위저드 초안 — sessionStorage 직렬화 (P3-4).
  *
  *   - 저장소는 **sessionStorage 만**(개인정보 포함 — 탭을 닫으면 사라져야 한다. localStorage 금지).
- *   - 동의 2종(privacyConsent·marketingConsent)과 단계(step)는 **직렬화하지 않는다** — 재방문 시 다시 체크하게(사전 선택 금지, ADR-6).
+ *   - 동의 3종(privacyConsent·marketingConsent·withdrawalConsent)과 단계(step)는 **직렬화하지 않는다** — 재방문 시 다시 체크하게(사전 선택 금지, ADR-6).
  *     단계는 URL(?step=N)이 갖는다.
  *   - 읽기·쓰기·삭제는 전부 try/catch — 사생활 모드·저장소 차단·용량 초과에서도 위저드는 동작한다(초안만 못 남길 뿐).
  *   - parseDraft 는 모양을 검사한다: 문자열 필드는 문자열만, 경유지는 문자열 배열(비문자열 원소 제거), 체크 2종은 boolean 만,

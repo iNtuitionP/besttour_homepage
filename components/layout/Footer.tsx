@@ -1,6 +1,9 @@
 /**
  * 공개 푸터 (P2-3 · ADR-1 · ADR-5) — 서버 컴포넌트.
  *
+ * 전화 (P1-7): 로고 아래 큰 전화 링크는 예약·상담 전화(lib/contact-phone — ko 010-…, en +82 …). 대표전화 1566(COMPANY.tel)은
+ * 사업자 정보 블록(data-testid="footer-company-info")의 "대표전화" 한 줄로만 남는다 — tests/contact-phone.test.ts 가 렌더에서 확인한다.
+ *
  * 이 파일에는 한글 법정 리터럴이 한 글자도 없다. 상호·대표·등록번호·주소·계좌·보호책임자·
  * 관계사 문구·배지 라벨까지 전부 원장 lib/legal/disclosures.ts 에서 온다. 문구를 고쳐야 하면
  * 원장을 고친다 — 여기서 고치면 게이트(check-legal-disclosures)와 테스트가 막는다.
@@ -22,8 +25,9 @@ import { getLocale, getTranslations } from "next-intl/server";
 
 import { OfficialKoreanNotice } from "@/components/legal/OfficialKoreanNotice";
 import { Link } from "@/i18n/navigation";
+import { consultPhone } from "@/lib/contact-phone";
 import { koLang, ledgerUi, localizeVerbatim } from "@/lib/i18n/ledger-ui";
-import { COMPANY, LEGAL_LINKS, RELATED_COMPANY, VERBATIM } from "@/lib/legal/disclosures";
+import { COMPANY, LEGAL_LINKS, PAYMENT, RELATED_COMPANY, VERBATIM } from "@/lib/legal/disclosures";
 import { LEGACY_MENU, MENU_BY_GROUP } from "@/lib/legacy-menu-map";
 
 import Nav from "./Nav";
@@ -66,6 +70,8 @@ export default async function Footer() {
   const valueLang = koLang(locale);
   const menuLabels = Object.fromEntries(LEGACY_MENU.map((m) => [m.key, t(`menu.${m.key}`)]));
   const year = new Date().getFullYear();
+  // 로고 아래 큰 전화 링크는 예약·상담 전화(P1-7). 대표전화 1566 은 아래 사업자 정보 블록의 한 줄로만 남는다.
+  const phone = consultPhone(locale);
 
   const operator: Fact[] = [
     { value: COMPANY.legalName, strong: true, ko: true },
@@ -85,7 +91,8 @@ export default async function Footer() {
     { label: contactLabels.mobile, value: COMPANY.mobile },
     { label: contactLabels.fax, value: COMPANY.fax },
     { label: contactLabels.email, value: COMPANY.email, href: `mailto:${COMPANY.email}` },
-    { label: labels.bankAccount, value: COMPANY.bankAccount, ko: true },
+    // 입금 계좌 — 관계사 명의(P1-7 · A-5). 원장 문안이 "입금 계좌 :" 라벨과 예금주(관계사)를 스스로 담으므로 라벨을 따로 붙이지 않는다.
+    { value: PAYMENT.accountLine, ko: true },
   ];
 
   const officer: Fact[] = [
@@ -114,12 +121,8 @@ export default async function Footer() {
               width={165}
               height={32}
             />
-            <a
-              className={styles.tel}
-              href={`tel:${COMPANY.tel}`}
-              aria-label={`${contactLabels.tel} ${COMPANY.tel}`}
-            >
-              {COMPANY.tel}
+            <a className={styles.tel} href={phone.href} aria-label={`${contactLabels.consultTel} ${phone.display}`}>
+              {phone.display}
             </a>
           </div>
 
@@ -144,7 +147,7 @@ export default async function Footer() {
           </div>
         </div>
 
-        <section className={styles.legal} aria-label={labels.companyInfo}>
+        <section className={styles.legal} aria-label={labels.companyInfo} data-testid="footer-company-info">
           <OfficialKoreanNotice notice={ui.officialNotice} />
           <p className={styles.badgeRow}>
             <span className={styles.badge}>{labels.operator}</span>

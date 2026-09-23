@@ -14,8 +14,8 @@
 
 import { getLocale, getTranslations } from "next-intl/server";
 
+import { consultPhone } from "@/lib/contact-phone";
 import { ledgerUi } from "@/lib/i18n/ledger-ui";
-import { COMPANY } from "@/lib/legal/disclosures";
 
 import styles from "./FloatingContact.module.css";
 
@@ -48,14 +48,16 @@ const TalkIcon = (
 
 export default async function FloatingContact() {
   const [t, locale] = await Promise.all([getTranslations("layout"), getLocale()]);
-  // 대표전화 라벨 — ko 는 원장 LEGAL_LABELS.contact.tel 그대로, en 은 en.json legal.labels (P2-6)
-  const telLabel = ledgerUi(locale).labels.contact.tel;
+  // 예약·상담 전화(P1-7) — 라벨은 ko 원장 LEGAL_LABELS.contact.consultTel 그대로, en 은 en.json legal.labels(P2-6).
+  // 번호는 ko 010-…, en +82 …(해외에서 1566 은 걸리지 않는다). 링크는 E.164.
+  const telLabel = ledgerUi(locale).labels.contact.consultTel;
+  const phone = consultPhone(locale);
 
   const channels: Channel[] = [
     {
       key: "tel",
-      href: COMPANY.tel.trim() === "" ? "" : `tel:${COMPANY.tel}`,
-      label: `${telLabel} ${COMPANY.tel}`,
+      href: phone.display.trim() === "" ? "" : phone.href,
+      label: `${telLabel} ${phone.display}`,
       className: styles.fbtnTel,
       icon: PhoneIcon,
       external: false,

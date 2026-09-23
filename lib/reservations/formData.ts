@@ -22,6 +22,7 @@
  * | locale                      | locale              | ko / en                                        |
  * | privacyConsent              | privacyConsent      | checkbox — 없으면 zod 실패(필수 동의)            |
  * | marketingConsent            | marketingConsent    | checkbox                                       |
+ * | withdrawalConsent           | withdrawalConsent   | checkbox — 없으면 zod 실패(청약철회 제한 확인 · P1-7) |
  * | website                     | (guard)             | 허니팟 — zod 밖. 사람에게 보이지 않는 필드         |
  * | formToken                   | (guard)             | 타임트랩 — issueFormToken 이 렌더 시 내려준 값     |
  * | cf-turnstile-response       | (guard)             | Turnstile 위젯이 넣는 표준 이름 — zod 밖          |
@@ -69,6 +70,7 @@ export const RESERVATION_FORM_FIELDS = {
   locale: "locale",
   privacyConsent: "privacyConsent",
   marketingConsent: "marketingConsent",
+  withdrawalConsent: "withdrawalConsent",
 } as const satisfies Record<string, keyof ReservationInput>;
 
 /** guard 전용 필드 — zod 입력에 넣지 않는다(turnstile 은 위 규칙대로 raw 에 복사). */
@@ -79,7 +81,7 @@ export const GUARD_FORM_FIELDS = {
 } as const;
 
 export const NUMBER_FORM_FIELDS = ["busCount", "passengers"] as const;
-export const BOOLEAN_FORM_FIELDS = ["privacyConsent", "marketingConsent", "parkingIncluded", "vatIncluded"] as const;
+export const BOOLEAN_FORM_FIELDS = ["privacyConsent", "marketingConsent", "parkingIncluded", "vatIncluded", "withdrawalConsent"] as const;
 export const MULTI_FORM_FIELDS = ["waypointCodes"] as const;
 
 /** guard 가 볼 수 있는 요청 헤더. 쿠키·인증 헤더는 guard 로 가지 않는다. */

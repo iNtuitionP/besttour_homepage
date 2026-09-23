@@ -19,7 +19,7 @@ import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 
-import { VERBATIM } from "@/lib/legal/disclosures";
+import { CANCELLATION, COMPANY, PAYMENT, VERBATIM, WITHDRAWAL } from "@/lib/legal/disclosures";
 import {
   FAILURE_NOTICE_CHANNEL,
   FAILURE_TEMPLATE_BY_EVENT,
@@ -30,7 +30,7 @@ import {
 import { ALL_TEMPLATE_KEYS, FAILURE_TEMPLATE_KEYS, MAX_ATTEMPTS, TEMPLATE_KEYS } from "@/lib/notify/outbox";
 import { memorySender, type NotificationSender, type SendOutcome } from "@/lib/notify/sender";
 import { TEMPLATE_AUDIENCE } from "@/lib/notify/solapi";
-import { ADMIN_NOTIFICATIONS_PATH, renderTemplate, renderVariants, type CustomerVars, type OwnerVars } from "@/lib/notify/templates";
+import { ADMIN_NOTIFICATIONS_PATH, GUIDE_PATH, renderTemplate, renderVariants, type CustomerVars, type OwnerVars } from "@/lib/notify/templates";
 import {
   runNotificationWorker,
   supabaseWorkerDb,
@@ -588,12 +588,36 @@ describe("4. 문안", () => {
 
   const sha = (s: string): string => createHash("sha256").update(Buffer.from(s, "utf8")).digest("hex");
 
-  test("§7 기존 문안 4종 바이트 무변경 — P4-4 는 추가만 했다", () => {
+  // P1-7(2026-09-22): 고객 문안 2종의 "문의·변경·취소" 전화가 대표전화(COMPANY.tel)에서 예약·상담 전화(COMPANY.consultTel)로 바뀌었다
+  // (사용자 결정 2026-09-21 — 손님에게 전화하라고 안내하는 자리는 전부 010-6362-6188). 지문은 **그 번호만** 되돌려 대조한다 —
+  // 번호 말고 한 글자라도 바뀌었으면 여기서 멈춘다. 번호가 실제로 바뀌었다는 것도 함께 단언한다.
+  // P1-7 R2(2026-09-22): 고객 확정 문안에 약관 제8조가 약속한 고지 줄 넷(취소·환불 · 청약철회 · 입금 계좌 · 이용안내 링크)을 더했다.
+  // 지문은 **그 네 줄만 걷어내고 번호만 되돌리면** 옛 문안과 바이트 동일해야 한다 — 다른 글자는 한 자도 바뀌지 않았다는 뜻이다.
+  test("§7 기존 문안 4종 바이트 무변경 — P4-4 는 추가만 했다 (P1-7: 고객 문안의 전화번호 · R2: 확정 문안의 고지 줄 넷)", () => {
     expect(Object.keys(BASELINE).sort()).toEqual([...TEMPLATE_KEYS].sort());
+    const addedLines = new Set([CANCELLATION.smsLine, WITHDRAWAL.smsLine, PAYMENT.accountLine, `자세한 내용 ${ORIGIN}${GUIDE_PATH}`]);
     for (const key of TEMPLATE_KEYS) {
       const v = key.includes(".owner.") ? renderVariants(key, BASELINE_OWNER) : renderVariants(key, CUSTOMER);
-      expect(sha(v.sms), `${key}.sms 의 바이트가 바뀌었다`).toBe(BASELINE[key].sms);
-      expect(sha(v.lms), `${key}.lms 의 바이트가 바뀌었다`).toBe(BASELINE[key].lms);
+      const customer = key.includes(".customer.");
+      const withoutAdded = (s: string) =>
+        key === "confirmed.customer.sms"
+          ? s
+              .split("\n")
+              .filter((l) => !addedLines.has(l))
+              .join("\n")
+          : s;
+      if (key === "confirmed.customer.sms") {
+        for (const s of [v.sms, v.lms]) for (const l of addedLines) expect(s.split("\n"), `${key} 에 ${l} 줄이 없다`).toContain(l);
+      }
+      const asBefore = (s: string) => (customer ? withoutAdded(s).split(COMPANY.consultTel).join(COMPANY.tel) : s);
+      if (customer) {
+        for (const s of [v.sms, v.lms]) {
+          expect(s, `${key} 에 예약·상담 전화가 없다`).toContain(COMPANY.consultTel);
+          expect(s, `${key} 에 대표전화가 남았다`).not.toContain(COMPANY.tel);
+        }
+      }
+      expect(sha(asBefore(v.sms)), `${key}.sms 의 바이트가 바뀌었다`).toBe(BASELINE[key].sms);
+      expect(sha(asBefore(v.lms)), `${key}.lms 의 바이트가 바뀌었다`).toBe(BASELINE[key].lms);
       expect(v.subject === undefined ? null : sha(v.subject), `${key}.subject 가 바뀌었다`).toBe(BASELINE[key].subject);
     }
   });
@@ -775,7 +799,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("6. DB — 실제 행으�
         nights: 0,
         bus_count: 1,
         locale: "ko",
-        ...consentFields({ privacyConsent: true, marketingConsent: false }, now),
+        ...consentFields({ privacyConsent: true, marketingConsent: false, withdrawalConsent: true }, now),
       },
       "return=representation",
     );

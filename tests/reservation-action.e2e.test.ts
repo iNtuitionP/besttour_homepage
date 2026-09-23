@@ -189,6 +189,7 @@ function form(overrides: Record<string, FormValue> = {}): FormData {
     passengers: "30",
     locale: "ko",
     privacyConsent: "on",
+    withdrawalConsent: "on", // P1-7 — 청약철회 제한 확인(필수)
     // 타임트랩: 렌더 4초 전에 발급된 토큰(최소 3초)
     formToken: issueFormToken(new Date(Date.now() - 4_000), SECRET),
     "cf-turnstile-response": DUMMY_TOKEN,
@@ -240,6 +241,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("E2E — 진짜 guards + �
     nights: number;
     privacy_consent_at: string | null;
     retention_until: string | null;
+    withdrawal_consent_at: string | null;
   }
   interface LogRow {
     id: number;
@@ -250,7 +252,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("E2E — 진짜 guards + �
   }
 
   const reservationsByName = () =>
-    rest<ReservationRow[]>("GET", `/reservations?name=eq.${encodeURIComponent(MARK)}&select=id,public_code,name,phone,status,trip_type,nights,privacy_consent_at,retention_until`);
+    rest<ReservationRow[]>("GET", `/reservations?name=eq.${encodeURIComponent(MARK)}&select=id,public_code,name,phone,status,trip_type,nights,privacy_consent_at,retention_until,withdrawal_consent_at`);
 
   async function purgeByMark(): Promise<void> {
     const rows = await reservationsByName();
@@ -283,7 +285,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("E2E — 진짜 guards + �
 
     const rows = await rest<ReservationRow[]>(
       "GET",
-      `/reservations?public_code=eq.${result.publicCode}&select=id,public_code,name,phone,status,trip_type,nights,privacy_consent_at,retention_until`,
+      `/reservations?public_code=eq.${result.publicCode}&select=id,public_code,name,phone,status,trip_type,nights,privacy_consent_at,retention_until,withdrawal_consent_at`,
     );
     expect(rows.status).toBe(200);
     expect(rows.body).toHaveLength(1);
@@ -295,6 +297,9 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("E2E — 진짜 guards + �
     expect(row.nights).toBe(0);
     expect(row.privacy_consent_at).toBeTruthy();
     expect(row.retention_until).toBeTruthy();
+    // P1-7 — 청약철회 제한 확인 시각은 서버가 찍고(폼에 시각 필드 없음) 필수 동의와 같은 인스턴트다
+    expect(row.withdrawal_consent_at).toBeTruthy();
+    expect(new Date(row.withdrawal_consent_at as string).getTime()).toBe(new Date(row.privacy_consent_at as string).getTime());
 
     const logs = await rest<LogRow[]>("GET", `/notifications_log?reservation_id=eq.${row.id}&select=id,channel,template,status,to_phone&order=id.asc`);
     expect(logs.status).toBe(200);
@@ -341,6 +346,19 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("E2E — 진짜 guards + �
     if (result.ok) throw new Error("unreachable");
     expect(result.fieldErrors).toHaveProperty("privacyConsent");
     expect(JSON.stringify(result)).not.toMatch(/"detail"/);
+    const rows = await reservationsByName();
+    expect(rows.body).toEqual([]);
+  });
+
+  // P1-7 — 체크박스는 클라이언트 게이트일 뿐이다. 동의 없는 payload 를 진짜 guard 가 저장 전에 거부한다(행 0).
+  test("validation — withdrawalConsent 없음 → fieldErrors.withdrawalConsent, 행 0 (서버 거부)", async () => {
+    vi.mocked(headers).mockResolvedValue(requestHeaders());
+    vi.mocked(defaultGuardDeps).mockReturnValue(liveDeps(TURNSTILE_PASS_SECRET, memoryLimiters()));
+
+    const result = await submitReservation(form({ withdrawalConsent: null }));
+    expect(result).toMatchObject({ ok: false, code: "validation", messageKey: "reservation.errors.validation" });
+    if (result.ok) throw new Error("unreachable");
+    expect(result.fieldErrors).toHaveProperty("withdrawalConsent");
     const rows = await reservationsByName();
     expect(rows.body).toEqual([]);
   });

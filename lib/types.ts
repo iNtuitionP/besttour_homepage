@@ -54,6 +54,9 @@ export const ReservationInput = z
     // 사전 선택 금지는 UI(P3) 책임. 동의 시각·방침 버전은 서버가 lib/reservations/consent.ts consentFields() 로 찍는다.
     privacyConsent: z.literal(true),
     marketingConsent: z.boolean().default(false),
+    // 청약철회 제한 확인 (P1-7 · 전자상거래법 §17⑥ · 0021). 필수 — 위저드 체크박스만 막으면 공개 POST 로 우회되므로 서버가 거부한다.
+    // 동의 시각은 여기서 받지 않는다(폼에 시각 필드가 없다) — 서버가 consentFields() 로 찍는다.
+    withdrawalConsent: z.literal(true),
   })
   .superRefine((data, ctx) => {
     // REVIEW-FIX M6: 예전 refine(locale 이 en 일 때만 phone||phoneIntl)은 phone 이 필수라 절대 거짓이 될 수 없었다(죽은 코드).
@@ -121,10 +124,13 @@ function kstInstant(local: string): { state: "ok"; ms: number } | { state: "bad-
 export type ReservationInput = z.infer<typeof ReservationInput>;
 
 /**
- * 0003_consent.sql 의 동의 기록 컬럼 4개 — lib/reservations/consent.ts consentFields() 가 만든다.
- * timestamptz 값은 ISO 8601 UTC 인스턴트 문자열. DB 에 default 가 없으므로 insert 는 이 4개를 반드시 포함한다.
+ * 동의 기록 컬럼 — 0003_consent.sql 의 4개 + 0021_withdrawal_consent.sql 의 1개. lib/reservations/consent.ts consentFields() 가 만든다.
+ * timestamptz 값은 ISO 8601 UTC 인스턴트 문자열. DB 에 default 가 없으므로 insert 는 이 5개를 반드시 포함한다
+ * (0021 이후 접수는 withdrawal_consent_at 이 없으면 reservations_withdrawal_consent_required 가 거부한다).
  */
 export interface ReservationConsentColumns {
+  /** 청약철회 제한 확인 시각(서버 수신 인스턴트 — 0021). 필수 동의와 같은 인스턴트다. */
+  withdrawal_consent_at: string;
   /** 필수 동의 시각(서버 수신 인스턴트). */
   privacy_consent_at: string;
   /** 동의 당시 방침 버전 (consent.ts PRIVACY_POLICY_VERSION, 'YYYY-MM-DD'). */

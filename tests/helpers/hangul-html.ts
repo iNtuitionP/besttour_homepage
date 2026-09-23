@@ -179,6 +179,54 @@ export function findElements(html: string, match: (tag: string, attrs: Map<strin
   return out;
 }
 
+export interface FoundText {
+  /** "text" 또는 속성 이름(href · aria-label …) */
+  where: string;
+  value: string;
+  /** 가까운 조상부터 — 속성 일치면 그 속성을 가진 요소 자신이 맨 앞 */
+  ancestors: Array<{ tag: string; attrs: Map<string, string> }>;
+}
+
+/**
+ * 텍스트 노드와 **모든 속성 값**에서 `needle` 을 찾는다 (P1-7 — 전화번호가 어느 블록에 렌더되는지 단언용).
+ * findElements 와 같은 토크나이저 규칙(script/style 건너뛰기 — RSC 페이로드는 보지 않는다)을 쓴다.
+ */
+export function findText(html: string, needle: string): FoundText[] {
+  const stack: Array<{ tag: string; attrs: Map<string, string> }> = [];
+  const out: FoundText[] = [];
+  const token = /<!--[\s\S]*?-->|<![^>]*>|<\/([a-zA-Z][\w:-]*)\s*>|<([a-zA-Z][\w:-]*)((?:\s+[^\s"'>/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>]+))?)*)\s*(\/?)>|[^<]+|</g;
+  let m: RegExpExecArray | null;
+  while ((m = token.exec(html)) !== null) {
+    const [whole, closeTag, openTag, rawAttrs, selfClose] = m;
+    if (whole.startsWith("<!")) continue;
+    if (closeTag !== undefined) {
+      const name = closeTag.toLowerCase();
+      const at = stack.map((f) => f.tag).lastIndexOf(name);
+      if (at >= 0) stack.length = at;
+      continue;
+    }
+    if (openTag !== undefined) {
+      const name = openTag.toLowerCase();
+      const attrs = parseAttrs(rawAttrs ?? "");
+      for (const [attr, value] of attrs) {
+        const v = decode(value);
+        if (v.includes(needle)) out.push({ where: attr, value: v, ancestors: [{ tag: name, attrs }, ...[...stack].reverse()] });
+      }
+      if (RAW_TEXT.has(name)) {
+        const end = html.toLowerCase().indexOf(`</${name}`, token.lastIndex);
+        token.lastIndex = end === -1 ? html.length : end;
+        continue;
+      }
+      if (VOID.has(name) || selfClose === "/") continue;
+      stack.push({ tag: name, attrs });
+      continue;
+    }
+    const text = decode(whole);
+    if (text.includes(needle)) out.push({ where: "text", value: text.trim(), ancestors: [...stack].reverse() });
+  }
+  return out;
+}
+
 /** `<title>` 의 텍스트(없으면 null). */
 export function documentTitle(html: string): string | null {
   const m = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);

@@ -586,7 +586,10 @@ describe("8. FloatingContact — 죽은 버튼 금지 · 네이버 라벨 금지
     expect(css).toContain("env(safe-area-inset-bottom)");
   });
 
-  test("전화 버튼은 원장 COMPANY.tel 을 tel: 로 건다", () => {
-    expect(src).toMatch(/tel:\$\{COMPANY\.tel\}|`tel:\$\{COMPANY\.tel\}`/);
+  // P1-7 — 전화 버튼은 예약·상담 전화(원장 COMPANY.consultTel · 영문 consultTelIntl)다. 대표전화 1566 은 푸터 사업자 정보에만 남는다.
+  test("전화 버튼은 예약·상담 전화(consultPhone(locale))를 E.164 tel: 링크로 건다", () => {
+    expect(src).toMatch(/consultPhone\(\s*locale\s*\)/);
+    expect(src).toMatch(/href:\s*phone\.display\.trim\(\) === "" \? "" : phone\.href/);
+    expect(src).not.toMatch(/COMPANY\.tel\b/);
   });
 });

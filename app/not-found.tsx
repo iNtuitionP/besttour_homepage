@@ -1,6 +1,7 @@
 import { getTranslations } from "next-intl/server";
 
 import { routing } from "@/i18n/routing";
+import { CONSULT_TEL_HREF } from "@/lib/contact-phone";
 import { COMPANY, LEGAL_LABELS } from "@/lib/legal/disclosures";
 
 import styles from "./errors.module.css";
@@ -15,7 +16,8 @@ import styles from "./errors.module.css";
  * - 요청 로케일이 없으므로 기본 로케일(ko)을 명시해 getTranslations 를 부른다. locale 을 넘기면 next-intl 이 headers() 를
  *   읽지 않아 정적 프리렌더가 유지된다(.next/server/app/_not-found.html 이 생긴다).
  * - i18n Link 는 로케일 컨텍스트가 필요하므로 쓰지 않는다. 홈은 <a href="/">.
- * - 문구는 messages/ko.json errors(법정 문구가 아니라 i18n), 전화는 원장 COMPANY.tel. 이 파일에 한글 리터럴 없음.
+ * - 문구는 messages/ko.json errors(법정 문구가 아니라 i18n), 전화는 예약·상담 전화(원장 COMPANY.consultTel · 링크 CONSULT_TEL_HREF — P1-7).
+ *   로케일 밖이라 언제나 한국어 화면이므로 국내 표기를 쓴다. 이 파일에 한글 리터럴 없음.
  * - (site) 안의 페이지가 notFound() 를 부르면 여기가 아니라 app/[locale]/(site)/not-found.tsx(헤더·푸터 상속)가 받는다.
  */
 export default async function RootNotFound() {
@@ -36,10 +38,10 @@ export default async function RootNotFound() {
             </a>
             <a
               className={styles.secondary}
-              href={`tel:${COMPANY.tel}`}
-              aria-label={`${LEGAL_LABELS.contact.tel} ${COMPANY.tel}`}
+              href={CONSULT_TEL_HREF}
+              aria-label={`${LEGAL_LABELS.contact.consultTel} ${COMPANY.consultTel}`}
             >
-              {COMPANY.tel}
+              {COMPANY.consultTel}
             </a>
           </p>
         </main>

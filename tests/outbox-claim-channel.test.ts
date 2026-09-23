@@ -306,7 +306,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("DB — 0014 채널 필터
         nights: 0,
         bus_count: 1,
         locale: "ko",
-        ...consentFields({ privacyConsent: true, marketingConsent: false }, now),
+        ...consentFields({ privacyConsent: true, marketingConsent: false, withdrawalConsent: true }, now),
       },
       "return=representation",
     );

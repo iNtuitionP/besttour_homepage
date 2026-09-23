@@ -6,7 +6,8 @@
  * 이 export 가 이긴다(빌드 출력 `ƒ /[locale]/quote`).
  *
  * 여기서 하는 일: 폼 토큰(issueQuoteFormToken — guardSecret() 만, 없으면 null 로 fail-closed) · Turnstile 사이트키 · 차량 목록 ·
- * 원장 동의 문구(PRIVACY_NOTICE·LEGAL_LINKS) · 청약철회 고지 노드(<WithdrawalNotice/>) 를 클라이언트 위저드에 props 로 내린다.
+ * 원장 동의 문구(PRIVACY_NOTICE·LEGAL_LINKS) · 청약철회 고지 노드(<WithdrawalNotice/>) · 청약철회 제한 확인 라벨 · 예약·상담 전화를
+ * 클라이언트 위저드에 props 로 내린다.
  * 개인정보는 props 로 흐르지 않는다(P3-5 리뷰 N-2 — dev 에서 서버 컴포넌트 props 가 HTML 에 직렬화된다).
  *
  * 개발 전용 분기(production 에서는 죽은 코드 — 페이지는 어차피 동적이지만 searchParams 자체를 읽지 않는다):
@@ -20,9 +21,10 @@ import { issueQuoteFormToken } from "@/components/quote/form-token";
 import { parsePreviewSubmit } from "@/components/quote/preview-submit";
 import { QuoteWizard } from "@/components/quote/QuoteWizard";
 import { WithdrawalNotice } from "@/components/quote/WithdrawalNotice";
+import { consultPhone } from "@/lib/contact-phone";
 import { TURNSTILE_ACTION } from "@/lib/guard";
 import { koLang, ledgerUi } from "@/lib/i18n/ledger-ui";
-import { COMPANY, LEGAL_LINKS, PRIVACY_NOTICE } from "@/lib/legal/disclosures";
+import { LEGAL_LINKS, PRIVACY_NOTICE } from "@/lib/legal/disclosures";
 import { getVehicles } from "@/lib/queries/vehicles";
 import { pageAlternates } from "@/lib/site-url";
 
@@ -89,7 +91,10 @@ export default async function QuotePage({ params, searchParams }: { params: Para
             bodyLang: koLang(locale),
           }}
           withdrawalNotice={<WithdrawalNotice />}
-          tel={COMPANY.tel}
+          // 청약철회 제한 확인 라벨 — ko 는 원장 WITHDRAWAL.consentLabel, en 은 원장 WITHDRAWAL.consentLabelEn(P1-7).
+          withdrawalConsentLabel={ui.consent.withdrawal}
+          // 예약·상담 전화(P1-7) — ko 010-…, en +82 …, 링크는 E.164.
+          tel={consultPhone(locale)}
           previewSubmit={previewSubmit}
         />
       </div>

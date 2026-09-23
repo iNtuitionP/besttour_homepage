@@ -33,6 +33,7 @@ export const F: typeof RESERVATION_FORM_FIELDS = {
   locale: "locale",
   privacyConsent: "privacyConsent",
   marketingConsent: "marketingConsent",
+  withdrawalConsent: "withdrawalConsent",
 };
 
 /** guard 필드 중 위저드가 직접 렌더하는 둘. cf-turnstile-response 는 Turnstile 위젯이 스스로 넣는다. */

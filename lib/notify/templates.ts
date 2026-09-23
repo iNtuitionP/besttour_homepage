@@ -32,7 +32,8 @@
  * 반드시 포함해야 하는 고객 문자 2종과, 필수 항목이 많은 사장님 문자 2종은 **전부 LMS 로 나간다.** 줄일 수 있는 것은
  * 이미 줄였고, 남은 것은 규약이 요구하는 내용뿐이다.
  */
-import { COMPANY, PAYMENT, VERBATIM } from "../legal/disclosures";
+import { CANCELLATION, COMPANY, PAYMENT, VERBATIM, WITHDRAWAL } from "../legal/disclosures";
+import { FALLBACK_SITE_ORIGIN } from "../site-url";
 import type { NotifyEvent } from "../types";
 import { ALL_TEMPLATE_KEYS, MAX_ATTEMPTS, type TemplateKey } from "./outbox";
 
@@ -48,6 +49,9 @@ export const LMS_BYTE_LIMIT = 2000;
 
 /** 예약확인 화면 경로 — app/[locale]/(site)/reservation/check/page.tsx. 접수번호 + 휴대폰 뒷 4자리로 조회한다. */
 export const RESERVATION_CHECK_PATH = "/reservation/check";
+
+/** 이용안내 경로 — app/[locale]/(legal)/guide/page.tsx. 취소·환불 규정과 청약철회 제한 고지 전문이 있다(확정 통지의 링크 — P1-7 R2). */
+export const GUIDE_PATH = "/guide";
 
 /** 관리자 예약 목록 경로 — app/admin/(protected)/reservations. 상세는 `${…}/{reservationId}`. */
 export const ADMIN_RESERVATIONS_PATH = "/admin/reservations";
@@ -174,6 +178,8 @@ const lines = (...parts: (string | null)[]): string => parts.filter((p): p is st
 const link = (origin: string, path: string): string => `${origin}${path}`;
 
 const checkLink = (v: CustomerVars): string => link(v.origin, RESERVATION_CHECK_PATH);
+/** 이용안내(취소·환불 규정 · 청약철회 제한 고지 전문) — 확정 통지의 "자세한 내용" 링크(P1-7 R2). */
+const guideLink = (v: CustomerVars): string => link(v.origin, GUIDE_PATH);
 const adminLink = (v: OwnerVars): string => `${link(v.origin, ADMIN_RESERVATIONS_PATH)}/${v.reservationId}`;
 
 /** 대수 · 인원. 인원 미입력이면 대수만. */
@@ -205,12 +211,13 @@ function ownerVariants(v: OwnerVars): MessageVariants {
 }
 
 /**
- * 고객 접수 확인 — 접수번호 + verbatim + 예약확인 안내 + 대표전화(브리프 Part 1).
+ * 고객 접수 확인 — 접수번호 + verbatim + 예약확인 안내 + 예약·상담 전화(브리프 Part 1 · P1-7).
  * 예약확인은 접수번호와 휴대폰 뒷 4자리로 조회한다(app/[locale]/(site)/reservation/check). 문구는 그 화면과 같은 말을 쓴다.
+ * 전화는 원장 COMPANY.consultTel — 손님에게 "여기로 전화하라" 고 안내하는 번호다(대표전화 1566 은 푸터 사업자 정보에만 남는다).
  */
 function createdCustomerVariants(v: CustomerVars): MessageVariants {
   return {
-    sms: lines(`${BRAND} 접수 ${v.publicCode}`, VERBATIM.bookingNotice, `확인 ${checkLink(v)} · 문의 ${COMPANY.tel}`),
+    sms: lines(`${BRAND} 접수 ${v.publicCode}`, VERBATIM.bookingNotice, `확인 ${checkLink(v)} · 문의 ${COMPANY.consultTel}`),
     lms: lines(
       `${BRAND} 견적 신청이 접수되었습니다.`,
       "",
@@ -218,7 +225,7 @@ function createdCustomerVariants(v: CustomerVars): MessageVariants {
       VERBATIM.bookingNotice,
       "",
       `접수 내용은 ${checkLink(v)} 에서 접수번호와 휴대폰 뒷 4자리로 확인하실 수 있습니다.`,
-      `문의 ${COMPANY.tel}`,
+      `문의 ${COMPANY.consultTel}`,
     ),
   };
 }
@@ -241,18 +248,24 @@ export const CONFIRMED_HEADLINE = "예약이 확정되었습니다.";
  *                    (components/reservation-check/ReservationCard.tsx `data-legal="booking-notice"`).
  * 그래서 verbatim 앞 문장은 확정 선언이 아니라 연락처 안내다 — 두 문장이 서로 부딪히지 않는다.
  * 변경·취소 안내 문구는 예약확인 화면(`reservationCheck.card.help`)과 같은 말을 쓴다.
+ *
+ * P1-7 R2 [P1-4] — 약관 제8조가 약속한 "예약 확정 통지에서의 고지": 결제 안내 바로 다음에 원장 줄 셋(취소·환불 · 청약철회 제한 ·
+ * 입금 계좌)과 자세한 내용 링크(이용안내 — 절대 URL)를 둔다. 이 줄들을 빼서 90바이트 SMS 에 맞추지 않는다 — SMS 판에도 같은 줄이 다
+ * 들어 있어 언제나 90바이트를 넘고, 그래서 확정 통지는 **LMS 로만** 나간다(renderTemplate 의 선택 규칙 그대로 · 테스트가 잠근다).
  */
 function confirmedCustomerVariants(v: CustomerVars): MessageVariants {
+  const notices = [CANCELLATION.smsLine, WITHDRAWAL.smsLine, PAYMENT.accountLine, `자세한 내용 ${guideLink(v)}`];
   return {
-    sms: lines(`${BRAND} 확정 ${v.publicCode}`, PAYMENT.line, `문의 ${COMPANY.tel}`, VERBATIM.bookingNotice),
+    sms: lines(`${BRAND} 확정 ${v.publicCode}`, PAYMENT.line, ...notices, `문의 ${COMPANY.consultTel}`, VERBATIM.bookingNotice),
     lms: lines(
       `${BRAND} ${CONFIRMED_HEADLINE}`,
       "",
       `접수번호 ${v.publicCode}`,
       PAYMENT.line,
+      ...notices,
       "",
       `예약 내용은 ${checkLink(v)} 에서 접수번호와 휴대폰 뒷 4자리로 확인하실 수 있습니다.`,
-      `예약 변경·취소는 ${COMPANY.tel} 로 전화 주시면 도와드립니다.`,
+      `예약 변경·취소는 ${COMPANY.consultTel} 로 전화 주시면 도와드립니다.`,
       "",
       VERBATIM.bookingNotice,
     ),
@@ -361,12 +374,31 @@ export function renderTemplate<K extends TemplateKey>(key: K, vars: TemplateVars
  *   사장님 확정 후 연락드리며, 확정된 예약만 결제 진행됩니다.
  *
  *   접수 내용은 예약확인 화면에서 접수번호와 휴대폰 뒷 4자리로 확인하실 수 있습니다.
- *   문의 #{대표전화}
+ *   문의 #{상담전화}
  *
  * 링크는 본문 URL 이 아니라 **버튼(웹링크)** 으로 붙인다 — 심사에서 본문 URL 은 광고성으로 걸리기 쉽고, 버튼은
- * 템플릿 등록 시 고정 URL 로 심사받는다. 그래서 본문에는 경로를 적지 않았다. 버튼 정의는 발송 연동(P4-2)에서
- * 제공자 콘솔에 등록한다. 대체(실패 시 문자) 문안은 위 renderTemplate 의 같은 이벤트 문안을 그대로 쓴다.
+ * 템플릿 등록 시 고정 URL 로 심사받는다. 그래서 본문에는 경로를 적지 않는다. **버튼 정의는 이 파일의 `buttons` 다**
+ * (R3 [P2-H] — 예전에는 "콘솔에서 등록한다" 는 주석뿐이어서 초안만으로는 심사에 낼 수 없었다). 콘솔 등록 때 이 값을 그대로 옮긴다.
+ * 대체(실패 시 문자) 문안은 위 renderTemplate 의 같은 이벤트 문안을 그대로 쓴다.
+ *
+ * P1-7 R2 [P1-4] — 확정 알림톡에도 문자와 같은 원장 줄 셋(취소·환불 · 청약철회 제한 · 입금 계좌)을 결제 안내 바로 다음에 둔다.
+ * 문자의 "자세한 내용" 링크(이용안내 GUIDE_PATH)는 알림톡에서는 버튼(웹링크)으로 등록한다(위 규칙 — P4-2 연동 때 콘솔에).
+ * 전화 자리 이름은 `#{상담전화}`(옛 `#{대표전화}` — 심사 전이라 바꿨다). 채우는 값은 원장 COMPANY.consultTel 이다.
  */
+/**
+ * 알림톡 버튼(웹링크) — 심사 제출본의 일부다 (R3 [P2-H]).
+ * 카카오 버튼 규격: `linkType = WL`(웹링크) · 모바일/PC 링크. 템플릿 등록 때 **고정 URL 로 심사**받으므로 변수 자리를 쓰지 않는다.
+ * 그래서 운영 도메인(FALLBACK_SITE_ORIGIN = 사이트 정본 원점)으로 박는다 — 문자 문안의 링크가 요청 원점을 쓰는 것과 다른 점이다.
+ */
+export interface AlimtalkButton {
+  /** 버튼에 보이는 이름. */
+  name: string;
+  /** 웹링크. 카카오 규격의 `WL`. */
+  type: "WL";
+  linkMo: string;
+  linkPc: string;
+}
+
 export interface AlimtalkTemplate {
   event: NotifyEvent;
   /** 사람이 목록에서 구분하는 이름. 카카오 템플릿 코드는 등록 시 발급받는 값이라 여기서 지어내지 않는다. */
@@ -374,9 +406,19 @@ export interface AlimtalkTemplate {
   /** 심사 제출본. `#{변수}` 자리는 renderAlimtalk 이 채운다. */
   body: string;
   variables: readonly string[];
+  /** 본문에 URL 을 적지 않는 대신 붙이는 웹링크 버튼(심사 제출본의 일부). */
+  buttons: readonly AlimtalkButton[];
 }
 
-const ALIMTALK_VARIABLES = ["접수번호", "대표전화"] as const;
+const ALIMTALK_VARIABLES = ["접수번호", "상담전화"] as const;
+
+/** 고정 URL 웹링크 버튼 하나. */
+const webLink = (name: string, pathname: string): AlimtalkButton => ({
+  name,
+  type: "WL",
+  linkMo: `${FALLBACK_SITE_ORIGIN}${pathname}`,
+  linkPc: `${FALLBACK_SITE_ORIGIN}${pathname}`,
+});
 
 export const ALIMTALK_TEMPLATES: readonly AlimtalkTemplate[] = [
   {
@@ -389,9 +431,10 @@ export const ALIMTALK_TEMPLATES: readonly AlimtalkTemplate[] = [
       VERBATIM.bookingNotice,
       "",
       "접수 내용은 예약확인 화면에서 접수번호와 휴대폰 뒷 4자리로 확인하실 수 있습니다.",
-      "문의 #{대표전화}",
+      "문의 #{상담전화}",
     ),
     variables: ALIMTALK_VARIABLES,
+    buttons: [webLink("예약확인", RESERVATION_CHECK_PATH)],
   },
   {
     event: "confirmed",
@@ -403,13 +446,18 @@ export const ALIMTALK_TEMPLATES: readonly AlimtalkTemplate[] = [
       "",
       "접수번호 #{접수번호}",
       PAYMENT.line,
+      CANCELLATION.smsLine,
+      WITHDRAWAL.smsLine,
+      PAYMENT.accountLine,
       "",
       "예약 내용은 예약확인 화면에서 접수번호와 휴대폰 뒷 4자리로 확인하실 수 있습니다.",
-      "예약 변경·취소는 #{대표전화} 로 전화 주시면 도와드립니다.",
+      "예약 변경·취소는 #{상담전화} 로 전화 주시면 도와드립니다.",
       "",
       VERBATIM.bookingNotice,
     ),
     variables: ALIMTALK_VARIABLES,
+    // R3 [P2-H]: 문자의 "자세한 내용 <origin>/guide" 에 해당하는 링크를 **버튼으로** 담는다(본문 URL 금지 규칙은 그대로).
+    buttons: [webLink("예약확인", RESERVATION_CHECK_PATH), webLink("이용안내", GUIDE_PATH)],
   },
 ];
 

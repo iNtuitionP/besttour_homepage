@@ -7,7 +7,18 @@
 import { LEGAL_LABELS } from "@/lib/legal/disclosures";
 import styles from "./legal.module.css";
 
-export function LegalArticle({ no, title, body }: { no: number; title: string; body: string }) {
+/** children — 조문 본문 바로 아래에 붙는 원장 고지(예: 제8조 아래 WITHDRAWAL.notice — P1-7). 조문 본문 자체는 바꾸지 않는다. */
+export function LegalArticle({
+  no,
+  title,
+  body,
+  children,
+}: {
+  no: number;
+  title: string;
+  body: string;
+  children?: React.ReactNode;
+}) {
   return (
     <article className={styles.section} data-article-no={no}>
       <h2 className={styles.sectionTitle}>
@@ -19,6 +30,7 @@ export function LegalArticle({ no, title, body }: { no: number; title: string; b
         {title}
       </h2>
       <p className={styles.body}>{body}</p>
+      {children}
     </article>
   );
 }

@@ -15,12 +15,14 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 
-import { COMPANY, PAYMENT, VERBATIM } from "@/lib/legal/disclosures";
+import { CANCELLATION, COMPANY, PAYMENT, VERBATIM, WITHDRAWAL } from "@/lib/legal/disclosures";
+import { FALLBACK_SITE_ORIGIN } from "@/lib/site-url";
 import { ALL_TEMPLATE_KEYS, FAILURE_TEMPLATE_KEYS, TEMPLATE_KEYS, type TemplateKey } from "@/lib/notify/outbox";
 import {
   ADMIN_RESERVATIONS_PATH,
   ALIMTALK_TEMPLATES,
   CONFIRMED_HEADLINE,
+  GUIDE_PATH,
   LMS_BYTE_LIMIT,
   RESERVATION_CHECK_PATH,
   SMS_BYTE_LIMIT,
@@ -329,18 +331,50 @@ describe("4. 개인정보 경계", () => {
     expect(noRawPii).toBe(true);
   });
 
-  test("고객 접수 확인 — 접수번호 · 예약확인 경로 · 대표전화가 있다", () => {
+  // P1-7 — 손님에게 전화하라고 안내하는 번호는 예약·상담 전화(COMPANY.consultTel)다. 대표전화(COMPANY.tel)는 문자에 쓰지 않는다.
+  test("고객 접수 확인 — 접수번호 · 예약확인 경로 · 예약·상담 전화가 있다", () => {
     const text = renderTemplate("created.customer.sms", CUSTOMER).text;
     expect(text).toContain(CUSTOMER.publicCode);
     expect(text).toContain(`${ORIGIN}${RESERVATION_CHECK_PATH}`);
-    expect(text).toContain(COMPANY.tel);
+    expect(text).toContain(COMPANY.consultTel);
+    expect(text).not.toContain(COMPANY.tel);
   });
 
   test("고객 확정 안내 — 접수번호 · 확정 사실 · 원장 PAYMENT 문안. 결제 문구를 지어내지 않았다", () => {
     const text = renderTemplate("confirmed.customer.sms", CUSTOMER).text;
     expect(text).toContain(CUSTOMER.publicCode);
     expect(text).toContain(PAYMENT.line);
-    expect(text).toContain(COMPANY.tel);
+    expect(text).toContain(COMPANY.consultTel);
+    expect(text).not.toContain(COMPANY.tel);
+  });
+
+  // P1-7 R2 [P1-4] — 약관 제8조: "회사는 이 사실을 견적 신청 화면과 **예약 확정 통지**에 고지합니다."
+  test("확정 통지 — 취소·환불 줄 · 청약철회 줄 · 입금 계좌 줄 · 이용안내 링크가 결제 안내 다음, verbatim 앞에 있다 (두 판 모두)", () => {
+    const guide = `${ORIGIN}${GUIDE_PATH}`;
+    for (const variant of ["sms", "lms"] as const) {
+      const text = renderVariants("confirmed.customer.sms", CUSTOMER)[variant];
+      const at = (s: string) => text.indexOf(s);
+      for (const s of [CANCELLATION.smsLine, WITHDRAWAL.smsLine, PAYMENT.accountLine, guide]) expect(at(s), `${variant}: ${s}`).toBeGreaterThan(-1);
+      expect(at(PAYMENT.line), variant).toBeLessThan(at(CANCELLATION.smsLine));
+      expect(at(CANCELLATION.smsLine), variant).toBeLessThan(at(WITHDRAWAL.smsLine));
+      expect(at(WITHDRAWAL.smsLine), variant).toBeLessThan(at(PAYMENT.accountLine));
+      expect(at(PAYMENT.accountLine), variant).toBeLessThan(at(guide));
+      expect(at(guide), variant).toBeLessThan(at(VERBATIM.bookingNotice));
+    }
+  });
+
+  test("확정 통지는 LMS 로만 나간다 — 고지를 빼서 SMS(90바이트)에 맞추지 않았다", () => {
+    const r = renderTemplate("confirmed.customer.sms", CUSTOMER);
+    expect(r.format).toBe("lms");
+    for (const s of [CANCELLATION.smsLine, WITHDRAWAL.smsLine, PAYMENT.accountLine]) expect(r.text).toContain(s);
+    expect(utf8ByteLength(renderVariants("confirmed.customer.sms", CUSTOMER).sms)).toBeGreaterThan(SMS_BYTE_LIMIT);
+  });
+
+  test("접수 통지(고객)는 바꾸지 않는다 — 아직 계약 전이라 취소·청약철회·계좌 줄이 없다", () => {
+    for (const variant of ["sms", "lms"] as const) {
+      const text = renderVariants("created.customer.sms", CUSTOMER)[variant];
+      for (const s of [CANCELLATION.smsLine, WITHDRAWAL.smsLine, PAYMENT.accountLine]) expect(text.includes(s), `${variant}: ${s}`).toBe(false);
+    }
   });
 });
 
@@ -388,13 +422,11 @@ describe("5. 문구 규약", () => {
     // "휴대폰 뒷 4자리" 의 4 는 조회 화면(messages/ko.json reservationCheck.form.phoneLast4Label)과 같은 말이라
     // 주장이 아니라 조작 안내다 — CLAIM_NUMBERS 의 단위(건·명·년·대·원·%)에 걸리지 않는다.
     for (const key of CUSTOMER_KEYS) {
-      const withoutSources = renderTemplate(key, CUSTOMER)
-        .text.split(PAYMENT.line)
-        .join("")
-        .split(COMPANY.tel)
-        .join("")
-        .split(CUSTOMER.publicCode)
-        .join("");
+      // P1-7 R2 — 확정 통지의 원장 줄(취소·환불 · 청약철회 · 입금 계좌)도 원장에서 온 것이라 걷어낸다.
+      let withoutSources = renderTemplate(key, CUSTOMER).text;
+      for (const source of [PAYMENT.line, CANCELLATION.smsLine, WITHDRAWAL.smsLine, PAYMENT.accountLine, COMPANY.consultTel, CUSTOMER.publicCode]) {
+        withoutSources = withoutSources.split(source).join("");
+      }
       expect(withoutSources, key).not.toMatch(CLAIM_NUMBERS);
     }
   });
@@ -422,6 +454,7 @@ describe("6. 원장 단일 출처", () => {
     const bare = codeOf(TEMPLATES);
     expect(bare, "verbatim 리터럴").not.toContain(VERBATIM.bookingNotice);
     expect(bare, "대표전화 리터럴").not.toContain(COMPANY.tel);
+    expect(bare, "예약·상담 전화 리터럴").not.toContain(COMPANY.consultTel);
     expect(bare, "결제 안내 리터럴").not.toContain(PAYMENT.line);
     expect(bare, "상호 리터럴").not.toContain(COMPANY.legalName);
   });
@@ -436,8 +469,10 @@ describe("6. 원장 단일 출처", () => {
   test("경로 상수가 실제 라우트를 가리킨다", () => {
     expect(RESERVATION_CHECK_PATH).toBe("/reservation/check");
     expect(ADMIN_RESERVATIONS_PATH).toBe("/admin/reservations");
+    expect(GUIDE_PATH).toBe("/guide");
     expect(exists("app/[locale]/(site)/reservation/check/page.tsx"), RESERVATION_CHECK_PATH).toBe(true);
     expect(exists("app/admin/(protected)/reservations/[id]/page.tsx"), ADMIN_RESERVATIONS_PATH).toBe(true);
+    expect(exists("app/[locale]/(legal)/guide/page.tsx"), GUIDE_PATH).toBe(true);
   });
 
   test("순수 모듈 — 서버 지시어·네트워크·DB 0", () => {
@@ -485,8 +520,52 @@ describe("7. 알림톡 템플릿", () => {
     expect(rows[0]).toContain(CONFIRMED_HEADLINE);
   });
 
+  // P1-7 R2 [P1-4] — 알림톡 초안에도 확정 통지의 고지 줄을 넣는다. 전화 자리 이름은 `#{상담전화}`(심사 전이라 바꿀 수 있다).
+  test("확정 알림톡 — 취소·환불 · 청약철회 · 입금 계좌 줄이 결제 안내 다음, verbatim 앞에 있다 · 접수 알림톡에는 없다", () => {
+    const confirmed = ALIMTALK_TEMPLATES.find((t) => t.event === "confirmed")?.body ?? "";
+    const at = (s: string) => confirmed.indexOf(s);
+    expect(at(PAYMENT.line)).toBeGreaterThan(-1);
+    expect(at(PAYMENT.line)).toBeLessThan(at(CANCELLATION.smsLine));
+    expect(at(CANCELLATION.smsLine)).toBeLessThan(at(WITHDRAWAL.smsLine));
+    expect(at(WITHDRAWAL.smsLine)).toBeLessThan(at(PAYMENT.accountLine));
+    expect(at(PAYMENT.accountLine)).toBeLessThan(at(VERBATIM.bookingNotice));
+    const created = ALIMTALK_TEMPLATES.find((t) => t.event === "created")?.body ?? "";
+    for (const s of [CANCELLATION.smsLine, WITHDRAWAL.smsLine, PAYMENT.accountLine]) expect(created.includes(s), s).toBe(false);
+  });
+
+  // P1-7 R3 [P2-H] — 링크가 주석으로만 있으면 초안이 아니다. 심사에 낼 수 있게 **버튼 정의**를 초안에 담는다.
+  test("🔴 버튼(웹링크) 정의가 초안에 있다 — 확정은 이용안내(/guide)와 예약확인, 접수는 예약확인", () => {
+    const origin = FALLBACK_SITE_ORIGIN;
+    const byEvent = Object.fromEntries(ALIMTALK_TEMPLATES.map((t) => [t.event, t]));
+    for (const t of ALIMTALK_TEMPLATES) {
+      expect(Array.isArray(t.buttons), t.event).toBe(true);
+      expect(t.buttons.length, t.event).toBeGreaterThan(0);
+      for (const b of t.buttons) {
+        // 카카오 웹링크 버튼: 이름 · 타입 WL · 모바일/PC 링크. 링크는 절대 URL 이고 변수 자리를 쓰지 않는다(고정 URL 심사).
+        expect(b.type, `${t.event}/${b.name}`).toBe("WL");
+        expect(b.linkMo, `${t.event}/${b.name}`).toMatch(new RegExp(`^${origin}/`));
+        expect(b.linkPc).toBe(b.linkMo);
+        expect(b.name.length).toBeGreaterThan(0);
+        expect(b.linkMo).not.toMatch(/#\{/);
+      }
+    }
+    expect(byEvent.confirmed.buttons.map((b) => b.linkMo)).toContain(`${origin}${GUIDE_PATH}`);
+    expect(byEvent.confirmed.buttons.map((b) => b.linkMo)).toContain(`${origin}${RESERVATION_CHECK_PATH}`);
+    expect(byEvent.created.buttons.map((b) => b.linkMo)).toEqual([`${origin}${RESERVATION_CHECK_PATH}`]);
+    // 본문에는 여전히 URL 을 적지 않는다(심사에서 본문 URL 은 광고성으로 걸리기 쉽다 — 기존 규칙)
+    for (const t of ALIMTALK_TEMPLATES) expect(t.body, t.event).not.toMatch(/https?:\/\//);
+  });
+
+  test("알림톡 전화 자리 이름은 #{상담전화} — #{대표전화} 는 남지 않는다", () => {
+    for (const t of ALIMTALK_TEMPLATES) {
+      expect(t.body, t.event).toContain("#{상담전화}");
+      expect(t.body, t.event).not.toContain("#{대표전화}");
+      expect(t.variables, t.event).toContain("상담전화");
+    }
+  });
+
   test("renderAlimtalk — 변수를 치환해도 verbatim 이 남고, 미치환 자리는 throw 한다", () => {
-    const values = { 접수번호: "BT12ABCD", 대표전화: COMPANY.tel };
+    const values = { 접수번호: "BT12ABCD", 상담전화: COMPANY.consultTel };
     for (const t of ALIMTALK_TEMPLATES) {
       const out = renderAlimtalk(t.event, values);
       expect(out).not.toMatch(/#\{/);

@@ -36,7 +36,7 @@
  * 규약 3 — **정규식에 `g` 플래그를 쓰지 마라.** `lastIndex` 가 남아 같은 규칙을 두 번째 돌릴 때
  * 조용히 빗나간다. 여기 규칙은 전부 무상태다.
  */
-import { COMPANY } from "@/lib/legal/disclosures";
+import { COMPANY, PAYMENT } from "@/lib/legal/disclosures";
 
 import type { OwnerCopyKind } from "./kinds";
 
@@ -228,13 +228,17 @@ export const PRICE_LITERALS: readonly CopyRule[] = [
 // **사장님 글에도 걸지 않는다**(아래 (6)) — "대표전화로 연락 주세요"는 정당한 공지다.
 export const CONTACT_LITERALS: ReadonlyArray<readonly [label: string, literal: string]> = [
   ["COMPANY.tel", COMPANY.tel],
+  // P1-7 — 예약·상담 전화(국내·국제 표기). 카탈로그는 `{tel}` 보간만 쓴다.
+  ["COMPANY.consultTel", COMPANY.consultTel],
+  ["COMPANY.consultTelIntl", COMPANY.consultTelIntl],
   ["COMPANY.mobile", COMPANY.mobile],
   ["COMPANY.fax", COMPANY.fax],
   ["COMPANY.bizRegNo", COMPANY.bizRegNo],
   ["COMPANY.mailOrderNo", COMPANY.mailOrderNo],
   ["COMPANY.privacyOfficer.phone", COMPANY.privacyOfficer.phone],
   ["COMPANY.email", COMPANY.email],
-  ["COMPANY.bankAccount", COMPANY.bankAccount],
+  // P1-7 — 입금 계좌는 COMPANY 가 아니라 PAYMENT.account(관계사 명의)다.
+  ["PAYMENT.account.number", PAYMENT.account.number],
 ];
 
 /**

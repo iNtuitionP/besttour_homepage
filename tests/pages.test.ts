@@ -415,9 +415,12 @@ describe("4. /about", () => {
     // ko 값이 LEGAL_LABELS·COMPANY.representative 와 같은 글자라는 것은 tests/i18n-en.test.ts §4 가 잠근다.
     expect(src).toMatch(/import\s*\{[^}]*\bledgerUi\b[^}]*\}\s*from\s*["']@\/lib\/i18n\/ledger-ui["']/);
     expect(code).toMatch(/\bui\.representative\b/);
-    for (const f of ["legalName", "bizRegNo", "mailOrderNo", "address", "tel", "email", "establishedYear"]) {
+    for (const f of ["legalName", "bizRegNo", "mailOrderNo", "address", "email", "establishedYear"]) {
       expect(code, `COMPANY.${f}`).toMatch(new RegExp(`COMPANY\\.${f}\\b`));
     }
+    // P1-7 — 전화 줄은 예약·상담 전화(consultPhone — en 은 +82 표기). 대표전화 1566 은 푸터 사업자 정보 한 줄에만 남는다.
+    expect(code).toMatch(/consultTel:\s*consultPhone\(\s*locale\s*\)\.display/);
+    expect(code).not.toMatch(/COMPANY\.tel\b/);
     expect(code).toMatch(/LegalRecordList/);
   });
 
@@ -517,8 +520,9 @@ describe("6. /fares (P6-3b)", () => {
   const code = codeOf(PAGE_FILES.fares);
   const faresKo = JSON.stringify(pagesKo.fares ?? {});
 
-  test("원장 import — QUOTE_BASIS · PAYMENT · VERBATIM · COMPANY 를 가져와 그대로 렌더한다", () => {
-    expect(ledgerImports(src)).toEqual(expect.arrayContaining(["QUOTE_BASIS", "PAYMENT", "VERBATIM", "COMPANY"]));
+  // P1-7 — 전화는 원장 COMPANY 를 직접 읽지 않고 lib/contact-phone(예약·상담 전화 — 원장 COMPANY.consultTel)을 거친다.
+  test("원장 import — QUOTE_BASIS · PAYMENT · VERBATIM 을 가져와 그대로 렌더한다", () => {
+    expect(ledgerImports(src)).toEqual(expect.arrayContaining(["QUOTE_BASIS", "PAYMENT", "VERBATIM"]));
     expect(code).toMatch(/QUOTE_BASIS\.(factors|line)/);
     expect(code).toMatch(/PAYMENT\.line/);
     expect(code).toMatch(/VERBATIM\.bookingNotice/);
@@ -556,9 +560,11 @@ describe("6. /fares (P6-3b)", () => {
     }
   });
 
-  test("CTA — /quote 링크 + 원장 COMPANY.tel 전화 링크", () => {
+  test("CTA — /quote 링크 + 예약·상담 전화 링크(P1-7 — consultPhone(locale), E.164 href)", () => {
     expect(code).toMatch(/href="\/quote"/);
-    expect(code).toMatch(/tel:\$\{COMPANY\.tel\}/);
+    expect(code).toMatch(/consultPhone\(\s*locale\s*\)/);
+    expect(code).toMatch(/href=\{phone\.href\}/);
+    expect(code).not.toMatch(/COMPANY\.tel\b/);
   });
 
   test("인벤토리 §4 요금 매트릭스의 숫자(300,000 · 350,000 · 400,000 · 180,000 · 5,500 · 40km)가 어디에도 없다", () => {

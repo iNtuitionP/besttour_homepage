@@ -1013,6 +1013,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("7. DB — is_admin() RLS 
         privacy_policy_version: "2026-09-11",
         marketing_consent_at: null,
         retention_until: later.toISOString(),
+        withdrawal_consent_at: now.toISOString(), // 0021(P1-7) — 새 접수는 청약철회 제한 확인 시각이 필수다
       },
       "return=representation",
     );

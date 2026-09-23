@@ -3,8 +3,8 @@
 import { useLocale, useMessages, useTranslations } from "next-intl";
 
 import { Link } from "@/i18n/navigation";
+import { consultPhone } from "@/lib/contact-phone";
 import { LEDGER_UI_KO, type LedgerUi } from "@/lib/i18n/ledger-ui-ko";
-import { COMPANY } from "@/lib/legal/disclosures";
 
 import styles from "@/app/errors.module.css";
 
@@ -18,8 +18,9 @@ import styles from "@/app/errors.module.css";
  * 클라이언트에서도 useTranslations 가 된다. 실측 경로: 개발 서버 /?boom=1 (홈 page.tsx 의 개발 전용 분기가 일부러 throw —
  * 옛 /dev/krmap?boom=1 은 P2-4 에서 dev 라우트와 함께 삭제됐다).
  *
- * 대표전화 라벨 (P2-6): ko 는 원장 그대로(LEDGER_UI_KO — lib/i18n/ledger-ui-ko.ts), 그 밖의 로케일은 공급자가 넘겨 준 카탈로그의
+ * 전화 라벨 (P2-6): ko 는 원장 그대로(LEDGER_UI_KO — lib/i18n/ledger-ui-ko.ts), 그 밖의 로케일은 공급자가 넘겨 준 카탈로그의
  * `legal` 네임스페이스(en.json). 서버 전용 ledgerUi 를 여기서 import 하지 않는다 — 영문 카탈로그 전체가 클라이언트 번들에 실린다.
+ * 번호는 예약·상담 전화(P1-7 — lib/contact-phone 은 원장 상수만 읽는 작은 모듈이라 클라이언트에서도 쓴다. en 은 +82 표기).
  */
 export default function SiteError({
   error,
@@ -31,7 +32,8 @@ export default function SiteError({
   const t = useTranslations("errors");
   const locale = useLocale();
   const messages = useMessages() as { legal?: Pick<LedgerUi, "labels"> };
-  const telLabel = (locale === "ko" ? LEDGER_UI_KO : (messages.legal ?? LEDGER_UI_KO)).labels.contact.tel;
+  const telLabel = (locale === "ko" ? LEDGER_UI_KO : (messages.legal ?? LEDGER_UI_KO)).labels.contact.consultTel;
+  const phone = consultPhone(locale);
 
   return (
     <main className={styles.page} data-testid="error-boundary" role="alert">
@@ -45,8 +47,8 @@ export default function SiteError({
         <Link className={styles.secondary} href="/">
           {t("home")}
         </Link>
-        <a className={styles.secondary} href={`tel:${COMPANY.tel}`} aria-label={`${telLabel} ${COMPANY.tel}`}>
-          {COMPANY.tel}
+        <a className={styles.secondary} href={phone.href} aria-label={`${telLabel} ${phone.display}`}>
+          {phone.display}
         </a>
       </p>
     </main>

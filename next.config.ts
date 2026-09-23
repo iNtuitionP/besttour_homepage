@@ -63,8 +63,8 @@ const LEGACY_URLS: readonly LegacyRedirect[] = [
 
   // 크롤하지 않은 게시판 2종 — HTML 은 없지만 인벤토리가 정체를 적어 둔 것만 옮긴다.
   //   estimate: 인벤토리 머리말 "견적 게시판(bo_table=estimate)은 개인정보 우려로 크롤링하지 않았다" — 정체는 확실하다.
-  //   confirm : 인벤토리 §5 는 "예약확인으로 **추정**" 이다. 추정이지만, 틀려도 방문자는 404 가 아니라 실재하는 페이지를 만난다.
-  //             (컨트롤러 결정 2026-09-13. 사장님 확인 대기 — 보고서 §미확정 Q2)
+  //   confirm : 옛 예약확인 게시판 — 사장님 확인(2026-09-21). (인벤토리 §5 의 추정을 컨트롤러가 2026-09-13 에 먼저 반영했고,
+  //             보고서 §미확정 Q2 가 이것으로 닫혔다.)
   { source: LEGACY_BOARD, query: { key: "bo_table", value: "estimate" }, destination: "/quote" },
   { source: LEGACY_BOARD, query: { key: "bo_table", value: "confirm" }, destination: "/reservation/check" },
 
@@ -87,6 +87,26 @@ const nextConfig: NextConfig = {
       statusCode: 301,
       ...(query ? { has: [{ type: "query" as const, key: query.key, value: query.value }] } : {}),
     }));
+  },
+  /**
+   * P1-7 R3 [P2-D] — 전역 `Referrer-Policy: strict-origin`.
+   *
+   * 방문 통계의 `beforeSend` 는 **보내는 이벤트의 url 만** 지운다. 수집 스크립트·수집 요청은 브라우저가 보내므로,
+   * 기본 정책(`strict-origin-when-cross-origin`)에서는 **같은 출처 요청의 Referer 에 전체 경로와 쿼리**가 그대로 실린다
+   * (`/quote/done?code=…` 의 접수번호, 위저드 프리필 등). 그것은 응답 헤더로만 막을 수 있다.
+   *
+   * `strict-origin` = 어디로 가든 **출처(https://bestour.co.kr)만** 보내고 경로·쿼리는 보내지 않는다. https→http 로는 아예 안 보낸다.
+   * 외부 링크(카카오·네이버 등)는 그대로 동작한다 — 참조자 값이 짧아질 뿐이다. `no-referrer` 로 더 세게 잠그지 않는 이유는
+   * 유입 경로(어느 사이트에서 왔는지)가 통계와 제휴 확인에 쓰이기 때문이다. `/quote/done` 은 더 좁은 `no-referrer` 메타를 따로 갖는다
+   * (페이지 메타가 문서 단위로 이긴다 — 접수번호가 든 주소는 출처조차 흘리지 않는다).
+   */
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [{ key: "Referrer-Policy", value: "strict-origin" }],
+      },
+    ];
   },
 };
 

@@ -296,6 +296,7 @@ export function solapiSender(deps: SolapiDeps): SolapiSender {
       //   그때 이 분기를 지우고, 아래 sendMessage 에서 type 을 알림톡용으로 바꾸고 pfId·templateId·변수와
       //   실패 시 문자 대체(disableSms=false)를 담은 카카오 옵션을 message 에 붙인다. 문안은
       //   lib/notify/templates.ts ALIMTALK_TEMPLATES 의 심사 제출본과 **글자 그대로** 같아야 한다.
+      //   버튼도 그 초안의 `buttons`(웹링크 — 예약확인 · 이용안내)를 그대로 등록·전송한다(R3 [P2-H]).
       //   pfId·templateId 는 제공자 콘솔에서 발급받는 값이라 여기서 지어내지 않는다 — env 로 주입한다.
       if (req.channel === "alimtalk") {
         return fail(ALIMTALK_REFUSED_CODE, false);

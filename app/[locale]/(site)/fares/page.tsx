@@ -7,7 +7,7 @@
  *   ② 대표 노선 예시: getShowcaseRoutes() → KrMap(홈과 같은 지도·카드). Top-5 고지(VERBATIM.showcaseNotice)는 KrMap 이 원장에서
  *      렌더한다 — 여기서 다시 렌더하지 않는다. 실값 미수령 노선은 라벨 숨김 폴백(P2-2 규약 그대로). 홈 RoutesSection 의 설명문
  *      ("더 저렴한 견적")은 비교 광고 표현이라 가져오지 않고 SectionHead 를 직접 조립한다(브리프 §/fares 마지막 줄).
- *   ③ 견적 신청 CTA: /quote(라벨은 홈 위젯 home.hero.widget.cta 재사용) + 원장 COMPANY.tel 전화 링크.
+ *   ③ 견적 신청 CTA: /quote(라벨은 홈 위젯 home.hero.widget.cta 재사용) + 예약·상담 전화 링크(P1-7 — lib/contact-phone, en 은 +82 표기).
  * 요청 시점 API 0 · 서비스 롤 0 · 가격 계산 0(check:pricing) · 이 파일과 ko.json pages.fares 에 금액 리터럴 0(tests/pages.test.ts).
  *
  * 로케일 (P2-6): 산정 기준 제목은 ledgerUi(locale).headings.quoteBasis(ko 는 QUOTE_BASIS.title 그대로), 산정 기준 칩과 대금 지급 줄은
@@ -21,8 +21,9 @@ import { KrMap } from "@/components/KrMap/KrMap";
 import { OfficialKoreanNotice } from "@/components/legal/OfficialKoreanNotice";
 import { PageHeader } from "@/components/pages/PageHeader";
 import { Link } from "@/i18n/navigation";
+import { consultPhone } from "@/lib/contact-phone";
 import { koLang, ledgerUi, localizeVerbatim } from "@/lib/i18n/ledger-ui";
-import { COMPANY, PAYMENT, QUOTE_BASIS, VERBATIM } from "@/lib/legal/disclosures";
+import { PAYMENT, QUOTE_BASIS, VERBATIM } from "@/lib/legal/disclosures";
 import { getShowcaseRoutes } from "@/lib/queries";
 import { pageAlternates } from "@/lib/site-url";
 
@@ -60,6 +61,7 @@ export default async function FaresPage({ params }: { params: Params }) {
   ]);
   const ui = ledgerUi(locale);
   const lang = koLang(locale);
+  const phone = consultPhone(locale);
 
   return (
     <main className={h.main} data-testid="fares-page">
@@ -111,10 +113,10 @@ export default async function FaresPage({ params }: { params: Params }) {
             </Link>
             <a
               className={`${h.btnGhost} ${h.btnLg}`}
-              href={`tel:${COMPANY.tel}`}
-              aria-label={`${ui.labels.contact.tel} ${COMPANY.tel}`}
+              href={phone.href}
+              aria-label={`${ui.labels.contact.consultTel} ${phone.display}`}
             >
-              {t("cta.call")} {COMPANY.tel}
+              {t("cta.call")} {phone.display}
             </a>
           </p>
         </div>

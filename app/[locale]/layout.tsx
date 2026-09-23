@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { hasLocale, NextIntlClientProvider } from "next-intl";
 import { setRequestLocale } from "next-intl/server";
+import { SiteAnalytics } from "@/components/analytics/SiteAnalytics";
 import { loadMessages } from "@/i18n/messages";
 import { routing } from "@/i18n/routing";
 import { siteOrigin, siteVerification } from "@/lib/site-url";
@@ -48,6 +49,9 @@ export async function generateMetadata({ params }: { params: Promise<{ locale: s
  * 로케일 셸 — <html lang>을 로케일에 맞춰 렌더한다.
  * 공개 셸(헤더/푸터)은 (site)/layout.tsx가 담당한다. 여기에는 두지 않는다.
  * 법정 문서 (legal)도 이 provider 아래에 들어오지만 (site) 셸은 상속하지 않는다.
+ *
+ * 방문 통계(P1-7): <SiteAnalytics /> 는 **여기에만** 둔다 — 공개 화면(로케일 트리) 전부가 대상이고, 관리자(app/admin/**)는 이 트리 밖이다.
+ * 전송 직전 필터가 쿼리·해시를 지우고 /admin 을 막는다(lib/analytics/before-send.ts · tests/analytics.test.ts).
  */
 export default async function LocaleLayout({
   children,
@@ -68,6 +72,7 @@ export default async function LocaleLayout({
     <html lang={locale}>
       <body>
         <NextIntlClientProvider>{children}</NextIntlClientProvider>
+        <SiteAnalytics />
       </body>
     </html>
   );

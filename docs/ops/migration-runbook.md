@@ -7,7 +7,7 @@
 1. 로컬 스택(`supabase db reset`)에 적용하고 **DB 테스트 전량**이 통과한다.
 2. **CI 가 green** 이다(푸시된 커밋 기준). red 인 채로 원격에 적용하지 않는다.
 3. 아래 **적용 전 확인**을 로컬에서 실행해 기대값과 일치하는지 본다.
-4. 원격에 적용한다 — **`supabase db push` 로만**(아래 「적용 경로」). 적용 직후 이력 마지막이 `0020` 인지 본다.
+4. 원격에 적용한다 — **`supabase db push` 로만**(아래 「적용 경로」). 적용 직후 이력 마지막이 `0021` 인지 본다.
 5. 같은 확인을 **원격에서** 다시 실행해 로컬과 같은 결과인지 대조한다.
 6. 결과를 이 파일에 날짜와 함께 적는다.
 
@@ -16,25 +16,26 @@
 ```sql
 select version, name from supabase_migrations.schema_migrations order by version;
 ```
-기대(**2026-09-21 0012~0019 적용 완료 기준**): 마지막이 `0019`. **`0020` 이 이미 있으면 멈추고 컨트롤러에게 보고한다.**
+기대(**2026-09-21 0012~0020 적용 완료 기준**): 마지막이 `0020`. **`0021` 이 이미 있으면 멈추고 컨트롤러에게 보고한다.**
 ⚠️ **이미 원격에 적용된 파일을 고쳐도 `supabase db push` 는 그 파일을 다시 돌리지 않는다**(이력에 있는 버전은 건너뛴다). P5-15 가 0016·0017·0018·0019 본문을 고친 것은 **네 파일 모두 원격 미적용**이라는 전제 위의 일이었다 — **그 전제는 2026-09-21 로 끝났다.** 0012~0019 는 원격에 들어갔으므로 그 여덟 파일은 이제 **고치지 않는다**. 수정분은 **새 번호의 마이그레이션**으로 낸다(P5-16 이 0020 을 그렇게 냈다).
 **② 원격 PostgreSQL 버전** — 0019 절 "적용 직전 필수 — 원격 버전 확인".
-**③ 이벤트 트리거** — 0019 절 "적용 직전 필수 — 이벤트 트리거 확인"(0017·0018·0019·**0020** 의 일회용 객체 생성이 CREATE TABLE·CREATE TRIGGER·CREATE SEQUENCE 태그를 낸다. 0020 은 함수 18개도 만든다 — `pgrst_ddl_watch` 가 스키마 캐시를 갱신해야 관리자 화면이 새 RPC 를 찾는다).
+**③ 이벤트 트리거** — 0019 절 "적용 직전 필수 — 이벤트 트리거 확인"(0017·0018·0019·**0020** 의 일회용 객체 생성이 CREATE TABLE·CREATE TRIGGER·CREATE SEQUENCE 태그를 낸다. 0020 은 함수 18개도 만든다 — `pgrst_ddl_watch` 가 스키마 캐시를 갱신해야 관리자 화면이 새 RPC 를 찾는다. **0021** 은 `reservations` 에 칸 둘을 더하고(ALTER TABLE) 트리거 함수·트리거를 만들며(CREATE FUNCTION · CREATE TRIGGER) 자기검증이 임시 표와 그 트리거를 만든다(CREATE TABLE · CREATE TRIGGER) — 스키마 캐시가 새 칸을 알아야 접수 insert 가 PGRST204 로 실패하지 않는다).
 **④ 0018 절의 적용 직전 스냅샷**(시퀀스·표 `relacl`) — 롤백 판단에 필요하다.
 **⑤ 0020 은 코드 배포와 짝이다** — 0020 절 「배포 순서」. **적용 → 배포** 순서를 어기면 관리자 화면의 저장이 전부 실패한다.
+**⑥ 0021 도 코드 배포와 짝이다** — 0021 절 「환경별 순서」. **환경마다 적용 → 배포**(시험 DB → 프리뷰 → 운영 DB → 운영 배포). 적용 뒤 옛 코드가 접수를 받으면 그 접수는 23514 로 실패하고, 새 코드를 먼저 배포하면 칸이 없어 접수가 PGRST204 로 실패한다.
 
 ### 🔴 적용 경로 — `supabase db push` 하나 (P5-15 R6 · 컨트롤러 결정 2026-09-17)
 - 🔴 **2026-09-21 부터: 시험 프로젝트(`gjnieoojgmhulkohdcnl`)에 먼저, 운영에 나중.** 시험 프로젝트가 생겼다(`docs/ops/environments.md`). 새 마이그레이션은 CI green 뒤 **시험 프로젝트에 `db push --db-url` 로 먼저** 적용하고, 자기검증 통과·프리뷰 정상을 본 뒤 운영에 아래 절차대로 적용한다. 저장소의 `supabase link` 는 운영을 가리키므로 **시험 프로젝트로 다시 link 하지 않는다.**
-- **0012~0020 의 원격 적용 경로는 `supabase db push` 하나다.** CLI 는 마이그레이션 파일 하나를 한 트랜잭션으로 돌리고, 성공한 버전을 `supabase_migrations.schema_migrations` 에 기록한다.
+- **0012~0021 의 원격 적용 경로는 `supabase db push` 하나다.** CLI 는 마이그레이션 파일 하나를 한 트랜잭션으로 돌리고, 성공한 버전을 `supabase_migrations.schema_migrations` 에 기록한다.
 - **SQL Editor 는 읽기 확인 전용이다** — 적용 전·후 행렬, 이력 조회처럼 카탈로그를 읽는 질의만 붙인다. **마이그레이션 본문을 SQL Editor 에 붙여 적용하지 않는다**: 그러면 이력이 남지 않아, 다음 `supabase db push` 가 **같은 마이그레이션을 다시 돌린다**(두 번 도는 것을 전제로 검토한 파일이 아니다).
 - **`psql -f` 도 쓰지 않는다**(리뷰 K1 — 파일이 원자적이지 않다. 이력도 남지 않는다).
 - 🔴 **적용 직후 필수 — 이력 확인**(읽기 질의):
   ```sql
   select version, name from supabase_migrations.schema_migrations order by version;
   ```
-  기대: 적용 전 목록(2026-09-21 이후 마지막 `0019`) 뒤에 `0020` 한 줄이 붙고, **마지막이 `0020`**. 한 줄이라도 빠졌거나 마지막이 `0020` 이 아니면 **멈추고 컨트롤러에게 보고한다**(`db push` 는 실패한 파일에서 멈추고 그 뒤 버전을 돌리지 않는다 — 어디서 멈췄는지가 이 목록에 보인다). (2026-09-21 의 첫 적용에서는 `0011` 뒤에 `0012`~`0019` 여덟 줄이 붙는 것이 기대였고 그대로 됐다 — 맨 아래 「원격 적용 기록」.)
+  기대: 적용 전 목록(2026-09-21 이후 마지막 `0020`) 뒤에 `0021` 한 줄이 붙고, **마지막이 `0021`**. 한 줄이라도 빠졌거나 마지막이 `0021` 이 아니면 **멈추고 컨트롤러에게 보고한다**(`db push` 는 실패한 파일에서 멈추고 그 뒤 버전을 돌리지 않는다 — 어디서 멈췄는지가 이 목록에 보인다). (2026-09-21 의 첫 적용에서는 `0011` 뒤에 `0012`~`0019` 여덟 줄이, 두 번째 적용에서는 `0020` 한 줄이 붙는 것이 기대였고 그대로 됐다 — 맨 아래 「원격 적용 기록」.)
 - **예외 — 이미 수동 적용(SQL Editor·psql)을 해 버렸다면**: 본문이 실제로 전부 적용됐는지 해당 절의 행렬로 먼저 확인한 뒤, `supabase migration repair --status applied <번호>` 로 이력을 맞춘다 — **이 경로는 컨트롤러 승인이 있을 때만 쓴다.** `repair` 는 이력만 고치고 본문을 돌리지 않으므로, 적용되지 않은 버전을 `applied` 로 적으면 그 마이그레이션은 **영영 건너뛰어진다**.
-- **잠금 대기 상한 — 파일 안의 `set local lock_timeout = '5s';`** (P5-15 R7 · 컨트롤러 결정): 0012 이후 아홉 파일 모두 **첫 실행문**이 이것이고, 둘째 실행문이 **그 시점에 `lock_timeout` 이 실제로 `5s` 인지**만 확인한다 — 아니면 아무것도 바꾸기 전에 멈춘다. ⚠️ 이 확인은 **원자성을 증명하지 않는다**(astra R7 P2-b): 자동 커밋 세션이라도 서버·롤·DB 기본값이 이미 5초면 통과한다. 잡아 주는 것은 "`set local` 이 그 문장에서 끝나 설정이 남지 않은 경우"(예: 기본값이 5초가 아닌 서버에서 `psql -f`)뿐이다. **파일 하나가 한 트랜잭션이라는 보장은 적용 경로(`supabase db push`)에서 오고**, 아래 실측이 그것을 확인한 것이다. CLI 는 파일 하나를 한 트랜잭션으로 보내므로 이 설정은 **그 파일에만** 걸리고 다음 파일로 새지 않는다. 어떤 문장이 잠금을 5초 넘게 기다리면 `ERROR: canceling statement due to lock timeout (SQLSTATE 55P03)` 로 그 파일이 실패한다 — 접수 트랜잭션을 줄 세우지 않는다.
+- **잠금 대기 상한 — 파일 안의 `set local lock_timeout = '5s';`** (P5-15 R7 · 컨트롤러 결정): 0012 이후 파일(0012~0021, 열 개) 모두 **첫 실행문**이 이것이고, 둘째 실행문이 **그 시점에 `lock_timeout` 이 실제로 `5s` 인지**만 확인한다 — 아니면 아무것도 바꾸기 전에 멈춘다. ⚠️ 이 확인은 **원자성을 증명하지 않는다**(astra R7 P2-b): 자동 커밋 세션이라도 서버·롤·DB 기본값이 이미 5초면 통과한다. 잡아 주는 것은 "`set local` 이 그 문장에서 끝나 설정이 남지 않은 경우"(예: 기본값이 5초가 아닌 서버에서 `psql -f`)뿐이다. **파일 하나가 한 트랜잭션이라는 보장은 적용 경로(`supabase db push`)에서 오고**, 아래 실측이 그것을 확인한 것이다. CLI 는 파일 하나를 한 트랜잭션으로 보내므로 이 설정은 **그 파일에만** 걸리고 다음 파일로 새지 않는다. 어떤 문장이 잠금을 5초 넘게 기다리면 `ERROR: canceling statement due to lock timeout (SQLSTATE 55P03)` 로 그 파일이 실패한다 — 접수 트랜잭션을 줄 세우지 않는다.
 - **부분 적용 — push 전체는 원자적이지 않다**: 한 파일이 시간 초과(또는 다른 오류)로 실패하면 **앞 파일들은 커밋·기록된 채 남고**, **그 파일은 롤백되며**(이력에도 없다), 뒤 파일은 돌지 않는다. 막던 세션이 끝난 뒤 **다음 `supabase db push` 가 그 파일부터** 이어서 적용한다. 시간 초과는 **멈추고 보고할 일**이다 — 수동 적용이나 `repair` 로 건너뛰지 않는다. 어디서 멈췄는지는 적용 직후 이력 확인이 보여 준다.
 - **실측** (2026-09-17 · supabase CLI 2.117.0 · 로컬 전용 `--db-url postgresql://…@127.0.0.1:…`):
   - 합성 마이그레이션(PG 15.17 일회용 컨테이너 · PG 17.6 로컬 스택의 일회용 DB 둘 다): 한 파일의 행들이 **같은 xid**, `set local` 뒤 `lock_timeout=5s`, 다음 파일에서는 `0`(새지 않음). 다른 세션이 표를 쥔 채 push → 약 5초 뒤 `55P03` · 그 파일의 표·행·이력 없음 · 앞 파일 이력 유지 → 풀린 뒤 push 가 그 파일부터 재개. 대조군(`set local` 없음)은 잠금이 풀릴 때까지 **기다렸다**(20초 잡음 → 20초 걸림).
@@ -53,6 +54,7 @@ select version, name from supabase_migrations.schema_migrations order by version
 
 **롤백 파일은 `supabase/rollbacks/` 에 있고 `migrations/` 밖이다** — CLI 가 `migrations/` 의 `^[0-9]+_.*\.sql$` 을 전부 마이그레이션으로 집기 때문이다. 롤백은 사람이 psql/SQL Editor 로 실행한 뒤 `supabase migration repair --status reverted <번호>`.
 0012·0013·0014·0015·0016·0017·0018·0019 롤백은 **승인 플래그를 조건 없이 요구**한다(`set bestour.rollback_00NN_ack = '1';`). 행이 0이어도 멈춘다 — 권한은 열린 채 남고 데이터는 나중에 들어오기 때문이다.
+0020·0021 롤백도 같다. 0021 은 **쓰기 잠금을 쥔 뒤에** 확인 기록을 세고, 한 건이라도 있으면 **내보냄 확인 플래그**(`bestour.rollback_0021_evidence_exported`)를 추가로 요구한다 — 0021 절 「롤백」.
 
 ---
 
@@ -404,7 +406,7 @@ select
        or not has_any_column_privilege('authenticated', t.tbl, 'select')), 'ADMIN_READ_OK') as admin_read,
   coalesce((select 'SERVICE_LOST ' || string_agg(format('%s/%s', t.tbl, p.priv), ' ')
      from (values ('public.reservations'),('public.notifications_log')) t(tbl)
-     cross join (values ('select'),('insert'),('update'),('delete'),('truncate'),('trigger'),('references')) p(priv)
+     cross join (values ('select'),('insert'),('update'),('delete'),('truncate'),('references')) p(priv)
     where not has_table_privilege('service_role', t.tbl, p.priv)), 'SERVICE_OK') as service,
   coalesce((select 'PII_COLUMN_LEAK ' || string_agg(format('%s/%s/%s', r.role, t.tbl, p.priv), ' ')
      from (values ('anon'),('authenticated')) r(role)
@@ -436,9 +438,20 @@ select
     where to_regprocedure(s.sig) is not null
       and not has_function_privilege('service_role', to_regprocedure(s.sig), 'EXECUTE')), 'OUTBOX_FN_SERVICE_OK') as fn_service,
   coalesce((select 'PII_USER_TRIGGER ' || string_agg(tgname, ' ')
-     from pg_trigger
-    where not tgisinternal
-      and tgrelid in ('public.reservations'::regclass, 'public.notifications_log'::regclass)), 'PII_NO_USER_TRIGGER') as trg;
+     from pg_trigger t
+    where not t.tgisinternal
+      and t.tgrelid in ('public.reservations'::regclass, 'public.notifications_log'::regclass)
+      and not (t.tgrelid = 'public.reservations'::regclass and t.tgname = 'reservations_withdrawal_legacy_guard'
+               and t.tgenabled = 'O' and t.tgqual is null and t.tgtype = 23
+               and exists (select 1 from pg_proc gp join pg_namespace gn on gn.oid = gp.pronamespace
+                            where gp.oid = t.tgfoid and gn.nspname = 'public' and gp.proname = 'reservations_withdrawal_legacy_guard'
+                              and gp.pronargs = 0 and not gp.prosecdef
+                              and md5(gp.prosrc) = '7bad11424b52c498a42b59cd4ab20a4f'))), 'PII_NO_USER_TRIGGER') as trg,
+  coalesce((select 'PII_TRIGGER_PRIV ' || string_agg(format('%s/%s', c.relname, case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end), ' ' order by c.relname)
+     from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     cross join lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+    where n.nspname = 'public' and c.relname in ('reservations','notifications_log')
+      and a.privilege_type = 'TRIGGER' and a.grantee is distinct from c.relowner), 'PII_TRIGGER_OWNER_ONLY') as trg_priv;
 ```
 <!-- P515:0017_MATRIX_SQL:END -->
 
@@ -447,13 +460,14 @@ select
 | ① | `PII_BLIND_NONE` | 두 표에 `anon`·`authenticated` 의 trigger/references 0 (컬럼 단위 references 포함) |
 | ② | `ANON_PII_NONE` | `anon` 은 두 표에서 **일곱 동작 전부** 없음(select 까지) |
 | ③ | `ADMIN_READ_OK` | `authenticated` 의 select 는 표·컬럼 단위 모두 생존 = 관리자 화면이 산다 |
-| ④ | `SERVICE_OK` | `service_role` 의 일곱 동작 불변 = 접수·enqueue·발송기·파기가 산다 |
+| ④ | `SERVICE_OK` | `service_role` 의 **여섯 동작**(select·insert·update·delete·truncate·references) 불변 = 접수·enqueue·발송기·파기가 산다. **TRIGGER 는 0021 이 회수했다**(P1-7 R3 [P1-A] — 남겨 두면 `create or replace trigger` 로 청약철회 가드를 갈아끼울 수 있다). 그래서 이 검사에서 빼고 ⑨ 로 따로 본다 |
 | ⑤ | `PII_COLUMN_NONE` · `PII_PUBLIC_NONE` | 컬럼 단위 grant 0 · PUBLIC 상속 0 |
 | ⑥ | `OUTBOX_FN_ALL_PRESENT` · `OUTBOX_FN_ONLY_SERVICE` · `OUTBOX_FN_NO_PUBLIC_ROLE_EXEC` · `OUTBOX_FN_SERVICE_OK` | 아웃박스 definer 함수 **넷이 시그니처까지 전부 있고**(없으면 `OUTBOX_FN_MISSING …`), EXECUTE 보유자는 `service_role`(+소유자) 뿐이며(NULL ACL 은 기본값 = PUBLIC EXECUTE 로 읽는다), 공개 롤의 **유효** EXECUTE 0, service_role 은 실행 가능 (P5-15 astra R4) |
-| ⑦ | `PII_NO_USER_TRIGGER` | 두 표에 사용자 트리거 0 |
-| ⑧ | (같은 파일의 거동 테스트 — ⛔ **로컬 전용, 원격에 붙이지 마라**) | `anon`·`authenticated` 의 `CREATE TRIGGER` 4회가 **42501**, `service_role` 2회는 **성공**(대조군) |
+| ⑦ | `PII_NO_USER_TRIGGER` | 두 표에 사용자 트리거 0 — 단 **0021 의 legacy 가드 하나**만 제외한다. 제외 조건은 **표·이름·함수 신원(public 스키마 · 이름 · 인자 0 · invoker)·함수 본문 md5·`WHEN` 조건 없음(`tgqual is null`)·활성(`tgenabled='O'`)·발화 시점(`tgtype = 23` = 행 단위 BEFORE INSERT OR UPDATE — R4 [P2-D] astra: **UPDATE 만 거는 트리거**는 이름·본문·조건이 다 같아도 INSERT 강제를 없앤다)** 전부 일치다(P1-7 R3 [P2-E] · astra: 이름만 보면 **본문 교체**와 **`WHEN (false)`** 를 놓친다 — 둘 다 한 행도 막지 않게 만든다). 하나라도 어긋나면 `PII_USER_TRIGGER` 로 보고된다. 0021 적용 전 DB 에서는 함수가 없어 아무것도 제외되지 않는다. **본문을 고치는 마이그레이션을 내면 이 md5 도 함께 바꾼다**(`tests/write-privileges.test.ts §12` 가 로컬 DB 값과 대조한다) |
+| ⑨ | `PII_TRIGGER_OWNER_ONLY` | 두 표의 `TRIGGER` 보유자는 **표 소유자뿐**이다(0021 R3 [P1-A] — `anon`·`authenticated` 는 0017, `service_role` 은 0021 에서 회수). 남는 우회(소유자·슈퍼유저 DDL)는 `known-defects.md` D11 |
+| ⑧ | (같은 파일의 거동 테스트 — ⛔ **로컬 전용, 원격에 붙이지 마라**) | **0021 뒤로는 세 롤(`anon`·`authenticated`·`service_role`) × 두 표 = 6회가 전부 `42501`** 이다(P1-7 R3 [P1-A] — 0021 이 `service_role` 의 TRIGGER 도 회수했다). 대조군은 **일회용 표**(TRIGGER 만 준 `p513_control_tbl`)에서 세 롤 모두 성공한다. ~~`service_role` 2회는 성공~~ 은 0021 이전 서술이다 |
 
-⛔ ⑧ 의 DO 블록은 원격 확인 절차가 아니다 — 원격에 붙이지 마라(P5-15 astra R2 — 원격 확인은 카탈로그 질의만). 대조군이 **실제** `reservations`·`notifications_log` 에 `CREATE TRIGGER` 를 성공시키고, **거부될 시도조차** 권한 검사 전에 SHARE ROW EXCLUSIVE 를 기다려 잡는다(아래 근거) — 접수가 막힌다. 원격에서는 위 행렬 `select` 만 붙인다.
+⛔ ⑧ 의 DO 블록은 원격 확인 절차가 아니다 — 원격에 붙이지 마라(P5-15 astra R2 — 원격 확인은 카탈로그 질의만). 거부될 시도조차 권한 검사 전에 SHARE ROW EXCLUSIVE 를 기다려 잡는다(아래 근거) — 접수가 막힌다. 원격에서는 위 행렬 `select` 만 붙인다. (0021 전에는 대조군이 **실제 두 표**에 `CREATE TRIGGER` 를 성공시켰다 — 지금은 일회용 표로 옮겼다.)
 
 ### 🔴 자기검증 ⑦ 개정 (2026-09-17, P5-15 astra R3) — 실제 두 표에 CREATE TRIGGER 를 치지 않는다
 옛 ⑦ 은 적용 중에 `anon`·`authenticated`·`service_role` 로 **실제** 두 표에 `CREATE TRIGGER` 를 시도하고, 대조군이 만든 트리거를 `DROP TRIGGER` 했다. PostgreSQL 17 `src/backend/commands/trigger.c` `CreateTriggerFiringOn` 은 **표를 먼저 잠그고 권한은 나중에 본다**:
@@ -874,6 +888,141 @@ select
 ⚠️ **코드 롤백과 짝이다**: 앱을 0020 이전 코드로 먼저 되돌린 뒤 이 파일을 돌린다. 한쪽만 하면 관리자 저장이 `PGRST202`(함수 없음) 또는 `42501`(표 권한 없음)로 전부 실패한다.
 재실행 가능: 로컬 실측(2026-09-21 P5-16) — 플래그 없이 멈춤 · 플래그 있으면 복원(ACL·정책·함수 스냅샷이 0020 이전과 **한 줄도 다르지 않다**) · 두 번 연달아 돌려도 오류 없음 · 그 뒤 0020 재적용 스냅샷이 첫 적용과 같다.
 (처음 판은 되살리는 `*_admin_all` 을 먼저 지우지 않아 **두 번째 실행이 `policy … already exists` 로 멈췄다** — 인계 뒤 고쳤다.)
+
+---
+
+## 0021 — 청약철회 제한 확인 시각 칸 + 동의 기록 도입 뒤의 모든 접수에 필수 (**원격 미적용** · P1-7 · 수정 라운드 2 에서 설계 교체)
+
+**무엇을 하나**: `reservations` 에 칸 둘을 더하고, 제약 셋과 트리거 하나를 건다.
+- `withdrawal_consent_at timestamptz` — nullable · 기본값 없음. 앱이 접수 때 서버 시각을 넣는다(`lib/reservations/consent.ts`).
+- `withdrawal_consent_legacy boolean not null` — **이 파일이 표를 쥔 순간에 있던 행만 `true`**, 그 뒤 들어오는 행은 기본값 `false`.
+- `reservations_withdrawal_consent_required` — `withdrawal_consent_at is not null or withdrawal_consent_legacy` (VALID)
+- `reservations_withdrawal_consent_before_created` · `reservations_withdrawal_consent_not_stale` — 0003 과 같은 폭(+5분 / -1일)
+- 트리거 `reservations_withdrawal_legacy_guard`(before insert or update · 행 단위 · WHEN 조건 없음) — 새 행을 legacy=true 로 넣는 것, legacy 를 false→true 로, true→false 로 바꾸는 것을 전부 `23000` 으로 거부한다. 트리거 함수의 EXECUTE 는 공개 롤·`service_role` 모두에서 회수한다(발화에는 필요 없다 — 0015 선례).
+- **두 개인정보 표(`reservations`·`notifications_log`)의 `TRIGGER` 권한을 `service_role` 에서 회수**한다 (R3 [P1-A] · astra R2 재현). **실제로 회수한 표는 트리거 함수 주석에 기록**되고 롤백이 그 목록만 되돌린다(R4 [P2-F] — 이미 굳혀 둔 DB 에서 없던 권한을 만들지 않는다).
+- 자기검증이 함께 보는 것(R4 [P2-C]): 두 표의 유효 TRIGGER 를 **`pg_roles` 전수**로 보고(소유자·소유자 롤의 멤버·슈퍼유저만 검사 밖 — 그 이름은 적용 NOTICE 에 찍힌다), **`session_replication_role` 에 SET 권한 부여가 0** 인지 본다(`pg_parameter_acl` — 그 권한을 가진 롤은 `replica` 로 트리거를 통째로 끈다). 남겨 두면 `create or replace trigger` 한 줄로 위 가드를 무해한 함수로 바꾼 뒤 **동의 기록 없는 접수**를 넣을 수 있다. 앱은 트리거를 만들지 않으므로 접수·확정·취소·파기에 영향이 없다(로컬 실측 — 아래). 남는 우회(소유자·슈퍼유저 DDL)는 `known-defects.md` D11.
+
+**왜**: 위저드 6단계에 청약철회 제한 고지(원장 `WITHDRAWAL.notice` — 사장님 답변 2026-09-21 A-2)와 필수 체크박스가 생겼다.
+확인 사실의 입증은 사업자 몫이라 행마다 서버 시각을 남기고, 값 없는 **새** 접수는 DB 가 거부한다(앱은 zod 로 먼저 거부한다).
+
+**설계 — 시각에 기대지 않는다**(자세히는 파일 헤더 · astra P1-3 반영). 첫 판은 `created_at < '<적용 시각>'` 을 예외로 둔 CHECK 였다. 버린 이유:
+`created_at default now()` 는 **트랜잭션 시작 시각**이라 적용 전에 시작한 트랜잭션이 적용 뒤에 동의 없이 넣을 수 있었고, `created_at` 을 과거로 넣으면 통째로 우회됐다.
+이 판은 행이 스스로 "도입 전 행" 인지 표시한다. legacy 칸을 **기본값 true 로 붙인 뒤 같은 트랜잭션에서 기본값을 false 로 바꾼다** — 기존 행은 빠른 기본값으로 true 가 되고(행을 다시 쓰지 않는다 · 행 UPDATE 트리거를 태우지 않는다), 칸을 붙이는 ALTER 가 ACCESS EXCLUSIVE 를 쥔 채라 그 사이 들어오는 행이 없다.
+잠금을 기다리던 접수도 커밋 뒤에 들어오므로 false 를 받는다 — **시각이 아니라 순서로** 정해진다. `NOT NULL`(기존 행 때문에 불가 · 채우면 허위) · `NOT VALID`(기존 행을 고치는 순간 새 튜플에 검사되어 옛 예약 확정이 23514) 는 버렸다.
+legacy 행의 다른 칸 갱신(관리자 확정·완료·취소·메모 — 0010 definer 함수)은 legacy 값이 그대로라 통과한다. 관리자 예약 상세는 legacy 행을 **"기록 없음(동의 기록 도입 전 접수)"** 으로 보여 준다(날짜를 박지 않는다).
+
+### 🔴 환경별 순서 — **환경마다 DB 적용이 코드 배포보다 먼저다** (0020 과 같은 짝 문제 · astra P1-5)
+이 마이그레이션과 앱 코드(`lib/reservations/consent.ts` · `lib/admin/reservations.ts`)는 **짝**이다. 새 코드는 **모든 접수**에 `withdrawal_consent_at` 을 싣는다.
+- **새 코드 · 옛 스키마**(0021 전 DB): 접수 insert 가 없는 칸을 보내 **`PGRST204` 로 접수가 실패**하고, 관리자 예약 상세가 없는 칸을 읽어 `42703` 으로 열리지 않는다.
+- **옛 코드 · 새 스키마**(0021 뒤 DB): 옛 코드는 칸을 보내지 않으므로 그 접수가 **`23514 reservations_withdrawal_consent_required` 로 실패**한다.
+짝을 한순간에 바꿀 수 없으므로, **적용 창(그 환경의 DB 적용 ~ 그 환경의 새 코드 배포 완료) 동안 그 환경의 접수는 실패한다.** 그래서 환경 하나씩, 이 순서로만 간다:
+
+1. **시험 DB**(`gjnieoojgmhulkohdcnl`)에 0021 — `db push --db-url`(`docs/ops/environments.md`). 자기검증 통과(`NOTICE: 0021: … 탐침 default_path=23514:… backdated=23514:…`)와 아래 확인 질의 기대값을 본다.
+2. **프리뷰 재배포**(새 코드) — 프리뷰에서 견적 신청 1건이 접수되고 관리자 상세에 확인 시각이 보이는지 본다. 1 과 2 사이에 프리뷰의 옛 배포본으로 들어온 접수는 23514 로 실패한다(시험 데이터라 무해).
+3. **운영 DB**(`expexkhcuogkavpacrem`)에 0021 — 맨 위 「적용 직전 필수」·「적용 경로」 그대로(`supabase db push` 하나).
+4. **운영 배포**(새 코드). 3 과 4 사이가 운영의 적용 창이다.
+
+**오늘(2026-09-22) 운영에는 접수가 가능한 배포본이 없다**(컨트롤러 전달 — P1-7 수정 라운드 2 브리프 [P1-5]). 그러면 3~4 의 창에서 실패할 운영 접수가 없다.
+🔴 **이 전제는 적용 직전에 컨트롤러가 다시 확인한다**: Vercel 운영 배포본이 어느 커밋인지, 그 배포본이 공개 접수를 받는지(`GUARD_SECRET`·Turnstile 키 유무 · `/quote` 제출이 fail-closed 인지). 접수가 열려 있으면 창을 접수가 적은 시간대로 잡고, 창의 길이(적용 → 배포 완료)를 보고서에 적는다.
+- **프리뷰 env 가 아직 운영 DB 를 가리키면**(시험 프로젝트 env 를 Preview 범위에 넣기 전 — `environments.md` 「아직 남은 설정」 1) 옛 커밋 프리뷰의 접수가 **3 의 순간부터** 실패하고, 1·2 는 운영 DB 를 건드린 셈이 된다 — 1 을 시작하기 전에 프리뷰가 시험 프로젝트를 가리키는지 확인한다.
+- **개발 서버**: 저장소 워킹트리로 도는 dev 서버가 운영 DB 를 가리키면, **이 코드가 워킹트리에 들어온 순간부터 운영 적용 전까지** 관리자 예약 상세가 `42703` 으로 열리지 않는다. 그 서버의 공개 접수는 `GUARD_SECRET` 이 없어 닫혀 있다(fail-closed).
+하나라도 불명이면 **멈추고 컨트롤러에게 보고한다.**
+
+### 적용 경로
+**`supabase db push` 만**(맨 위 「적용 경로」 — 시험 프로젝트 먼저, 운영 나중). **`psql -f` 를 쓰지 마라**. 로컬 단건 적용은 `psql -1` 또는 `supabase migration up --db-url postgresql://…@127.0.0.1:…`.
+⚠️ 자기검증은 **실제 `reservations` 에 탐침 문장을 치지 않는다**(astra P2-8 · P5-15 규칙) — 롤 전환 0 · 잠금 문장 0 · 실제 표 쓰기 0. 실제 표에는 행 수를 **세기만** 한다(legacy 가 아닌 기존 행 0 · 소급 채움 0 — 본문의 칸 추가가 이미 쥔 잠금 안에서). 권한은 카탈로그(`has_column_privilege` · `has_function_privilege`)로 보고, 거동은 `pg_temp.p0021_probe`(LIKE 복제본 — CHECK 정의를 실제 표와 글자 그대로 대조하고, 트리거는 실제 트리거 정의에서 표 이름만 바꿔 붙인다)에 친 뒤 서브트랜잭션째 되돌린다. 임시 표·트리거 생성이 이벤트 트리거를 태운다(맨 위 ③). 적용 롤에 임시 표 권한이 필요하다(기본값).
+  탐침이 치는 경로: 기본값 경로(created_at·legacy 를 지정하지 않은 insert) · created_at 을 과거로 넣은 insert · legacy=true 삽입 · 새 행의 동의 시각 지우기 · 새 행 legacy 올리기 · legacy 행의 상태·확정 시각·메모 갱신 · legacy 행 내리기. 기대 줄: `default_path=23514:reservations_withdrawal_consent_required backdated=23514:reservations_withdrawal_consent_required legacy_insert=23000 new_with=legacy_false wipe=23514:reservations_withdrawal_consent_required promote=23000 legacy_update=OK demote=23000` — 한 글자라도 다르면 파일째 멈춘다.
+⚠️ 다시 돌리면 ① 에서 멈춘다(칸이 이미 있다) — 두 번 돌면 그 사이 들어온 접수까지 legacy 가 되어 동의 강제에서 빠지기 때문이다.
+
+### 적용 전/후 확인 (읽기 질의뿐 — SQL Editor 에 **읽기 확인용으로만** 붙인다)
+- **적용 전** 기대: `COLS_MISSING` · `CONS_MISSING` · `TRIGGER_MISSING` · `FN_MISSING`
+- **적용 후** 기대:
+  - `cols` = `withdrawal_consent_at:null=true,def=none withdrawal_consent_legacy:null=false,def=false`
+  - `cons` = `reservations_withdrawal_consent_before_created:true reservations_withdrawal_consent_not_stale:true reservations_withdrawal_consent_required:true`
+  - `required_def` = `CHECK (((withdrawal_consent_at IS NOT NULL) OR withdrawal_consent_legacy))` — 시각 리터럴이 없다
+  - `trg` = `TRIGGER_OK`(붙어 있고 · 켜져 있고 · **WHEN 조건 없음** · 행 단위 BEFORE 에 삽입·갱신 둘 다 · 함수가 invoker)
+  - `trg_priv` = `TRIGGER_PRIV_OWNER_ONLY`(두 개인정보 표의 TRIGGER 보유자는 소유자뿐 — R3 [P1-A])
+  - `fn_exec` = `FN_EXEC_NONE`(anon·authenticated·service_role·PUBLIC 누구도 트리거 함수를 직접 실행하지 못한다)
+- 🔴 **권한은 "불변" 이 아니라 "허용된 차이만"** (R4 [P2-E] astra: 옛 서술은 **정상 적용을 절차에서 막았다** — 0021 은 TRIGGER 두 건을 **의도적으로** 회수하므로 전수 해시는 반드시 달라진다):
+  - **허용된 차이**는 정확히 두 항목이다 — `reservations` · `notifications_log` 각각의 `service_role` **TRIGGER** 제거. 그 차이는 첫 질의의 `trg_priv` 가 이름으로 보여 준다(적용 전 `TRIGGER_PRIV reservations/service_role …` → 적용 후 `TRIGGER_PRIV_OWNER_ONLY`).
+  - **그 밖에는 불변**: 아래 둘째 질의는 그 두 항목을 **뺀** 집합의 `md5` 이므로 **적용 전과 후에 같아야 한다**(표·칸 ACL 전수 — 권한 종류를 나열하지 않고 `aclexplode` 로 전부 본다). 다르면 다른 것이 함께 바뀐 것이다 — 멈추고 보고한다.
+  - 적용 전 DB 에 이미 그 TRIGGER 가 없다면(이미 굳혀 둔 DB) 차이는 0 이고 두 해시도 같다 — 그때 롤백은 **없던 권한을 만들지 않는다**(0021 이 실제로 회수한 목록만 되돌린다 — 「롤백」 절).
+
+<!-- P17:0021_CHECK_SQL:BEGIN -->
+```sql
+select
+  (select coalesce(string_agg(format('%s:null=%s,def=%s', a.attname, (not a.attnotnull)::text, coalesce(pg_get_expr(d.adbin, d.adrelid), 'none')), ' ' order by a.attname), 'COLS_MISSING')
+     from pg_attribute a left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+    where a.attrelid = 'public.reservations'::regclass and a.attname like 'withdrawal_consent%' and not a.attisdropped) as cols,
+  (select coalesce(string_agg(format('%s:%s', conname, convalidated::text), ' ' order by conname), 'CONS_MISSING')
+     from pg_constraint where conrelid = 'public.reservations'::regclass and conname like 'reservations_withdrawal_consent_%') as cons,
+  (select pg_get_constraintdef(oid) from pg_constraint where conrelid = 'public.reservations'::regclass and conname = 'reservations_withdrawal_consent_required') as required_def,
+  (select coalesce(max(case when t.tgenabled = 'O' and t.tgqual is null
+                             and (t.tgtype & 1) = 1 and (t.tgtype & 2) = 2 and (t.tgtype & 4) = 4 and (t.tgtype & 16) = 16
+                             and t.tgfoid = to_regprocedure('public.reservations_withdrawal_legacy_guard()') and not p.prosecdef
+                            then 'TRIGGER_OK' else 'TRIGGER_BAD' end), 'TRIGGER_MISSING')
+     from pg_trigger t join pg_proc p on p.oid = t.tgfoid
+    where t.tgrelid = 'public.reservations'::regclass and not t.tgisinternal and t.tgname = 'reservations_withdrawal_legacy_guard') as trg,
+  (select coalesce('TRIGGER_PRIV ' || string_agg(format('%s/%s', c.relname, case when a.grantee = 0 then 'PUBLIC' else a.grantee::regrole::text end), ' ' order by c.relname), 'TRIGGER_PRIV_OWNER_ONLY')
+     from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     cross join lateral aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+    where n.nspname = 'public' and c.relname in ('reservations','notifications_log')
+      and a.privilege_type = 'TRIGGER' and a.grantee is distinct from c.relowner) as trg_priv,
+  (select case
+            when f.oid is null then 'FN_MISSING'
+            when has_function_privilege('anon', f.oid, 'EXECUTE') or has_function_privilege('authenticated', f.oid, 'EXECUTE')
+              or has_function_privilege('service_role', f.oid, 'EXECUTE')
+              or exists (select 1 from pg_proc p cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x where p.oid = f.oid and x.grantee = 0)
+            then 'FN_EXEC_LEAK'
+            else 'FN_EXEC_NONE' end
+     from (select to_regprocedure('public.reservations_withdrawal_legacy_guard()')::oid as oid) f) as fn_exec;
+
+select md5(string_agg(x, E'\n' order by x)) as acl_md5_without_allowed_delta, count(*) as acl_rows from (
+  select format('%s|%s|%s|%s|%s', c.relname, a.grantee::regrole, a.grantor::regrole, a.privilege_type, a.is_grantable) as x
+    from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    cross join lateral aclexplode(coalesce(c.relacl, acldefault(case when c.relkind = 'S' then 's' else 'r' end::"char", c.relowner))) a
+   where n.nspname = 'public' and c.relkind in ('r', 'p', 'v', 'm', 'f', 'S')
+     and not (c.relname in ('reservations','notifications_log') and a.grantee = 'service_role'::regrole and a.privilege_type = 'TRIGGER')
+  union all
+  select format('%s.%s|%s|%s|%s|%s', c.relname, at.attname, a.grantee::regrole, a.grantor::regrole, a.privilege_type, a.is_grantable)
+    from pg_attribute at join pg_class c on c.oid = at.attrelid join pg_namespace n on n.oid = c.relnamespace
+    cross join lateral aclexplode(at.attacl) a
+   where n.nspname = 'public' and at.attacl is not null
+) s;
+```
+<!-- P17:0021_CHECK_SQL:END -->
+
+### 로컬 실측 (2026-09-22, P1-7 수정 라운드 2 · PostgreSQL 17.6)
+- 옛 0021(적용 시각 설계)은 로컬에서 롤백 파일로 되돌리고 이력을 `reverted` 로 맞춘 뒤 새 0021 을 적용했다(원격에는 어느 판도 적용된 적 없다).
+- 세 연결 방식 모두 자기검증 통과(드라이런 — `begin; … rollback;`): postgres 로그인 · supabase_admin 로그인 뒤 `set local role postgres` · supabase_admin 로그인 그대로. 탐침 줄은 위 기대 줄과 글자 그대로 같다.
+- 양성 대조(적용 전에 접수 2건 — 신규·확정): 두 행 모두 legacy=true · 동의 시각 null · 적용 뒤 확정·취소·메모 갱신 통과.
+- (R3, 2026-09-23) **TRIGGER 회수 뒤에도 앱 경로는 그대로**: 접수(REST insert) · 관리자 확정·완료·취소·메모(0010 definer 함수) · 파기(delete) 전부 통과(전량 테스트 · 사본 서버 제출 흐름). `service_role` 로 두 표에 `create trigger`·`create or replace trigger` 는 **42501**(`tests/write-privileges.test.ts §12` · `tests/withdrawal-consent.test.ts §4 (i)`), 같은 시도를 TRIGGER 를 준 일회용 표에 하면 성공(대조군).
+- (R4, 2026-09-23) 깨뜨리기 3종 추가 — `session_replication_role` 에 SET 권한이 부여된 DB → `session_replication_role 에 SET 권한이 부여돼 있다 — authenticated(SET)`(소유자·슈퍼유저 항목은 멈춤 사유가 아니다) · 소유자도 슈퍼유저도 아닌 다른 롤이 TRIGGER 를 가진 DB → 직접 부여 검사가 이름을 댄다 · **직접 부여 검사를 지운 변형**으로 유효 권한(pg_roles 전수) 검사를 단독 확인 → `소유자도 슈퍼유저도 아닌 롤에 두 표의 유효 TRIGGER 권한이 남았다 — public.notifications_log/dashboard_user`.
+- (R3) 깨뜨리기 5종 추가 — 회수 없음 → `개인정보 두 표의 TRIGGER 를 소유자 말고 다른 롤이 갖고 있다 — notifications_log/service_role reservations/service_role` · 한 표만 회수 → 남은 표 이름 · 가드에 `when (false)` → `WHEN 조건이 붙어 있다 (false)` · 의도 밖 권한 변경(delete 회수) → `의도한 것 말고 다른 권한이 바뀌었다 — -reservations|service_role|postgres|DELETE|f` · 회수 뒤 다시 grant → 소유자 외 보유자로 보고.
+- 깨뜨리기 16종(R2) — **전부 이름을 대며 멈춤**: NOT VALID · legacy 예외 없는 CHECK(NOT VALID · 빈 표의 VALID) · 기본값을 false 로 되돌리지 않음 · **옛 설계 둘**(`created_at` 과거 우회 → `backdated=INSERTED` · 트랜잭션 시작 시각 경로 → `default_path=INSERTED`) · 트리거 없음 · 트리거가 갱신에만 · legacy=true 삽입을 막지 않는 함수 · true→false 를 허용하는 함수 · EXECUTE 회수 없음 · 회수에서 `service_role` 빠짐 · definer 함수 · 기존 행 소급 채우기 · 새 칸에 anon 칸 권한 · 다른 표 권한 변경.
+- 다른 세션이 `reservations` 에 ROW EXCLUSIVE(쓰기 중인 접수와 같은 잠금)를 쥔 채 적용 → 6초 뒤 `canceling statement due to lock timeout` · 파일째 롤백(칸 없음 · 이력 0020).
+- 원문: 보고서 `P1-7-report.md` 「수정 라운드 2」.
+
+### 롤백 — **잠금 먼저, 그다음 센다** (astra P1-6)
+`supabase/rollbacks/0021_withdrawal_consent.down.sql` — 파일이 `begin … commit` 을 스스로 쥔다. 순서:
+1. `set local lock_timeout = '5s'`(이 파일의 모든 잠금 대기 상한)
+2. **승인 플래그** `set bestour.rollback_0021_ack = '1';` — 조건 없이 먼저
+3. `reservations` 에 **EXCLUSIVE 잠금** — 쓰기(접수·관리자 확정)를 막고 읽기는 허용한다. 여기부터 커밋까지 기록 수가 바뀌지 않는다
+4. 확인 기록 수를 센다 → 한 건이라도 있으면 **내보냄 확인 플래그** `set bestour.rollback_0021_evidence_exported = '1';` 를 추가로 요구 — 칸을 지우면 확인 기록(분쟁 때 사업자 측 증거)이 되돌릴 수 없게 사라진다
+5. 트리거 → 트리거 함수 → 제약 셋 → 칸 둘(주석 포함) 제거
+6. **권한 복원** — 0021 이 회수한 두 표의 `service_role` TRIGGER 를 되돌린다(적용 전과 같은 세계로). ⚠️ 되돌리면 가드를 갈아끼울 수 있는 상태로 함께 돌아간다(`known-defects.md` D11)
+
+첫 판은 잠금 없이 센 뒤 지웠다 — 세는 순간과 지우는 순간 사이에 들어온 접수의 기록은 "내보냈다" 는 확인 밖에서 사라질 수 있었다.
+⚠️ **코드 롤백과 짝이다**: 앱을 0021 이전 코드로 먼저 되돌린 뒤 돌린다(칸만 지우면 모든 접수가 `PGRST204`).
+로컬 실측(2026-09-22 R2):
+- 플래그 없이 → 멈춤.
+- ack 만 · 확인 기록 0건인데 **다른 세션이 기록 1건을 넣고 2초 뒤 커밋**하는 도중에 시작 → 롤백이 잠금에서 약 2초 기다린 뒤 **1건을 세고 멈춤**(칸 유지). 잠금 없이 셌다면 0건으로 보고 진행했을 자리다.
+- 다른 세션이 쓰기 잠금(ROW EXCLUSIVE)을 쥔 채 → 잠금 문장에서 약 5.9초 뒤 `canceling statement due to lock timeout`(칸 유지).
+- 두 플래그 → 제거 · 스냅샷(표·칸 ACL + 칸 + 제약 + 트리거 + public 함수 ACL)이 **적용 전과 md5 동일**(R3·R4 실측 `86612466… rows=297` — 회수한 `service_role` TRIGGER 두 항목이 6번 단계에서 되돌아온 것을 포함한다) · 두 번째 실행 오류 0(되돌릴 것이 없으면 `되돌릴 것이 없다(칸·함수 모두 없음) — 권한도 건드리지 않는다`).
+- (R4 실측) **이미 굳혀 둔 DB**(그 TRIGGER 가 처음부터 없는 DB)에 적용 → 회수 기록이 빈 목록(`TRIGGER 회수 [이미 없음]`) → 롤백이 **아무 권한도 만들지 않는다**(`되돌릴 TRIGGER 없음`). 보통 DB 에서는 `[notifications_log,reservations]` 을 기록하고 그대로 되돌린다.
+- (R4 실측) 기록이 없는 상태(옛 판이 적용된 DB 등)에서 칸이 남아 있으면 롤백은 **멈추고** `set bestour.rollback_0021_restore_trigger = 'reservations,notifications_log'`(있었다) 또는 `'none'`(없었다)을 요구한다 — 스냅샷 사실을 사람이 넘겨야 권한을 만든다.
+- `migration repair --status reverted 0021` → `migration up` 재적용 → 스냅샷이 첫 적용과 **md5 동일**(R3 실측 `c18d8fb8… rows=302` = 적용 전 297 + 칸 2 + 제약 3 + 트리거 1 + 함수 1 − TRIGGER ACL 2) · 다시 돌리면 ① 에서 멈춤.
+- 재적용하면 **그 순간의 모든 행이 legacy** 가 된다 — 롤백과 재적용 사이의 접수는 "기록 없음(도입 전)" 으로 남는다(되살릴 수 없다).
 
 ---
 

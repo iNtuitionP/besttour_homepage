@@ -12,12 +12,13 @@
  *     옮긴다 — pending 동안 disabled 된 버튼에서 떨어진 포커스가 body 에 남지 않게(리뷰 M-2, WCAG 2.4.3).
  *   - 성공 시 폼 대신 ReservationCard 를 그린다. "다른 예약 조회"는 key 를 올려 라운드를 새로 시작한다(useActionState 상태 초기화).
  *   - 개발 프리뷰(?previewResult=): 서버액션 대신 mock 결과 3종(preview-result.ts). production 에서는 page.tsx 가 null 을 내린다.
- * 한글 리터럴·원장 import 없음 — 문구는 messages/ko.json reservationCheck.*, 법정 문구·대표번호는 서버 페이지가 props 로 넣는다.
+ * 한글 리터럴·원장 import 없음 — 문구는 messages/ko.json reservationCheck.*, 법정 문구·예약·상담 전화는 서버 페이지가 props 로 넣는다.
  */
 import { useTranslations } from "next-intl";
 import { useActionState, useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
 import { checkReservation } from "@/actions/reservation-check";
+import type { ContactPhone } from "@/lib/contact-phone";
 import type { CheckFieldErrors, CheckResult } from "@/lib/reservation-check/result";
 
 import q from "@/components/quote/quote.module.css";
@@ -30,8 +31,8 @@ import { validateCheckForm } from "./validate";
 export interface CheckFormProps {
   /** 원장 VERBATIM.bookingNotice — 결과 카드 하단. */
   bookingNotice: string;
-  /** 원장 COMPANY.tel — 안내·전화 폴백. */
-  tel: string;
+  /** 예약·상담 전화(P1-7 — lib/contact-phone.ts) — 안내·전화 폴백. 표시는 로케일별, 링크는 E.164. */
+  tel: ContactPhone;
   previewResult: PreviewResultMode | null;
 }
 
@@ -74,9 +75,9 @@ function CheckRound({ bookingNotice, tel, previewResult, onAgain }: CheckFormPro
   const errors: CheckFieldErrors = { ...serverFieldErrors, ...clientErrors };
   const codeErr = errors.publicCode ? tRoot(errors.publicCode) : undefined;
   const last4Err = errors.phoneLast4 ? tRoot(errors.phoneLast4) : undefined;
-  // `{tel}` 보간 — reservationCheck.errors.* 의 ratelimit·infra·server 가 대표전화를 부른다. 예전에는 카탈로그에
+  // `{tel}` 보간 — reservationCheck.errors.* 의 ratelimit·infra·server 가 예약·상담 전화를 부른다. 예전에는 카탈로그에
   // 번호가 리터럴로 박혀 있었고(P6-6 감사 R-6), 번호가 바뀌면 조용히 뒤처졌다. 원장 값은 서버 페이지가 prop 으로 준다.
-  const serverMessage = result && !result.ok ? tRoot(result.messageKey, { tel }) : null;
+  const serverMessage = result && !result.ok ? tRoot(result.messageKey, { tel: tel.display }) : null;
   const hasAlert = Boolean(serverMessage || codeErr || last4Err);
 
   const onCodeChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -199,7 +200,7 @@ function CheckRound({ bookingNotice, tel, previewResult, onAgain }: CheckFormPro
       </div>
 
       <p className={s.help}>
-        {t("form.help", { tel })} <a href={`tel:${tel}`}>{tel}</a>
+        {t("form.help", { tel: tel.display })} <a href={tel.href}>{tel.display}</a>
       </p>
 
       <div className={s.submitRow}>

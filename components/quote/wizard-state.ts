@@ -9,7 +9,8 @@
  *   - 귀가 규칙(0006): round 필수 · oneway_oneway 선택 · oneway 숨김(보내지 않음). oneway 로 바꾸면 귀가 날짜를 비운다.
  *   - 경유지 최대 5(zod max(5)). 추가만 하고 고르지 않은 칸("")은 검증에서 걸린다(서버는 빈 항목을 버리지만, 사람에게는 의도를 묻는다).
  *   - 연락처는 phone(국내) XOR phoneIntl(해외) — phoneKind 로 어느 칸이 살아 있는지 정하고 toFormValues 가 나머지를 "" 로 낸다.
- *   - 동의 2종은 상태에 있지만 초안(draft.ts)에는 직렬화되지 않고, init 도 절대 켜지 않는다(사전 선택 금지 — ADR-6).
+ *   - 동의 3종(개인정보 필수 · 광고 선택 · 청약철회 제한 확인 필수 — P1-7)은 상태에 있지만 초안(draft.ts)에는 직렬화되지 않고,
+ *     init 도 절대 켜지 않는다(사전 선택 금지 — ADR-6).
  */
 import { isLocationCode, PURPOSES } from "@/lib/codes";
 
@@ -61,6 +62,8 @@ export interface WizardState {
   email: string;
   privacyConsent: boolean;
   marketingConsent: boolean;
+  /** 청약철회 제한 확인(필수 — P1-7). 서버 zod 도 literal(true) 로 거부한다. */
+  withdrawalConsent: boolean;
 }
 
 export type TextField =
@@ -81,9 +84,9 @@ export type TextField =
   | "phone"
   | "phoneIntl"
   | "email";
-export type BoolField = "parkingIncluded" | "vatIncluded" | "privacyConsent" | "marketingConsent";
+export type BoolField = "parkingIncluded" | "vatIncluded" | "privacyConsent" | "marketingConsent" | "withdrawalConsent";
 /** 초안에 들어가는 필드 — 단계·동의 제외. */
-export type DraftFields = Omit<WizardState, "step" | "privacyConsent" | "marketingConsent">;
+export type DraftFields = Omit<WizardState, "step" | "privacyConsent" | "marketingConsent" | "withdrawalConsent">;
 
 /** 목업 기본값: 출발 08:00 · 상행 18:00 · 1대 · 견적 확인 핸드폰 · 계산 현금. 인원은 비워 둔다(기본 숫자를 접수 데이터로 보내지 않는다). */
 export const INITIAL_STATE: WizardState = {
@@ -112,6 +115,7 @@ export const INITIAL_STATE: WizardState = {
   email: "",
   privacyConsent: false,
   marketingConsent: false,
+  withdrawalConsent: false,
 };
 
 export type WizardAction =
@@ -166,10 +170,11 @@ function prefillToState(p: Prefill): Partial<DraftFields> {
 /** 초안·프리필에서 단계·동의 키가 섞여 들어와도 버린다(draft.ts 가 이미 거르지만 리듀서도 스스로 지킨다). */
 function withoutGuardedKeys<T extends object>(o: T | null | undefined): Partial<DraftFields> {
   if (!o) return {};
-  const { step: _s, privacyConsent: _p, marketingConsent: _m, ...rest } = o as Record<string, unknown>;
+  const { step: _s, privacyConsent: _p, marketingConsent: _m, withdrawalConsent: _w, ...rest } = o as Record<string, unknown>;
   void _s;
   void _p;
   void _m;
+  void _w;
   return rest as Partial<DraftFields>;
 }
 
@@ -208,6 +213,7 @@ export function reducer(state: WizardState, action: WizardAction): WizardState {
         ...prefillToState(action.prefill),
         privacyConsent: false,
         marketingConsent: false,
+        withdrawalConsent: false,
       };
       return { ...merged, step: Math.min(state.step, firstInvalidStep(merged)) as Step };
     }
@@ -283,6 +289,7 @@ export function validateStep(s: WizardState, step: Step): FieldError[] {
       const email = s.email.trim();
       if (email !== "" && !EMAIL_PATTERN.test(email)) push("email", "steps.contact.errorEmail");
       if (!s.privacyConsent) push("privacyConsent", "steps.contact.consentRequired");
+      if (!s.withdrawalConsent) push("withdrawalConsent", "steps.contact.consentRequired");
       break;
     }
   }
@@ -357,5 +364,6 @@ export function toFormValues(s: WizardState, locale: string = "ko"): FormValues 
     locale,
     privacyConsent: s.privacyConsent,
     marketingConsent: s.marketingConsent,
+    withdrawalConsent: s.withdrawalConsent,
   };
 }

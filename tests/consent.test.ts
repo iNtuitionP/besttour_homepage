@@ -165,6 +165,7 @@ const validInput = {
   locale: "ko" as const,
   turnstileToken: "test-turnstile-token",
   privacyConsent: true as const,
+  withdrawalConsent: true as const, // P1-7 — 청약철회 제한 확인(필수). 거부 경로는 tests/withdrawal-consent.test.ts
 };
 
 describe("ReservationInput — 동의 필드 (ADR-6)", () => {
@@ -264,28 +265,30 @@ describe("retentionUntil / PRIVACY_POLICY_VERSION", () => {
 describe("consentFields", () => {
   const now = new Date("2026-09-11T10:20:30.000Z");
 
-  test("marketingConsent:false → marketing_consent_at null, 나머지 3필드는 now 기준", () => {
-    const f = consentFields({ privacyConsent: true, marketingConsent: false }, now);
+  test("marketingConsent:false → marketing_consent_at null, 나머지는 now 기준 (P1-7: 청약철회 제한 확인 시각도 같은 인스턴트)", () => {
+    const f = consentFields({ privacyConsent: true, marketingConsent: false, withdrawalConsent: true }, now);
     expect(f).toEqual({
       privacy_consent_at: now.toISOString(),
       privacy_policy_version: PRIVACY_POLICY_VERSION,
       marketing_consent_at: null,
       retention_until: retentionUntil(now).toISOString(),
+      withdrawal_consent_at: now.toISOString(),
     });
   });
 
   test("marketingConsent:true → marketing_consent_at 은 필수 동의와 같은 인스턴트", () => {
-    const f = consentFields({ privacyConsent: true, marketingConsent: true }, now);
+    const f = consentFields({ privacyConsent: true, marketingConsent: true, withdrawalConsent: true }, now);
     expect(f.marketing_consent_at).toBe(f.privacy_consent_at);
   });
 
-  test("반환 키는 정확히 0003 의 컬럼 4개다", () => {
-    const f = consentFields({ privacyConsent: true, marketingConsent: false }, now);
-    expect(Object.keys(f).sort()).toEqual([...COLUMNS].sort());
+  test("반환 키는 정확히 0003 의 컬럼 4개 + 0021 의 1개다", () => {
+    const f = consentFields({ privacyConsent: true, marketingConsent: false, withdrawalConsent: true }, now);
+    // 0003 의 4개 + 0021 의 withdrawal_consent_at (P1-7)
+    expect(Object.keys(f).sort()).toEqual([...COLUMNS, "withdrawal_consent_at"].sort());
   });
 
   test("timestamptz 값은 ISO 8601 UTC 인스턴트('Z')다 — KST 벽시계 문자열 규칙은 운행 일시 입력에만 해당한다", () => {
-    const f = consentFields({ privacyConsent: true, marketingConsent: true }, now);
+    const f = consentFields({ privacyConsent: true, marketingConsent: true, withdrawalConsent: true }, now);
     for (const v of [f.privacy_consent_at, f.marketing_consent_at, f.retention_until]) {
       expect(v).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
     }
@@ -299,14 +302,14 @@ describe("consentFields", () => {
   });
 
   test("타입을 우회해 privacyConsent !== true 를 넣으면 throw — 동의 없이 동의 시각을 만들지 않는다", () => {
-    const bypass = { privacyConsent: false, marketingConsent: false } as unknown as Parameters<typeof consentFields>[0];
+    const bypass = { privacyConsent: false, marketingConsent: false, withdrawalConsent: true } as unknown as Parameters<typeof consentFields>[0];
     expect(() => consentFields(bypass, now)).toThrow(/privacyConsent/);
-    const truthy = { privacyConsent: "true", marketingConsent: false } as unknown as Parameters<typeof consentFields>[0];
+    const truthy = { privacyConsent: "true", marketingConsent: false, withdrawalConsent: true } as unknown as Parameters<typeof consentFields>[0];
     expect(() => consentFields(truthy, now)).toThrow(/privacyConsent/);
   });
 
   test("유효하지 않은 now 는 throw 한다", () => {
-    expect(() => consentFields({ privacyConsent: true, marketingConsent: false }, new Date(NaN))).toThrow();
+    expect(() => consentFields({ privacyConsent: true, marketingConsent: false, withdrawalConsent: true }, new Date(NaN))).toThrow();
   });
 });
 
@@ -420,7 +423,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("DB — 0003 제약 실증
       nights: 0,
       bus_count: 1,
       locale: "ko",
-      ...consentFields({ privacyConsent: true, marketingConsent: false }, now),
+      ...consentFields({ privacyConsent: true, marketingConsent: false, withdrawalConsent: true }, now),
     };
     for (const [k, v] of Object.entries(overrides)) {
       if (v === undefined) delete row[k];
@@ -525,7 +528,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("DB — 0003 제약 실증
   });
 
   test("marketingConsent:true 로 만든 insert → marketing_consent_at 이 저장된다", async () => {
-    const row = baseRow({ ...consentFields({ privacyConsent: true, marketingConsent: true }, new Date()) });
+    const row = baseRow({ ...consentFields({ privacyConsent: true, marketingConsent: true, withdrawalConsent: true }, new Date()) });
     const r = await insert(row);
     expect(r.status, JSON.stringify(r.body)).toBe(201);
     const [saved] = r.body as Record<string, unknown>[];

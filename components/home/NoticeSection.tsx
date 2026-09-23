@@ -3,9 +3,11 @@
  * 원격 notices 가 비어 있으면 **섹션 자체를 숨긴다**(빈 목록 금지 — 고객센터 카드도 함께; 연락처는 푸터에 있다).
  * 날짜는 KST 달력 날짜(notice-date.ts — /notices 와 같은 함수). 홈 섹션은 링크 없는 요약 목록이고, 상세는 /notices/[id](P6-3).
  * 고객센터 카드의 라벨·연락처는 원장에서만 온다 — 라벨은 ledgerUi(locale)(ko 는 LEGAL_LABELS.contact 그대로 — P2-6), 값은 COMPANY.
+ * 첫 줄은 예약·상담 전화(P1-7 — lib/contact-phone, en 은 +82 표기). 대표전화 1566 은 이 카드에 두지 않는다(푸터 사업자 정보 한 줄만).
  */
 import { getLocale, getTranslations } from "next-intl/server";
 
+import { consultPhone } from "@/lib/contact-phone";
 import { ledgerUi } from "@/lib/i18n/ledger-ui";
 import { COMPANY } from "@/lib/legal/disclosures";
 import type { Notice } from "@/lib/types";
@@ -21,6 +23,7 @@ export async function NoticeSection({ notices }: { notices: readonly Notice[] })
   const [t, locale] = await Promise.all([getTranslations("home.notice"), getLocale()]);
   const categories = t.raw("category") as Record<string, string | undefined>;
   const contact = ledgerUi(locale).labels.contact;
+  const phone = consultPhone(locale);
 
   return (
     <section id="notice" className={`${h.section} ${h.toneWhite}`} aria-labelledby="notice-h" data-section="notice">
@@ -47,9 +50,9 @@ export async function NoticeSection({ notices }: { notices: readonly Notice[] })
           <h3 className={s.csTitle}>{t("csTitle")}</h3>
           <dl className={s.csList}>
             <div>
-              <dt>{contact.tel}</dt>
+              <dt>{contact.consultTel}</dt>
               <dd>
-                <a href={`tel:${COMPANY.tel}`}>{COMPANY.tel}</a>
+                <a href={phone.href}>{phone.display}</a>
               </dd>
             </div>
             <div>

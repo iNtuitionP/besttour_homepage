@@ -2,7 +2,13 @@
  * 6단계 — 연락처 · 동의 · 제출 준비 (name · phone/phoneIntl · email · privacyConsent · marketingConsent).
  * 연락처는 국내(phone) XOR 해외(phoneIntl): 종류 토글 뒤 활성 칸 하나만 보인다. 보이는 칸은 이름 없이 UI 만 맡고,
  * 실제 제출 값은 QuoteWizard 가 toFormValues 로 만든 hidden phone/phoneIntl 이 낸다(XOR 을 순수 함수가 보장한다).
- * 동의 블록 → 청약철회 고지(서버 컴포넌트 노드) → 보안 확인(Turnstile 또는 "접수 준비 중") 순서. 제출 버튼은 바로 아래 navbar 에 있다.
+ * 동의 블록 → 청약철회 고지(서버 컴포넌트 노드) → 청약철회 제한 확인 체크박스(필수 · P1-7) → 보안 확인(Turnstile 또는 "접수 준비 중") 순서.
+ * 제출 버튼은 바로 아래 navbar 에 있다.
+ *
+ * 청약철회 제한 확인(P1-7 브리프 1-B): 고지 문장(원장 WITHDRAWAL.notice)은 서버 컴포넌트가 취소·환불 규정 바로 아래에 그리고,
+ * 그 바로 아래에 이 체크박스가 온다. **사전 체크 금지**(상태 초기값 false · 초안 복원 없음 · defaultChecked 0). 라벨은 서버 페이지가
+ * ledgerUi(locale).consent.withdrawal 로 넣는다(ko = 원장 consentLabel · en = 원장 consentLabelEn). 미체크면 제출이 닫히고(submit-gate),
+ * 서버 zod 도 literal(true) 로 거부한다.
  */
 import { useTranslations } from "next-intl";
 import type { ReactNode } from "react";
@@ -26,8 +32,9 @@ export function Step6Contact({
   idPrefix,
   consent,
   withdrawalNotice,
+  withdrawalConsentLabel,
   security,
-}: StepProps & { consent: ConsentText; withdrawalNotice: ReactNode; security: ReactNode }) {
+}: StepProps & { consent: ConsentText; withdrawalNotice: ReactNode; withdrawalConsentLabel: string; security: ReactNode }) {
   const t = useTranslations("quote.steps.contact");
   const id = (k: string) => `${idPrefix}-${k}`;
   const nameErr = errorFor("name");
@@ -35,6 +42,7 @@ export function Step6Contact({
   const phoneField = state.phoneKind === "intl" ? "phoneIntl" : "phone";
   const emailErr = errorFor("email");
   const consentErr = errorFor("privacyConsent");
+  const withdrawalErr = errorFor("withdrawalConsent");
 
   return (
     <StepShell n={6} active={active} headingRef={headingRef} title={t("title")} desc={t("desc")}>
@@ -156,6 +164,22 @@ export function Step6Contact({
       />
 
       {withdrawalNotice}
+
+      <div className={s.withdrawalConsent} data-field="withdrawalConsent" data-testid="withdrawal-consent-block">
+        <label className={s.consentRow} data-checked={state.withdrawalConsent}>
+          <input
+            type="checkbox"
+            name={F.withdrawalConsent}
+            checked={state.withdrawalConsent}
+            onChange={(e) => dispatch({ type: "toggle", field: "withdrawalConsent", value: e.target.checked })}
+            aria-describedby={withdrawalErr ? id("err-withdrawalConsent") : undefined}
+            aria-invalid={withdrawalErr ? true : undefined}
+            data-testid="consent-withdrawal"
+          />
+          <span>{withdrawalConsentLabel}</span>
+        </label>
+        <ErrorText id={id("err-withdrawalConsent")} message={withdrawalErr} />
+      </div>
 
       <div data-testid="quote-security" aria-label={t("security")}>
         {security}

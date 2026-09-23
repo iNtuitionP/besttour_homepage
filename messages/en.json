@@ -32,7 +32,7 @@
     "notFoundTitle": "Page not found",
     "notFoundBody": "The address may have changed, or the page does not exist. Please check the address or go to the home page.",
     "errorTitle": "A temporary error occurred",
-    "errorBody": "Please try again in a moment. If the problem continues, please call our main number.",
+    "errorBody": "Please try again in a moment. If the problem continues, please give us a call.",
     "errorRef": "Error reference {digest}",
     "retry": "Try again",
     "home": "Go to home page"
@@ -570,12 +570,19 @@
       "legalNav": "Legal notices",
       "contact": {
         "tel": "Main number",
+        "consultTel": "Bookings & inquiries",
         "mobile": "Mobile",
         "fax": "Fax",
         "email": "Email"
       },
       "officer": {
         "phone": "Phone"
+      },
+      "analyticsOptOut": {
+        "optOut": "Opt out of visitor statistics",
+        "optIn": "Allow visitor statistics again",
+        "storageFailed": "We couldn't save this setting in this browser. Visitor statistics are not sent for the rest of this visit.",
+        "browserRefused": "Already opted out by your browser's tracking-refusal setting."
       },
       "footer": {
         "companyInfo": "Business information",
@@ -585,7 +592,6 @@
         "mailOrder": "Mail-order business report no.",
         "headOffice": "Head office",
         "branch": "Branch",
-        "bankAccount": "Bank account",
         "privacyOfficer": "Privacy officer",
         "hosting": "Hosting",
         "ftcBizInfo": "Verify business information"

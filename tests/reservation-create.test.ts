@@ -89,6 +89,7 @@ function validInput(overrides: Partial<ReservationInput> = {}): ReservationInput
     turnstileToken: "test-token",
     privacyConsent: true,
     marketingConsent: false,
+    withdrawalConsent: true,
     ...overrides,
   };
 }
@@ -364,6 +365,7 @@ describe("insert 페이로드 — ReservationInsert 컬럼명 그대로", () => 
       privacy_policy_version: PRIVACY_POLICY_VERSION,
       marketing_consent_at: null,
       retention_until: retentionUntil(NOW).toISOString(),
+      withdrawal_consent_at: NOW.toISOString(),
     } satisfies ReservationInsert);
     expect(row.public_code).toMatch(PUBLIC_CODE_PATTERN);
   });
@@ -754,6 +756,7 @@ describe("supabaseReservationDb — 어댑터", () => {
     privacy_policy_version: PRIVACY_POLICY_VERSION,
     marketing_consent_at: null,
     retention_until: retentionUntil(NOW).toISOString(),
+    withdrawal_consent_at: NOW.toISOString(),
   };
 
   test("insert 성공 → { id }. reservations 테이블에 행 그대로, select('id').single()", async () => {

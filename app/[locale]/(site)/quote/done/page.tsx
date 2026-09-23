@@ -8,8 +8,9 @@ import type { Metadata } from "next";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 
 import { Link } from "@/i18n/navigation";
+import { consultPhone } from "@/lib/contact-phone";
 import { localizeVerbatim } from "@/lib/i18n/ledger-ui";
-import { COMPANY, VERBATIM } from "@/lib/legal/disclosures";
+import { VERBATIM } from "@/lib/legal/disclosures";
 import { PUBLIC_CODE_PATTERN } from "@/lib/reservations/publicCode";
 
 import s from "@/components/quote/quote.module.css";
@@ -20,7 +21,9 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const { locale } = await params;
   const t = await getTranslations({ locale, namespace: "quote.done" });
-  return { title: t("meta"), robots: { index: false, follow: false } };
+  // P1-7 R2 [P2-7] — 이 주소에는 접수번호(?code=)가 실린다. 이 화면에서 나가는 요청(같은 출처의 방문 통계·링크 이동)의 Referer 로
+  // 새지 않게 no-referrer 를 건다. 다른 페이지는 브라우저 기본값 그대로다.
+  return { title: t("meta"), robots: { index: false, follow: false }, referrer: "no-referrer" };
 }
 
 export default async function QuoteDonePage({ params, searchParams }: { params: Params; searchParams: SearchParams }) {
@@ -59,7 +62,8 @@ export default async function QuoteDonePage({ params, searchParams }: { params: 
           <p className={s.doneNote}>
             {t("body")} <span data-legal="booking-notice">{localizeVerbatim(locale, VERBATIM.bookingNotice)}</span>
           </p>
-          <p className={s.doneSub}>{t("sub", { tel: COMPANY.tel })}</p>
+          {/* 예약·상담 전화(P1-7) — ko 010-…, en +82 … */}
+          <p className={s.doneSub}>{t("sub", { tel: consultPhone(locale).display })}</p>
 
           <div className={s.doneActions}>
             <Link href="/" className={`${s.btn} ${s.btnPrev}`}>

@@ -3,11 +3,12 @@
  *
  * 뷰 모델(lib/reservation-check/view.ts ReservationView)만 받는다 — 원문 name·phone 은 타입에 없다. 금액·가격 0.
  * 상태 배지(new 접수 · confirmed 확정 · cancelled 취소 · done 완료)는 data-status 로 스타일을 가르고 문구는 ko.json 에서 푼다.
- * 법정 문구(원장 VERBATIM.bookingNotice)와 대표번호(COMPANY.tel)는 서버 페이지가 props 로 내린다 — 원장을 클라이언트 번들에 싣지 않는다
- * (P2-3·P3-4 와 같은 규칙). 한글 리터럴 없음 — 문구는 messages/ko.json reservationCheck.card.*.
+ * 법정 문구(원장 VERBATIM.bookingNotice)와 예약·상담 전화(consultPhone — P1-7)는 서버 페이지가 props 로 내린다 — 원장을 클라이언트 번들에
+ * 싣지 않는다(P2-3·P3-4 와 같은 규칙). 한글 리터럴 없음 — 문구는 messages/ko.json reservationCheck.card.*.
  */
 import { useTranslations } from "next-intl";
 
+import type { ContactPhone } from "@/lib/contact-phone";
 import type { ReservationView } from "@/lib/reservation-check/view";
 
 import q from "@/components/quote/quote.module.css";
@@ -17,8 +18,8 @@ export interface ReservationCardProps {
   view: ReservationView;
   /** 원장 VERBATIM.bookingNotice — 서버 페이지가 넣는다. */
   bookingNotice: string;
-  /** 원장 COMPANY.tel — 전화 폴백. */
-  tel: string;
+  /** 예약·상담 전화 — 전화 폴백. 표시는 로케일별, 링크는 E.164. */
+  tel: ContactPhone;
   /** "다른 예약 조회" — 폼으로 돌아간다(CheckForm 이 라운드를 올려 상태를 초기화한다). */
   onAgain: () => void;
 }
@@ -96,11 +97,11 @@ export function ReservationCard({ view, bookingNotice, tel, onAgain }: Reservati
       <p className={q.doneNote}>
         <span data-legal="booking-notice">{bookingNotice}</span>
       </p>
-      <p className={q.doneSub}>{t("card.help", { tel })}</p>
+      <p className={q.doneSub}>{t("card.help", { tel: tel.display })}</p>
 
       <div className={s.actions}>
-        <a className={`${q.btn} ${q.btnPrev}`} href={`tel:${tel}`} data-testid="reservation-call">
-          {t("card.call")} {tel}
+        <a className={`${q.btn} ${q.btnPrev}`} href={tel.href} data-testid="reservation-call">
+          {t("card.call")} {tel.display}
         </a>
         <button type="button" className={`${q.btn} ${q.btnSubmit}`} onClick={onAgain} data-testid="reservation-again">
           {t("card.again")}

@@ -549,7 +549,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("DB — 파기 실증 (로
 
   // retention_until 은 앱이 넣는 값이라 과거로도 넣을 수 있다(0003 제약은 created_at 이후만 요구) — created_at 을 함께 과거로 둔다.
   function seed(createdAt: Date, retentionUntil: Date) {
-    const consent = consentFields({ privacyConsent: true, marketingConsent: false }, createdAt);
+    const consent = consentFields({ privacyConsent: true, marketingConsent: false, withdrawalConsent: true }, createdAt);
     return {
       public_code: `${TEST_PREFIX}${randomUUID().slice(0, 8)}`,
       created_at: createdAt.toISOString(),

@@ -13,7 +13,7 @@
  * 그 블록은 koLang(locale) 로 `lang="ko"` 를 달고, 위에 <OfficialKoreanNotice notice={ledgerUi(locale).officialNotice} /> 를 둔다.
  */
 import { routing } from "@/i18n/routing";
-import { COMPANY, VERBATIM } from "@/lib/legal/disclosures";
+import { COMPANY, VERBATIM, WITHDRAWAL } from "@/lib/legal/disclosures";
 import en from "@/messages/en.json";
 
 import { LEDGER_UI_KO, type LedgerUi } from "./ledger-ui-ko";
@@ -24,6 +24,8 @@ const LEDGER_UI_EN: LedgerUi = {
   ...en.legal,
   brand: COMPANY.brandNameEn,
   representative: COMPANY.representativeEn,
+  // 청약철회 제한 동의 라벨의 영문은 원장의 확정 영문 필드다(P1-7 브리프 1-B — en.json 에 다시 적지 않는다).
+  consent: { ...en.legal.consent, withdrawal: WITHDRAWAL.consentLabelEn },
 };
 
 /** 로케일별 원장 UI 문구. 지원하지 않는 로케일은 기본 로케일(ko) — i18n/messages.ts 의 폴백과 같다. */

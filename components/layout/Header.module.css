@@ -161,6 +161,17 @@
     font-size: 20px;
   }
 }
+/* 좁은 폰(<420px) — 예약·상담 전화(P1-7)는 대표전화 1566-6188 보다 길다(국문 13자 · 영문 +82 표기 16자).
+ * 375px 실측에서 영문 줄이 로고 132 + 전화 147 + 햄버거 44 + 간격 32 = 355px 로 내용 폭 343px 를 12px 넘어 햄버거가 오른쪽 여백을 먹었다
+ * (360px 에서는 국문도 2px 넘는다). 번호를 줄이거나 숨기지 않고 줄 간격과 글자 크기만 한 단계 내린다. */
+@media (max-width: 419px) {
+  .inner {
+    gap: var(--space-inline-xs);
+  }
+  .tel {
+    font-size: 14px;
+  }
+}
 
 /* ── 언어 전환 (P2-6b) ─────────────────────────────────────────────────────
  * 작은 텍스트 링크 하나. 데스크톱(≥1280px)은 줄 오른쪽 끝, 그 아래 폭은 모바일 패널 맨 위(.panelLocale).
@@ -316,4 +327,35 @@
 .panelDisabled {
   color: var(--text-muted);
   cursor: default;
+}
+
+/* 패널 맨 아래 — 예약·상담 전화 버튼 (P1-7 · 목업 variant-08 .drawer .btn--primary.btn--block) */
+.panelCall {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  column-gap: var(--space-inline-xs);
+  min-height: 48px;
+  margin: var(--space-stack-md) 0 0;
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  border-radius: var(--radius-control);
+  background: var(--action-primary-bg);
+  color: var(--action-primary-fg);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  word-break: keep-all;
+}
+.panelCallNumber {
+  white-space: nowrap;
+}
+.panelCall:hover {
+  background: var(--action-primary-bg-hover);
+}
+.panelCall:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
 }

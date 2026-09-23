@@ -61,6 +61,7 @@ const validInput = {
   locale: "ko" as const,
   turnstileToken: "test-turnstile-token",
   privacyConsent: true as const,
+  withdrawalConsent: true as const, // P1-7 — 청약철회 제한 확인(필수)
 };
 
 /** 주석을 걷어낸 코드. 제거기는 저장소에 하나뿐이다(`tests/helpers/strip-comments.ts` · P6-7/P6-8 · D7). */
@@ -269,13 +270,14 @@ describe("M1 — 전역 404 · (site) 404 · (site) error 바운더리", () => {
     expect(src).toMatch(/<\/body>\s*<\/html>/);
   });
 
-  test('app/not-found.tsx: 로케일 밖 — i18n Link 가 아니라 <a href="/">, 원장 COMPANY.tel 로 전화 링크', () => {
+  // P1-7 — 전화는 예약·상담 전화(원장 COMPANY.consultTel · E.164 링크 CONSULT_TEL_HREF). 대표전화 1566 은 푸터 사업자 정보에만 남는다.
+  test('app/not-found.tsx: 로케일 밖 — i18n Link 가 아니라 <a href="/">, 원장 예약·상담 전화로 전화 링크', () => {
     const src = read(ROOT_NOT_FOUND);
     expect(src).not.toMatch(/from\s+["']@\/i18n\/navigation["']/);
     expect(src).not.toMatch(/from\s+["']next\/link["']/);
     expect(src).toMatch(/<a\s[^>]*href="\/"/);
-    expect(src).toContain("COMPANY.tel");
-    expect(src).toMatch(/href=\{`tel:\$\{COMPANY\.tel\}`\}/);
+    expect(src).toContain("COMPANY.consultTel");
+    expect(src).toMatch(/href=\{CONSULT_TEL_HREF\}/);
   });
 
   test("(site)/not-found.tsx: 공개 셸 상속 — <html>/<body> 없음, i18n Link 로 홈, 같은 errors 문구", () => {
@@ -283,7 +285,7 @@ describe("M1 — 전역 404 · (site) 404 · (site) error 바운더리", () => {
     expect(src).not.toMatch(/<html/);
     expect(src).not.toMatch(/<body/);
     expect(src).toMatch(/from\s+["']@\/i18n\/navigation["']/);
-    expect(src).toContain("COMPANY.tel");
+    expect(src).toMatch(/consultPhone\(\s*locale\s*\)/); // P1-7 — 예약·상담 전화
     expect(usedMessageKeys(src)).toEqual(expect.arrayContaining(["notFoundTitle", "notFoundBody", "home"]));
     expect(usedMessageKeys(read(ROOT_NOT_FOUND))).toEqual(
       expect.arrayContaining(["notFoundTitle", "notFoundBody", "home"]),

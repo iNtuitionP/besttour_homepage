@@ -36,6 +36,8 @@ describe("ReservationInput", () => {
     turnstileToken: "test-turnstile-token",
     // 0003(P1-3): 필수 동의는 literal(true). 동의 필드 자체의 계약은 tests/consent.test.ts 가 단언한다.
     privacyConsent: true as const,
+    // 0021(P1-7): 청약철회 제한 확인도 literal(true). 계약은 tests/withdrawal-consent.test.ts.
+    withdrawalConsent: true as const,
   };
 
   test("accepts a valid reservation input", () => {

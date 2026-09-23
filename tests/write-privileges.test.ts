@@ -785,6 +785,7 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
           privacy_policy_version: "2026-09-11",
           marketing_consent_at: null,
           retention_until: later.toISOString(),
+          withdrawal_consent_at: now.toISOString(), // 0021(P1-7) — 새 접수는 청약철회 제한 확인 시각이 필수다
         },
         "return=representation",
       );
@@ -2333,6 +2334,11 @@ describe.skipIf(!gate.allowed)("12. DB — 0017 권한 행렬 + 거동 실증 (�
     expect(verdict, verdict).toContain("SERVICE_OK");
   });
 
+  // P1-7 R3 [P1-A] — 0021 이 service_role 의 TRIGGER 까지 회수했다(가드 갈아끼우기 차단). 표 소유자 말고는 아무도 갖지 않는다.
+  test("🔴 두 표의 TRIGGER 보유자는 소유자뿐이다 — service_role 도 아니다", () => {
+    expect(verdict, verdict).toContain("PII_TRIGGER_OWNER_ONLY");
+  });
+
   test("컬럼 단위 권한과 PUBLIC 상속도 0 — 표 단위 revoke 가 지우지 못하는 두 경로", () => {
     expect(verdict, verdict).toContain("PII_COLUMN_NONE");
     expect(verdict, verdict).toContain("PII_PUBLIC_NONE");
@@ -2381,20 +2387,82 @@ describe.skipIf(!gate.allowed)("12. DB — 0017 권한 행렬 + 거동 실증 (�
   }, 300_000);
 
   /**
+   * P1-7 R2 — 0021 이 `reservations` 에 정식 트리거(reservations_withdrawal_legacy_guard)를 둔다. 행렬 ⑦ 은 그 하나만
+   * **이름·표·함수가 모두 맞을 때** 제외한다. 제외가 구멍이 되지 않는지 — 다른 사용자 트리거, 그리고 같은 이름이지만 다른 함수를
+   * 부르는 트리거는 여전히 PII_USER_TRIGGER 로 보고되는지 — 슈퍼유저 채널(로컬 전용)의 되돌려지는 트랜잭션에서 실증한다.
+   */
+  test("🔴 P1-7 R2·R3 — 행렬 ⑦ 은 0021 가드만 제외한다: 다른 트리거 · 같은 이름의 다른 함수 · WHEN (false) · 본문 교체는 전부 보고된다 (슈퍼유저 · 되돌림)", () => {
+    const matrix = runbookSql("0017").replace(/;\s*$/, "");
+    const out = superProbeError(
+      [
+        "do $p17t$",
+        "declare a text; b text; c text; d text; e text;",
+        "begin",
+        "  create trigger p17_extra_trg before insert on public.reservations for each row execute function pg_catalog.suppress_redundant_updates_trigger();",
+        `  select m.trg into a from (${matrix}) m;`,
+        "  drop trigger p17_extra_trg on public.reservations;",
+        // R3 [P2-E] ① 같은 이름·같은 함수지만 WHEN (false) — 한 행도 발화하지 않는다(무력화). tgqual 을 봐야 잡힌다.
+        "  drop trigger reservations_withdrawal_legacy_guard on public.reservations;",
+        "  create trigger reservations_withdrawal_legacy_guard before insert or update on public.reservations for each row when (false) execute function public.reservations_withdrawal_legacy_guard();",
+        `  select m.trg into c from (${matrix}) m;`,
+        "  drop trigger reservations_withdrawal_legacy_guard on public.reservations;",
+        "  create trigger reservations_withdrawal_legacy_guard before insert or update on public.reservations for each row execute function public.reservations_withdrawal_legacy_guard();",
+        // R3 [P2-E] ② 이름·트리거는 그대로 두고 **함수 본문만** 갈아끼운다 — 본문 해시를 봐야 잡힌다.
+        "  create or replace function public.reservations_withdrawal_legacy_guard() returns trigger language plpgsql as $x$ begin return new; end $x$;",
+        `  select m.trg into d from (${matrix}) m;`,
+        // R4 [P2-D] ③ 이름·함수·본문·조건이 모두 진짜인데 **BEFORE UPDATE 만** 건다 — INSERT 강제가 사라진다. tgtype 을 봐야 잡힌다.
+        "  drop trigger reservations_withdrawal_legacy_guard on public.reservations;",
+        "  create trigger reservations_withdrawal_legacy_guard before update on public.reservations for each row execute function public.reservations_withdrawal_legacy_guard();",
+        `  select m.trg into e from (${matrix}) m;`,
+        // ④ 같은 이름·다른 함수
+        "  drop trigger reservations_withdrawal_legacy_guard on public.reservations;",
+        "  create trigger reservations_withdrawal_legacy_guard before update on public.reservations for each row execute function pg_catalog.suppress_redundant_updates_trigger();",
+        `  select m.trg into b from (${matrix}) m;`,
+        "  raise exception 'P17T a=% | b=% | c=% | d=% | e=%', a, b, c, d, e;",
+        "end",
+        "$p17t$;",
+      ].join("\n"),
+    );
+    expect(out, out).toContain("P17T");
+    expect(out, out).toMatch(/a=PII_USER_TRIGGER p17_extra_trg \|/);
+    expect(out, out).toMatch(/b=PII_USER_TRIGGER reservations_withdrawal_legacy_guard\b/);
+    expect(out, out).toMatch(/c=PII_USER_TRIGGER reservations_withdrawal_legacy_guard\b/);
+    expect(out, out).toMatch(/d=PII_USER_TRIGGER reservations_withdrawal_legacy_guard\b/);
+    // R4 [P2-D] — UPDATE 만 거는 트리거(이름·함수·본문·조건 전부 진짜)도 보고된다
+    expect(out, out).toMatch(/e=PII_USER_TRIGGER reservations_withdrawal_legacy_guard\b/);
+    // 되돌려졌다 — 실제 가드가 그대로 붙어 있고 탐침 트리거는 없다
+    const after = sqlValue(
+      "select 'P17A ' || (select count(*) from pg_trigger where tgrelid = 'public.reservations'::regclass and not tgisinternal and tgname = 'p17_extra_trg') || ' ' || " +
+        "(select tgfoid::regprocedure::text from pg_trigger where tgrelid = 'public.reservations'::regclass and tgname = 'reservations_withdrawal_legacy_guard') as a;",
+    );
+    expect(after, after).toContain("P17A 0 reservations_withdrawal_legacy_guard()");
+  }, 300_000);
+
+  // R3 [P2-E] — 행렬 ⑦ 의 예외는 **함수 본문 해시**까지 본다. 0021 이 본문을 바꾸면 이 테스트가 runbook 을 함께 고치라고 말한다.
+  test("🔴 R3 — 행렬 ⑦ 의 본문 md5 가 이 DB 의 가드 함수와 같다", () => {
+    const literal = runbookSql("0017").match(/md5\(gp\.prosrc\) = '([0-9a-f]{32})'/);
+    expect(literal, "0017 행렬 ⑦ 에 함수 본문 md5 가 없다").not.toBeNull();
+    const actual = sqlValue("select md5(prosrc) as a from pg_proc where oid = 'public.reservations_withdrawal_legacy_guard()'::regprocedure;");
+    expect(actual, `runbook 의 md5=${literal?.[1]} · DB=${actual}`).toContain(literal?.[1] ?? "");
+  }, 120_000);
+
+  /**
    * **거동 실증** — 행렬은 "권한이 없다" 까지만 말한다. 여기서는 실제로 `CREATE TRIGGER` 를 친다.
    *
    * 통과 조건은 넷이고, 하나라도 어긋나면 DO 블록이 `raise exception` 해서 runLocalSql 이 던진다:
-   *   · `anon`·`authenticated` × 두 표 = 4회 시도가 전부 **거부**되고 SQLSTATE 가 정확히 `42501` 이다
-   *   · `service_role` × 두 표 = 2회 시도가 **성공**한다(대조군 — 탐침 SQL 자체는 멀쩡하다는 증거)
+   *   · `anon`·`authenticated`·**`service_role`** × 두 표 = 6회 시도가 전부 **거부**되고 SQLSTATE 가 정확히 `42501` 이다
+   *     (P1-7 R3 [P1-A]: 0021 이 `service_role` 의 TRIGGER 도 회수했다 — 남겨 두면 `create or replace trigger` 로
+   *      청약철회 가드를 갈아끼운 뒤 동의 없는 행을 넣을 수 있었다. astra R2 재현 SQL.)
+   *   · **대조군은 일회용 표**(`p513_control_tbl`)로 옮겼다 — 세 롤 모두 TRIGGER 를 받으면 성공한다(탐침 SQL 자체는 멀쩡하다)
    *   · 롤이 원래대로 되돌아온다
-   *   · 탐침이 만든 트리거가 하나도 남지 않는다
+   *   · 탐침이 만든 트리거·일회용 표가 하나도 남지 않는다
    *
    * 탐침 함수는 내장 무해 함수(`pg_catalog.suppress_redundant_updates_trigger`)다 — 검사하는 것은
    * "TRIGGER 권한이 CREATE TRIGGER 를 막는가" 이지 특정 함수가 아니고, pg_catalog 함수는 어느 DB 에나 있다.
    * 이 DB 에서 실제로 위험한 것은 `supabase_functions.http_request` 이고, 0017 적용 **전** 실측에서는
    * 그 함수로 네 조합 모두 `CREATE TRIGGER` 에 **성공했다**.
    */
-  test("거동 실증 — anon·authenticated 는 두 표에 트리거를 붙일 수 없다(42501) · service_role 은 붙일 수 있다(대조군)", () => {
+  test("거동 실증 — 세 롤 모두 두 표에 트리거를 붙일 수 없다(42501) · 일회용 표에서는 붙는다(대조군)", () => {
     const out = runLocalSql(
       [
         "do $$",
@@ -2408,8 +2476,12 @@ describe.skipIf(!gate.allowed)("12. DB — 0017 권한 행렬 + 거동 실증 (�
         "  probe_tbl text;",
         "  applier   constant text := current_user;",
         "begin",
+        // 대조군용 일회용 표 — 기본 권한을 전부 걷고 TRIGGER 만 세 롤에 준다(끝에서 지운다)
+        "  execute 'create table public.p513_control_tbl (id int)';",
+        "  execute 'revoke all on table public.p513_control_tbl from public, anon, authenticated, service_role';",
+        "  execute 'grant trigger on table public.p513_control_tbl to anon, authenticated, service_role';",
         "  foreach role_name in array array['anon', 'authenticated', 'service_role'] loop",
-        "    foreach probe_tbl in array array['reservations', 'notifications_log'] loop",
+        "    foreach probe_tbl in array array['reservations', 'notifications_log', 'p513_control_tbl'] loop",
         "      probe_n := probe_n + 1;",
         "      trg := format('p513_test_probe_%s', probe_n);",
         "      created := false; st := null; ms := null;",
@@ -2425,13 +2497,13 @@ describe.skipIf(!gate.allowed)("12. DB — 0017 권한 행렬 + 거동 실증 (�
         "      end;",
         "      execute 'reset role';",
         "      if created then execute format('drop trigger %I on public.%I', trg, probe_tbl); end if;",
-        "      if role_name = 'service_role' then",
+        "      if probe_tbl = 'p513_control_tbl' then",
         "        if not created then",
-        "          raise exception 'P513 탐침: 대조군 실패 — service_role 조차 % 에 트리거를 붙이지 못했다 (SQLSTATE=% MESSAGE=%)', probe_tbl, st, ms;",
+        "          raise exception 'P513 탐침: 대조군 실패 — % 가 TRIGGER 를 받은 일회용 표에도 붙이지 못했다 (SQLSTATE=% MESSAGE=%)', role_name, st, ms;",
         "        end if;",
         "      else",
         "        if created then",
-        "          raise exception 'P513 탐침: % 가 % 에 트리거를 붙일 수 있다 — 고객 개인정보가 외부로 나갈 수 있다', role_name, probe_tbl;",
+        "          raise exception 'P513 탐침: % 가 % 에 트리거를 붙일 수 있다 — 고객 개인정보가 외부로 나가거나 동의 가드가 갈아끼워질 수 있다', role_name, probe_tbl;",
         "        end if;",
         "        if st is distinct from '42501' then",
         "          raise exception 'P513 탐침: 권한 거부(42501)가 아닌 이유로 실패했다 — % → % : SQLSTATE=% MESSAGE=%', role_name, probe_tbl, st, ms;",
@@ -2439,12 +2511,31 @@ describe.skipIf(!gate.allowed)("12. DB — 0017 권한 행렬 + 거동 실증 (�
         "      end if;",
         "    end loop;",
         "  end loop;",
+        // P1-7 R3 [P1-A] — astra 재현: `create or replace trigger` 는 같은 이름의 트리거를 **다른 함수로** 갈아끼운다.
+        //   TRIGGER 권한이 없으면 이것도 42501 이다. service_role 로 한 번 더 확인한다(0021 의 가드가 그대로 남는가).
+        "  execute 'set local role service_role';",
+        "  begin",
+        "    execute 'create or replace trigger reservations_withdrawal_legacy_guard before update on public.reservations for each row execute function pg_catalog.suppress_redundant_updates_trigger()';",
+        "    execute 'reset role';",
+        "    raise exception 'P513 탐침: service_role 이 청약철회 가드를 갈아끼웠다 — 동의 없는 접수를 넣을 수 있다';",
+        "  exception when insufficient_privilege then",
+        "    execute 'reset role';",
+        "  end;",
+        "  if (select tgfoid from pg_trigger where tgrelid = 'public.reservations'::regclass and tgname = 'reservations_withdrawal_legacy_guard')",
+        "       is distinct from to_regprocedure('public.reservations_withdrawal_legacy_guard()')::oid then",
+        "    raise exception 'P513 탐침: 청약철회 가드의 함수가 바뀌었다';",
+        "  end if;",
         "  if current_user <> applier then",
         "    raise exception 'P513 탐침: 롤이 되돌아오지 않았다 (current_user=%)', current_user;",
         "  end if;",
-        "  if exists (select 1 from pg_trigger where not tgisinternal",
+        "  execute 'drop table public.p513_control_tbl';",
+        // P1-7 R2: 0021 이 reservations 에 정식 트리거(reservations_withdrawal_legacy_guard)를 둔다 — 남은 것을 볼 때는 **이 탐침이 만든 이름**만 센다.
+        "  if exists (select 1 from pg_trigger where not tgisinternal and tgname like 'p513\\_test\\_probe\\_%'",
         "               and tgrelid in ('public.reservations'::regclass, 'public.notifications_log'::regclass)) then",
         "    raise exception 'P513 탐침: 탐침이 만든 트리거가 남았다';",
+        "  end if;",
+        "  if to_regclass('public.p513_control_tbl') is not null then",
+        "    raise exception 'P513 탐침: 대조군 표가 남았다';",
         "  end if;",
         "end",
         "$$;",
@@ -3330,14 +3421,14 @@ describe("19. runbook 0017·0018·0019 — 원격 확인 절차는 카탈로그 
     const applyViaEditor = /db push[^\n]{0,30}또는[^\n]{0,30}SQL Editor|SQL Editor[^\n]{0,10}로 적용|SQL Editor 로만/;
     expect(raw.match(applyViaEditor)?.[0] ?? null, "runbook 이 SQL Editor 를 적용 경로로 적는다").toBeNull();
     const migs = CONVENTION_MIGRATIONS;
-    expect(migs.length).toBe(9);
+    expect(migs.length).toBe(10); // 0012~0021 (P1-7 이 0021 을 더했다)
     for (const f of migs) {
       expect(read(`supabase/migrations/${f}`).match(applyViaEditor)?.[0] ?? null, f).toBeNull();
     }
     // 맨 위에 결정이 있다
     expect(top.indexOf("### 🔴 적용 경로"), "맨 위에 「적용 경로」 절이 없다").toBeGreaterThan(-1);
     const route = top.slice(top.indexOf("### 🔴 적용 경로"));
-    expect(route).toMatch(/0012~0020[^\n]*`supabase db push`[^\n]*하나/);
+    expect(route).toMatch(/0012~0021[^\n]*`supabase db push`[^\n]*하나/);
     expect(route).toMatch(/SQL Editor[^\n]*읽기 확인/);
     // 적용 직후 필수 — 이력 마지막이 **저장소의 마지막 마이그레이션 번호**여야 한다(문서가 낡지 않게 파일에서 유도한다)
     expect(route).toContain("select version, name from supabase_migrations.schema_migrations order by version;");
@@ -3408,10 +3499,10 @@ describe("19. runbook 0017·0018·0019 — 원격 확인 절차는 카탈로그 
     }
   });
 
-  test("🔴 R7 P2-b — 0012 이후 아홉 파일의 첫 실행문은 `set local lock_timeout = '5s'` · runbook 은 부분 적용을 적는다", () => {
+  test("🔴 R7 P2-b — 0012 이후 파일(0012~0021)의 첫 실행문은 `set local lock_timeout = '5s'` · runbook 은 부분 적용을 적는다", () => {
     const all = readdirSync(path.join(ROOT, "supabase", "migrations")).filter((n) => /^\d{4}_.*\.sql$/.test(n));
     const pending = CONVENTION_MIGRATIONS;
-    expect(pending.length).toBe(9);
+    expect(pending.length).toBe(10);
     for (const f of pending) {
       const rel = `supabase/migrations/${f}`;
       const code = sqlCode(rel);
@@ -3562,6 +3653,13 @@ describe("19. runbook 0017·0018·0019 — 원격 확인 절차는 카탈로그 
     expect(s17).toContain("aclexplode(coalesce(p.proacl, acldefault('f', p.proowner)))");
     expect(s17).not.toMatch(/aclexplode\(p\.proacl\)/);
     expect(s17).toContain("'OUTBOX_FN_NO_PUBLIC_ROLE_EXEC'");
+    // R3 [P1-A]·[P2-E] — service 검사는 TRIGGER 를 빼고(0021 이 회수했다), 대신 "소유자 말고는 TRIGGER 0" 을 따로 본다.
+    expect(s17).toContain("'PII_TRIGGER_OWNER_ONLY'");
+    expect(s17).toContain("(values ('select'),('insert'),('update'),('delete'),('truncate'),('references')) p(priv)");
+    expect(s17).toMatch(/tgqual/);
+    expect(s17).toMatch(/md5\(gp\.prosrc\)/);
+    // R4 [P2-D] — 발화 시점(행 단위 BEFORE INSERT OR UPDATE = tgtype 23)까지 본다
+    expect(s17).toMatch(/t\.tgtype = 23/);
     for (const k of ["'PII_BLIND_NONE'", "'ANON_PII_NONE'", "'ADMIN_READ_OK'", "'SERVICE_OK'", "'PII_COLUMN_NONE'", "'PII_PUBLIC_NONE'", "'OUTBOX_FN_ALL_PRESENT'", "'OUTBOX_FN_ONLY_SERVICE'", "'OUTBOX_FN_SERVICE_OK'", "'PII_NO_USER_TRIGGER'"]) {
       expect(s17, k).toContain(k);
     }

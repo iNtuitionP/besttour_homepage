@@ -18,6 +18,7 @@ import {
   QUOTE_BASIS,
   RELATED_COMPANY,
   VERBATIM,
+  WITHDRAWAL,
 } from "@/lib/legal/disclosures";
 
 /** 원장 한국어 블록 위에 두는 영문 안내(컨트롤러 확정) — 굵게 쓰는 첫 문장과 나머지. ko 에는 없다(null). */
@@ -39,8 +40,11 @@ export interface LedgerUi {
   pages: { privacy: string; terms: string; guide: string };
   /** 원장 블록을 소개하는 제목 — QUOTE_BASIS.title · INSURANCE.title · PRIVACY_NOTICE.title */
   headings: { quoteBasis: string; insurance: string; privacyNotice: string };
-  /** 위저드 동의 체크박스 라벨 — PRIVACY_NOTICE.consentLabel · marketingConsentLabel */
-  consent: { privacy: string; marketing: string };
+  /**
+   * 위저드 동의 체크박스 라벨 — PRIVACY_NOTICE.consentLabel · marketingConsentLabel · WITHDRAWAL.consentLabel(P1-7).
+   * withdrawal 의 영문은 en.json 이 아니라 **원장의 영문 필드**(WITHDRAWAL.consentLabelEn)에서 온다 — 브리프가 원장에 확정 영문을 두었다.
+   */
+  consent: { privacy: string; marketing: string; withdrawal: string };
   /** 푸터 관계사 배지 — RELATED_COMPANY.role */
   relatedRole: string;
   /** 원장 라벨(LEGAL_LABELS) 중 공개 셸·서브페이지가 쓰는 것 */
@@ -48,8 +52,11 @@ export interface LedgerUi {
     effectiveDate: string;
     home: string;
     legalNav: string;
-    contact: { tel: string; mobile: string; fax: string; email: string };
+    /** tel = 대표전화(푸터 사업자 정보 한 줄) · consultTel = 예약·상담 전화(손님에게 안내하는 번호 — P1-7) */
+    contact: { tel: string; consultTel: string; mobile: string; fax: string; email: string };
     officer: { phone: string };
+    /** /privacy 방문 통계 거부 버튼 — LEGAL_LABELS.analyticsOptOut (P1-7 R2) */
+    analyticsOptOut: { optOut: string; optIn: string; storageFailed: string; browserRefused: string };
     footer: {
       companyInfo: string;
       operator: string;
@@ -58,7 +65,6 @@ export interface LedgerUi {
       mailOrder: string;
       headOffice: string;
       branch: string;
-      bankAccount: string;
       privacyOfficer: string;
       hosting: string;
       ftcBizInfo: string;
@@ -75,7 +81,11 @@ export const LEDGER_UI_KO: LedgerUi = {
   verbatim: { bookingNotice: VERBATIM.bookingNotice, showcaseNotice: VERBATIM.showcaseNotice },
   pages: { privacy: LEGAL_PAGES.privacy.title, terms: LEGAL_PAGES.terms.title, guide: LEGAL_PAGES.guide.title },
   headings: { quoteBasis: QUOTE_BASIS.title, insurance: INSURANCE.title, privacyNotice: PRIVACY_NOTICE.title },
-  consent: { privacy: PRIVACY_NOTICE.consentLabel, marketing: PRIVACY_NOTICE.marketingConsentLabel },
+  consent: {
+    privacy: PRIVACY_NOTICE.consentLabel,
+    marketing: PRIVACY_NOTICE.marketingConsentLabel,
+    withdrawal: WITHDRAWAL.consentLabel,
+  },
   relatedRole: RELATED_COMPANY.role,
   labels: {
     effectiveDate: LEGAL_LABELS.effectiveDate,
@@ -83,11 +93,18 @@ export const LEDGER_UI_KO: LedgerUi = {
     legalNav: LEGAL_LABELS.legalNav,
     contact: {
       tel: LEGAL_LABELS.contact.tel,
+      consultTel: LEGAL_LABELS.contact.consultTel,
       mobile: LEGAL_LABELS.contact.mobile,
       fax: LEGAL_LABELS.contact.fax,
       email: LEGAL_LABELS.contact.email,
     },
     officer: { phone: LEGAL_LABELS.officer.phone },
+    analyticsOptOut: {
+      optOut: LEGAL_LABELS.analyticsOptOut.optOut,
+      optIn: LEGAL_LABELS.analyticsOptOut.optIn,
+      storageFailed: LEGAL_LABELS.analyticsOptOut.storageFailed,
+      browserRefused: LEGAL_LABELS.analyticsOptOut.browserRefused,
+    },
     footer: {
       companyInfo: F.companyInfo,
       operator: F.operator,
@@ -96,7 +113,6 @@ export const LEDGER_UI_KO: LedgerUi = {
       mailOrder: F.mailOrder,
       headOffice: F.headOffice,
       branch: F.branch,
-      bankAccount: F.bankAccount,
       privacyOfficer: F.privacyOfficer,
       hosting: F.hosting,
       ftcBizInfo: F.ftcBizInfo,

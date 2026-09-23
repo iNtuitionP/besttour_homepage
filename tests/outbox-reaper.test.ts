@@ -314,7 +314,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("DB — 0007 회수기 실
         nights: 0,
         bus_count: 1,
         locale: "ko",
-        ...consentFields({ privacyConsent: true, marketingConsent: false }, now),
+        ...consentFields({ privacyConsent: true, marketingConsent: false, withdrawalConsent: true }, now),
       },
       "return=representation",
     );

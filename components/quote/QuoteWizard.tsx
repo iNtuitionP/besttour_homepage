@@ -34,6 +34,7 @@ import {
 
 import { submitReservation } from "@/actions/reservation";
 import { useRouter } from "@/i18n/navigation";
+import type { ContactPhone } from "@/lib/contact-phone";
 import { toKstDateString } from "@/lib/kst";
 import type { SubmitResult } from "@/lib/reservations/submitResult";
 
@@ -77,8 +78,10 @@ export interface QuoteWizardProps {
   consent: ConsentText;
   /** 서버 컴포넌트 <WithdrawalNotice /> — 제출 버튼 바로 위에 놓인다. */
   withdrawalNotice: ReactNode;
-  /** 원장 대표번호 — "접수 준비 중" 안내의 전화 폴백. */
-  tel: string;
+  /** 청약철회 제한 확인 체크박스 라벨 — ledgerUi(locale).consent.withdrawal (ko 원장 consentLabel · en 원장 consentLabelEn). */
+  withdrawalConsentLabel: string;
+  /** 예약·상담 전화(P1-7) — "접수 준비 중" 안내·서버 오류 문구의 전화 폴백. 표시는 로케일별, 링크는 E.164. */
+  tel: ContactPhone;
   previewSubmit: PreviewSubmitMode | null;
 }
 
@@ -96,6 +99,7 @@ export function QuoteWizard({
   turnstileAction,
   consent,
   withdrawalNotice,
+  withdrawalConsentLabel,
   tel,
   previewSubmit,
 }: QuoteWizardProps) {
@@ -127,14 +131,20 @@ export function QuoteWizard({
 
   const values = toFormValues(state, locale);
   const ready = isIntakeReady(formToken, turnstileSiteKey);
-  const block = submitBlock({ formToken, siteKey: turnstileSiteKey, privacyConsent: state.privacyConsent, pending });
+  const block = submitBlock({
+    formToken,
+    siteKey: turnstileSiteKey,
+    privacyConsent: state.privacyConsent,
+    withdrawalConsent: state.withdrawalConsent,
+    pending,
+  });
 
-  // `{tel}` 보간 — reservation.errors.* 의 ratelimit·infra·server 가 대표전화를 부른다. 예전에는 카탈로그에 번호가
+  // `{tel}` 보간 — reservation.errors.* 의 ratelimit·infra·server 가 예약·상담 전화를 부른다. 예전에는 카탈로그에 번호가
   // 리터럴로 박혀 있었고(P6-6 감사 R-6), 번호가 바뀌면 조용히 뒤처졌다. 원장 값은 서버 페이지가 prop 으로 준다.
   // 필드 오류(quote.*)에는 {tel} 이 없지만 ICU 는 쓰이지 않는 인자를 무시하므로 한 갈래로 둔다.
   const resolve = useCallback(
-    (key: string) => (key.startsWith(SERVER_KEY_PREFIX) ? tRoot(key, { tel }) : t(key)),
-    [t, tRoot, tel],
+    (key: string) => (key.startsWith(SERVER_KEY_PREFIX) ? tRoot(key, { tel: tel.display }) : t(key)),
+    [t, tRoot, tel.display],
   );
   const errorFor = useCallback(
     (field: string) => {
@@ -291,10 +301,10 @@ export function QuoteWizard({
   ) : (
     <div className={s.notReady} role="status" data-testid="quote-not-ready">
       <strong>{t("steps.contact.notReadyTitle")}</strong>
-      <p>{t("steps.contact.notReadyBody", { tel })}</p>
+      <p>{t("steps.contact.notReadyBody", { tel: tel.display })}</p>
       <p>
-        <a href={`tel:${tel}`}>
-          {t("steps.contact.call")} {tel}
+        <a href={tel.href}>
+          {t("steps.contact.call")} {tel.display}
         </a>
       </p>
     </div>
@@ -377,6 +387,7 @@ export function QuoteWizard({
           idPrefix={idPrefix}
           consent={consent}
           withdrawalNotice={withdrawalNotice}
+          withdrawalConsentLabel={withdrawalConsentLabel}
           security={security}
         />
 

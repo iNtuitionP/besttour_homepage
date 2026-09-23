@@ -102,10 +102,12 @@ const FORM_FIELD_CONTRACT = {
   locale: "locale",
   privacyConsent: "privacyConsent",
   marketingConsent: "marketingConsent",
+  // P1-7 — 청약철회 제한 동의(필수). 없으면 zod literal(true) 가 거부한다.
+  withdrawalConsent: "withdrawalConsent",
 } as const;
 const GUARD_FIELD_CONTRACT = { website: "website", formToken: "formToken", turnstile: "cf-turnstile-response" } as const;
 const NUMBER_CONTRACT = ["busCount", "passengers"] as const;
-const BOOLEAN_CONTRACT = ["privacyConsent", "marketingConsent", "parkingIncluded", "vatIncluded"] as const;
+const BOOLEAN_CONTRACT = ["privacyConsent", "marketingConsent", "parkingIncluded", "vatIncluded", "withdrawalConsent"] as const;
 const MULTI_CONTRACT = ["waypointCodes"] as const;
 
 // =============================================================================
@@ -143,6 +145,7 @@ function form(overrides: Record<string, FormValue> = {}): FormData {
     locale: "ko",
     privacyConsent: "on",
     marketingConsent: "",
+    withdrawalConsent: "on",
     formToken: validToken(),
     "cf-turnstile-response": "unit-test-turnstile-token",
   };
@@ -332,6 +335,18 @@ describe("2. 매핑 — GuardFailure.reason → SubmitResult", () => {
     expect(result.fieldErrors).toHaveProperty("privacyConsent", "reservation.errors.validation");
     expect(JSON.stringify(result)).not.toMatch(/"detail"/);
   });
+
+  // P1-7 — 클라이언트 체크박스만 막으면 공개 POST 로 우회된다. 서버가 동의 없는 payload 를 저장 전에 거부한다.
+  test.for([["누락", null], ["'off'", "off"], ["빈 문자열", ""]] as const)(
+    "validation — withdrawalConsent %s → code validation · fieldErrors.withdrawalConsent · createReservation 0",
+    async ([, value]) => {
+      const result = await submitReservation(form({ withdrawalConsent: value }));
+      expect(result).toMatchObject({ ok: false, code: "validation", messageKey: "reservation.errors.validation" });
+      if (result.ok) throw new Error("unreachable");
+      expect(result.fieldErrors).toHaveProperty("withdrawalConsent", "reservation.errors.validation");
+      expect(createReservation).not.toHaveBeenCalled();
+    },
+  );
 
   test("validation — phone·phoneIntl 둘 다 없음 → fieldErrors.phone (M6 XOR)", async () => {
     const result = await submitReservation(form({ phone: null }));
@@ -659,6 +674,7 @@ describe("5. formDataToRaw — 모양만 바꾼다(zod 는 guard 가 돌린다)"
       locale: "ko",
       privacyConsent: true,
       marketingConsent: true,
+      withdrawalConsent: true,
       turnstileToken: "unit-test-turnstile-token",
     });
     expect(guardFields).toEqual({ website: "", formToken: token, turnstileToken: "unit-test-turnstile-token" });

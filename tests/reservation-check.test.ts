@@ -990,7 +990,8 @@ describe("8. 컴포넌트·페이지 정적", () => {
   // 카탈로그 쪽 단언(§7)과 짝이 되는 소스 쪽 단언 — 한쪽만 고치면 빨간불이다.
   test("서버 오류 문구를 풀 때 원장 tel 을 보간 인자로 넘긴다 ({tel} 자리가 비지 않게)", () => {
     const src = codeOf(FORM);
-    expect(src).toMatch(/tRoot\(\s*result\.messageKey\s*,\s*\{\s*tel\s*\}\s*\)/);
+    // P1-7 — tel 은 { display, href }. 문장에는 표시 문자열(ko 010-… / en +82 …)을 넣는다.
+    expect(src).toMatch(/tRoot\(\s*result\.messageKey\s*,\s*\{\s*tel:\s*tel\.display\s*\}\s*\)/);
   });
 
   test("useActionState — checkReservation 을 직접 넘기지 않고 (_prev, fd) 래퍼로 감싼다 (P3-4 규칙)", () => {
@@ -1052,13 +1053,14 @@ describe("8. 컴포넌트·페이지 정적", () => {
     expect(clients).toEqual([FORM]);
   });
 
-  test("서버 페이지 — 원장 VERBATIM.bookingNotice·COMPANY.tel 을 읽어 props 로 내린다 · 'use client' 0 · force-dynamic 0 · 메타 reservationCheck.meta", () => {
+  test("서버 페이지 — 원장 VERBATIM.bookingNotice·예약·상담 전화(P1-7)를 읽어 props 로 내린다 · 'use client' 0 · force-dynamic 0 · 메타 reservationCheck.meta", () => {
     const src = codeOf(PAGE);
     expect(/^\s*["']use client["']/m.test(src)).toBe(false);
-    expect(ledgerImports(read(PAGE))).toEqual(expect.arrayContaining(["VERBATIM", "COMPANY"]));
+    expect(ledgerImports(read(PAGE))).toEqual(expect.arrayContaining(["VERBATIM"]));
     // P2-6: ko 는 원장 문자열 그 자체, en 은 컨트롤러 확정 영문(localizeVerbatim — tests/i18n-en.test.ts §4).
     expect(src).toMatch(/bookingNotice=\{localizeVerbatim\(locale,\s*VERBATIM\.bookingNotice\)\}/);
-    expect(src).toMatch(/tel=\{COMPANY\.tel\}/);
+    // P1-7: 예약·상담 전화 — { display(ko 010-… / en +82 …), href(E.164) } (lib/contact-phone — 원장 COMPANY.consultTel)
+    expect(src).toMatch(/tel=\{consultPhone\(locale\)\}/);
     expect(src).not.toMatch(/force-dynamic/);
     expect(src).toMatch(/generateMetadata/);
     expect(src).toMatch(/namespace:\s*["']reservationCheck\.meta["']/);
@@ -1070,7 +1072,7 @@ describe("8. 컴포넌트·페이지 정적", () => {
   test("카드 — data-legal=\"booking-notice\" 로 원장 문구 자리를 표시 · tel: 링크 · data-status 배지 · 가격 0", () => {
     const src = codeOf(CARD);
     expect(src).toMatch(/data-legal="booking-notice"/);
-    expect(src).toMatch(/tel:\$\{tel\}/);
+    expect(src).toMatch(/href=\{tel\.href\}/); // P1-7 — E.164 링크(표시 문자열의 +82 공백을 tel: 에 넣지 않는다)
     expect(src).toMatch(/data-status=/);
     for (const k of ["maskedName", "maskedPhone", "vehicleLabel", "originLabel", "destinationLabel", "departAtKst", "createdAtKst", "publicCode"]) expect(src, k).toContain(k);
     expect(src).not.toMatch(/view\.(name|phone|email)\b/);

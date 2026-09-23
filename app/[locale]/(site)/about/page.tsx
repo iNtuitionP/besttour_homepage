@@ -23,6 +23,7 @@ import { SectionHead } from "@/components/home/SectionHead";
 import { OfficialKoreanNotice } from "@/components/legal/OfficialKoreanNotice";
 import { LegalRecordList } from "@/components/legal/LegalTable";
 import { PageHeader } from "@/components/pages/PageHeader";
+import { consultPhone } from "@/lib/contact-phone";
 import { koLang, ledgerUi } from "@/lib/i18n/ledger-ui";
 import { COMPANY } from "@/lib/legal/disclosures";
 import { pageAlternates } from "@/lib/site-url";
@@ -67,6 +68,7 @@ export default async function AboutPage({ params }: { params: Params }) {
   const valueLang = koLang(locale);
 
   // 회사 정보 표 — 라벨은 원장 라벨(ledgerUi), 값은 원장 COMPANY. 빈 값 행은 LegalRecordList 가 뺀다.
+  // 전화 줄은 예약·상담 전화(P1-7 — en 은 +82 표기). 대표전화 1566 은 푸터 사업자 정보 한 줄에만 남는다.
   const factLabels = {
     legalName: footer.operator,
     representative: footer.representative,
@@ -75,7 +77,7 @@ export default async function AboutPage({ params }: { params: Params }) {
     since: t("facts.since"),
     headOffice: footer.headOffice,
     branch: footer.branch,
-    tel: contact.tel,
+    consultTel: contact.consultTel,
     mobile: contact.mobile,
     fax: contact.fax,
     email: contact.email,
@@ -89,7 +91,7 @@ export default async function AboutPage({ params }: { params: Params }) {
     since: tTrust("since", { year: String(COMPANY.establishedYear) }),
     headOffice: COMPANY.address,
     branch: COMPANY.branchAddress,
-    tel: COMPANY.tel,
+    consultTel: consultPhone(locale).display,
     mobile: COMPANY.mobile,
     fax: COMPANY.fax,
     email: COMPANY.email,

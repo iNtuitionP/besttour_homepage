@@ -984,9 +984,20 @@ textarea.control {
 .tiers li + li {
   margin-top: var(--space-stack-xs);
 }
-.withdrawalLaw {
-  font-size: 13.5px;
-  color: var(--text-secondary);
+/* 청약철회 제한 고지(원장 WITHDRAWAL.notice) — 취소·환불 규정 바로 아래, 눈에 띄게(P1-7 브리프 1-B).
+ * 예전(P3-4)에는 약관 제8조 문장을 보조 글씨(13.5px · 보조색)로 실었다. 이제 체크박스로 동의를 받는 대상이라 본문색·굵게로 올린다. */
+.withdrawal .withdrawalLaw {
+  margin-top: var(--space-stack-sm);
+  padding-top: var(--space-stack-xs);
+  border-top: 1px solid var(--border-decorative);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* 청약철회 제한 확인 체크박스 — 고지 바로 아래. 행 모양은 개인정보 동의(.consentRow)와 같다. */
+.withdrawalConsent {
+  margin: 0;
 }
 
 /* ── 보안 확인 / 접수 준비 중 ─────────────────────────────────────────── */

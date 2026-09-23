@@ -68,6 +68,10 @@ export interface ReservationDetailRow extends ReservationListRow {
   privacy_consent_at: string;
   marketing_consent_at: string | null;
   retention_until: string;
+  /** 청약철회 제한 확인 시각(0021 · P1-7). 0021 적용 순간에 있던 접수는 null — 화면은 "기록 없음(동의 기록 도입 전 접수)" 으로 보여 준다. */
+  withdrawal_consent_at: string | null;
+  /** 0021 적용 순간에 이미 있던 접수(동의 기록 도입 전) — 적용 때 한 번 정해지고 트리거가 바꾸지 못하게 한다(P1-7 R2). */
+  withdrawal_consent_legacy: boolean;
 }
 
 /** 목록 화이트리스트 — 행을 식별하고 전화를 걸고 상태를 판단하는 데 필요한 것만. */
@@ -103,6 +107,8 @@ export const RESERVATION_DETAIL_ONLY_COLUMNS = [
   "privacy_consent_at",
   "marketing_consent_at",
   "retention_until",
+  "withdrawal_consent_at",
+  "withdrawal_consent_legacy",
 ] as const satisfies readonly (keyof ReservationDetailRow)[];
 
 export const RESERVATION_DETAIL_COLUMNS = [...RESERVATION_LIST_COLUMNS, ...RESERVATION_DETAIL_ONLY_COLUMNS] as const;

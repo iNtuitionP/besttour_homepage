@@ -15,42 +15,15 @@
 # tests/legal.test.ts 가 원장의 마커 줄과 아래 항목이 1:1 인지 단언한다(항목 추가·삭제는 원장과 함께).
 # 값이 미확정인 필드는 "" 로 두었다 — 지어내지 않는다. 소비자(P1-6·P2-3)는 빈 값을 숨김 폴백으로 처리한다.
 
-# [등록 2026-09-11 · P1-1] 통신판매업 신고 기관명 "고양시".
-# 사유: 신고번호(제 2020-고양일산동-1211호)에서 유추한 값. 신고증 원본을 아직 보지 못했다.
-# 해제 조건: 사장님이 통신판매업 신고증 사본을 보내주면 기관명 확인 후 마커와 이 항목을 지운다.
-lib/legal/disclosures.ts:\[TEMP\] COMPANY\.mailOrderIssuer:
+# [해제 2026-09-21 · P1-7] 사장님 답변(사용자 경유)으로 다음 일곱 항목의 마커와 허용 항목을 지웠다.
+#   COMPANY.mailOrderIssuer → "고양시 일산동구청"(A-4) · COMPANY.bankHolder → 필드째 삭제, 계좌는 PAYMENT.account(관계사 명의, A-5)
+#   CANCELLATION.basis → 계약금 기준 2단계로 확정(A-1) · PAYMENT.balanceTiming · PRIVACY_NOTICE.retention · PRIVACY_NOTICE.retentionDays ·
+#   DISPUTE.handling → 값 그대로 확정. tests/legal.test.ts §8(마커 ↔ 항목 1:1)과 §5-b(해제 확인)가 잠근다.
 
 # [등록 2026-09-11 · P1-1] 대표 이메일 bestour2013@naver.com.
 # 사유: 실재하는 회사 메일이지만 도메인 메일(info@bestour.co.kr)로 바꾸기로 했다(P0-10). 개설 전까지 옛 주소를 쓴다.
 # 해제 조건: P0-10 도메인 메일 개설·수신 확인 후 값을 교체하고 마커와 이 항목을 지운다.
 lib/legal/disclosures.ts:\[TEMP\] COMPANY\.email:
-
-# [등록 2026-09-11 · P1-1] 계좌 예금주명 "합자회사 베스트투어".
-# 사유: 계좌번호는 확인시트에서 받았으나 예금주명은 별도 확인하지 않았다. 법인명과 같다고 가정한 값.
-# 해제 조건: 사장님이 통장 사본 또는 예금주명을 확인해 주면 마커와 이 항목을 지운다.
-lib/legal/disclosures.ts:\[TEMP\] COMPANY\.bankHolder:
-
-# [등록 2026-09-11 · P1-1] 잔금 지급 시기 "예약 확정 시 안내".
-# 사유: 확인시트 C3 2차 회신(2026-09-06)에 계약금 10만원만 있고 잔금 시기·지급수단 상세는 미회신.
-# 해제 조건: 사장님 회신으로 잔금 시기·수단이 정해지면 문안을 교체하고 마커와 이 항목을 지운다.
-lib/legal/disclosures.ts:\[TEMP\] PAYMENT\.balanceTiming:
-
-# [등록 2026-09-11 · P1-1] 취소·환불 기준액 "deposit"(계약금 기준).
-# 사유: 기존 사이트는 총 차량금액 기준 위약금, 확인시트 ★1 답변은 환불율만 있고 기준액 미명시. 컨트롤러 잠정 결정.
-# 해제 조건: 사장님이 "계약금 10만원 기준 / 총 운임 기준" 중 하나로 확답하면 basis·tiers 라벨을 맞추고 마커와 이 항목을 지운다.
-lib/legal/disclosures.ts:\[TEMP\] CANCELLATION\.basis:
-
-# [등록 2026-09-11 · P1-1] 개인정보 보유기간 "접수일로부터 1년".
-# 사유: 확인시트 F3 미회신 — 1년은 가정값. 전자상거래법 보존 의무(계약 기록 5년)는 확정건에 별도 적용한다.
-# 해제 조건: 사장님이 보유기간을 정해 주면 문안을 교체하고 마커와 이 항목을 지운다.
-lib/legal/disclosures.ts:\[TEMP\] PRIVACY_NOTICE\.retention:
-
-# [등록 2026-09-11 · P1-3] 개인정보 보유기간 숫자값 retentionDays = 365.
-# 사유: 바로 위 PRIVACY_NOTICE.retention("접수일로부터 1년")과 같은 가정값(확인시트 F3 미회신)의 숫자 표기.
-#       lib/reservations/consent.ts retentionUntil() 이 retention_until(0003) 계산에 읽는다 — 문자열을 파싱하지 않고
-#       원장에 숫자를 둔다. tests/consent.test.ts 가 문안↔숫자 일치를 단언하므로 한쪽만 바꾸면 테스트가 잡는다.
-# 해제 조건: 위 retention 항목과 함께 — 사장님이 보유기간을 정해 주면 문안·숫자를 같이 교체하고 마커와 이 항목을 지운다.
-lib/legal/disclosures.ts:\[TEMP\] PRIVACY_NOTICE\.retentionDays:
 
 # [등록 2026-09-11 · P1-1] 문자 발송 수탁사 법인명 "주식회사 누리고(Solapi)".
 # 사유: 브리프가 준 값이지만 법인명은 solapi.com 사업자정보로 확인하기 전이다.
@@ -71,11 +44,6 @@ lib/legal/disclosures.ts:\[TEMP\] OVERSEAS_TRANSFERS\.Upstash\.contact:
 # 사유: PROCESSORS.Upstash.location 과 같은 미확인(리전).
 # 해제 조건: 위 항목과 함께 해소한다.
 lib/legal/disclosures.ts:\[TEMP\] OVERSEAS_TRANSFERS\.Upstash\.country:
-
-# [등록 2026-09-11 · P1-1] 소비자 불만 처리 기한 "영업일 기준 3일 이내".
-# 사유: 결정 메모 1-C 의 잠정 문안. 사장님이 지킬 수 있는 기한인지 확인 전이다.
-# 해제 조건: 사장님이 처리 기한을 확답하면 문안을 맞추고 마커와 이 항목을 지운다.
-lib/legal/disclosures.ts:\[TEMP\] DISPUTE\.handling:
 
 # ── P1-6 법정 페이지 3종 — 원장 lib/legal/disclosures.ts 에 추가된 마커 ──────────────────────────
 # [등록 2026-09-11 · P1-6] 개인정보 처리방침 시행일 "2026-09-11".

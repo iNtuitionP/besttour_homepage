@@ -4,7 +4,9 @@
  * 'use client' 는 여기 오지 않는다. 상태가 필요한 조각(MobileMenu)과 경로를 아는 조각(Nav · LocaleSwitch)만
  * 클라이언트다. tests/layout.test.ts 가 파일명으로 그 경계를 단언한다.
  *
- * 담는 것은 넷이다 — 로고 · 메뉴(LEGACY_MENU 10개 전부) · 대표전화 · 언어 전환(P2-6b).
+ * 담는 것은 넷이다 — 로고 · 메뉴(LEGACY_MENU 10개 전부) · 예약·상담 전화 · 언어 전환(P2-6b).
+ *   - 전화는 예약·상담 전화(P1-7 — COMPANY.consultTel, 영문은 +82 표기). 대표전화 1566 은 푸터 사업자 정보에만 남는다.
+ *     모바일 패널 맨 아래에도 같은 번호의 전화 버튼을 둔다(목업 variant-08 .drawer .btn).
  *   - 로고는 bestour 만. 관계사(best mobility) 로고는 헤더에 넣지 않는다(스펙 §13.1).
  *   - 목업 상단바의 "대표전화 · 연중무휴", "운행 13년" 같은 부가 문구는 옮기지 않는다.
  *     실증 불가 수치이고 C4 규칙 범위 밖이다(브리프 §1). 번호만 노출한다.
@@ -22,8 +24,8 @@ import Image from "next/image";
 import { getLocale, getTranslations } from "next-intl/server";
 
 import { Link } from "@/i18n/navigation";
+import { consultPhone } from "@/lib/contact-phone";
 import { ledgerUi } from "@/lib/i18n/ledger-ui";
-import { COMPANY } from "@/lib/legal/disclosures";
 import { LEGACY_MENU } from "@/lib/legacy-menu-map";
 
 import LocaleSwitch from "./LocaleSwitch";
@@ -35,6 +37,8 @@ export default async function Header() {
   const [t, locale] = await Promise.all([getTranslations("layout"), getLocale()]);
   const ui = ledgerUi(locale);
   const menuLabels = Object.fromEntries(LEGACY_MENU.map((m) => [m.key, t(`menu.${m.key}`)]));
+  const phone = consultPhone(locale);
+  const phoneLabel = `${ui.labels.contact.consultTel} ${phone.display}`;
 
   return (
     <header className={styles.header}>
@@ -46,6 +50,7 @@ export default async function Header() {
         items={LEGACY_MENU}
         itemLabels={menuLabels}
         labels={{ open: t("menuOpen"), close: t("menuClose"), nav: t("mobileNav") }}
+        call={{ href: phone.href, label: ui.labels.contact.consultTel, number: phone.display }}
       >
         <Link className={styles.brand} href="/">
           <Image
@@ -72,12 +77,8 @@ export default async function Header() {
           />
         </div>
 
-        <a
-          className={styles.tel}
-          href={`tel:${COMPANY.tel}`}
-          aria-label={`${ui.labels.contact.tel} ${COMPANY.tel}`}
-        >
-          {COMPANY.tel}
+        <a className={styles.tel} href={phone.href} aria-label={phoneLabel}>
+          {phone.display}
         </a>
 
         <span className={styles.localeDesktop}>

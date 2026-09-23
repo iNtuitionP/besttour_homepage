@@ -75,6 +75,7 @@ const VALID_RAW = {
   returnAtLocal: "2026-10-01T18:00",
   turnstileToken: "tok-valid",
   privacyConsent: true,
+  withdrawalConsent: true, // P1-7 — 청약철회 제한 확인(필수)
 } as const;
 
 interface SiteverifyBody {

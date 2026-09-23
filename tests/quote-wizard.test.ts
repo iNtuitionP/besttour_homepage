@@ -57,12 +57,11 @@ import {
   validateStep,
   type WizardState,
 } from "@/components/quote/wizard-state";
-import { withdrawalSentence } from "@/components/quote/withdrawal";
 import { LOCATION_CODES, PLACES, REGIONS } from "@/lib/codes";
 import { GUARD_SECRET_MIN_LENGTH, guardSecret } from "@/lib/guard/deps";
 import { verifyFormToken } from "@/lib/guard/timetrap";
 import { LEGACY_MENU } from "@/lib/legacy-menu-map";
-import { CANCELLATION, PAYMENT, PRIVACY_NOTICE, QUOTE_BASIS, TERMS, VERBATIM } from "@/lib/legal/disclosures";
+import { CANCELLATION, PAYMENT, PRIVACY_NOTICE, QUOTE_BASIS, TERMS, VERBATIM, WITHDRAWAL } from "@/lib/legal/disclosures";
 import { GUARD_FORM_FIELDS, RESERVATION_FORM_FIELDS } from "@/lib/reservations/formData";
 import { PUBLIC_CODE_PATTERN } from "@/lib/reservations/publicCode";
 import { RESERVATION_ERROR_KEYS } from "@/lib/reservations/submitResult";
@@ -76,7 +75,7 @@ const PAGE = "app/[locale]/(site)/quote/page.tsx";
 const DONE_PAGE = "app/[locale]/(site)/quote/done/page.tsx";
 const WIZARD = `${QUOTE_DIR}/QuoteWizard.tsx`;
 const TURNSTILE = `${QUOTE_DIR}/TurnstileWidget.tsx`;
-const WITHDRAWAL = `${QUOTE_DIR}/WithdrawalNotice.tsx`;
+const WITHDRAWAL_FILE = `${QUOTE_DIR}/WithdrawalNotice.tsx`;
 const DEPS = "lib/guard/deps.ts";
 const MESSAGES_KO = "messages/ko.json";
 
@@ -154,6 +153,7 @@ function validState(over: Partial<WizardState> = {}): WizardState {
     email: "",
     privacyConsent: true,
     marketingConsent: false,
+    withdrawalConsent: true,
     ...over,
   };
 }
@@ -321,6 +321,9 @@ describe("2. 검증 · 폼 값", () => {
     expect(f({ email: "not-an-email" })).toEqual(["email"]);
     expect(f({ email: "name@example.com" })).toEqual([]);
     expect(f({ privacyConsent: false })).toEqual(["privacyConsent"]);
+    // P1-7 — 청약철회 제한 확인도 필수 동의다
+    expect(f({ withdrawalConsent: false })).toEqual(["withdrawalConsent"]);
+    expect(f({ privacyConsent: false, withdrawalConsent: false })).toEqual(["privacyConsent", "withdrawalConsent"]);
     // 선택 동의는 검증 대상이 아니다
     expect(f({ marketingConsent: true })).toEqual([]);
   });
@@ -356,6 +359,7 @@ describe("2. 검증 · 폼 값", () => {
       locale: 6,
       privacyConsent: 6,
       marketingConsent: 6,
+      withdrawalConsent: 6,
     };
     for (const k of Object.keys(RESERVATION_FORM_FIELDS)) expect(stepForField(k), k).toBe(expected[k]);
     expect(stepForField("turnstileToken")).toBe(6);
@@ -376,6 +380,7 @@ describe("2. 검증 · 폼 값", () => {
     expect(v.vatIncluded).toBe(false);
     expect(v.privacyConsent).toBe(true);
     expect(v.marketingConsent).toBe(false);
+    expect(v.withdrawalConsent).toBe(true);
     expect(v.busCount).toBe("1");
     expect(v.passengers).toBe("30");
     expect(departAtLocal(validState({ departTime: "" }))).toBe("");
@@ -467,10 +472,11 @@ describe("3. 프리필", () => {
 // =============================================================================
 describe("4. 초안 저장", () => {
   test("직렬화에 동의 필드·단계가 없다 — 재방문 시 다시 체크하게", () => {
-    const json = serializeDraft(validState({ privacyConsent: true, marketingConsent: true, step: 6 }));
+    const json = serializeDraft(validState({ privacyConsent: true, marketingConsent: true, withdrawalConsent: true, step: 6 }));
     const obj = JSON.parse(json) as Record<string, unknown>;
     expect("privacyConsent" in obj).toBe(false);
     expect("marketingConsent" in obj).toBe(false);
+    expect("withdrawalConsent" in obj).toBe(false);
     expect("step" in obj).toBe(false);
     expect(json.includes("Consent")).toBe(false);
     // 개인정보 필드는 초안에 있다(탭이 살아 있는 동안만 — sessionStorage)
@@ -489,9 +495,10 @@ describe("4. 초안 저장", () => {
     const dirty = parseDraft(JSON.stringify({ name: 123, waypointCodes: ["SEL", 7], privacyConsent: true, marketingConsent: true, step: 6, extra: 1 }));
     expect(dirty).toEqual({ waypointCodes: ["SEL"] });
     // init 이 초안에서 동의를 켤 수 없다
-    const applied = reducer(INITIAL_STATE, { type: "init", draft: { ...(dirty ?? {}), privacyConsent: true } as never, prefill: {} });
+    const applied = reducer(INITIAL_STATE, { type: "init", draft: { ...(dirty ?? {}), privacyConsent: true, withdrawalConsent: true } as never, prefill: {} });
     expect(applied.privacyConsent).toBe(false);
     expect(applied.marketingConsent).toBe(false);
+    expect(applied.withdrawalConsent).toBe(false);
   });
 
   test("저장소 키 고정 + 저장/복원/삭제 + 던지는 저장소에서도 throw 0", () => {
@@ -559,12 +566,14 @@ describe("5. 선택지", () => {
 // =============================================================================
 describe("6. 제출 게이트 · 프리뷰", () => {
   test("submitBlock — 토큰/사이트키 없음 > 동의 없음 > 제출 중 > null", () => {
-    const base = { formToken: "1.abc", siteKey: "site", privacyConsent: true, pending: false };
+    const base = { formToken: "1.abc", siteKey: "site", privacyConsent: true, withdrawalConsent: true, pending: false };
     expect(submitBlock(base)).toBeNull();
     expect(submitBlock({ ...base, formToken: null })).toBe("not-ready");
     expect(submitBlock({ ...base, siteKey: "" })).toBe("not-ready");
     expect(submitBlock({ ...base, formToken: null, privacyConsent: false })).toBe("not-ready");
     expect(submitBlock({ ...base, privacyConsent: false })).toBe("consent");
+    // P1-7 — 청약철회 제한 확인이 빠져도 닫힌다
+    expect(submitBlock({ ...base, withdrawalConsent: false })).toBe("consent");
     expect(submitBlock({ ...base, pending: true })).toBe("pending");
     expect(isIntakeReady("tok", "key")).toBe(true);
     expect(isIntakeReady(null, "key")).toBe(false);
@@ -592,14 +601,15 @@ describe("6. 제출 게이트 · 프리뷰", () => {
     expect(parsePreviewSubmit(["ok"])).toBeNull();
   });
 
-  test("청약철회 문장 — 약관 제8조 첫 문장, '청약철회' 포함, 원장 밖 리터럴 아님", () => {
-    const art = TERMS.articles[7];
-    expect(art.no).toBe(8);
-    const sentence = withdrawalSentence();
-    expect(sentence).toContain("청약철회");
-    expect(art.body.startsWith(sentence)).toBe(true);
-    expect(sentence.length).toBeLessThan(art.body.length);
-    expect(sentence.endsWith(".")).toBe(true);
+  // P1-7 — 6단계의 청약철회 제한 문장은 약관 제8조에서 잘라 낸 문장(P3-4) 대신 사장님이 확정한 원장 WITHDRAWAL.notice 다.
+  // 약관 제8조 자체는 그대로이고 /terms 에 있다. 잘라 내던 도우미(components/quote/withdrawal.ts)는 쓰는 곳이 없어져 지웠다.
+  test("청약철회 고지 — 원장 WITHDRAWAL.notice 를 렌더하고, 약관 제8조를 잘라 쓰던 도우미는 없다", () => {
+    expect(TERMS.articles[7].no).toBe(8);
+    expect(WITHDRAWAL.notice).toContain("청약철회");
+    expect(existsSync(path.join(ROOT, QUOTE_DIR, "withdrawal.ts"))).toBe(false);
+    const code = codeOf(WITHDRAWAL_FILE);
+    expect(code).toMatch(/\{WITHDRAWAL\.notice\}/);
+    expect(code).not.toMatch(/withdrawalSentence|TERMS\.articles/);
   });
 });
 
@@ -665,20 +675,20 @@ describe("7. 폼 토큰 — env 없이도 페이지는 죽지 않는다", () => 
 // =============================================================================
 describe("8. 정적 검사", () => {
   test("산출물 파일이 있다", () => {
-    for (const f of [PAGE, DONE_PAGE, WIZARD, TURNSTILE, WITHDRAWAL, `${QUOTE_DIR}/ConsentBlock.tsx`, `${QUOTE_DIR}/quote.module.css`]) {
+    for (const f of [PAGE, DONE_PAGE, WIZARD, TURNSTILE, WITHDRAWAL_FILE, `${QUOTE_DIR}/ConsentBlock.tsx`, `${QUOTE_DIR}/quote.module.css`]) {
       expect(existsSync(path.join(ROOT, f)), f).toBe(true);
     }
     expect(quoteTsx.length).toBeGreaterThanOrEqual(8);
   });
 
-  test("원장 import — PRIVACY_NOTICE·VERBATIM·QUOTE_BASIS·PAYMENT·CANCELLATION·TERMS·LEGAL_LINKS 를 서버 파일이 가져온다", () => {
+  test("원장 import — PRIVACY_NOTICE·VERBATIM·QUOTE_BASIS·PAYMENT·CANCELLATION·WITHDRAWAL·LEGAL_LINKS 를 서버 파일이 가져온다", () => {
     const union = new Set(quoteSources.flatMap((s) => ledgerImports(s.text)));
-    for (const n of ["PRIVACY_NOTICE", "VERBATIM", "QUOTE_BASIS", "PAYMENT", "CANCELLATION", "TERMS", "LEGAL_LINKS", "COMPANY"]) {
+    for (const n of ["PRIVACY_NOTICE", "VERBATIM", "QUOTE_BASIS", "PAYMENT", "CANCELLATION", "WITHDRAWAL", "LEGAL_LINKS"]) {
       expect(union.has(n), n).toBe(true);
     }
-    // 청약철회 고지 컴포넌트가 5종을 직접 가져온다
-    const w = ledgerImports(read(WITHDRAWAL));
-    for (const n of ["VERBATIM", "QUOTE_BASIS", "PAYMENT", "CANCELLATION", "TERMS"]) expect(w, n).toContain(n);
+    // 청약철회 고지 컴포넌트가 5종을 직접 가져온다 (P1-7: 약관 제8조 대신 원장 WITHDRAWAL)
+    const w = ledgerImports(read(WITHDRAWAL_FILE));
+    for (const n of ["VERBATIM", "QUOTE_BASIS", "PAYMENT", "CANCELLATION", "WITHDRAWAL"]) expect(w, n).toContain(n);
     // 동의 문구는 page.tsx 가 원장에서 읽어 props 로 내린다
     expect(ledgerImports(read(PAGE))).toContain("PRIVACY_NOTICE");
   });
@@ -697,7 +707,9 @@ describe("8. 정적 검사", () => {
       PRIVACY_NOTICE.consentLabel,
       PRIVACY_NOTICE.marketingConsentLabel,
       PRIVACY_NOTICE.publicFeedNotice,
-      withdrawalSentence(),
+      WITHDRAWAL.notice,
+      WITHDRAWAL.consentLabel,
+      WITHDRAWAL.consentLabelEn,
     ];
     for (const { file, code } of quoteSources) {
       for (const p of phrases) expect(code.includes(p), `${file} 에 원장 문구 리터럴: ${p.slice(0, 20)}…`).toBe(false);
@@ -769,7 +781,8 @@ describe("8. 정적 검사", () => {
   // 값을 넘기지 않으면 next-intl 이 렌더 시점에 던지므로, 카탈로그 쪽 단언과 짝이 되는 소스 쪽 단언을 둔다.
   test("서버 오류 문구를 풀 때 원장 tel 을 보간 인자로 넘긴다 ({tel} 자리가 비지 않게)", () => {
     const wiz = codeOf(WIZARD);
-    expect(wiz).toMatch(/tRoot\(\s*key\s*,\s*\{\s*tel\s*\}\s*\)/);
+    // P1-7 — tel 은 { display, href } 다(영문은 +82 표기). 문장에는 표시 문자열을 넣는다.
+    expect(wiz).toMatch(/tRoot\(\s*key\s*,\s*\{\s*tel:\s*tel\.display\s*\}\s*\)/);
   });
 
   test("'use client' 는 QuoteWizard.tsx · TurnstileWidget.tsx 두 파일뿐", () => {
@@ -781,7 +794,7 @@ describe("8. 정적 검사", () => {
 
   test("next/link 0 · 청약철회 고지 data-legal · Turnstile action 상수 · 허니팟 속성", () => {
     for (const { file, code } of quoteSources) expect(/from\s+["']next\/link["']/.test(code), file).toBe(false);
-    expect(read(WITHDRAWAL)).toMatch(/data-legal="withdrawal-notice"/);
+    expect(read(WITHDRAWAL_FILE)).toMatch(/data-legal="withdrawal-notice"/);
     expect(read(PAGE)).toMatch(/TURNSTILE_ACTION/);
     const ts = read(TURNSTILE);
     expect(ts).toMatch(/challenges\.cloudflare\.com\/turnstile\/v0\/api\.js/);

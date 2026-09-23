@@ -693,7 +693,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("9. DB 실증 (로컬 스�
       bus_count: ROW.bus_count,
       passengers: ROW.passengers,
       locale: "ko",
-      ...consentFields({ privacyConsent: true, marketingConsent: false }, now),
+      ...consentFields({ privacyConsent: true, marketingConsent: false, withdrawalConsent: true }, now),
     };
     const r = await rest("POST", "/reservations", row, "return=representation");
     if (r.status !== 201 || !Array.isArray(r.body)) {

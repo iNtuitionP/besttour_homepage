@@ -17,6 +17,7 @@
     "@supabase/supabase-js": "^2.112.4",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.3",
+    "@vercel/analytics": "^2.0.1",
     "next": "15.5.24",
     "next-intl": "^4.14.1",
     "react": "19.1.0",

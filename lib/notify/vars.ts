@@ -78,7 +78,7 @@ export const OWNER_VARS_COLUMNS = [
 
 /**
  * **어느 쪽도 읽지 않는 컬럼.** 문안에 쓰지 않으므로 읽을 이유가 없고, 읽지 않으면 샐 수도 없다.
- * (동의 컬럼·retention_until 은 0003, admin_memo 는 0001 — 통지와 무관한 운영·법정 보존용 값이다.)
+ * (동의 컬럼·retention_until 은 0003, 청약철회 제한 확인 시각은 0021, admin_memo 는 0001 — 통지와 무관한 운영·법정 보존용 값이다.)
  */
 export const FORBIDDEN_VARS_COLUMNS = [
   "email",
@@ -88,6 +88,8 @@ export const FORBIDDEN_VARS_COLUMNS = [
   "privacy_policy_version",
   "marketing_consent_at",
   "retention_until",
+  "withdrawal_consent_at",
+  "withdrawal_consent_legacy",
 ] as const;
 
 /** PostgREST select 문자열 — 화이트리스트를 쉼표로 이은 것. `*` 없음. */

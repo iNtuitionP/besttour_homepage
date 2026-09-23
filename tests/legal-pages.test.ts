@@ -187,7 +187,7 @@ describe("1. 원장 소스 — 새 상수 4종", () => {
     expect((byKey.officer as { from: unknown }).from).toBe(COMPANY.privacyOfficer);
   });
 
-  test("GUIDE_SECTIONS 8절 — flow 는 4단계, contact 는 COMPANY 5개 필드", () => {
+  test("GUIDE_SECTIONS 8절 — flow 는 4단계, contact 는 COMPANY 5개 필드 (P1-7: 첫 줄은 예약·상담 전화)", () => {
     expect(GUIDE_SECTIONS).toHaveLength(8);
     expect(GUIDE_SECTIONS.map((s) => s.key)).toEqual([
       "flow",
@@ -203,8 +203,37 @@ describe("1. 원장 소스 — 새 상수 4종", () => {
     expect(flow.steps).toHaveLength(4);
     for (const s of flow.steps) expect(s.trim().length).toBeGreaterThan(0);
     const contact = GUIDE_SECTIONS[7] as { fields: readonly string[] };
-    expect(contact.fields).toEqual(["tel", "mobile", "fax", "email", "address"]);
+    // 대표전화(tel)는 푸터 사업자 정보 한 줄에만 남는다(P1-7 브리프 1-C) — 이용안내 연락처는 예약·상담 전화다.
+    expect(contact.fields).toEqual(["consultTel", "mobile", "fax", "email", "address"]);
     for (const f of contact.fields) expect(typeof COMPANY[f as keyof typeof COMPANY], f).toBe("string");
+    for (const f of contact.fields) expect(ledger.LEGAL_LABELS.contact, f).toHaveProperty(f);
+  });
+
+  test("P1-7 — 청약철회 제한 고지(WITHDRAWAL.notice · 영문 noticeEn)가 이용안내 취소·환불 절과 약관 제8조 아래에 실린다", () => {
+    const art8 = TERMS.articles.find((a) => a.no === 8);
+    expect(art8?.title).toBe("청약철회");
+    const terms = read(PAGE_FILES.terms);
+    expect(terms).toMatch(/const WITHDRAWAL_ARTICLE_NO = 8;/);
+    expect(terms).toMatch(/notice=\{WITHDRAWAL\.notice\}/);
+    const guide = read(PAGE_FILES.guide);
+    const iCancel = guide.indexOf('case "cancel":');
+    const iNotice = guide.indexOf("notice={WITHDRAWAL.notice}");
+    const iNext = guide.indexOf('case "insurance":');
+    expect(iCancel).toBeGreaterThan(-1);
+    expect(iNotice).toBeGreaterThan(iCancel);
+    expect(iNotice).toBeLessThan(iNext);
+  });
+
+  // P1-7 R2 [P1-10] — 법정 페이지에는 사이트 푸터가 없다. 대금을 관계사 계좌로 받는다는 사실을 /guide 의 대금 지급 절에 싣는다.
+  test("P1-7 R2 — /guide 대금 지급 절: PAYMENT.line → PAYMENT.accountLine → RELATED_COMPANY.note", () => {
+    const guide = read(PAGE_FILES.guide);
+    const body = guide.slice(guide.indexOf('case "payment":'), guide.indexOf('case "cancel":'));
+    const iLine = body.indexOf("PAYMENT.line");
+    const iAccount = body.indexOf("PAYMENT.accountLine");
+    const iNote = body.indexOf("RELATED_COMPANY.note");
+    expect(iLine).toBeGreaterThan(-1);
+    expect(iAccount).toBeGreaterThan(iLine);
+    expect(iNote).toBeGreaterThan(iAccount);
   });
 
   test("LEGAL_PAGES — 세 페이지 제목, 약관·처리방침에 시행일(YYYY-MM-DD)", () => {
@@ -238,13 +267,18 @@ export const LEGAL_MAPPING: readonly MappingRow[] = [
   { law: "약관규제법 §3 — 약관의 명시·설명(사이트 게시로 효력, 제3조)", ledgerKey: "TERMS.articles.2", page: "/terms" },
   { law: "전자상거래법 §13②5호 — 계약 성립·취소·환불 조건(제5조·제7조)", ledgerKey: "TERMS.articles.4", page: "/terms" },
   { law: "전자상거래법 §17② — 청약철회 제한 사유 고지(제8조)", ledgerKey: "TERMS.articles.7", page: "/terms" },
+  { law: "전자상거래법 §17⑥ — 청약철회 제한 사전 고지(제8조 아래 · P1-7)", ledgerKey: "WITHDRAWAL.notice", page: "/terms" },
   { law: "전자상거래법 §13②9호 — 분쟁 해결·관할·준거법(제12조)", ledgerKey: "TERMS.articles.11", page: "/terms" },
   // ── 이용안내 (전자상거래법 §13② 거래조건 표시) ──
   { law: "전자상거래법 §13①1호 — 상호·대표자·주소·전화·이메일", ledgerKey: "COMPANY", page: "/guide" },
   { law: "전자상거래법 §13②3호 — 가격 미결정 시 산정 기준", ledgerKey: "QUOTE_BASIS.line", page: "/guide" },
   { law: "전자상거래법 §13②4호 — 대금 지급 방법·시기", ledgerKey: "PAYMENT.line", page: "/guide" },
-  { law: "전자상거래법 §13②5호 — 취소·환불 조건(4단계 표)", ledgerKey: "CANCELLATION.tiers", page: "/guide" },
+  { law: "전자상거래법 §13②4호 — 대금 입금 계좌(관계사 명의 · P1-7 R2)", ledgerKey: "PAYMENT.accountLine", page: "/guide" },
+  { law: "전자상거래법 §13①1호 — 계약 주체와 대금 수령 주체(관계사) 고지 · P1-7 R2", ledgerKey: "RELATED_COMPANY.note", page: "/guide" },
+  { law: "전자상거래법 §13②5호 — 취소·환불 조건(2단계 표 · 사장님 답변 2026-09-21 A-1)", ledgerKey: "CANCELLATION.tiers", page: "/guide" },
+  { law: "전자상거래법 §17⑥ — 청약철회 제한 사전 고지(취소·환불 절 아래 · P1-7)", ledgerKey: "WITHDRAWAL.notice", page: "/guide" },
   { law: "전자상거래법 §13②5호 — 환불 기준액(계약금) 고지", ledgerKey: "CANCELLATION.depositNote", page: "/guide" },
+  { law: "전자상거래법 §17③ — 취소·환불 표의 적용 범위(고객 사정 취소 · 법정 권리 보존 · P1-7 R3)", ledgerKey: "CANCELLATION.scope", page: "/guide" },
   { law: "전자상거래법 §13②8호 — 소비자 불만·분쟁 처리 절차", ledgerKey: "DISPUTE", page: "/guide" },
   { law: "전자상거래법 §13③ / PIPA §22조의2 — 만 14세 미만 제한", ledgerKey: "MINORS.line", page: "/guide" },
   { law: "확인시트 ★2 — 차량 보험 안내(기존 문구 계승)", ledgerKey: "INSURANCE.body", page: "/guide" },
@@ -255,6 +289,7 @@ export const LEGAL_MAPPING: readonly MappingRow[] = [
   { law: "PIPA §30①1호 — 개인정보의 처리 목적", ledgerKey: "PRIVACY_NOTICE.purpose", page: "/privacy" },
   { law: "PIPA §30①2호 — 처리 및 보유 기간", ledgerKey: "PRIVACY_NOTICE.retention", page: "/privacy" },
   { law: "PIPA §30①3호의2 / §28조의8② — 국외 이전 5항목+근거", ledgerKey: "OVERSEAS_TRANSFERS", page: "/privacy" },
+  { law: "PIPA §28조의8② — 방문 통계 국외 이전(별도 항목 · 자체 거부 수단 · P1-7 R2)", ledgerKey: "VISITOR_STATS_TRANSFER", page: "/privacy" },
   { law: "PIPA §30①4호 / §26② — 처리위탁 수탁자·업무", ledgerKey: "PROCESSORS", page: "/privacy" },
   { law: "PIPA §30①5호 — 정보주체 권리·의무 및 행사 방법", ledgerKey: "PRIVACY_POLICY_SECTIONS.5.body", page: "/privacy" },
   { law: "PIPA §30①6호 — 처리하는 개인정보 항목", ledgerKey: "PRIVACY_NOTICE.items", page: "/privacy" },
@@ -433,6 +468,10 @@ describe.runIf(Boolean(BASE))("5. dev 서버 — 200/404", { timeout: GATE_TIMEO
     const guide = await (await fetch(`${BASE}/guide`)).text();
     expect(guide).toContain(ledger.VERBATIM.bookingNotice);
     expect(guide).toContain(ledger.VERBATIM.showcaseNotice);
-    expect(CANCELLATION.tiers.length).toBe(4);
+    expect(CANCELLATION.tiers.length).toBe(2); // P1-7 — 사장님 답변 2026-09-21 A-1 로 2단계
+    expect(guide).toContain(ledger.WITHDRAWAL.notice);
+    expect(terms).toContain(ledger.WITHDRAWAL.notice);
+    expect(guide).toContain(ledger.PAYMENT.accountLine); // R2
+    expect(guide).toContain(ledger.RELATED_COMPANY.note); // R2
   });
 });

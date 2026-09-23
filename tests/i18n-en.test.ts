@@ -25,6 +25,7 @@ import { loadMessages } from "@/i18n/messages";
 import { ledgerUi, localizeVerbatim } from "@/lib/i18n/ledger-ui";
 import { LEGACY_MENU } from "@/lib/legacy-menu-map";
 import {
+  CANCELLATION,
   COMPANY,
   INSURANCE,
   LEGAL_LABELS,
@@ -33,7 +34,9 @@ import {
   QUOTE_BASIS,
   RELATED_COMPANY,
   VERBATIM,
+  WITHDRAWAL,
 } from "@/lib/legal/disclosures";
+// (WITHDRAWAL 은 §4 의 동의 라벨과 §8-d 의 영문 번역본 실측에 쓴다)
 
 import { documentTitle, findElements, findUnmarkedHangul, HANGUL, metaDescription } from "./helpers/hangul-html";
 import { stripComments } from "./helpers/strip-comments";
@@ -208,12 +211,17 @@ describe("4. 원장 UI 문구 — ko 는 원장 그대로, en 은 컨트롤러 �
       insurance: INSURANCE.title,
       privacyNotice: PRIVACY_NOTICE.title,
     });
-    expect(koUi.consent).toEqual({ privacy: PRIVACY_NOTICE.consentLabel, marketing: PRIVACY_NOTICE.marketingConsentLabel });
+    expect(koUi.consent).toEqual({
+      privacy: PRIVACY_NOTICE.consentLabel,
+      marketing: PRIVACY_NOTICE.marketingConsentLabel,
+      withdrawal: WITHDRAWAL.consentLabel, // P1-7
+    });
     expect(koUi.relatedRole).toBe(RELATED_COMPANY.role);
     expect(koUi.labels.effectiveDate).toBe(LEGAL_LABELS.effectiveDate);
     expect(koUi.labels.home).toBe(LEGAL_LABELS.home);
     expect(koUi.labels.legalNav).toBe(LEGAL_LABELS.legalNav);
     expect(koUi.labels.officer).toEqual({ phone: LEGAL_LABELS.officer.phone });
+    expect(koUi.labels.analyticsOptOut).toEqual(LEGAL_LABELS.analyticsOptOut); // P1-7 R2
     for (const k of Object.keys(koUi.labels.contact) as (keyof typeof koUi.labels.contact)[]) {
       expect(koUi.labels.contact[k], `contact.${k}`).toBe(LEGAL_LABELS.contact[k]);
     }
@@ -225,8 +233,10 @@ describe("4. 원장 UI 문구 — ko 는 원장 그대로, en 은 컨트롤러 �
 
   test("en.json legal 과 ko 원장 UI 의 키 구조가 같다 (officialNotice 는 en 에만 값이 있다)", () => {
     // brand·representative 는 en.json 이 아니라 원장의 영문 필드에서 온다(아래 단언). officialNotice 는 ko 에서 null.
-    const koRest: Record<string, unknown> = { ...koUi };
+    // consent.withdrawal(P1-7)도 원장의 확정 영문 필드(WITHDRAWAL.consentLabelEn)에서 온다 — en.json 에 다시 적지 않는다.
+    const koRest: Record<string, unknown> = { ...koUi, consent: { ...koUi.consent } };
     for (const k of ["brand", "representative", "officialNotice"]) delete koRest[k];
+    delete (koRest.consent as Record<string, unknown>).withdrawal;
     const enRest: Record<string, unknown> = { ...(en.legal as Record<string, unknown>) };
     const officialNotice = enRest.officialNotice;
     delete enRest.officialNotice;
@@ -237,6 +247,13 @@ describe("4. 원장 UI 문구 — ko 는 원장 그대로, en 은 컨트롤러 �
   test("en 의 상호·대표자는 원장의 영문 필드(COMPANY.brandNameEn · representativeEn)다 — 지어내지 않는다", () => {
     expect(enUi.brand).toBe(COMPANY.brandNameEn);
     expect(enUi.representative).toBe(COMPANY.representativeEn);
+  });
+
+  test("en 의 청약철회 제한 확인 라벨은 원장의 확정 영문(WITHDRAWAL.consentLabelEn) · 예약·상담 전화 라벨은 'Bookings & inquiries' (P1-7)", () => {
+    expect(enUi.consent.withdrawal).toBe(WITHDRAWAL.consentLabelEn);
+    expect("withdrawal" in (en.legal as { consent: object }).consent).toBe(false);
+    expect(enUi.labels.contact.consultTel).toBe("Bookings & inquiries");
+    expect(koUi.labels.contact.consultTel).toBe(LEGAL_LABELS.contact.consultTel);
   });
 
   test("컨트롤러 확정 문안이 바이트 그대로다", () => {
@@ -397,20 +414,24 @@ describe("6. 공개 화면 코드 — 한글 리터럴 0 (주석 제외, 명시�
  * 법정 문서 3쪽(/privacy·/terms·/guide)은 본문 전체(절 제목·표 머리·조 번호 포함)가 원장 한국어다.
  */
 const LEDGER_ON_EN: ReadonlyArray<{ file: string; refs: readonly string[]; screen: string; notice: boolean | { via: string } }> = [
-  { file: "app/[locale]/(legal)/guide/page.tsx", screen: "/en/guide 본문 전체", notice: true, refs: ["CANCELLATION", "COMPANY[]", "DISPUTE", "GUIDE_SECTIONS", "INSURANCE", "LEGAL_LABELS", "MINORS", "PAYMENT", "QUOTE_BASIS", "VERBATIM"] },
-  { file: "app/[locale]/(legal)/privacy/page.tsx", screen: "/en/privacy 본문 전체", notice: true, refs: ["COMPANY.privacyOfficer", "LEGAL_LABELS", "OVERSEAS_TRANSFERS", "PRIVACY_NOTICE", "PRIVACY_POLICY_SECTIONS", "PROCESSORS"] },
-  { file: "app/[locale]/(legal)/terms/page.tsx", screen: "/en/terms 본문 전체", notice: true, refs: ["TERMS"] },
+  // P1-7 R2: /en/guide 대금 지급 절에 입금 계좌·관계사 고지(RELATED_COMPANY.note), 청약철회 고지는 영문 번역본(noticeEn) + 한국어 원문.
+  { file: "app/[locale]/(legal)/guide/page.tsx", screen: "/en/guide 본문 전체(P1-7: 취소·환불 절 아래 청약철회 제한 고지 · R2: 대금 지급 절에 입금 주체)", notice: true, refs: ["CANCELLATION", "COMPANY[]", "DISPUTE", "GUIDE_SECTIONS", "INSURANCE", "LEGAL_LABELS", "MINORS", "PAYMENT", "QUOTE_BASIS", "RELATED_COMPANY", "VERBATIM", "WITHDRAWAL"] },
+  // P1-7 R2: 방문 통계 국외이전 항목(VISITOR_STATS_TRANSFER)을 따로 두고 그 바로 아래 거부 버튼(라벨은 영문).
+  { file: "app/[locale]/(legal)/privacy/page.tsx", screen: "/en/privacy 본문 전체", notice: true, refs: ["COMPANY.privacyOfficer", "LEGAL_LABELS", "OVERSEAS_TRANSFERS", "PRIVACY_NOTICE", "PRIVACY_POLICY_SECTIONS", "PROCESSORS", "VISITOR_STATS_TRANSFER"] },
+  // R3 [P2-F]: 제7조(취소 및 환불) 아래에 CANCELLATION.scope(규정의 적용 범위 — 고객 사정 취소 · 법정 권리 보존)를 붙였다.
+  { file: "app/[locale]/(legal)/terms/page.tsx", screen: "/en/terms 본문 전체(P1-7: 제8조 아래 청약철회 제한 고지 · R3: 제7조 아래 취소·환불 적용 범위)", notice: true, refs: ["CANCELLATION", "TERMS", "WITHDRAWAL"] },
   { file: "components/legal/LegalArticle.tsx", screen: "/en/terms 조 번호(제N조)", notice: { via: "app/[locale]/(legal)/terms/page.tsx" }, refs: ["LEGAL_LABELS"] },
   { file: "app/[locale]/(site)/about/page.tsx", screen: "/en/about 회사 정보 표 · 찾아오시는 길 주소", notice: true, refs: ["COMPANY.address", "COMPANY.branchAddress", "COMPANY.legalName", "COMPANY.mailOrderIssuer", "COMPANY.mailOrderNo"] },
   { file: "app/[locale]/(site)/fares/page.tsx", screen: "/en/fares 산정 기준 칩 · 대금 지급", notice: true, refs: ["PAYMENT", "QUOTE_BASIS"] },
   { file: "app/[locale]/(site)/fleet/page.tsx", screen: "/en/fleet 보험 본문", notice: true, refs: ["INSURANCE"] },
   { file: "app/[locale]/(site)/quote/page.tsx", screen: "/en/quote 6단계 동의 고지 본문", notice: true, refs: ["PRIVACY_NOTICE"] },
-  { file: "components/quote/WithdrawalNotice.tsx", screen: "/en/quote 6단계 접수 전 확인 사항", notice: true, refs: ["CANCELLATION", "PAYMENT", "QUOTE_BASIS", "TERMS"] },
-  { file: "components/quote/withdrawal.ts", screen: "/en/quote 6단계 청약철회 문장", notice: { via: "components/quote/WithdrawalNotice.tsx" }, refs: ["TERMS"] },
+  // P1-7: 청약철회 제한 문장이 약관 제8조 발췌(withdrawal.ts — 삭제)에서 원장 WITHDRAWAL.notice 로 바뀌었다. 체크박스 라벨은 원장 확정 영문(consentLabelEn).
+  { file: "components/quote/WithdrawalNotice.tsx", screen: "/en/quote 6단계 접수 전 확인 사항 · 청약철회 제한 고지", notice: true, refs: ["CANCELLATION", "PAYMENT", "QUOTE_BASIS", "WITHDRAWAL"] },
   { file: "components/home/HowItWorks.tsx", screen: "/en 이용 방법 4단계 · 산정 기준 · 대금 지급", notice: true, refs: ["GUIDE_SECTIONS", "PAYMENT", "QUOTE_BASIS"] },
   { file: "components/home/RecentFeed.tsx", screen: "/en 접수 현황 공개 고지(행이 있을 때만)", notice: true, refs: ["PRIVACY_NOTICE"] },
   { file: "components/home/TrustBar.tsx", screen: "/en 신뢰 지표 — 통신판매업 신고번호 · 법인 상호", notice: false, refs: ["COMPANY.legalName", "COMPANY.mailOrderNo"] },
-  { file: "components/layout/Footer.tsx", screen: "/en/* 푸터 사업자 정보", notice: true, refs: ["COMPANY.address", "COMPANY.bankAccount", "COMPANY.branchAddress", "COMPANY.legalName", "COMPANY.mailOrderIssuer", "COMPANY.mailOrderNo", "COMPANY.privacyOfficer", "RELATED_COMPANY"] },
+  // P1-7: 계좌는 COMPANY.bankAccount 에서 PAYMENT.accountLine(관계사 명의)으로 옮겼다.
+  { file: "components/layout/Footer.tsx", screen: "/en/* 푸터 사업자 정보", notice: true, refs: ["COMPANY.address", "COMPANY.branchAddress", "COMPANY.legalName", "COMPANY.mailOrderIssuer", "COMPANY.mailOrderNo", "COMPANY.privacyOfficer", "PAYMENT", "RELATED_COMPANY"] },
 ];
 
 /** 한국어 산문을 담은 원장 기호 — 참조가 곧 `/en` 에 한국어가 남는다는 뜻이다. */
@@ -429,8 +450,10 @@ const PROSE_SYMBOLS = [
   "GUIDE_SECTIONS",
   "RELATED_COMPANY",
   "LEGAL_LABELS",
+  "WITHDRAWAL",
+  "VISITOR_STATS_TRANSFER",
 ] as const;
-/** COMPANY 의 한글 값 필드 — tel·mobile·fax·email·bizRegNo 는 숫자·ASCII 라 빠진다. */
+/** COMPANY 의 한글 값 필드 — tel·consultTel·consultTelIntl·mobile·fax·email·bizRegNo 는 숫자·ASCII 라 빠진다. (P1-7: bankAccount·bankHolder 는 COMPANY 에서 빠졌다) */
 const COMPANY_KO_FIELDS = [
   "legalName",
   "brandName",
@@ -439,8 +462,6 @@ const COMPANY_KO_FIELDS = [
   "mailOrderIssuer",
   "address",
   "branchAddress",
-  "bankAccount",
-  "bankHolder",
   "privacyOfficer",
 ] as const;
 
@@ -642,6 +663,55 @@ describe.runIf(Boolean(EN_BASE))("8-b. 렌더 실측 — /en (GET)", { timeout: 
     const enPage = await fetch(`${EN_BASE}/en`, { redirect: "manual" });
     expect(enPage.headers.get("set-cookie") ?? "").not.toMatch(/NEXT_LOCALE/);
     await enPage.text();
+  });
+});
+
+// P1-7 R2 [P1-1] — 청약철회 고지만은 영문 번역본(noticeEn)을 싣는다. 한국어 원문은 그 아래 lang="ko".
+describe.runIf(Boolean(EN_BASE))("8-d. 렌더 실측 — 청약철회 고지 영문 번역본 · 방문 통계 거부 버튼 (GET)", { timeout: 120_000 }, () => {
+  const html = async (p: string) => (await fetch(`${EN_BASE}${p}`)).text();
+  const decodeText = (s: string) => s.replace(/&#x27;|&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
+
+  test.for([["/en/quote"], ["/en/guide"], ["/en/terms"]] as const)("%s — noticeEn(lang=en) 다음에 한국어 원문(lang=ko)", async ([route]) => {
+    const page = await html(route);
+    const en = findElements(page, (tag, a) => tag === "p" && a.get("data-legal") === "withdrawal-restriction-en");
+    const ko = findElements(page, (tag, a) => tag === "p" && a.get("data-legal") === "withdrawal-restriction");
+    expect(en, route).toHaveLength(1);
+    expect(ko, route).toHaveLength(1);
+    expect(en[0].attrs.get("lang")).toBe("en");
+    const koLangOk = ko[0].attrs.get("lang") === "ko" || ko[0].ancestors.some((a) => a.attrs.get("lang") === "ko");
+    expect(koLangOk, route).toBe(true);
+    expect(decodeText(page)).toContain(WITHDRAWAL.noticeEn);
+    expect(page.indexOf('data-legal="withdrawal-restriction-en"')).toBeLessThan(page.indexOf('data-legal="withdrawal-restriction"'));
+  });
+
+  test.for([["/quote"], ["/guide"], ["/terms"]] as const)("%s — 한국어 화면에는 영문 번역본이 없다", async ([route]) => {
+    const page = await html(route);
+    expect(page, route).not.toContain('data-legal="withdrawal-restriction-en"');
+    expect(page, route).toContain('data-legal="withdrawal-restriction"');
+  });
+
+  // R3 [P2-F] — 표·요약 바로 아래 "이 규정은 고객 사정 취소에 적용" 문장이 실제로 렌더된다(ko·en 화면 모두 한국어 원문).
+  test.for([["/quote"], ["/guide"], ["/terms"], ["/en/quote"], ["/en/guide"], ["/en/terms"]] as const)(
+    "%s — 취소·환불 적용 범위 문장이 렌더된다",
+    async ([route]) => {
+      const page = await html(route);
+      expect(page, route).toContain('data-legal="cancellation-scope"');
+      expect(decodeText(page), route).toContain(CANCELLATION.scope);
+    },
+  );
+
+  test("/en/privacy · /privacy — 방문 통계 거부 버튼이 방문 통계 항목 바로 뒤에 있다(영문 라벨 · 한국어 라벨)", async () => {
+    const en = await html("/en/privacy");
+    expect(en).toContain('data-testid="analytics-optout"');
+    expect(en).toContain("Opt out of visitor statistics");
+    const ko = await html("/privacy");
+    expect(ko).toContain("방문 통계 거부");
+    const button = ko.indexOf('data-testid="analytics-optout"');
+    const rest = ko.indexOf('data-testid="overseas-rest"');
+    expect(ko.indexOf("방문 통계(방문 수·많이 보는 페이지·유입 경로 파악)")).toBeLessThan(button);
+    // "Upstash Inc." 는 위탁 표(국외이전 절보다 앞)에도 나온다 — 국외이전의 나머지 항목 목록(overseas-rest)을 기준으로 본다.
+    expect(rest).toBeGreaterThan(button);
+    expect(ko.indexOf("Upstash Inc.", rest)).toBeGreaterThan(rest);
   });
 });
 

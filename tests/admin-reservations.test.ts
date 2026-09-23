@@ -368,15 +368,15 @@ describe("3. lib/admin/reservations.ts — 목록·상세 쿼리", () => {
     const cols = selectCols(calls);
     expect(cols).toEqual([...RESERVATION_LIST_COLUMNS]);
     expect(RESERVATION_LIST_SELECT).not.toContain("*");
-    for (const forbidden of ["email", "message", "admin_memo", "privacy_consent_at", "marketing_consent_at", "retention_until", "purpose_code"]) {
+    for (const forbidden of ["email", "message", "admin_memo", "privacy_consent_at", "marketing_consent_at", "retention_until", "withdrawal_consent_at", "withdrawal_consent_legacy", "purpose_code"]) {
       expect(cols, `목록에 ${forbidden} 이 있다`).not.toContain(forbidden);
     }
   });
 
-  test("상세 select 는 목록 + 나머지다 — 파기 예정 시각·동의 시각을 사장님에게 보여 준다", () => {
+  test("상세 select 는 목록 + 나머지다 — 파기 예정 시각·동의 시각·청약철회 제한 확인 시각(0021)을 사장님에게 보여 준다", () => {
     const cols = [...RESERVATION_DETAIL_COLUMNS];
     for (const c of RESERVATION_LIST_COLUMNS) expect(cols).toContain(c);
-    for (const c of ["email", "purpose_code", "waypoint_codes", "contact_method", "payment_method", "parking_included", "vat_included", "message", "admin_memo", "privacy_consent_at", "marketing_consent_at", "retention_until"]) {
+    for (const c of ["email", "purpose_code", "waypoint_codes", "contact_method", "payment_method", "parking_included", "vat_included", "message", "admin_memo", "privacy_consent_at", "marketing_consent_at", "retention_until", "withdrawal_consent_at", "withdrawal_consent_legacy"]) {
       expect(cols, c).toContain(c);
     }
     expect(new Set(cols).size, "중복 컬럼이 있다").toBe(cols.length);
@@ -1007,6 +1007,7 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
           privacy_policy_version: "2026-09-11",
           marketing_consent_at: null,
           retention_until: later.toISOString(),
+          withdrawal_consent_at: now.toISOString(), // 0021(P1-7) — 새 접수는 청약철회 제한 확인 시각이 필수다
         },
         "return=representation",
       );

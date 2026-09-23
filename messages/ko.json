@@ -32,7 +32,7 @@
     "notFoundTitle": "페이지를 찾을 수 없습니다",
     "notFoundBody": "주소가 바뀌었거나 없는 페이지입니다. 주소를 다시 확인하시거나 홈으로 이동해 주세요.",
     "errorTitle": "일시적인 오류가 발생했습니다",
-    "errorBody": "잠시 후 다시 시도해 주세요. 문제가 계속되면 대표전화로 문의해 주세요.",
+    "errorBody": "잠시 후 다시 시도해 주세요. 문제가 계속되면 전화로 문의해 주세요.",
     "errorRef": "오류 참조 번호 {digest}",
     "retry": "다시 시도",
     "home": "홈으로"
@@ -645,6 +645,7 @@
         "memo": "관리자 메모",
         "privacyConsentAt": "개인정보 동의",
         "marketingConsentAt": "광고성 정보 수신 동의",
+        "withdrawalConsentAt": "청약철회 제한 동의",
         "retentionUntil": "파기 예정"
       },
       "value": {
@@ -652,7 +653,8 @@
         "included": "포함 조건",
         "excluded": "미포함 조건",
         "consented": "동의",
-        "notConsented": "미동의"
+        "notConsented": "미동의",
+        "noWithdrawalRecord": "기록 없음(동의 기록 도입 전 접수)"
       },
       "confirm": "확정하기",
       "cancel": "취소 처리",

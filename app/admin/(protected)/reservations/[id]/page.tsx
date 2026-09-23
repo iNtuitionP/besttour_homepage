@@ -24,6 +24,10 @@ import q from "@/components/quote/quote.module.css";
  *
  * 화면에 함께 보이는 것: `privacy_consent_at`(언제 동의했는지)과 `retention_until`(언제 파기되는지). 파기 배치(P1-5)가
  * 그 시각을 보고 지우므로, 사장님이 "이 예약 기록이 언제 사라지는지" 를 화면에서 알 수 있어야 한다.
+ * `withdrawal_consent_at`(청약철회 제한 확인 — 0021 · P1-7)도 보여 준다: 취소·환불 분쟁 때 사장님이 증거를 찾을 수 있게.
+ * 0021 적용 순간에 있던 접수는 `withdrawal_consent_legacy = true` 이고 값이 없다 — "기록 없음(동의 기록 도입 전 접수)" 으로 보여 준다
+ * (빈 칸이 누락으로 읽히지 않게 · 날짜를 박지 않는다 — 경계는 날짜가 아니라 적용 순간이다, P1-7 R2). legacy 가 아니면서 값이 없는 행은
+ * 0021 의 CHECK 가 만들지 못한다 — 만약 보이면 "—" 로 둔다(지어내지 않는다).
  *
  * 값 라벨(여행 구분·운행 구분·연락/결제 방법)은 **위저드가 쓰는 문구를 그대로 재사용한다**(quote.* · reservationCheck.*).
  * 같은 코드에 두 벌의 한국어를 두면 사장님이 보는 말과 고객이 고른 말이 갈라진다. 관리자 전용 문구만 admin.* 에 있다.
@@ -234,6 +238,16 @@ export default async function AdminReservationDetailPage({ params }: { params: P
               <dt className={a.dt}>{t("field.marketingConsentAt")}</dt>
               <dd className={a.dd}>
                 {row.marketing_consent_at === null ? t("value.notConsented") : kstWallClock(row.marketing_consent_at)}
+              </dd>
+            </div>
+            <div className={a.row}>
+              <dt className={a.dt}>{t("field.withdrawalConsentAt")}</dt>
+              <dd className={a.dd} data-testid="admin-withdrawal-consent">
+                {row.withdrawal_consent_at !== null
+                  ? kstWallClock(row.withdrawal_consent_at)
+                  : row.withdrawal_consent_legacy
+                    ? t("value.noWithdrawalRecord")
+                    : none}
               </dd>
             </div>
             <div className={a.row}>
