@@ -26,16 +26,16 @@ select version, name from supabase_migrations.schema_migrations order by version
 
 ### 🔴 적용 경로 — `supabase db push` 하나 (P5-15 R6 · 컨트롤러 결정 2026-09-17)
 - 🔴 **2026-09-21 부터: 시험 프로젝트(`gjnieoojgmhulkohdcnl`)에 먼저, 운영에 나중.** 시험 프로젝트가 생겼다(`docs/ops/environments.md`). 새 마이그레이션은 CI green 뒤 **시험 프로젝트에 `db push --db-url` 로 먼저** 적용하고, 자기검증 통과·프리뷰 정상을 본 뒤 운영에 아래 절차대로 적용한다. 저장소의 `supabase link` 는 운영을 가리키므로 **시험 프로젝트로 다시 link 하지 않는다.**
-- **0012~0021 의 원격 적용 경로는 `supabase db push` 하나다.** CLI 는 마이그레이션 파일 하나를 한 트랜잭션으로 돌리고, 성공한 버전을 `supabase_migrations.schema_migrations` 에 기록한다.
+- **0012~0022 의 원격 적용 경로는 `supabase db push` 하나다.** CLI 는 마이그레이션 파일 하나를 한 트랜잭션으로 돌리고, 성공한 버전을 `supabase_migrations.schema_migrations` 에 기록한다.
 - **SQL Editor 는 읽기 확인 전용이다** — 적용 전·후 행렬, 이력 조회처럼 카탈로그를 읽는 질의만 붙인다. **마이그레이션 본문을 SQL Editor 에 붙여 적용하지 않는다**: 그러면 이력이 남지 않아, 다음 `supabase db push` 가 **같은 마이그레이션을 다시 돌린다**(두 번 도는 것을 전제로 검토한 파일이 아니다).
 - **`psql -f` 도 쓰지 않는다**(리뷰 K1 — 파일이 원자적이지 않다. 이력도 남지 않는다).
 - 🔴 **적용 직후 필수 — 이력 확인**(읽기 질의):
   ```sql
   select version, name from supabase_migrations.schema_migrations order by version;
   ```
-  기대: 적용 전 목록(2026-09-21 이후 마지막 `0020`) 뒤에 `0021` 한 줄이 붙고, **마지막이 `0021`**. 한 줄이라도 빠졌거나 마지막이 `0021` 이 아니면 **멈추고 컨트롤러에게 보고한다**(`db push` 는 실패한 파일에서 멈추고 그 뒤 버전을 돌리지 않는다 — 어디서 멈췄는지가 이 목록에 보인다). (2026-09-21 의 첫 적용에서는 `0011` 뒤에 `0012`~`0019` 여덟 줄이, 두 번째 적용에서는 `0020` 한 줄이 붙는 것이 기대였고 그대로 됐다 — 맨 아래 「원격 적용 기록」.)
+  기대: 적용 전 목록 뒤에 이번에 적용한 버전이 한 줄씩 붙고, 저장소의 마지막 마이그레이션과 같은 번호로 끝난다 — 지금은 **마지막이 `0022`**(P5-17 이 `0021` 뒤에 더했다). 한 줄이라도 빠졌거나 마지막이 `0022` 가 아니면 **멈추고 컨트롤러에게 보고한다**(`db push` 는 실패한 파일에서 멈추고 그 뒤 버전을 돌리지 않는다 — 어디서 멈췄는지가 이 목록에 보인다). (2026-09-21 의 첫 적용에서는 `0011` 뒤에 `0012`~`0019` 여덟 줄이, 두 번째 적용에서는 `0020` 한 줄이 붙는 것이 기대였고 그대로 됐다 — 맨 아래 「원격 적용 기록」.)
 - **예외 — 이미 수동 적용(SQL Editor·psql)을 해 버렸다면**: 본문이 실제로 전부 적용됐는지 해당 절의 행렬로 먼저 확인한 뒤, `supabase migration repair --status applied <번호>` 로 이력을 맞춘다 — **이 경로는 컨트롤러 승인이 있을 때만 쓴다.** `repair` 는 이력만 고치고 본문을 돌리지 않으므로, 적용되지 않은 버전을 `applied` 로 적으면 그 마이그레이션은 **영영 건너뛰어진다**.
-- **잠금 대기 상한 — 파일 안의 `set local lock_timeout = '5s';`** (P5-15 R7 · 컨트롤러 결정): 0012 이후 파일(0012~0021, 열 개) 모두 **첫 실행문**이 이것이고, 둘째 실행문이 **그 시점에 `lock_timeout` 이 실제로 `5s` 인지**만 확인한다 — 아니면 아무것도 바꾸기 전에 멈춘다. ⚠️ 이 확인은 **원자성을 증명하지 않는다**(astra R7 P2-b): 자동 커밋 세션이라도 서버·롤·DB 기본값이 이미 5초면 통과한다. 잡아 주는 것은 "`set local` 이 그 문장에서 끝나 설정이 남지 않은 경우"(예: 기본값이 5초가 아닌 서버에서 `psql -f`)뿐이다. **파일 하나가 한 트랜잭션이라는 보장은 적용 경로(`supabase db push`)에서 오고**, 아래 실측이 그것을 확인한 것이다. CLI 는 파일 하나를 한 트랜잭션으로 보내므로 이 설정은 **그 파일에만** 걸리고 다음 파일로 새지 않는다. 어떤 문장이 잠금을 5초 넘게 기다리면 `ERROR: canceling statement due to lock timeout (SQLSTATE 55P03)` 로 그 파일이 실패한다 — 접수 트랜잭션을 줄 세우지 않는다.
+- **잠금 대기 상한 — 파일 안의 `set local lock_timeout = '5s';`** (P5-15 R7 · 컨트롤러 결정): 0012 이후 파일(0012~0022, 열한 개) 모두 **첫 실행문**이 이것이고, 둘째 실행문이 **그 시점에 `lock_timeout` 이 실제로 `5s` 인지**만 확인한다 — 아니면 아무것도 바꾸기 전에 멈춘다. ⚠️ 이 확인은 **원자성을 증명하지 않는다**(astra R7 P2-b): 자동 커밋 세션이라도 서버·롤·DB 기본값이 이미 5초면 통과한다. 잡아 주는 것은 "`set local` 이 그 문장에서 끝나 설정이 남지 않은 경우"(예: 기본값이 5초가 아닌 서버에서 `psql -f`)뿐이다. **파일 하나가 한 트랜잭션이라는 보장은 적용 경로(`supabase db push`)에서 오고**, 아래 실측이 그것을 확인한 것이다. CLI 는 파일 하나를 한 트랜잭션으로 보내므로 이 설정은 **그 파일에만** 걸리고 다음 파일로 새지 않는다. 어떤 문장이 잠금을 5초 넘게 기다리면 `ERROR: canceling statement due to lock timeout (SQLSTATE 55P03)` 로 그 파일이 실패한다 — 접수 트랜잭션을 줄 세우지 않는다.
 - **부분 적용 — push 전체는 원자적이지 않다**: 한 파일이 시간 초과(또는 다른 오류)로 실패하면 **앞 파일들은 커밋·기록된 채 남고**, **그 파일은 롤백되며**(이력에도 없다), 뒤 파일은 돌지 않는다. 막던 세션이 끝난 뒤 **다음 `supabase db push` 가 그 파일부터** 이어서 적용한다. 시간 초과는 **멈추고 보고할 일**이다 — 수동 적용이나 `repair` 로 건너뛰지 않는다. 어디서 멈췄는지는 적용 직후 이력 확인이 보여 준다.
 - **실측** (2026-09-17 · supabase CLI 2.117.0 · 로컬 전용 `--db-url postgresql://…@127.0.0.1:…`):
   - 합성 마이그레이션(PG 15.17 일회용 컨테이너 · PG 17.6 로컬 스택의 일회용 DB 둘 다): 한 파일의 행들이 **같은 xid**, `set local` 뒤 `lock_timeout=5s`, 다음 파일에서는 `0`(새지 않음). 다른 세션이 표를 쥔 채 push → 약 5초 뒤 `55P03` · 그 파일의 표·행·이력 없음 · 앞 파일 이력 유지 → 풀린 뒤 push 가 그 파일부터 재개. 대조군(`set local` 없음)은 잠금이 풀릴 때까지 **기다렸다**(20초 잡음 → 20초 걸림).
@@ -55,6 +55,7 @@ select version, name from supabase_migrations.schema_migrations order by version
 **롤백 파일은 `supabase/rollbacks/` 에 있고 `migrations/` 밖이다** — CLI 가 `migrations/` 의 `^[0-9]+_.*\.sql$` 을 전부 마이그레이션으로 집기 때문이다. 롤백은 사람이 psql/SQL Editor 로 실행한 뒤 `supabase migration repair --status reverted <번호>`.
 0012·0013·0014·0015·0016·0017·0018·0019 롤백은 **승인 플래그를 조건 없이 요구**한다(`set bestour.rollback_00NN_ack = '1';`). 행이 0이어도 멈춘다 — 권한은 열린 채 남고 데이터는 나중에 들어오기 때문이다.
 0020·0021 롤백도 같다. 0021 은 **쓰기 잠금을 쥔 뒤에** 확인 기록을 세고, 한 건이라도 있으면 **내보냄 확인 플래그**(`bestour.rollback_0021_evidence_exported`)를 추가로 요구한다 — 0021 절 「롤백」.
+**0022 롤백만 플래그가 없다** — 같은 기준("실행한 뒤의 세계가 조용히 위험한가")을 적용한 결과다: 되돌려도 열리는 권한이 없고(함수 하나를 지울 뿐이다), 고장이 조용하지 않으며(통계 탭이 곧바로 PGRST202), 데이터가 사라지지 않는다. 근거는 0022 절 「롤백」과 그 파일 헤더.
 
 ---
 
@@ -1023,6 +1024,96 @@ select md5(string_agg(x, E'\n' order by x)) as acl_md5_without_allowed_delta, co
 - (R4 실측) 기록이 없는 상태(옛 판이 적용된 DB 등)에서 칸이 남아 있으면 롤백은 **멈추고** `set bestour.rollback_0021_restore_trigger = 'reservations,notifications_log'`(있었다) 또는 `'none'`(없었다)을 요구한다 — 스냅샷 사실을 사람이 넘겨야 권한을 만든다.
 - `migration repair --status reverted 0021` → `migration up` 재적용 → 스냅샷이 첫 적용과 **md5 동일**(R3 실측 `c18d8fb8… rows=302` = 적용 전 297 + 칸 2 + 제약 3 + 트리거 1 + 함수 1 − TRIGGER ACL 2) · 다시 돌리면 ① 에서 멈춤.
 - 재적용하면 **그 순간의 모든 행이 legacy** 가 된다 — 롤백과 재적용 사이의 접수는 "기록 없음(도입 전)" 으로 남는다(되살릴 수 없다).
+
+---
+
+## 0022 — 관리자 통계 함수 `admin_stats` (**원격 미적용** · P5-17)
+
+**무엇을 하나**: `public.admin_stats(p_from date, p_to date) returns jsonb` **함수 하나**를 만들고 그 EXECUTE 를 `authenticated` 에만 준다.
+표·칸·제약·트리거·정책·데이터 변경은 **0 건**이다. 지금까지의 마이그레이션 중 가장 좁다.
+
+- `language plpgsql · stable · security definer · set search_path = public, pg_temp`
+- **첫 문장이 가드**: `if not is_admin() then raise exception 'admin_stats: 관리자 명단에 없는 호출자다' using errcode = '42501'`
+  — `lib/admin/adminRpc.ts` 의 `ADMIN_GUARD_MESSAGE` 와 한 글자도 같아야 한다(앱이 이 문구로 가드 거부와 EXECUTE 거부를 가른다).
+- 입력 검증 `22023` 세 가지: 양끝 중 null · `p_from > p_to` · 366일 초과.
+- `revoke all on function admin_stats(date, date) from public, anon, service_role;` + `grant execute … to authenticated;`
+  (`pg_default_acl` 이 새 함수에 네 롤을 연다 — CLAUDE.md §3. **`drop function` 을 쓰지 않는다**: `create or replace` 만.)
+- 돌려주는 것은 **(버킷 또는 코드, 건수)뿐**이다. 이름·전화·메일·메모·접수번호·수신처는 집계에도 쓰지 않는다.
+  분해표(여행 구분·차량·구간·리드타임)에서 **1~2건인 칸은 함수 안에서** 건수를 지우고(`count: null`) 하나의 "기타" 로 합친다(k=3).
+- **보완 숨김**: 가려질 칸이 **하나뿐이면** 보이는 칸 중 가장 작은 것도 함께 가린다 — 한 칸만 가리면
+  `총건수 − 보이는 칸들의 합` 이 그 칸의 건수라, 흔한 배치에서 그 한 줄짜리 복원을 막는다.
+- **추이의 상태 칸**(수정 라운드 3): 상태 칸(대기·확정·취소) 중 **어느 하나라도 1~2건이면** 그 버킷을 쪼개지 않는다(`split: false`).
+  총건수만 보던 옛 판은 하루 3건이 1·1·1 일 때 세 칸을 그대로 내보냈다(astra 반례). 0건 버킷은 쪼갠 채로 둔다.
+- 🔴 **이 장치는 익명화가 아니다.** "기타" 가 가려진 채 보이면 1건짜리 칸이 **정확히 둘**이라는 뜻이고, 동률 처리 규칙까지 알면
+  어느 칸인지도 좁혀진다(리드타임 `(2,3,3,3)` → 가려진 둘이 `d0_7=2 · d91_plus=3` 으로 유일하게 풀린다 — astra 전수 열거).
+  `confirmation.pending` 같은 다른 숫자와 맞물리면 1건짜리 날의 상태도 드러난다. 목적은 **캡처가 밖으로 나갔을 때의 예의 수준**이지
+  보장이 아니다 — 관리자는 예약 목록에서 원본을 본다. 남는 경로와 뒤집을 조건은 `known-defects.md` **D13**.
+- **축별 합이 총건수와 다를 수 있는 이유**는 병합 자체가 아니다(수정 라운드 3 정정): ① 건수를 가린 칸은 합에 더할 수 없고
+  ② 구간(⑨)은 상위 10개까지만 보여 준다. "기타" 에 숫자가 있으면 보이는 칸들 + 기타 = 총건수로 **정확히** 맞는다.
+- 입력 검증은 **유한성 → 지원 범위(1900-01-01 ~ 2200-01-01) → 앞뒤 → 길이** 순서다. `infinity` 가 산술보다 먼저 걸린다.
+- KST: 경계는 `(p_from::timestamp at time zone 'Asia/Seoul')` ~ `((p_to + 1)::timestamp at time zone 'Asia/Seoul')`,
+  버킷은 `… at time zone 'Asia/Seoul'` 뒤에 `date_trunc`. **`current_date`·`now()::date` 를 쓰지 않는다**(세션 TZ 가 UTC — 0004 가 고친 버그).
+- 인덱스·뷰·캐시를 만들지 않는다(수백~수천 행 규모).
+
+**왜**: 사용자(2026-09-21) 요청 — 사장님이 홈페이지가 문의를 얼마나 가져오는지 볼 화면. 지표 10개는 조사 보고서
+`.superpowers/sdd/2026-09-06-bestour-implementation-v4/ADMIN-STATS-RESEARCH.md` 「권장 v1」 그대로다.
+
+### 🔴 배포 순서 — **적용 → 배포**
+`/admin/stats` 화면과 `lib/admin/stats.ts` 가 이 함수를 부른다. 적용 전에 코드를 배포하면 그 탭이 `PGRST202`(함수 없음)로 열리지 않는다.
+**반대 방향의 사고는 없다** — 이 파일은 기존 코드가 쓰는 것을 아무것도 바꾸지 않으므로, 적용만 먼저 해도 옛 코드에 영향이 없다.
+그래서 0020·0021 과 달리 "적용 창" 개념이 없다(접수·확정·통지·파기 경로가 이 함수를 부르지 않는다).
+
+### 적용 경로
+**`supabase db push` 만**(맨 위 「적용 경로」 — 시험 프로젝트 먼저, 운영 나중). 로컬 단건은 `psql -1` 또는
+`supabase migration up --db-url postgresql://…@127.0.0.1:54322/postgres`.
+자기검증은 **실제 표에 문장을 치지 않는다**: 롤 전환 0 · 잠금 문장 0 · 쓰기 0. 거동 탐침은 **가드 하나뿐이고 읽기다** —
+적용 롤이 관리자 명단에 없으면 `NOTICE: 0022: 가드 탐침 통과 — 42501:admin_stats: 관리자 명단에 없는 호출자다` 가 찍힌다
+(명단에 있으면 탐침을 건너뛴다는 NOTICE 가 대신 찍힌다). 마지막 줄은 언제나
+`NOTICE: 0022: 자기검증 통과 — admin_stats(date,date) definer·stable·pg_temp, EXECUTE 는 authenticated 뿐.` 이다.
+
+### 적용 전/후 확인 (읽기 질의뿐)
+- **적용 전** 기대: `fn` = `FN_MISSING`
+- **적용 후** 기대: `fn` = `FN_OK`(definer · stable · `search_path=public, pg_temp`) · `priv` = `PRIV_AUTH_ONLY`
+
+<!-- P517:0022_CHECK_SQL:BEGIN -->
+```sql
+select
+  (select case
+            when f.oid is null then 'FN_MISSING'
+            when p.prosecdef and p.provolatile = 's' and coalesce(array_to_string(p.proconfig, ' '), '') = 'search_path=public, pg_temp'
+              then 'FN_OK'
+            else format('FN_BAD secdef=%s vol=%s cfg=%s', p.prosecdef, p.provolatile, coalesce(array_to_string(p.proconfig, ' '), '(none)'))
+          end
+     from (select to_regprocedure('public.admin_stats(date,date)')::oid as oid) f
+     left join pg_proc p on p.oid = f.oid) as fn,
+  (select case
+            when to_regprocedure('public.admin_stats(date,date)') is null then 'FN_MISSING'
+            when has_function_privilege('anon', 'public.admin_stats(date,date)', 'execute')
+              or has_function_privilege('service_role', 'public.admin_stats(date,date)', 'execute')
+              or exists (select 1 from pg_proc p cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x
+                          where p.oid = 'public.admin_stats(date,date)'::regprocedure and x.grantee = 0 and x.privilege_type = 'EXECUTE')
+            then 'PRIV_LEAK'
+            when not has_function_privilege('authenticated', 'public.admin_stats(date,date)', 'execute') then 'PRIV_NO_ADMIN'
+            else 'PRIV_AUTH_ONLY'
+          end) as priv;
+```
+<!-- P517:0022_CHECK_SQL:END -->
+
+- 표·칸 권한은 **불변**이다(이 파일은 표를 건드리지 않는다). 0021 절 둘째 질의의 `acl_md5` 가 적용 전후로 같아야 한다.
+
+### 로컬 실측 (2026-09-23, P5-17 구현 + 수정 라운드 2 · PostgreSQL 17.6)
+- 드라이런(`begin; … rollback;`) · 정식 적용(`migration up --db-url …@127.0.0.1:54322`) 모두 자기검증 통과.
+- 깨뜨리기 **17종** 전부 이름을 대며 멈춘다(수정 라운드 2 에서 4종 추가: 가드가 첫 문장이 아님 · 결과 키 추가 ·
+  본문이 `name` 칸 참조 · 최상위 키 들여쓰기 변경). 전수와 UI 실측은 보고서 `P5-17-report.md` ⑥·⑦·⑩.
+- vitest `tests/admin-stats.test.ts` — anon·service_role EXECUTE 거부 · 명단 밖 로그인 가드 거부 · KST 경계 ·
+  k=3 숨김 + **보완 숨김**(astra 배치 3·3·3·1) · 추이 상태 숨김 · 결과 키 집합 고정 · `infinity` 거부.
+
+### 롤백
+`supabase/rollbacks/0022_admin_stats.down.sql` — 함수 하나를 지운다(`drop function if exists public.admin_stats(date, date)`).
+**승인 플래그가 없다.** 0015~0020 의 기준은 "실행한 뒤의 세계가 조용히 위험한가" 인데, 이 롤백은
+① 열리는 권한이 없고(함수가 사라지면 그 ACL 도 사라진다 · 표 권한은 처음부터 안 건드렸다) ② 조용하지 않으며(통계 탭이 곧바로 PGRST202)
+③ 데이터가 사라지지 않는다. 근거는 그 파일 헤더에 적혀 있다. ⚠️ **앱을 0022 이전 코드로 먼저 되돌린 뒤** 돌린다.
+되돌린 뒤 `supabase migration repair --status reverted 0022`.
 
 ---
 

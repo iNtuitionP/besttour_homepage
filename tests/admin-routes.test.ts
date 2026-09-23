@@ -561,6 +561,7 @@ describe("4. 정적 규약", () => {
       "/admin/gallery",
       "/admin/routes",
       "/admin/notifications",
+      "/admin/stats",
     ]);
     expect(ADMIN_TABS.find((t) => t.key === "routes")?.href).toBe(ADMIN_ROUTES_PATH);
     expect(read(TABS_DEF)).toContain("/admin/routes");

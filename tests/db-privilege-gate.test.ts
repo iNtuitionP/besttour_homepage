@@ -225,6 +225,8 @@ const AUTH_EXEC: Reasoned = {
   "admin_delete_album(integer)": "관리자 앨범 지우기 (0020 · 사진은 미분류로 남는다)",
   "admin_update_route(integer,text,text,integer,integer,boolean)": "관리자 대표 노선 값 고치기 (0020 · 만들기·지우기는 없다)",
   "admin_set_route_active(integer,boolean)": "관리자 대표 노선 노출 토글 (0020)",
+  // 0022(P5-17) — 관리자 통계. **읽기 전용 집계**이고 결과는 (버킷·코드, 건수)뿐이다(개인정보 0 · 1~2건 칸은 함수가 가린다).
+  "admin_stats(date,date)": "관리자 통계 집계 (0022, definer · 첫 문장 is_admin 가드 · 읽기 전용)",
 };
 
 /** 객체 소유자 — 마이그레이션은 `postgres` 로 적용된다. 공개 롤이 소유하면 권한 회수가 의미를 잃는다. */

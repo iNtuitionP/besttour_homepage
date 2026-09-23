@@ -991,7 +991,7 @@ describe("7. 정적 규약", () => {
   // P5-8 이 여섯 번째 탭(발송 내역)을 덧붙였다 — tests/admin-notifications.test.ts 가 그 탭의 화면을 단언한다.
   test("탭 — 갤러리가 켜졌다. 여섯 탭 전부 ready 다", async () => {
     const { ADMIN_TABS } = await import("@/components/admin/tabs");
-    expect(ADMIN_TABS.map((t) => t.key)).toEqual(["reservations", "popups", "notices", "gallery", "routes", "notifications"]);
+    expect(ADMIN_TABS.map((t) => t.key)).toEqual(["reservations", "popups", "notices", "gallery", "routes", "notifications", "stats"]);
     expect(ADMIN_TABS.filter((t) => t.ready).map((t) => t.href)).toEqual([
       "/admin/reservations",
       "/admin/popups",
@@ -999,6 +999,7 @@ describe("7. 정적 규약", () => {
       "/admin/gallery",
       "/admin/routes",
       "/admin/notifications",
+      "/admin/stats",
     ]);
     expect(ADMIN_TABS.find((t) => t.key === "gallery")?.href).toBe(ADMIN_GALLERY_PATH);
     expect(read(TABS_DEF)).toContain("/admin/gallery");

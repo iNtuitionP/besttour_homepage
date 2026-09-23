@@ -3421,14 +3421,18 @@ describe("19. runbook 0017·0018·0019 — 원격 확인 절차는 카탈로그 
     const applyViaEditor = /db push[^\n]{0,30}또는[^\n]{0,30}SQL Editor|SQL Editor[^\n]{0,10}로 적용|SQL Editor 로만/;
     expect(raw.match(applyViaEditor)?.[0] ?? null, "runbook 이 SQL Editor 를 적용 경로로 적는다").toBeNull();
     const migs = CONVENTION_MIGRATIONS;
-    expect(migs.length).toBe(10); // 0012~0021 (P1-7 이 0021 을 더했다)
+    // 개수를 박지 않는다 — 0012 이전 열한 개를 뺀 나머지 전부여야 한다(새 번호가 붙을 때마다 사람이 고치면
+    // "목록에 없으니 대상이 아니다" 로 조용히 빠지는 파일이 생긴다 — MIGRATION_FILES 주석과 같은 이유).
+    expect(migs.length, `0012 이후 파일: ${migs.join(", ")}`).toBe(MIGRATION_FILES.length - 11);
+    expect(migs.length).toBeGreaterThanOrEqual(10);
     for (const f of migs) {
       expect(read(`supabase/migrations/${f}`).match(applyViaEditor)?.[0] ?? null, f).toBeNull();
     }
     // 맨 위에 결정이 있다
     expect(top.indexOf("### 🔴 적용 경로"), "맨 위에 「적용 경로」 절이 없다").toBeGreaterThan(-1);
     const route = top.slice(top.indexOf("### 🔴 적용 경로"));
-    expect(route).toMatch(/0012~0021[^\n]*`supabase db push`[^\n]*하나/);
+    // 범위도 저장소에서 유도한다 — 새 마이그레이션이 붙으면 runbook 의 이 문장도 함께 넓어져야 한다
+    expect(route).toMatch(new RegExp(`0012~${LAST_MIGRATION}[^\\n]*\`supabase db push\`[^\\n]*하나`));
     expect(route).toMatch(/SQL Editor[^\n]*읽기 확인/);
     // 적용 직후 필수 — 이력 마지막이 **저장소의 마지막 마이그레이션 번호**여야 한다(문서가 낡지 않게 파일에서 유도한다)
     expect(route).toContain("select version, name from supabase_migrations.schema_migrations order by version;");
@@ -3499,10 +3503,12 @@ describe("19. runbook 0017·0018·0019 — 원격 확인 절차는 카탈로그 
     }
   });
 
-  test("🔴 R7 P2-b — 0012 이후 파일(0012~0021)의 첫 실행문은 `set local lock_timeout = '5s'` · runbook 은 부분 적용을 적는다", () => {
+  test("🔴 R7 P2-b — 0012 이후 파일 전부의 첫 실행문은 `set local lock_timeout = '5s'` · runbook 은 부분 적용을 적는다", () => {
     const all = readdirSync(path.join(ROOT, "supabase", "migrations")).filter((n) => /^\d{4}_.*\.sql$/.test(n));
     const pending = CONVENTION_MIGRATIONS;
-    expect(pending.length).toBe(10);
+    // 개수를 박지 않는다(위 R6 P2-1 과 같은 이유) — 0012 이전 열한 개를 뺀 나머지 전부다.
+    expect(pending.length, `0012 이후 파일: ${pending.join(", ")}`).toBe(all.length - 11);
+    expect(pending.length).toBeGreaterThanOrEqual(10);
     for (const f of pending) {
       const rel = `supabase/migrations/${f}`;
       const code = sqlCode(rel);

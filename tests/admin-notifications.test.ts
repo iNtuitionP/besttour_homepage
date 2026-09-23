@@ -640,7 +640,7 @@ describe("7. 정적 규약", () => {
 describe("8. 탭 · 문구", () => {
   test("탭 — 발송 내역이 여섯 번째로 붙고 여섯 탭 전부 ready 다", async () => {
     const { ADMIN_TABS, ADMIN_TAB_KEYS } = await import("@/components/admin/tabs");
-    expect([...ADMIN_TAB_KEYS]).toEqual(["reservations", "popups", "notices", "gallery", "routes", "notifications"]);
+    expect([...ADMIN_TAB_KEYS]).toEqual(["reservations", "popups", "notices", "gallery", "routes", "notifications", "stats"]);
     expect(ADMIN_TABS.filter((t) => t.ready).map((t) => t.href)).toEqual([
       "/admin/reservations",
       "/admin/popups",
@@ -648,6 +648,7 @@ describe("8. 탭 · 문구", () => {
       "/admin/gallery",
       "/admin/routes",
       ADMIN_NOTIFICATIONS_PATH,
+      "/admin/stats",
     ]);
     expect(ADMIN_TABS.find((t) => t.key === "notifications")?.href).toBe(ADMIN_NOTIFICATIONS_PATH);
     expect(read(TABS_DEF)).toContain(ADMIN_NOTIFICATIONS_PATH);

@@ -735,3 +735,243 @@
   color: var(--text-primary);
   overflow-wrap: anywhere;
 }
+
+/* ── 통계 (P5-17 · /admin/stats) ────────────────────────────────────────────
+ * 차트 라이브러리를 쓰지 않는다(CLAUDE.md §4 · 새 패키지 금지). 막대는 전부 CSS 다:
+ * 가로 막대는 트랙 + 채움 두 겹, 추이는 세로 칼럼 안에 세 조각을 쌓은 flex 다.
+ * 색은 semantic.css 의 **역할 토큰만** 쓴다 — 원시 토큰(--brand-700 등)을 직접 쓰지 않는다.
+ * 375px 에서 가로 스크롤이 생기지 않아야 한다: 칼럼은 `flex: 1 1 0` + `min-width: 0` 으로 줄어들고,
+ * 구간 표만 .tableWrap 안에서 가로로 스크롤한다(표는 원래 그렇게 다룬다).
+ */
+.statGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-stack-sm);
+  margin: 0 0 var(--space-stack-md);
+}
+.statCard {
+  padding: var(--space-stack-sm) var(--space-inline-sm);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-surface);
+  background: var(--bg-surface);
+  box-shadow: var(--elevation-raised);
+}
+.statLabel {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.statValue {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--text-brand);
+  overflow-wrap: anywhere;
+}
+.statValue[data-weak="true"] {
+  font-size: 20px;
+  color: var(--text-secondary);
+}
+.statDelta {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.statNote {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.statLink {
+  display: inline-block;
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-link);
+}
+.statLink:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* 가로 막대 — 라벨 · 트랙 · 값 */
+.barList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.barRow {
+  display: grid;
+  grid-template-columns: minmax(5.5rem, 8rem) 1fr auto;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  padding: var(--space-stack-xs) 0;
+  min-width: 0;
+}
+.barLabel {
+  font-size: 14px;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.barTrack {
+  position: relative;
+  height: 14px;
+  min-width: 0;
+  border-radius: var(--radius-chip);
+  background: var(--bg-subtle);
+  overflow: hidden;
+}
+.barFill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-chip);
+  background: var(--action-primary-bg);
+}
+.barRow[data-suppressed="true"] .barFill {
+  background: var(--icon-default);
+}
+.barValue {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.barSub {
+  grid-column: 2 / -1;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* 추이 — 세로 누적 막대 */
+.trendChart {
+  display: flex;
+  align-items: flex-end;
+  height: 160px;
+  padding: var(--space-stack-xs) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.trendCol {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  align-items: flex-end;
+  justify-content: center;
+}
+/* 칼럼 사이 틈은 gap(간격 속성 — 역할 토큰만 허용)이 아니라 **폭**으로 만든다.
+ * 하루 단위는 31칸이라 8px 토큰을 쓰면 틈이 막대보다 넓어진다. 치수는 토큰화 대상이 아니다(tests/layout.test.ts §4 주석). */
+.trendStack {
+  display: flex;
+  flex-direction: column-reverse;
+  width: calc(100% - 2px);
+  min-height: 1px;
+  border-radius: var(--radius-chip) var(--radius-chip) 0 0;
+  overflow: hidden;
+  background: var(--bg-subtle);
+}
+.trendSeg[data-kind="waiting"] {
+  background: var(--accent-decorative-strong);
+}
+.trendSeg[data-kind="confirmed"] {
+  background: var(--action-primary-bg);
+}
+.trendSeg[data-kind="cancelled"] {
+  background: var(--icon-default);
+}
+/* 3건 미만이라 상태를 나누지 않은 버킷 — 한 색으로 채우고 범례가 그 뜻을 적는다(수정 라운드 2). */
+.trendSeg[data-kind="unsplit"] {
+  background: var(--border-strong);
+}
+.trendAxis {
+  display: flex;
+  justify-content: space-between;
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-inline-sm);
+  margin: var(--space-stack-xs) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+}
+.legendSwatch {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-chip);
+}
+.legendSwatch[data-kind="waiting"] {
+  background: var(--accent-decorative-strong);
+}
+.legendSwatch[data-kind="confirmed"] {
+  background: var(--action-primary-bg);
+}
+.legendSwatch[data-kind="cancelled"] {
+  background: var(--icon-default);
+}
+.legendSwatch[data-kind="unsplit"] {
+  background: var(--border-strong);
+}
+
+/* 칸이 적은 표 — `.table` 의 `min-width: 68rem` 은 열 열 개짜리 예약 목록을 위한 값이다(그 표는 좁은 화면에서
+ * 가로로 스크롤하는 것이 맞다). 통계의 구간 표는 칸이 셋뿐이라 그 하한을 풀어 **375px 에 그대로 들어가게** 한다. */
+.tableNarrow {
+  min-width: 0;
+}
+
+/* 구간 표의 "대표 노선" 배지 — 좁은 화면에서는 줄을 바꿔 표가 가로로 넘치지 않게 한다(ADMIN-STATS-RESEARCH ④ "375px 에서 2줄로 접힘").
+ * 표 자체는 .tableWrap 이 감싸므로 페이지에는 가로 스크롤이 생기지 않지만, 배지까지 한 줄에 두면 표 안에서 잘려 보인다. */
+.segBadge {
+  display: block;
+  width: fit-content;
+  margin-top: var(--space-stack-xs);
+}
+
+.subBlock {
+  margin: 0 0 var(--space-stack-md);
+}
+.subBlock:last-child {
+  margin-bottom: 0;
+}
+.subTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+@media (min-width: 640px) {
+  .statGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .barRow {
+    grid-template-columns: minmax(7rem, 10rem) 1fr auto;
+  }
+  .segBadge {
+    display: inline-block;
+    margin-top: 0;
+    margin-left: var(--space-inline-xs);
+  }
+}
+
+@media (min-width: 1024px) {
+  .statGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .statGrid[data-cols="2"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -752,7 +752,7 @@ describe("6. 정적 규약", () => {
   // 이제 자리만 지키는 탭은 없다 — aria-disabled 분기는 그대로 두되(다음 탭이 생길 자리) 켜진 목록이 전부여야 한다.
   test("탭 — 여섯 탭이 전부 켜져 있다", async () => {
     const { ADMIN_TABS } = await import("@/components/admin/tabs");
-    expect(ADMIN_TABS.map((t) => t.key)).toEqual(["reservations", "popups", "notices", "gallery", "routes", "notifications"]);
+    expect(ADMIN_TABS.map((t) => t.key)).toEqual(["reservations", "popups", "notices", "gallery", "routes", "notifications", "stats"]);
     expect(ADMIN_TABS.filter((t) => t.ready).map((t) => t.href)).toEqual([
       "/admin/reservations",
       "/admin/popups",
@@ -760,6 +760,7 @@ describe("6. 정적 규약", () => {
       "/admin/gallery",
       "/admin/routes",
       "/admin/notifications",
+      "/admin/stats",
     ]);
     expect(ADMIN_TABS.filter((t) => !t.ready).map((t) => t.key)).toEqual([]);
     const ui = codeOf(TABS_UI);

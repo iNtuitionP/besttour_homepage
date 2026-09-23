@@ -8,7 +8,7 @@
  *
  * 라벨은 여기 없다: messages/ko.json `admin.tabs.<key>`. 관리자 영역은 로케일 밖이라 레이아웃이 기본 로케일로 풀어 내린다.
  */
-export const ADMIN_TAB_KEYS = ["reservations", "popups", "notices", "gallery", "routes", "notifications"] as const;
+export const ADMIN_TAB_KEYS = ["reservations", "popups", "notices", "gallery", "routes", "notifications", "stats"] as const;
 export type AdminTabKey = (typeof ADMIN_TAB_KEYS)[number];
 
 export interface AdminTab {
@@ -26,4 +26,7 @@ export const ADMIN_TABS: readonly AdminTab[] = [
   { key: "routes", href: "/admin/routes", ready: true },
   // P5-8 발송 내역 — 읽기 전용. 아웃박스가 기록만 하고 아무도 읽지 않던 구멍을 막는 탭이다(lib/admin/notifications.ts 헤더).
   { key: "notifications", href: "/admin/notifications", ready: true },
+  // P5-17 통계 — 읽기 전용. 0022 의 definer 함수 하나가 집계해 준다(lib/admin/stats.ts 헤더).
+  // **맨 뒤에 붙인다**: 앞 여섯의 순서는 사장님이 이미 익힌 배치이고, 통계는 매일 누르는 탭이 아니다.
+  { key: "stats", href: "/admin/stats", ready: true },
 ];

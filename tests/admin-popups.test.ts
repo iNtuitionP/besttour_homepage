@@ -525,6 +525,7 @@ describe("4. 정적 규약", () => {
       "/admin/gallery",
       "/admin/routes",
       "/admin/notifications",
+      "/admin/stats",
     ]);
     expect(ADMIN_TABS.find((t) => t.key === "popups")?.href).toBe(ADMIN_POPUPS_PATH);
     expect(read(TABS_DEF)).toContain("/admin/popups");
