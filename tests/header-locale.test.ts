@@ -232,6 +232,20 @@ describe("3. 언어 전환 링크 — 같은 경로의 다른 로케일", () => 
     expect(inPanel[0].getStart()).toBeLessThan(nav!.getStart());
   });
 
+  /**
+   * 법정 페이지(/privacy·/terms·/guide)는 **사이트 헤더를 상속하지 않는다**(P0-0 · (legal) 셸).
+   * 그래서 헤더의 전환 링크가 거기엔 없고, 영문 손님이 `/en/privacy` 에서 한국어로 돌아갈 방법이 사라진다 —
+   * P2-6b 가 헤더에서 고친 것과 같은 결함이라 같은 부품을 (legal) 셸 하단 nav 에도 둔다.
+   */
+  test("자리 — 법정 셸 하단 nav 에도 하나(사이트 헤더가 없는 화면이다)", () => {
+    const legal = parseTsx("app/[locale]/(legal)/layout.tsx");
+    const inLegal = allJsx(legal).filter((n) => tagName(n) === "LocaleSwitch");
+    expect(inLegal, "법정 셸에 언어 전환이 없다 — /en/privacy 에서 한국어로 돌아갈 수 없다").toHaveLength(1);
+    const nav = allJsx(legal).find((n) => tagName(n) === "nav");
+    expect(nav, "법정 셸에 nav 가 없다").toBeDefined();
+    expect(jsxAncestors(inLegal[0])).toContain(nav);
+  });
+
   test("데스크톱 자리는 1280px 미만에서 숨는다(모바일 줄은 로고·전화·햄버거만 — 375px 폭을 넘기지 않는다)", () => {
     const css = codeOf(HEADER_CSS);
     expect(css).toMatch(/\.localeDesktop\s*\{[^}]*display:\s*none/);

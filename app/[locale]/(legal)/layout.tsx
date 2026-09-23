@@ -5,6 +5,7 @@
  * 링크 라벨은 ledgerUi(locale) — ko 는 원장 LEGAL_PAGES.*.title · LEGAL_LABELS.home 그대로, en 은 en.json legal(P2-6).
  * 이 파일에 한글 리터럴 없음.
  */
+import LocaleSwitch from "@/components/layout/LocaleSwitch";
 import { Link } from "@/i18n/navigation";
 import { ledgerUi } from "@/lib/i18n/ledger-ui";
 import { LEGAL_LINKS } from "@/lib/legal/disclosures";
@@ -43,6 +44,11 @@ export default async function LegalLayout({
                 <Link className={styles.navLink} href="/">
                   {ui.labels.home}
                 </Link>
+              </li>
+              {/* 법정 페이지에는 사이트 헤더가 없다(위 주석) — 헤더에 있는 언어 전환을 여기서 준다.
+                  없으면 영문 손님이 /en/privacy 에서 한국어로 돌아갈 방법이 없다(P2-6b 가 헤더에서 고친 것과 같은 문제). */}
+              <li>
+                <LocaleSwitch className={styles.navLink} />
               </li>
             </ul>
           </nav>
