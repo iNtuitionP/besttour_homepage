@@ -33,6 +33,7 @@ import {
 } from "@/lib/notify/sender";
 import {
   DEFAULT_WORKER_LIMIT,
+  HEAL_ROW_BUDGET_MS,
   MARK_SENT_RETRY_DELAYS_MS,
   PENDING_STATS_COLUMNS,
   PENDING_STATS_SCAN_LIMIT,
@@ -618,10 +619,59 @@ describe("runNotificationWorker — 실패", () => {
     expect(sender.send).not.toHaveBeenCalled();
     expect(report).toMatchObject({ healed: 2 });
     expect(report.ids.healed).toEqual([71, 72]);
-    // 복구는 reap 다음, claim 전에 돈다
-    const order = [db.reapStale, db.listQuarantined, db.claimPending].map((f) => f.mock.invocationCallOrder[0]);
+    // P4-7b · 재검토 P2-R3-4: 복구는 **발송 뒤에** 돈다 — 손님 문자가 기록 정리보다 먼저다. 순서: reap → claim → 복구
+    const order = [db.reapStale, db.claimPending, db.listQuarantined].map((f) => f.mock.invocationCallOrder[0]);
     expect(order[0]).toBeLessThan(order[1]);
     expect(order[1]).toBeLessThan(order[2]);
+  });
+
+  // ── P4-7b · 재검토 P2-R3-3: 목록 조회가 던져도 발송은 멈추지 않는다 ─────────
+  test("자가 복구 — listQuarantined 가 던져도 그 회차의 발송은 그대로 · error 로그 1줄(list_failed) · healed 0", async () => {
+    const db = fakeDb({ claim: [row({ id: 5 })] });
+    db.listQuarantined.mockRejectedValueOnce(new Error("worker.listQuarantined: connection lost"));
+    const sender = spySender();
+    const { deps: d, log } = deps(db, sender);
+    const report = await runNotificationWorker({ dryRun: false }, d);
+    expect(sender.send).toHaveBeenCalledTimes(1);
+    expect(report).toMatchObject({ claimed: 1, sent: 1, healed: 0 });
+    expect(log.mock.calls.map((c) => c[0]).filter((e) => e.event === "notify.heal")).toMatchObject([
+      { level: "error", outcome: "list_failed", error: "worker.listQuarantined: connection lost" },
+    ]);
+  });
+
+  // ── P4-7b · 재검토 P2-R3-4: 복구도 마감을 지킨다 ─────────────────────────
+  test("자가 복구 — deadlineMs 가 있으면 남은 시간 안에서만(행마다 '지금 + HEAL_ROW_BUDGET_MS ≤ 마감') · 못 한 것은 deferred 로그 1줄", async () => {
+    const clock = { ms: NOW.getTime() };
+    const db = fakeDb({
+      quarantined: [
+        { id: 71, last_error: "sent_unmarked:pm-71" },
+        { id: 72, last_error: "sent_unmarked:pm-72" },
+        { id: 73, last_error: "sent_unmarked:pm-73" },
+      ],
+    });
+    db.markSent.mockImplementation(async () => {
+      clock.ms += HEAL_ROW_BUDGET_MS; // 복구 한 건이 예산을 꽉 쓴다
+      return true;
+    });
+    const log = vi.fn<(entry: WorkerLogEntry) => void>();
+    const report = await runNotificationWorker(
+      { dryRun: false, limit: 5, deadlineMs: NOW.getTime() + 2 * HEAL_ROW_BUDGET_MS, rowBudgetMs: 12_000 },
+      { db, sender: spySender(), now: () => new Date(clock.ms), log, sleep: async () => {} },
+    );
+    expect(report.ids.healed).toEqual([71, 72]);
+    expect(log.mock.calls.map((c) => c[0]).filter((e) => e.event === "notify.heal" && e.outcome === "deferred")).toMatchObject([
+      { level: "info", outcome: "deferred", remaining: 1 },
+    ]);
+  });
+
+  test("자가 복구 — 마감이 이미 지났으면 목록 조회조차 하지 않는다(크론이 다음에 한다)", async () => {
+    const db = fakeDb({ quarantined: [{ id: 71, last_error: "sent_unmarked:pm-71" }] });
+    const log = vi.fn<(entry: WorkerLogEntry) => void>();
+    await runNotificationWorker(
+      { dryRun: false, limit: 5, deadlineMs: NOW.getTime() - 1, rowBudgetMs: 12_000 },
+      { db, sender: spySender(), now: () => NOW, log, sleep: async () => {} },
+    );
+    expect(db.listQuarantined).not.toHaveBeenCalled();
   });
 
   test("자가 복구 — sender 미구성이어도 돈다(DB 기록일 뿐이다) · dry-run 에서는 돌지 않는다", async () => {

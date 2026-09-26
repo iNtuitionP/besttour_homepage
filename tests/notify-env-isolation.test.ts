@@ -112,6 +112,45 @@ describe("④ 원격 URL 과 짝인 service role 키는 테스트 프로세스�
     }
   });
 
+  /**
+   * P4-7b · 재검토 P2-R3-1 — URL 과 키는 **같은 출처에서만** 짝으로 받는다.
+   * 셸이 로컬 URL 만 주고 키를 주지 않으면, 예전 로더는 `.env.local` 의 운영 키로 빈칸을 채웠고 URL 이 로컬이라 끝의 판정도 그 키를 남겼다.
+   */
+  test("🔴 이빨 — 셸이 로컬 URL 만 주고 키를 안 주면, 파일에 운영 쌍이 있어도 키는 비어 있다(셸 URL 이면 파일 키를 읽지 않는다)", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "p47b-envlocal-mixed-"));
+    const file = path.join(dir, ".env.local");
+    try {
+      writeFileSync(file, ["NEXT_PUBLIC_SUPABASE_URL=https://abcdefgh.supabase.co", "SUPABASE_SERVICE_ROLE_KEY=prod-secret-from-file", ""].join("\n"));
+      process.env.NEXT_PUBLIC_SUPABASE_URL = "http://127.0.0.1:54321";
+      delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+      scrubRemoteServiceRole(process.env);
+      loadDotEnvLocal(file);
+      expect(process.env.NEXT_PUBLIC_SUPABASE_URL).toBe("http://127.0.0.1:54321");
+      expect(process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").toBe("");
+      // 셸이 로컬 쌍을 둘 다 줬으면 그 쌍이 그대로 남는다(파일이 덮지 않는다)
+      process.env.SUPABASE_SERVICE_ROLE_KEY = "local-demo-from-shell";
+      loadDotEnvLocal(file);
+      expect(process.env.SUPABASE_SERVICE_ROLE_KEY).toBe("local-demo-from-shell");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("파일이 URL 을 줬으면 키도 파일 것만 — 셸에 떠돌던 키는 파일의 로컬 URL 과 짝지어지지 않는다", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "p47b-envlocal-filepair-"));
+    const file = path.join(dir, ".env.local");
+    try {
+      writeFileSync(file, ["NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321", ""].join("\n"));
+      delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+      process.env.SUPABASE_SERVICE_ROLE_KEY = "stray-from-shell";
+      loadDotEnvLocal(file);
+      expect(process.env.NEXT_PUBLIC_SUPABASE_URL).toBe("http://127.0.0.1:54321");
+      expect(process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").toBe("");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("로컬 스택 짝은 그대로 읽는다 — DB 테스트(로컬 스택)가 깨지지 않는다", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "p47-envlocal-local-"));
     const file = path.join(dir, ".env.local");

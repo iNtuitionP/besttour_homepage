@@ -799,6 +799,8 @@ function walkTree(node: unknown, out: RenderWalk): void {
 }
 
 const NO_CORRECTIONS = { sentUnconfirmed: 0, sentUnconfirmedStuck: 0, suppressedDuplicates: 0 };
+/** 렌더 한 번 동안 불린 순서 — "stats"(0022) 와 getNotifyCorrections 에 넘긴 창. */
+const correctionCalls: unknown[] = [];
 
 async function renderStatsPage(stats: unknown, corrections: typeof NO_CORRECTIONS = NO_CORRECTIONS): Promise<RenderWalk> {
   vi.resetModules();
@@ -808,7 +810,17 @@ async function renderStatsPage(stats: unknown, corrections: typeof NO_CORRECTION
   vi.doMock("@/lib/analytics/dashboard", () => ({ vercelAnalyticsUrl: () => null }));
   vi.doMock("@/lib/admin/stats", async () => {
     const actual = await vi.importActual<Record<string, unknown>>("@/lib/admin/stats");
-    return { ...actual, getAdminStats: async () => stats, getNotifyCorrections: async () => corrections };
+    return {
+      ...actual,
+      getAdminStats: async () => {
+        correctionCalls.push("stats");
+        return stats;
+      },
+      getNotifyCorrections: async (window: unknown) => {
+        correctionCalls.push(window);
+        return corrections;
+      },
+    };
   });
   const page = (await import("@/app/admin/(protected)/stats/page")) as {
     default: (p: { searchParams: Promise<Record<string, string>> }) => Promise<unknown>;
@@ -872,6 +884,30 @@ describe("4-b. 화면 분기 — 실제 렌더로 확인 (번역 호출 존재�
     expect(drawn.testids).not.toContain("admin-stats-notify-stuck");
     const clean = await renderStatsPage(emptyStats(3));
     expect(clean.attentionNotify).toEqual({ failed: 0, stuck: 0, sentUnconfirmed: 0, ok: true });
+  });
+
+  // P4-7b · 재검토 P2-R3-2 — 0022 와 보정을 **동시에** 보내고, 창이 같으면 다시 세지 않는다
+  test("보정 집계는 0022 와 동시에 한 번(NOTIFY_WINDOW) — 0022 가 준 창이 다르면 그 창으로 한 번 더 센다", async () => {
+    const { NOTIFY_WINDOW } = await import("@/lib/admin/stats");
+    correctionCalls.length = 0;
+    await renderStatsPage(emptyStats(3));
+    expect(correctionCalls).toHaveLength(2);
+    expect(correctionCalls).toContain("stats");
+    expect(correctionCalls).toContainEqual(NOTIFY_WINDOW);
+
+    correctionCalls.length = 0;
+    const odd = emptyStats(3) as { notifications: Record<string, number> };
+    odd.notifications = { failed: 0, stuck: 0, window_days: 14, stuck_hours: 2 };
+    await renderStatsPage(odd);
+    expect(correctionCalls).toEqual(expect.arrayContaining(["stats", NOTIFY_WINDOW, { failed: 0, stuck: 0, window_days: 14, stuck_hours: 2 }]));
+    expect(correctionCalls).toHaveLength(3);
+  });
+
+  test("NOTIFY_WINDOW 는 0022 의 c_notify_days · c_notify_stuck_h 와 같다(동시 조회의 전제)", async () => {
+    const { NOTIFY_WINDOW } = await import("@/lib/admin/stats");
+    const sql = read(UP_REL);
+    expect(sql).toMatch(new RegExp(`c_notify_days\\s+constant int := ${NOTIFY_WINDOW.window_days};`));
+    expect(sql).toMatch(new RegExp(`c_notify_stuck_h\\s+constant int := ${NOTIFY_WINDOW.stuck_hours};`));
   });
 
   test("1건 이상이면 빈 상태도 거부도 없고 추이를 그린다", async () => {

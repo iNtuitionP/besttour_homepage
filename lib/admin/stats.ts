@@ -387,6 +387,13 @@ async function sessionClient(): Promise<AdminStatsClient> {
  * 뺀 값이 음수가 되면 0 으로 자른다. 격리 행은 자가 복구(워커)가 곧 sent 로 바꾸므로 대개 오래 남지 않는다.
  * 읽기는 세션 클라이언트 + 0009 의 is_admin() select 정책이다(서비스 롤 금지 — ADR-2). head 집계라 행이 오지 않는다(개인정보 0).
  */
+/**
+ * 0022 의 ⑤ 창 — `c_notify_days`·`c_notify_stuck_h` 와 **같은 값**이어야 한다(tests/admin-stats.test.ts 가 SQL 원문과 대조한다).
+ * P4-7b · 재검토 P2-R3-2: 보정 집계를 0022 와 **동시에**(Promise.all) 돌리려면 창을 0022 의 결과보다 먼저 알아야 한다.
+ * 결과가 이 값과 다르면 화면은 0022 가 준 창으로 보정을 다시 센다(순차 — 예전 동작).
+ */
+export const NOTIFY_WINDOW = { window_days: 7, stuck_hours: 1 } as const;
+
 export interface NotifyCorrections {
   /** 창 안(최근 window_days)의 격리 행 전부 — "발송됨 · 기록 확인 필요". */
   sentUnconfirmed: number;

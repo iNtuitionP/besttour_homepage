@@ -8,6 +8,11 @@ export default defineConfig({
     // P4-7 수정 라운드 2 · 리뷰 P1-1 — 실제 발송으로 이어질 수 있는 env(즉시 발송 스위치·제공자 키·사장님 수신처)를
     // 모든 테스트 파일 시작 전에 빈 문자열로 고정한다. 필요한 테스트는 자기 안에서 가짜 값을 넣는다(tests/helpers/notify-env.ts).
     setupFiles: ["./tests/helpers/vitest-setup.ts"],
+    // P4-7b — 기본 5초 → 30초. 저장소 파일을 훑는 정적 테스트(주석 제거기로 수십 개 파일을 읽는다)가 전량 실행에서 **번갈아** 5초를 넘었다
+    // (analytics·db-test-preconditions·redirects·admin-stats·contact-phone·i18n-en 등 — 실행마다 다른 파일). 단독이나 한가한 전량에서는
+    // 수백 ms~몇 초이고, 두 전량이 겹친 부하(실측)에서 최대 10.2초였다. 단언은 그대로 두고 시간만 준다 — 무한 대기는 여전히 30초에 끊긴다.
+    // 이미 자기 timeout 을 적은 테스트(60초 등)와 DB 잠금 헬퍼의 대기 한도는 영향이 없다(각자의 값이 우선한다).
+    testTimeout: 30_000,
     server: {
       deps: {
         // next-intl 의 ESM 빌드는 `next/server` 를 확장자 없이 import 한다. Node 의 ESM 로더는 exports 맵이 없는 `next` 에서

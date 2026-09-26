@@ -12,6 +12,7 @@ import {
   getNotifyCorrections,
   isNearPurgeBoundary,
   medianDuration,
+  NOTIFY_WINDOW,
   notifyAttention,
   parseStatsPeriod,
   statsRange,
@@ -19,11 +20,23 @@ import {
   visibleMax,
   type AdminStats,
   type NotifyAttention,
+  type NotifyCorrections,
   type StatsPeriod,
 } from "@/lib/admin/stats";
 
 /** 보정치가 없을 때(도달하지 않는 방어 경로) — 0022 값 그대로. */
 const NO_CORRECTIONS = { sentUnconfirmed: 0, sentUnconfirmedStuck: 0, suppressedDuplicates: 0 };
+
+/**
+ * 동시에 센 보정치를 쓴다 — 단 0022 가 돌려준 창이 NOTIFY_WINDOW 와 같을 때만. 다르면(0022 의 상수가 바뀌었는데 앱이 못 따라온 경우)
+ * 0022 가 준 창으로 다시 센다(순차). 동시 조회가 실패했으면 여기서 던진다 — 모르는 것을 "문제 없음" 으로 그리지 않는다.
+ */
+async function correctionsFor(stats: AdminStats, early: NotifyCorrections | Error): Promise<NotifyCorrections> {
+  const same = stats.notifications.window_days === NOTIFY_WINDOW.window_days && stats.notifications.stuck_hours === NOTIFY_WINDOW.stuck_hours;
+  if (!same) return getNotifyCorrections(stats.notifications);
+  if (early instanceof Error) throw early;
+  return early;
+}
 import { toKstDateString } from "@/lib/kst";
 import { getVehicles } from "@/lib/queries/vehicles";
 import { routing } from "@/i18n/routing";
@@ -65,7 +78,13 @@ export default async function AdminStatsPage({ searchParams }: { searchParams: S
 
   const period = parseStatsPeriod(params.period);
   const range = statsRange(period, toKstDateString(new Date()));
-  const stats = await getAdminStats(range);
+  // P4-7b · 재검토 P2-R3-2 — 0022 와 ⑤ 보정 집계를 **동시에** 보낸다. 순차로 돌리면 두 조회 사이(수십 ms)에 자가 복구·새 중복 억제 행이
+  // 끼어 한 번의 렌더에서 한 건이 어긋날 수 있었다. 동시에 보내면 그 창이 두 요청의 도착 차이로 줄어든다(0 은 아니다 — 원자적으로 하려면 0023).
+  // 보정 쪽 실패는 여기서 삼키지 않고 stats 가 있을 때만 던진다(권한 없음 화면을 보정 오류로 500 내지 않게).
+  const [stats, earlyCorrections] = await Promise.all([
+    getAdminStats(range),
+    getNotifyCorrections(NOTIFY_WINDOW).catch((err: unknown) => (err instanceof Error ? err : new Error(String(err)))),
+  ]);
   const analyticsHref = vercelAnalyticsUrl();
   // 차량 라벨은 `vehicles.name_ko`(DB 가 진실)에서 온다. anon 키 + RLS 로 활성 차량만 — 개인정보가 없다.
   const vehicleNames = new Map((await getVehicles()).map((v) => [v.slug, v.nameKo]));
@@ -77,7 +96,7 @@ export default async function AdminStatsPage({ searchParams }: { searchParams: S
   const purgeWarning = isNearPurgeBoundary(range, toKstDateString(new Date()));
   // ⑤ 발송 문제 보정(P4-7 수정 라운드 3) — 0022 가 격리 행을 "보내지 못한 건" 으로, 중복 억제 행을 "실패" 로 세는 것을 앱에서 바로잡는다.
   // 관리자 세션일 때만(stats 가 null 이면 부르지 않는다). 창은 0022 가 준 값 그대로다.
-  const attention = stats === null ? null : notifyAttention(stats.notifications, await getNotifyCorrections(stats.notifications));
+  const attention = stats === null ? null : notifyAttention(stats.notifications, await correctionsFor(stats, earlyCorrections));
 
   return (
     <main className={q.main} data-testid="admin-stats">

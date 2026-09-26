@@ -819,10 +819,16 @@ describe("10. 워커 시퀀스 — 수락 → markSent 실패 → 재claim", () 
     const resend = fakeResend();
     const sender = resendSender(deps({ fetch: resend.fetch, vars: editableVars().port }));
 
+    // 같은 회차 끝의 자가 복구(P4-7b — 발송 뒤에 돈다)도 DB 가 아직 불안정해 목록 조회가 실패한다고 둔다 — 격리 상태가 남는 경우를 본다.
+    const healList = db.listQuarantined;
+    db.listQuarantined = async () => {
+      throw new Error("db down");
+    };
     const first = await runNotificationWorker({ dryRun: false }, { db, sender, ownerEmail: OWNER_EMAIL, now: () => clock.now, log: () => {}, sleep: async () => {} });
-    expect(first).toMatchObject({ sentUnmarked: 1, quarantined: 1 });
+    expect(first).toMatchObject({ sentUnmarked: 1, quarantined: 1, healed: 0 });
     expect(rows[0].status).toBe("pending");
     expect(rows[0].last_error).toMatch(/^sent_unmarked:/);
+    db.listQuarantined = healList;
 
     clock.now = new Date(T0.getTime() + 2 * 24 * 60 * 60_000);
     const later = await runNotificationWorker({ dryRun: false }, { db, sender, ownerEmail: OWNER_EMAIL, now: () => clock.now, log: () => {}, sleep: async () => {} });

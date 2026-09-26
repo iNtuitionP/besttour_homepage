@@ -24,6 +24,12 @@ const NEVER_LOAD = new Set<string>(SCRUBBED_NOTIFY_ENV);
  * 원격 URL 에 대한 DB 테스트는 원래 `dbWriteGate()`·`hasServiceRole` 로 skip 이므로 잃는 것이 없다.
  */
 export function loadDotEnvLocal(envPath: string = path.resolve(import.meta.dirname, "..", "..", ".env.local")): void {
+  // 🔴 URL 과 service role 키는 **같은 출처에서만** 짝으로 받는다 (P4-7b · 재검토 P2-R3-1).
+  //   · 셸(또는 앞선 코드)이 URL 을 이미 줬으면 → 파일의 키는 읽지 않는다(셸 키만).
+  //     예전에는 셸이 로컬 URL 만 주고 키를 안 주면 파일의 **운영 키**가 채워지고, URL 이 로컬이라 끝의 판정도 그 키를 남겼다.
+  //   · 파일이 URL 을 채우면 → 키도 파일 것만 쓴다. 셸에 떠돌던 키는 버린다(파일의 URL 과 짝지어지지 않게).
+  let fileServiceRole: string | undefined;
+  let urlFromFile = false;
   if (existsSync(envPath)) {
     const contents = readFileSync(envPath, "utf-8");
     for (const rawLine of contents.split("\n")) {
@@ -34,13 +40,27 @@ export function loadDotEnvLocal(envPath: string = path.resolve(import.meta.dirna
       const key = line.slice(0, eq).trim();
       const value = line.slice(eq + 1).trim();
       if (NEVER_LOAD.has(key)) continue;
+      if (key === SERVICE_ROLE_KEY) {
+        fileServiceRole = value;
+        continue; // 짝 판정 뒤에 넣는다(아래)
+      }
       if (key && process.env[key] === undefined) {
         process.env[key] = value;
+        if (key === URL_KEY) urlFromFile = true;
       }
     }
   }
+  if (urlFromFile) {
+    // URL 이 파일에서 왔다 → 키도 파일 것만(없으면 없음).
+    if (fileServiceRole === undefined) delete process.env[SERVICE_ROLE_KEY];
+    else process.env[SERVICE_ROLE_KEY] = fileServiceRole;
+  }
+  // 그 밖(셸이 URL 을 줬거나, URL 이 어디에도 없다)에는 파일 키를 넣지 않는다 — 셸이 준 키(있으면)만 남는다.
   scrubRemoteServiceRole(process.env);
 }
+
+const URL_KEY = "NEXT_PUBLIC_SUPABASE_URL";
+const SERVICE_ROLE_KEY = "SUPABASE_SERVICE_ROLE_KEY";
 
 /**
  * DB 스모크에 필요한 접속 정보. URL + service role 둘 다 있어야 실행한다

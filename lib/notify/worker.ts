@@ -30,6 +30,8 @@
  * 실행 순서 (dryRun=false, configured): reapStale → claimPending(limit) → 행마다 [claimedDecision → send → markSent | markFailed(→ give_up 이면 실패 알림)] → pendingStats
  * (P4-7 수정 라운드 2) markSent 가 throw 하면 발송이 아니라 **기록을** 다시 시도하고, 끝내 못 하면 그 행을 격리한다(recordSent).
  * deadlineMs 가 있으면(즉시 발송) claim 을 한 행씩, 새 행마다 마감을 확인하며 한다. 제공자 Retry-After 는 다음 시도를 그만큼 미룬다.
+ * (수정 라운드 3 · P4-7b) 발송 **뒤에** 격리 행 자가 복구(저장된 제공자 id 로 markSent — 발송 아님)가 돈다. 마감이 있으면 복구도 그 안에서만,
+ * 복구 실패(목록 조회·markSent)는 로그만 남긴다. 순서: reapStale → claim·send·mark → 자가 복구 → pendingStats.
  *
  * claim 이후 행의 판정은 outbox.ts nextAttemptDecision 이 아니라 claimedDecision 이다. claim 이 next_attempt_at 을 lease 만큼 미래로
  * 찍어 두므로(0005 :109) nextAttemptDecision 은 모든 행에 wait 를, 5회째 행에는 give_up 을 내 — 아무것도 보내지 못한다.
@@ -89,6 +91,13 @@ export const PENDING_STATS_COLUMNS = "id, created_at, attempts, next_attempt_at,
 
 /** 한 실행에서 자가 복구를 시도하는 격리 행 상한(수정 라운드 3). 격리는 드문 사고라 작게 둔다. */
 export const HEAL_BATCH_LIMIT = 20;
+
+/**
+ * 자가 복구 한 건(DB 쓰기 1회)에 잡는 시간 예산 — deadlineMs 가 있을 때(즉시 발송) 복구도 마감을 지킨다(P4-7b · 재검토 P2-R3-4).
+ * 목록 조회·행마다 `지금 + 이 값 ≤ 마감` 을 확인한다. 발송(제공자 타임아웃 10초)과 달리 DB 쓰기 한 번이라 짧게 잡았다 —
+ * DB 호출에는 타임아웃이 없으므로 추정치다(inline.ts 헤더와 같은 한계).
+ */
+export const HEAL_ROW_BUDGET_MS = 2_000;
 
 /** 로그·last_error 로 나가는 오류 문구 상한. DB 의 2000자 상한(outbox.ts)보다 훨씬 짧게 — 로그는 덤프가 아니다. */
 const ERROR_MAX_CHARS = 200;
@@ -302,11 +311,17 @@ export type WorkerLogEntry =
       error?: string;
     }
   | {
-      /** 격리 행 자가 복구(수정 라운드 3). healed=info · not_transitioned(이미 pending 아님·같은 키 sent 있음)=warn · error=error(멈춤). */
+      /**
+       * 격리 행 자가 복구(수정 라운드 3 · P4-7b). healed=info · not_transitioned(이미 pending 아님·같은 키 sent 있음)=warn ·
+       * error=error(markSent 가 던짐 — 멈춤) · list_failed=error(목록 조회가 던짐 — 그 회차 복구만 건너뜀) ·
+       * deferred=info(마감 안에 못 한 나머지 — 다음 실행이 한다). id 는 행 단위 결과에만.
+       */
       level: "info" | "warn" | "error";
       event: "notify.heal";
-      id: number;
-      outcome: "healed" | "not_transitioned" | "error";
+      id?: number;
+      outcome: "healed" | "not_transitioned" | "error" | "list_failed" | "deferred";
+      /** deferred 일 때 — 이번에 손대지 못한 격리 행 수. */
+      remaining?: number;
       error?: string;
     }
   | { level: "warn"; event: "notify.lease_expired"; id: number; attempts: number }
@@ -630,32 +645,6 @@ export async function runNotificationWorker(opts: WorkerOptions, deps: WorkerDep
     await recordSent(row, outcome.providerMessageId);
   }
 
-  // 1-b. 격리 행 자가 복구 (수정 라운드 3 · 리뷰 P1-B) — **발송이 아니라 기록이다.**
-  // 보냈는데 기록을 못 해 격리된 행에 저장된 제공자 id 로 markSent 를 다시 시도한다. DB 가 회복됐으면 행이 sent 가 되어
-  // 관리자 통계·발송 내역의 "기록 확인 필요" 에서 사라진다. 0005 mark_notification_sent 는 `where status='pending'` 이라 격리 행을 받는다.
-  // sender 구성과 무관하게 돈다(기록일 뿐). dry-run 은 부작용 0 이라 건너뛴다. throw 하면(DB 가 아직 죽어 있음) 나머지는 두드리지 않고 멈춘다 —
-  // 복구 실패가 발송을 막지 않는다(실행은 계속).
-  if (!dryRun) {
-    const candidates = await db.listQuarantined(HEAL_BATCH_LIMIT);
-    for (const q of candidates) {
-      const parsed = parseSentUnmarked(q.last_error);
-      if (parsed === null) continue; // 방어 — 표식이 아닌 행은 건드리지 않는다
-      try {
-        const transitioned = await db.markSent(q.id, parsed.providerMessageId);
-        if (transitioned) {
-          ids.healed.push(q.id);
-          log({ level: "info", event: "notify.heal", id: q.id, outcome: "healed" });
-        } else {
-          // 이미 pending 이 아니거나, 같은 키에 sent 가 있어 0005 가 failed/duplicate_sent 로 닫았다.
-          log({ level: "warn", event: "notify.heal", id: q.id, outcome: "not_transitioned" });
-        }
-      } catch (err) {
-        log({ level: "error", event: "notify.heal", id: q.id, outcome: "error", error: (err instanceof Error ? err.message : String(err)).slice(0, 200) });
-        break;
-      }
-    }
-  }
-
   // 2. 발송 — 구성된 sender 가 있고, 보낼 수 있는 채널이 있을 때만 claim 한다.
   if (!dryRun && skipped === undefined) {
     if (deadlineMs === undefined) {
@@ -675,6 +664,50 @@ export async function runNotificationWorker(opts: WorkerOptions, deps: WorkerDep
         if (rows.length === 0) break;
         claimed += rows.length;
         for (const row of rows) await processRow(row);
+      }
+    }
+  }
+
+  // 2-b. 격리 행 자가 복구 (수정 라운드 3 · 리뷰 P1-B · P4-7b 재검토 P2-R3-3·4) — **발송이 아니라 기록이다.**
+  // 보냈는데 기록을 못 해 격리된 행에 저장된 제공자 id 로 markSent 를 다시 시도한다. DB 가 회복됐으면 행이 sent 가 되어
+  // 관리자 통계·발송 내역의 "기록 확인 필요" 에서 사라진다. 0005 mark_notification_sent 는 `where status='pending'` 이라 격리 행을 받는다.
+  //   · **발송 뒤에** 돈다(P4-7b): 손님 문자가 기록 정리보다 먼저다. 격리 행은 이미 손님에게 갔고 claim 대상도 아니라 발송과 얽히지 않는다.
+  //     즉시 발송의 마감(40초)이 빠듯하면 복구를 먼저 돌려 발송을 밀어내는 쪽이 손해다.
+  //   · **마감을 지킨다**(P4-7b): deadlineMs 가 있으면 목록 조회와 행마다 `지금 + HEAL_ROW_BUDGET_MS ≤ 마감` 을 확인하고,
+  //     못 한 나머지는 deferred 로그 한 줄로 남긴다 — 다음 즉시 발송이나 하루 1회 크론(마감 없음)이 한다.
+  //   · **복구 실패는 로그만 남긴다**: 목록 조회가 던지면 이 회차 복구를 건너뛰고(list_failed), markSent 가 던지면 나머지를 두드리지 않고
+  //     멈춘다(error). 어느 쪽도 발송(위 2단계 — 이미 끝났다)이나 실행 보고를 막지 않는다.
+  // sender 구성과 무관하게 돈다(기록일 뿐). dry-run 은 부작용 0 이라 건너뛴다.
+  if (!dryRun) {
+    const withinDeadline = () => deadlineMs === undefined || deps.now().getTime() + HEAL_ROW_BUDGET_MS <= deadlineMs;
+    let candidates: { id: number; last_error: string | null }[] = [];
+    if (withinDeadline()) {
+      try {
+        candidates = await db.listQuarantined(HEAL_BATCH_LIMIT);
+      } catch (err) {
+        log({ level: "error", event: "notify.heal", outcome: "list_failed", error: (err instanceof Error ? err.message : String(err)).slice(0, 200) });
+      }
+    }
+    for (let i = 0; i < candidates.length; i += 1) {
+      const q = candidates[i];
+      const parsed = parseSentUnmarked(q.last_error);
+      if (parsed === null) continue; // 방어 — 표식이 아닌 행은 건드리지 않는다
+      if (!withinDeadline()) {
+        log({ level: "info", event: "notify.heal", outcome: "deferred", remaining: candidates.length - i });
+        break;
+      }
+      try {
+        const transitioned = await db.markSent(q.id, parsed.providerMessageId);
+        if (transitioned) {
+          ids.healed.push(q.id);
+          log({ level: "info", event: "notify.heal", id: q.id, outcome: "healed" });
+        } else {
+          // 이미 pending 이 아니거나, 같은 키에 sent 가 있어 0005 가 failed/duplicate_sent 로 닫았다.
+          log({ level: "warn", event: "notify.heal", id: q.id, outcome: "not_transitioned" });
+        }
+      } catch (err) {
+        log({ level: "error", event: "notify.heal", id: q.id, outcome: "error", error: (err instanceof Error ? err.message : String(err)).slice(0, 200) });
+        break;
       }
     }
   }

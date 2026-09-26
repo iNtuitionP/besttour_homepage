@@ -758,6 +758,108 @@ describe("7. 정적", () => {
   });
 
   /**
+   * P4-7b · 재검토 P2-R3-5 — 위 테스트는 관리자 파일의 **직접** import 만 본다. 관리자 밖의 모듈(`lib/x.ts`)이
+   * `export { notifyWorkerDeps } from "@/lib/notify/deps"` 로 다시 내보내고 관리자 모듈이 `lib/x` 를 import 하면 초록이었다.
+   * 그래서 **관리자 경로에서 도달 가능한 모든 모듈**이 deps.ts 로 들어가는 간선을 검사한다:
+   *   - 허용: `import { notifyAfterResponse } from "…/notify/deps"` 하나(이름 하나, 별칭 없음)
+   *   - 금지: 다른 이름 · 별칭 · namespace · default · `export … from deps`(재수출) · `export *` · 동적 import
+   * 분석기는 파일 시스템을 인자로 받는다 — 이빨 테스트가 **가상 그래프**로 빨강을 보인다(저장소에 가짜 파일을 두지 않는다).
+   */
+  interface VirtualFs {
+    read(abs: string): string;
+    isFile(abs: string): boolean;
+  }
+  const DEPS_ABS = path.join(ROOT, "lib", "notify", "deps.ts");
+
+  function depsEdgeViolations(roots: string[], vfs: VirtualFs): string[] {
+    const EXTS = ["", ".ts", ".tsx", "/index.ts", "/index.tsx"];
+    const resolve = (fromFile: string, spec: string): string | null => {
+      let base: string;
+      if (spec.startsWith("@/")) base = path.join(ROOT, spec.slice(2));
+      else if (spec.startsWith("./") || spec.startsWith("../")) base = path.resolve(path.dirname(fromFile), spec);
+      else return null;
+      for (const ext of EXTS) if (vfs.isFile(base + ext)) return base + ext;
+      return null;
+    };
+    const rel = (abs: string) => path.relative(ROOT, abs).split(path.sep).join("/");
+    const violations: string[] = [];
+    const seen = new Set<string>();
+    const stack = [...roots];
+    // 절(clause)에는 `;`·따옴표가 없다 — 앞 문장(`import "x";`)을 건너 다음 문장의 from 까지 늘어나지 않게 한다.
+    const STMT = /(?:^|\n)\s*(import|export)\s+([^;"']+?)\s+from\s*["']([^"']+)["']/g;
+    const SIDE = /(?:^|\n)\s*import\s*["']([^"']+)["']/g;
+    const DYN = /import\(\s*["']([^"']+)["']\s*\)/g;
+    while (stack.length > 0) {
+      const file = stack.pop() as string;
+      if (seen.has(file)) continue;
+      seen.add(file);
+      if (file === DEPS_ABS) continue; // deps.ts 자신의 import 는 대상이 아니다(그래프 테스트가 따로 본다)
+      const src = vfs.read(file);
+      for (const m of src.matchAll(STMT)) {
+        const target = resolve(file, m[3]);
+        if (target === null) continue;
+        if (target === DEPS_ABS) {
+          const kind = m[1];
+          const clause = m[2].trim();
+          const named = /^\{([^}]*)\}$/.exec(clause);
+          const names = named ? named[1].split(",").map((s) => s.trim()).filter(Boolean) : null;
+          const ok = kind === "import" && names !== null && names.length === 1 && names[0] === "notifyAfterResponse";
+          if (!ok) violations.push(`${rel(file)}: ${kind} ${clause} from deps`);
+        }
+        stack.push(target);
+      }
+      for (const m of src.matchAll(SIDE)) {
+        const target = resolve(file, m[1]);
+        if (target === DEPS_ABS) violations.push(`${rel(file)}: side-effect import of deps`);
+        if (target !== null) stack.push(target);
+      }
+      for (const m of src.matchAll(DYN)) {
+        const target = resolve(file, m[1]);
+        if (target === DEPS_ABS) violations.push(`${rel(file)}: dynamic import of deps`);
+        if (target !== null) stack.push(target);
+      }
+    }
+    if (!seen.has(DEPS_ABS)) violations.push("(탐색이 deps.ts 에 닿지 않았다 — 헛도는 탐색)");
+    return violations;
+  }
+
+  const adminRoots = (): string[] => {
+    const walk = (dir: string): string[] =>
+      existsSync(dir)
+        ? readdirSync(dir).flatMap((n) => {
+            const p = path.join(dir, n);
+            return statSync(p).isDirectory() ? walk(p) : /\.tsx?$/.test(n) ? [p] : [];
+          })
+        : [];
+    return ["app/admin", "actions/admin", "lib/admin", "components/admin"].flatMap((d) => walk(path.join(ROOT, d)));
+  };
+  const realFs: VirtualFs = {
+    read: (abs) => readFileSync(abs, "utf-8"),
+    isFile: (abs) => existsSync(abs) && statSync(abs).isFile(),
+  };
+
+  test("관리자 경로에서 도달 가능한 모든 모듈 — deps.ts 로 들어가는 간선은 notifyAfterResponse import 하나뿐 · 재수출 0", () => {
+    expect(depsEdgeViolations(adminRoots(), realFs)).toEqual([]);
+  });
+
+  test("🔴 이빨(가상 그래프) — 관리자 밖 모듈이 notifyWorkerDeps 를 재수출하고 관리자 모듈이 그것을 import 하면 빨강", () => {
+    const virtual = new Map<string, string>([
+      [path.join(ROOT, "actions", "admin", "evil.ts"), 'import { helper } from "@/lib/x";\nexport async function a() { return helper; }\n'],
+      [path.join(ROOT, "lib", "x.ts"), 'export { notifyWorkerDeps as helper } from "@/lib/notify/deps";\n'],
+      [path.join(ROOT, "lib", "y.ts"), 'import { notifyAfterResponse } from "./notify/deps";\nexport const ok = notifyAfterResponse;\n'],
+      [path.join(ROOT, "lib", "z.ts"), 'export * from "@/lib/notify/deps";\n'],
+      [path.join(ROOT, "lib", "w.ts"), 'import { notifyWorkerDeps } from "@/lib/notify/deps";\nexport const w = notifyWorkerDeps;\n'],
+      [DEPS_ABS, "export function notifyAfterResponse() {}\nexport function notifyWorkerDeps() {}\n"],
+    ]);
+    const vfs: VirtualFs = { read: (abs) => virtual.get(abs) ?? "", isFile: (abs) => virtual.has(abs) };
+    const roots = [path.join(ROOT, "actions", "admin", "evil.ts")];
+    expect(depsEdgeViolations(roots, vfs)).toEqual(["lib/x.ts: export { notifyWorkerDeps as helper } from deps"]);
+    // 허용 간선(y)만 있는 관리자 모듈은 초록 · export * · 다른 이름 import 는 빨강
+    virtual.set(path.join(ROOT, "actions", "admin", "evil.ts"), 'import { ok } from "@/lib/y";\nimport "@/lib/z";\nimport { w } from "@/lib/w";\n');
+    expect(depsEdgeViolations(roots, vfs).sort()).toEqual(["lib/w.ts: import { notifyWorkerDeps } from deps", "lib/z.ts: export * from deps"]);
+  });
+
+  /**
    * 수정 라운드 3 · 리뷰 P2-3 — 즉시 발송은 응답 뒤(after)에 돈다. 함수 시간 한도가 즉시 발송 마감보다 짧으면
    * send 와 markSent 사이에서 잘려 행이 lease 뒤 다시 집히고 **손님이 두 번 받는다.** 그래서 즉시 발송이 도는 두 페이지
    * (견적 제출 서버액션을 부르는 /quote · 확정 버튼이 있는 관리자 예약 상세)에 maxDuration 을 명시한다.
