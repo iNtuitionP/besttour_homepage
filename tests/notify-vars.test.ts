@@ -69,6 +69,8 @@ const DEPART_AT_KST = "2026-10-01 08:30";
 
 const ROW = {
   public_code: "ABCD2345",
+  intake: "wizard",
+  return_at: null,
   vehicle_slug: "bus45",
   origin_code: "SEL",
   destination_code: "BSN",
@@ -164,12 +166,13 @@ describe("1. 타입 격리 — 고객 변수는 개인정보를 담을 자리 �
     expect([...CUSTOMER_VARS_KEYS].sort()).toEqual(["origin", "publicCode"]);
   });
 
-  test("OWNER_VARS_KEYS 는 사장님 문안이 요구하는 11개 — email·message 는 없다", () => {
+  test("OWNER_VARS_KEYS 는 사장님 문안이 요구하는 13개(P3-8: 접수 경로·도착일 추가) — email·message 는 없다", () => {
     expect([...OWNER_VARS_KEYS].sort()).toEqual(
       [
         "busCount",
         "departAtKst",
         "destinationLabel",
+        "intake",
         "name",
         "origin",
         "originLabel",
@@ -177,6 +180,7 @@ describe("1. 타입 격리 — 고객 변수는 개인정보를 담을 자리 �
         "phone",
         "publicCode",
         "reservationId",
+        "returnDateKst",
         "vehicleLabel",
       ].sort(),
     );
@@ -209,12 +213,14 @@ describe("1. 타입 격리 — 고객 변수는 개인정보를 담을 자리 �
 const EXPECTED_CUSTOMER_COLUMNS = ["public_code"];
 const EXPECTED_OWNER_COLUMNS = [
   "public_code",
+  "intake",
   "name",
   "phone",
   "vehicle_slug",
   "origin_code",
   "destination_code",
   "depart_at",
+  "return_at",
   "bus_count",
   "passengers",
 ];
@@ -229,7 +235,7 @@ describe("2. select 화이트리스트", () => {
     expect(reservations[0].eq).toEqual([["id", RID]]);
   });
 
-  test("사장님 조회는 문안이 쓰는 9컬럼만 읽는다", async () => {
+  test("사장님 조회는 문안이 쓰는 11컬럼만 읽는다 (P3-8: 접수 경로 · 도착일)", async () => {
     const { client, calls } = fakeClient();
     await templateVars({ client, origin: ORIGIN }).ownerVars(RID);
     const reservations = calls.filter((c) => c.table === "reservations");
@@ -323,13 +329,63 @@ describe("3. 누출", () => {
       reservationId: RID,
       name: RAW_PII.name,
       phone: RAW_PII.phone,
+      intake: "wizard",
       vehicleLabel: VEHICLE_NAME_KO,
       departAtKst: DEPART_AT_KST,
+      returnDateKst: null,
       originLabel: locationLabelKo("SEL"),
       destinationLabel: locationLabelKo("BSN"),
       busCount: ROW.bus_count,
       passengers: ROW.passengers,
     });
+  });
+
+  // P3-8 — 홈 간편 견적(0023 intake='quick'): 차종·대수가 null 이고 운행일은 날짜만이다. 없는 값을 지어내 문안에 싣지 않는다.
+  const QUICK_ROW = {
+    ...ROW,
+    intake: "quick",
+    vehicle_slug: null,
+    bus_count: null,
+    passengers: 30,
+    depart_at: "2026-09-30T15:00:00.000Z", // KST 2026-10-01 00:00 (출발일 자리값)
+    return_at: "2026-10-02T15:00:00.000Z", // KST 2026-10-03 00:00
+  };
+
+  test("간편 접수 — vehicles 를 읽지 않고(slug 가 없다) 차종·대수 null · 날짜만(시각 0) · 도착일", async () => {
+    const { client, calls } = fakeClient({ reservation: QUICK_ROW });
+    const v = await templateVars({ client, origin: ORIGIN }).ownerVars(RID);
+    expect(calls.filter((c) => c.table === "vehicles")).toHaveLength(0);
+    expect(v).toMatchObject({
+      intake: "quick",
+      vehicleLabel: null,
+      busCount: null,
+      passengers: 30,
+      departAtKst: "2026-10-01",
+      returnDateKst: "2026-10-03",
+    });
+    expect(Object.keys(v as object).sort()).toEqual([...OWNER_VARS_KEYS].sort());
+  });
+
+  test("간편 접수 · 같은 날(return_at null) → returnDateKst null", async () => {
+    const { client } = fakeClient({ reservation: { ...QUICK_ROW, return_at: null } });
+    const v = await templateVars({ client, origin: ORIGIN }).ownerVars(RID);
+    expect(v?.departAtKst).toBe("2026-10-01");
+    expect(v?.returnDateKst).toBeNull();
+  });
+
+  test("위저드 접수분에 차종이나 대수가 비어 있으면 throw — 반쯤 빈 문안을 보내지 않는다(0023 CHECK 가 막는 모양)", async () => {
+    for (const patch of [{ vehicle_slug: null }, { bus_count: null }]) {
+      const { client } = fakeClient({ reservation: { ...ROW, ...patch } });
+      await expect(templateVars({ client, origin: ORIGIN }).ownerVars(RID)).rejects.toThrow();
+    }
+  });
+
+  test("모르는 intake 값 → throw (값은 오류 문구에 없다)", async () => {
+    const { client } = fakeClient({ reservation: { ...ROW, intake: `LEAK-${RAW_PII.name}` } });
+    const err = await templateVars({ client, origin: ORIGIN }).ownerVars(RID).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toContain("intake");
+    expect((err as Error).message).not.toContain(RAW_PII.name);
   });
 });
 
@@ -680,6 +736,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("9. DB 실증 (로컬 스�
       phone: RAW_PII.phone,
       email: RAW_PII.email,
       message: RAW_PII.message,
+      intake: "wizard", // 0023 — 기본값 없음
       vehicle_slug: ROW.vehicle_slug,
       purpose_code: "family",
       origin_code: ROW.origin_code,

@@ -1039,6 +1039,7 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
           status,
           name: "P53",
           phone: "010-0000-0000",
+          intake: "wizard", // 0023 — 기본값 없음
           vehicle_slug: "bus45",
           purpose_code: "family",
           origin_code: "SEL",

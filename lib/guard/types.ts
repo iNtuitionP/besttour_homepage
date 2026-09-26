@@ -5,7 +5,7 @@
  * 이 디렉터리는 lib 순수 모듈이다 — 서버 액션 지시어 없음, DB 없음. 네트워크·시계는 전부 deps 로 주입받고,
  * 환경변수는 deps.ts(defaultGuardDeps, server-only) 한 곳에서만 읽는다.
  */
-import type { ReservationInput } from "../types";
+import type { QuickReservationInput } from "../types";
 
 /**
  * 거부 사유.
@@ -95,8 +95,10 @@ export interface GuardContext {
 
 /**
  * runGuards 결과.
- *   ok·silent:false — 전부 통과. `input` 은 zod 가 파싱한 ReservationInput(기본값 적용). 호출자가 저장한다.
+ *   ok·silent:false — 전부 통과. `input` 은 zod 가 파싱한 QuickReservationInput(기본값 적용). 호출자가 저장한다.
+ *                     `now` 는 guard 가 **한 번** 읽은 시각이다(zod 의 "KST 오늘" 하한·타임트랩이 쓴 값). 호출자는 저장 단계에도
+ *                     이 값을 그대로 넘긴다 — 시계를 다시 읽으면 KST 자정 경계에서 guard 는 통과, create 는 거부가 된다(P3-8 리뷰 P2-6).
  *   ok·silent:true  — 허니팟. `input` 이 없다 — 저장할 것이 없다. 호출자는 가짜 성공을 돌려준다.
  *   ok:false        — 거부. reason 별 사용자 메시지는 호출자(UI) 몫.
  */
-export type GuardOutcome = { ok: true; silent: false; input: ReservationInput } | { ok: true; silent: true } | GuardFailure;
+export type GuardOutcome = { ok: true; silent: false; input: QuickReservationInput; now: Date } | { ok: true; silent: true } | GuardFailure;

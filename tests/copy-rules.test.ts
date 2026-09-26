@@ -228,7 +228,8 @@ describe("3. en.json — 영문 카피 규칙 + ko 와의 키 관계", () => {
     // ko 로 폴백되지 않고 사라진다. 그래서 en 에 넣은 네임스페이스는 ko 와 완전히 같은 잎 경로를 가져야 한다.
     // admin 은 로케일 밖(한국어 전용)이라 en 에 넣지 않는다. legal 은 ko 에서 원장 상수로 오는 문구의 영문이다
     // (tests/i18n-en.test.ts §4 가 원장과 구조를 대조한다).
-    expect(enLeaves.length, "en.json 이 비었다").toBeGreaterThan(350);
+    // P3-8: 위저드 quote.* 잎 약 140개 삭제 — 하한을 그만큼 내렸다(빈 카탈로그를 잡는 값이다).
+    expect(enLeaves.length, "en.json 이 비었다").toBeGreaterThan(250);
     expect(en).not.toHaveProperty("admin");
     for (const ns of Object.keys(en).filter((n) => n !== "legal")) {
       const koPaths = koLeaves.filter((l) => namespaceOf(l.path) === ns).map((l) => l.path);
@@ -382,12 +383,13 @@ describe("6. 단일 원장 — 목록을 두 번 정의하지 않는다", () => 
 // 7. 남아 있어야 할 것 — 빼기만 했는지의 반대편 단언
 // =============================================================================
 describe("7. 사업 설명은 남는다 (실증 대상이 아니다)", () => {
-  test('확정 표기 "공항 픽업·샌딩 (송영 전문)" 이 홈·위저드에 그대로 있다 — CLAUDE.md §3', () => {
+  // P3-8: 위저드(quote.steps.route.airNote)가 없어졌다 — 견적 입구는 홈 위젯(home.hero.widget.airNote)이고 그 안내가 같은 표기를 쓴다.
+  test('확정 표기 "공항 픽업·샌딩 (송영 전문)" 이 홈과 견적 위젯 안내에 그대로 있다 — CLAUDE.md §3', () => {
     const MARK = "공항 픽업·샌딩 (송영 전문)";
-    const hits = koLeaves.filter((l) => l.value.includes(MARK)).map((l) => namespaceOf(l.path));
+    const hits = koLeaves.filter((l) => l.value.includes(MARK));
     expect(hits.length, "확정 표기가 사라졌다").toBeGreaterThanOrEqual(4);
-    expect(new Set(hits)).toContain("home");
-    expect(new Set(hits)).toContain("quote");
+    expect(new Set(hits.map((l) => namespaceOf(l.path)))).toContain("home");
+    expect(hits.map((l) => l.path)).toContain("home.hero.widget.airNote");
   });
 
   test("홈의 보험 문구는 원장 INSURANCE 가 보증하는 범위 안이다 (가입 사실 + 서류 열람)", () => {

@@ -7,6 +7,7 @@ import { requireAdmin } from "@/lib/auth/requireAdmin";
 import { ADMIN_NOTIFICATIONS_PATH } from "@/lib/admin/notifications";
 import {
   STATS_PERIODS,
+  axisLabelKind,
   barWidthPercent,
   getAdminStats,
   getNotifyCorrections,
@@ -73,8 +74,13 @@ export default async function AdminStatsPage({ searchParams }: { searchParams: S
 
   const params = await searchParams;
   const t = await getTranslations({ locale: routing.defaultLocale, namespace: "admin.stats" });
-  // 여행 구분 라벨은 위저드가 쓰는 것을 **그대로** 재사용한다 — 같은 코드가 두 화면에서 다른 이름으로 불리면 안 된다.
-  const purposeLabels = await getTranslations({ locale: routing.defaultLocale, namespace: "quote.steps.purpose.options" });
+  // 여행 구분 라벨은 예약 상세와 **같은** admin.labels.purpose 를 쓴다(옛 위저드 문구를 P3-8 에서 옮겼다) — 같은 코드가 두 화면에서 다른 이름으로 불리면 안 된다.
+  const purposeLabels = await getTranslations({ locale: routing.defaultLocale, namespace: "admin.labels.purpose" });
+  // 간편 접수(0023)의 차종·여행 구분 미정 칸 — "기타(소수 항목)" 와 다른 이름으로 그린다(axisLabelKind).
+  const axisLabel = (other: boolean, value: string | null, named: (code: string) => string): string => {
+    const k = axisLabelKind(other, value);
+    return k.kind === "other" ? t("other") : k.kind === "undecided" ? t("undecided") : named(k.code);
+  };
 
   const period = parseStatsPeriod(params.period);
   const range = statsRange(period, toKstDateString(new Date()));
@@ -149,13 +155,9 @@ export default async function AdminStatsPage({ searchParams }: { searchParams: S
                       {stats.purposes.map((row, i) => (
                         <Bar
                           key={`purpose-${row.code ?? "other"}-${i}`}
-                          label={
-                            row.other
-                              ? t("other")
-                              : (PURPOSES as readonly string[]).includes(row.code ?? "")
-                                ? purposeLabels(row.code as (typeof PURPOSES)[number])
-                                : (row.code ?? t("other"))
-                          }
+                          label={axisLabel(row.other, row.code, (code) =>
+                            (PURPOSES as readonly string[]).includes(code) ? purposeLabels(code as (typeof PURPOSES)[number]) : code,
+                          )}
                           value={row.count}
                           max={visibleMax(stats.purposes)}
                           suppressed={row.suppressed}
@@ -173,7 +175,7 @@ export default async function AdminStatsPage({ searchParams }: { searchParams: S
                       {stats.vehicles.map((row, i) => (
                         <Bar
                           key={`vehicle-${row.slug ?? "other"}-${i}`}
-                          label={row.other || row.slug === null ? t("other") : (vehicleNames.get(row.slug) ?? row.slug)}
+                          label={axisLabel(row.other, row.slug, (slug) => vehicleNames.get(slug) ?? slug)}
                           value={row.count}
                           max={visibleMax(stats.vehicles)}
                           suppressed={row.suppressed}

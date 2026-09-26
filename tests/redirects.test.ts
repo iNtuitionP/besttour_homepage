@@ -17,7 +17,7 @@
  *
  * 주의: tests/ 아래라 세 게이트(check-no-pricing · check-legal-disclosures · check-temp-values)의 검사 대상이다.
  */
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -81,9 +81,19 @@ const REDIRECTS: readonly Row[] = [
   { url: "/bbs/board.php?bo_table=notice", destination: "/notices" },
   { url: "/bbs/board.php?bo_table=thema1", destination: "/gallery" },
   // 아래 2건은 크롤 대상이 아니었다(CRAWLED_HTML_URLS 에 없다) — 인벤토리 기록만으로 목적지를 정했다.
-  { url: "/bbs/board.php?bo_table=estimate", destination: "/quote" },
+  // P3-8: 견적 게시판의 후신은 홈 간편 견적(위저드 /quote 폐지) — 앵커로 한 번에 보낸다.
+  { url: "/bbs/board.php?bo_table=estimate", destination: "/#quote" },
   { url: "/bbs/board.php?bo_table=confirm", destination: "/reservation/check" },
 ];
+
+/** P3-8 — 이 사이트가 없앤 경로(위저드). 옛 사이트 URL 표와 계약이 달라(로케일별 목적지 · 쿼리 매칭 없음) 따로 잠근다. */
+const RETIRED: readonly { source: string; destination: string }[] = [
+  { source: "/quote", destination: "/#quote" },
+  { source: "/quote/done", destination: "/#quote" },
+  { source: "/en/quote", destination: "/en#quote" },
+  { source: "/en/quote/done", destination: "/en#quote" },
+];
+const RETIRED_SOURCES = new Set(RETIRED.map((r) => r.source));
 
 /**
  * 크롤하지 않았지만 인벤토리가 정체를 적어 둔 게시판 2종.
@@ -115,13 +125,18 @@ type RedirectEntry = {
   locale?: false;
 };
 
-async function loadRedirects(): Promise<RedirectEntry[]> {
+async function loadAllRedirects(): Promise<RedirectEntry[]> {
   const mod = await import("@/next.config");
   const config = mod.default as { redirects?: () => Promise<unknown> };
   expect(typeof config.redirects, "next.config.ts 가 redirects() 를 내보내야 한다").toBe("function");
   const list = (await config.redirects!()) as RedirectEntry[];
   expect(Array.isArray(list)).toBe(true);
   return list;
+}
+
+/** 옛 사이트 URL 표(§1)만 — 이 사이트가 없앤 경로(§1-b)는 뺀다. */
+async function loadRedirects(): Promise<RedirectEntry[]> {
+  return (await loadAllRedirects()).filter((e) => !RETIRED_SOURCES.has(e.source));
 }
 
 /** 옛 URL 문자열 → 설정 항목의 정규화 키(`경로` 또는 `경로?키=값`). */
@@ -257,7 +272,7 @@ describe("P7-1 — next.config.ts redirects()", () => {
     expect([...extras].sort()).toEqual([...UNCRAWLED_BOARDS].sort());
 
     const byUrl = new Map(REDIRECTS.map((r) => [r.url, r.destination]));
-    expect(byUrl.get("/bbs/board.php?bo_table=estimate")).toBe("/quote");
+    expect(byUrl.get("/bbs/board.php?bo_table=estimate")).toBe("/#quote");
     expect(byUrl.get("/bbs/board.php?bo_table=confirm")).toBe("/reservation/check");
   });
 
@@ -291,6 +306,42 @@ describe("P7-1 — next.config.ts redirects()", () => {
       const hit = entries.find((e) => e.source === pathname && normalizeEntry(e) === `${pathname}?${query}`);
       expect(hit, url).toBeUndefined();
     }
+  });
+});
+
+// =============================================================================
+// 1-b. P3-8 — 없앤 위저드 경로 → 홈 간편 견적 앵커
+// =============================================================================
+describe("P3-8 — /quote · /quote/done (ko·en) → 홈 #quote 영구 리디렉트", () => {
+  test("네 경로가 정확히 그 목적지로, 301 · 쿼리 매칭 없음(프리필·?code= 가 붙어도 같은 규칙)", async () => {
+    const all = await loadAllRedirects();
+    const retired = all.filter((e) => RETIRED_SOURCES.has(e.source));
+    expect(retired.map((e) => [e.source, e.destination]).sort()).toEqual(RETIRED.map((r) => [r.source, r.destination]).sort());
+    for (const e of retired) {
+      expect(e.statusCode, e.source).toBe(301);
+      expect(e.permanent, e.source).toBeUndefined();
+      expect(e.has, e.source).toBeUndefined();
+      expect(e.missing, e.source).toBeUndefined();
+    }
+  });
+
+  test("목적지는 홈(ko `/` · en `/en`)의 #quote 이고 홈 page.tsx 가 있다 · 위저드 page.tsx 는 없다", () => {
+    for (const r of RETIRED) {
+      expect(r.destination.endsWith("#quote"), r.destination).toBe(true);
+      expect(["/", "/en"]).toContain(r.destination.split("#")[0]);
+    }
+    expect(routeFileExists("/")).toBe(true);
+    expect(routeFileExists("/quote")).toBe(false);
+    expect(routeFileExists("/quote/done")).toBe(false);
+  });
+
+  test("홈 위젯에 그 앵커(id=\"quote\")가 있다 — 리디렉트가 빈 자리로 떨어지지 않는다", () => {
+    const src = readFileSync(path.join(ROOT, "components/home/QuoteWidget.tsx"), "utf8");
+    expect(src).toMatch(/id="quote"/);
+  });
+
+  test("메뉴 견적요청은 /#quote 를 가리킨다(목적지 계약과 같은 값)", () => {
+    expect(LEGACY_MENU.find((m) => m.key === "quote")?.href).toBe("/#quote");
   });
 });
 
@@ -384,7 +435,7 @@ describe("P7-2 — app/sitemap.ts", () => {
     const sitemap = (await import("@/app/sitemap")).default;
     for (const entry of sitemap()) {
       expect(entry.url).not.toContain("/admin");
-      expect(entry.url).not.toContain("/quote/done");
+      expect(entry.url).not.toContain("/quote");
       expect(entry.url).not.toContain("[");
     }
   });

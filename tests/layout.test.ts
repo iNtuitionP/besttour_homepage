@@ -96,7 +96,8 @@ const EXPECTED_HREF: Record<string, string> = {
   location: "/about#location",
   fleet: "/fleet",
   fares: "/fares",
-  quote: "/quote",
+  // P3-8: 위저드(/quote) 폐지 — 견적요청은 홈 간편 견적 위젯 앵커로 간다.
+  quote: "/#quote",
   reservationCheck: "/reservation/check",
   notices: "/notices",
   guide: "/guide",

@@ -280,56 +280,31 @@ function allJsxWithin(node: ts.Node): JsxNode[] {
 // =============================================================================
 // 4. 위저드 단위 — ICU plural (next-intl 런타임과 같은 createTranslator 로)
 // =============================================================================
-describe("4. 위저드 영문 단위·정원 안내 — 1대/2대 문법, ko 렌더 불변", () => {
-  const tEn = createTranslator({ locale: "en", messages: en, namespace: "quote.steps.schedule" as never }) as unknown as (
+// P3-8: 6단계 위저드(단위·정원 안내)는 지웠다. 같은 성질(영문 1/2 문법 · ko 렌더)을 간편 견적 모달의 인원 요약에 건다.
+describe("4. 간편 견적 요약의 인원 — en 1 person / 2 people, ko 는 N명", () => {
+  const tEn = createTranslator({ locale: "en", messages: en, namespace: "quote.modal" as never }) as unknown as (
     key: string,
     values?: Record<string, string | number>,
   ) => string;
-  const tKo = createTranslator({ locale: "ko", messages: ko, namespace: "quote.steps.schedule" as never }) as unknown as (
+  const tKo = createTranslator({ locale: "ko", messages: ko, namespace: "quote.modal" as never }) as unknown as (
     key: string,
     values?: Record<string, string | number>,
   ) => string;
-  const one = { vehicle: "45-seat Coach", buses: 1, total: 45, pax: 1 };
-  const two = { vehicle: "45-seat Coach", buses: 2, total: 90, pax: 120 };
 
-  test("단위 라벨 — en: 1 bus / 2 buses · 1 person / 2 people", () => {
-    expect(tEn("unitBus", { count: 1 })).toBe("bus");
-    expect(tEn("unitBus", { count: 2 })).toBe("buses");
-    expect(tEn("unitPax", { count: 1 })).toBe("person");
-    expect(tEn("unitPax", { count: 2 })).toBe("people");
-    expect(tEn("unitBus", { count: 0 })).toBe("buses");
+  test("en — 1 person / 2 people / 30 people", () => {
+    expect(tEn("paxValue", { n: 1 })).toBe("1 person");
+    expect(tEn("paxValue", { n: 2 })).toBe("2 people");
+    expect(tEn("paxValue", { n: 30 })).toBe("30 people");
   });
 
-  test("정원 안내 — en 1대", () => {
-    expect(tEn("capBase", one)).toBe("1 bus (45-seat Coach) can seat up to 45 people.");
-    expect(tEn("capNote", one)).toBe("1 bus (45-seat Coach) can seat up to 45 people. (Currently 1 person)");
+  test("ko — N명 · 날짜 한 개는 (당일)", () => {
+    for (const n of [1, 2, 30]) expect(tKo("paxValue", { n })).toBe(`${n}명`);
+    expect(tKo("dateSingle", { date: "2026-10-01" })).toBe("2026-10-01 (당일)");
+    expect(tKo("dateRange", { from: "2026-10-01", to: "2026-10-03" })).toBe("2026-10-01 ~ 2026-10-03");
   });
 
-  test("정원 안내 — en 2대", () => {
-    expect(tEn("capBase", two)).toBe("2 buses (45-seat Coach) can seat up to 90 people.");
-    expect(tEn("capNote", two)).toBe("2 buses (45-seat Coach) can seat up to 90 people. (Currently 120 people)");
-    expect(tEn("capWarn", two)).toBe(
-      "2 buses (45-seat Coach) can seat up to 90 people. You have 120 people — add more buses, or adjust with our staff after you submit your request.",
-    );
-  });
-
-  test("ko 렌더 결과는 P2-6 과 같다 — 숫자를 넘겨도 문자열을 넘겨도 같은 글자", () => {
-    const vKo = { vehicle: "45인승 관광버스", buses: 1, total: 45, pax: 30 };
-    expect(tKo("capBase", vKo)).toBe("45인승 관광버스 1대 · 최대 45명까지 탑승 가능합니다.");
-    expect(tKo("capNote", vKo)).toBe("45인승 관광버스 1대 · 최대 45명까지 탑승 가능합니다. (현재 30명)");
-    expect(tKo("capWarn", { ...vKo, buses: 2, total: 90, pax: 120 })).toBe(
-      "45인승 관광버스 2대는 최대 90명까지 탑승 가능합니다. 현재 120명 — 차량 대수를 늘리시거나 접수 후 담당자와 조정하실 수 있습니다.",
-    );
-    for (const n of [0, 1, 2, 20]) {
-      expect(tKo("unitBus", { count: n })).toBe("대");
-      expect(tKo("unitPax", { count: n })).toBe("명");
-    }
-  });
-
-  test("위저드가 단위 라벨에 현재 값(count)을 넘기고, 정원 안내에 숫자를 넘긴다", () => {
-    const src = codeOf("components/quote/Step4Schedule.tsx");
-    expect(src).toMatch(/t\(\s*["']unitBus["']\s*,\s*\{\s*count:/);
-    expect(src).toMatch(/t\(\s*["']unitPax["']\s*,\s*\{\s*count:/);
-    expect(src).not.toMatch(/buses:\s*String\(/);
+  test("모달이 인원 요약에 숫자를 넘긴다(문자열이면 en 의 plural 이 깨진다)", () => {
+    const src = codeOf("components/quote/QuickQuoteModal.tsx");
+    expect(src).toMatch(/t\(\s*["']paxValue["']\s*,\s*\{\s*n:\s*Number\(/);
   });
 });

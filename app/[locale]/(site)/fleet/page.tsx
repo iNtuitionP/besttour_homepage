@@ -1,8 +1,9 @@
 /**
  * /fleet — 차량소개 · 보험내용 (P6-3). 서버 컴포넌트, SSG + ISR(revalidate 600).
  *
- * 차량 카드는 홈 FleetSection 그대로 — 정원(vehicles.capacity) · 한 줄 카피(home.fleet.lines) · "이 차량으로 견적" CTA
- * (/quote?vehicle=<slug> 프리필 — 위저드가 받는다: components/quote/prefill.ts PREFILL_PARAMS). 가격 없음.
+ * 차량 카드는 홈 FleetSection 그대로 — 정원(vehicles.capacity) · 한 줄 카피(home.fleet.lines) · [견적 신청하기] CTA
+ * (홈 간편 견적 `/#quote` — P3-8: 위저드와 차종 프리필은 없어졌다. 차종은 사장님이 전화로 확인한다. 그래서 CTA 는 차종별 견적을
+ * 약속하지 않는다 — 리뷰 P2-8). 가격 없음.
  * 옛 사이트 차종 원문(인벤토리 §2 H4, intro3~9)은 옮기지 않는다 — 요금표 위주이고 16인승은 25인승 본문 복붙 오류다.
  * 보험 문구는 원장 INSURANCE(인벤토리 ★2 "기존 문구 그대로" — tests/pages.test.ts 가 인벤토리 파일을 읽어 대조) —
  * ko.json 에 복제하지 않는다(원장 단일 출처). 차량 대수·연식 주장 0.

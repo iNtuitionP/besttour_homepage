@@ -168,6 +168,7 @@ function seedFixture(dir: string, sessionSource: string): void {
   );
   put("actions/reservation.ts", publicAction("submitReservation"));
   put("actions/reservation-check.ts", publicAction("checkReservation"));
+  put("actions/quote-form-token.ts", publicAction("requestQuoteFormToken"));
   put("actions/admin/auth.ts", publicAction("requestAdminLoginLink"));
   put("app/admin/login/page.tsx", ["export default function LoginPage() {", "  return null;", "}", ""].join("\n"));
   put("app/admin/auth/callback/route.ts", ["export async function GET(): Promise<Response> {", "  return new Response(null);", "}", ""].join("\n"));
@@ -178,11 +179,11 @@ describe("1. 게이트", { timeout: GATE_TIMEOUT_MS }, () => {
   /**
    * 예외 목록에 한 줄을 더하는 것이 이 저장소에서 인가를 무르게 만드는 가장 싼 방법이다.
    * 로그아웃은 **이미 들어와 있는 사람이 나가는 동작**이라 게이트를 부를 수 있고, 불러야 한다 —
-   * 그래서 목록이 5건 그대로여야 한다(tests/admin-gate.test.ts 가 항목 하나하나를 단언한다).
+   * 그래서 목록이 6건 그대로여야 한다(P3-8 에서 공개 폼 토큰 액션이 하나 늘었다 — tests/admin-gate.test.ts 가 항목 하나하나를 단언한다).
    */
-  test("예외(인증 전) 화이트리스트가 5건 그대로다 — 로그아웃은 예외가 아니다", () => {
-    expect([...PUBLIC_ACTIONS, ...PUBLIC_ROUTES]).toHaveLength(5);
-    expect([...PUBLIC_ACTIONS]).toHaveLength(3);
+  test("예외(인증 전) 화이트리스트가 6건 그대로다 — 로그아웃은 예외가 아니다", () => {
+    expect([...PUBLIC_ACTIONS, ...PUBLIC_ROUTES]).toHaveLength(6);
+    expect([...PUBLIC_ACTIONS]).toHaveLength(4);
     expect([...PUBLIC_ROUTES]).toHaveLength(2);
     expect([...PUBLIC_ACTIONS], "로그아웃 액션이 예외 목록에 들어가면 안 된다").not.toContain(SESSION_ACTION);
     expect([...PUBLIC_ROUTES]).not.toContain(SESSION_ACTION);

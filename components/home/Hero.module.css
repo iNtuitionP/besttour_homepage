@@ -274,10 +274,12 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ── 견적 위젯 (접수 없음 — /quote 프리필 링크까지) ──────────────────── */
+/* ── 견적 위젯 (P3-8 — 접수 경로의 입구: 다섯 칸 → 간편 견적 모달) ────── */
 .quote {
   position: relative;
   overflow: hidden;
+  /* `/#quote` 로 들어오면 고정 헤더에 가리지 않게 */
+  scroll-margin-top: calc(var(--space-section) + var(--space-stack-lg));
   background: var(--bg-surface);
   border: 1px solid var(--border-decorative);
   border-radius: var(--radius-surface);
@@ -310,6 +312,21 @@
   display: grid;
   gap: var(--space-stack-xs);
   min-width: 0;
+}
+/* 인원 칸은 두 열을 다 쓴다(다섯 칸 = 2 · 2 · 1) */
+.fieldWide {
+  grid-column: 1 / -1;
+}
+.field[data-invalid="true"] .ctrl {
+  border-color: var(--border-strong);
+  border-width: 2.5px;
+}
+.fieldErr {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--text-brand);
 }
 .fieldLabel {
   font-size: 11.5px;

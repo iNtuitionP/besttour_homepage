@@ -170,8 +170,10 @@ const OWNER_VARS: OwnerVars = {
   reservationId: RID_FAKE,
   name: "테스트",
   phone: "010-0000-0000",
+  intake: "wizard",
   vehicleLabel: "45인승 우등",
   departAtKst: "2026-10-01 08:00",
+  returnDateKst: null,
   originLabel: "서울",
   destinationLabel: "부산",
   busCount: 1,
@@ -295,6 +297,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("DB — 0014 채널 필터
         public_code: `${TEST_PREFIX}${randomUUID().slice(0, 8)}`,
         name: "테스트",
         phone: "010-0000-0000",
+        intake: "wizard", // 0023 — 기본값 없음
         vehicle_slug: "bus45",
         purpose_code: "family",
         origin_code: "SEL",

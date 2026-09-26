@@ -24,6 +24,7 @@ import {
   LEGAL_PAGES,
   OVERSEAS_TRANSFERS,
   PRIVACY_NOTICE,
+  PRIVACY_POLICY_ITEMS,
   PRIVACY_POLICY_SECTIONS,
   PROCESSORS,
   VISITOR_STATS_TRANSFER,
@@ -50,7 +51,8 @@ function SectionBody({ section, ui }: { section: Section; ui: ReturnType<typeof 
     case "purpose":
       return <LegalParagraph text={PRIVACY_NOTICE.purpose} />;
     case "items":
-      return <LegalList items={PRIVACY_NOTICE.items} />;
+      // 처리방침 항목 = 지금 받는 항목 + 옛 6단계 접수분의 보관 항목(P3-8 리뷰 P1-1). 동의 화면의 항목 목록(짧은 쪽)이 아니다.
+      return <LegalList items={PRIVACY_POLICY_ITEMS} />;
     case "retention":
       return <LegalParagraph text={PRIVACY_NOTICE.retention} />;
     case "processors":

@@ -12,7 +12,8 @@ import { locationLabelKo } from "@/lib/codes";
 import { CHECK_ERROR_KEYS, notFoundResult, type CheckResult } from "@/lib/reservation-check/result";
 import type { ReservationView } from "@/lib/reservation-check/view";
 
-export const PREVIEW_RESULT_MODES = ["ok", "not_found", "ratelimit"] as const;
+/** `quick` (P3-8) — 홈 간편 견적으로 들어온 접수의 카드(날짜만 · 차종·대수 줄 없음)를 실측한다. */
+export const PREVIEW_RESULT_MODES = ["ok", "quick", "not_found", "ratelimit"] as const;
 export type PreviewResultMode = (typeof PREVIEW_RESULT_MODES)[number];
 
 /** PUBLIC_CODE_ALPHABET(0·O·1·I·L 제외 31자) 안의 8자 — 실제 접수번호 모양이지만 저장된 적 없는 값(P3-4 와 같은 값). */
@@ -26,6 +27,7 @@ const PREVIEW_VIEW: ReservationView = {
   statusKey: "reservationCheck.status.confirmed",
   tripType: "round",
   tripTypeKey: "reservationCheck.tripType.round",
+  intake: "wizard",
   departAtKst: "2026-10-01 08:00",
   returnAtKst: "2026-10-01 18:00",
   vehicleLabel: "45인승 관광버스",
@@ -38,6 +40,21 @@ const PREVIEW_VIEW: ReservationView = {
   createdAtKst: "2026-09-13 14:00",
 };
 
+/** 간편 접수(0023 intake='quick') — 날짜만 · 차종·대수·운행 구분 없음. view.ts toReservationView 가 만드는 모양과 같다. */
+const PREVIEW_QUICK_VIEW: ReservationView = {
+  ...PREVIEW_VIEW,
+  status: "new",
+  statusKey: "reservationCheck.status.new",
+  tripType: null,
+  tripTypeKey: null,
+  intake: "quick",
+  departAtKst: "2026-10-01",
+  returnAtKst: "2026-10-03",
+  vehicleLabel: null,
+  busCount: null,
+  passengers: 30,
+};
+
 export function parsePreviewResult(v: string | string[] | undefined): PreviewResultMode | null {
   if (typeof v !== "string") return null;
   if (v === "1") return "ok";
@@ -48,6 +65,8 @@ export function previewCheckResult(mode: PreviewResultMode): CheckResult {
   switch (mode) {
     case "ok":
       return { ok: true, view: { ...PREVIEW_VIEW } };
+    case "quick":
+      return { ok: true, view: { ...PREVIEW_QUICK_VIEW } };
     case "not_found":
       return notFoundResult();
     case "ratelimit":

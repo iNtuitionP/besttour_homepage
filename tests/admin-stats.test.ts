@@ -590,20 +590,20 @@ describe("4. /admin/stats 화면 · 탭 · messages/ko.json", () => {
     }
   });
 
-  test("여행 구분 라벨은 위저드의 카탈로그를 그대로 쓴다 — 네임스페이스 경로가 실제로 있고 코드 10개가 다 있다", async () => {
+  test("여행 구분 라벨은 예약 상세와 같은 카탈로그(admin.labels.purpose — P3-8 에서 위저드 문구를 옮겼다)를 쓴다 — 경로가 실제로 있고 코드 10개가 다 있다", async () => {
     // 실측에서 한 번 틀렸다: `quote.purpose.options` 로 적었더니 렌더가 MISSING_MESSAGE 로 터졌다(실제 경로는 steps 가 한 단계 더 있다).
     // 화면 소스의 경로 문자열과 ko.json 의 실제 경로를 함께 본다 — 둘 중 하나만 보면 같은 실수가 다시 지나간다.
     const src = stripComments(read(PAGE_REL), PAGE_REL);
     const ns = /namespace:\s*"([^"]+)"/g;
     const namespaces = [...src.matchAll(ns)].map((m) => m[1]);
-    expect(namespaces).toContain("quote.steps.purpose.options");
+    expect(namespaces).toContain("admin.labels.purpose");
     const ko = JSON.parse(read("messages/ko.json")) as Record<string, unknown>;
     for (const path of namespaces) {
       const node = path.split(".").reduce<unknown>((acc, k) => (acc as Record<string, unknown> | undefined)?.[k], ko);
       expect(node, `messages/ko.json 에 ${path} 가 없다`).toBeTruthy();
     }
     const { PURPOSES } = await import("@/lib/codes");
-    const options = "quote.steps.purpose.options".split(".").reduce<Record<string, string>>(
+    const options = "admin.labels.purpose".split(".").reduce<Record<string, string>>(
       (acc, k) => acc[k] as unknown as Record<string, string>,
       ko as unknown as Record<string, string>,
     );
@@ -1059,6 +1059,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("5. DB — admin_stats (�
       status: f.status,
       name: "통계픽스처",
       phone: "+821000000000",
+      intake: "wizard", // 0023 — 기본값 없음
       vehicle_slug: f.vehicle,
       purpose_code: f.purpose,
       origin_code: f.origin,
@@ -1403,8 +1404,8 @@ begin
   o := o || ('stuck_matches=' || ((j0->'notifications'->>'stuck')::bigint = ref_stuck)::text);
 
   -- 창 밖(100일 전)에 대기 1건 — 72시간을 넘긴 건으로만 잡혀야 한다
-  insert into public.reservations (public_code, created_at, status, name, phone, vehicle_slug, purpose_code, origin_code, destination_code, trip_type, depart_at, privacy_consent_at, privacy_policy_version, retention_until, withdrawal_consent_at)
-    values ('${PREFIX}X1', now() - interval '100 days', 'new', 'x', '+821000000000', 'bus45', 'family', 'SEL', 'BSN', 'oneway', now() + interval '30 days', now() - interval '100 days', '2026-09-11', now() + interval '400 days', now() - interval '100 days')
+  insert into public.reservations (public_code, intake, bus_count, created_at, status, name, phone, vehicle_slug, purpose_code, origin_code, destination_code, trip_type, depart_at, privacy_consent_at, privacy_policy_version, retention_until, withdrawal_consent_at)
+    values ('${PREFIX}X1', 'wizard', 1, now() - interval '100 days', 'new', 'x', '+821000000000', 'bus45', 'family', 'SEL', 'BSN', 'oneway', now() + interval '30 days', now() - interval '100 days', '2026-09-11', now() + interval '400 days', now() - interval '100 days')
     returning id into rid;
   insert into public.notifications_log (reservation_id, event, channel, to_phone, template, status, created_at, next_attempt_at)
     values (rid, 'created', 'sms', '+821000000000', 'created.customer.sms', 'failed', now() - interval '3 days', now() + interval '400 days'),
@@ -1465,9 +1466,9 @@ begin
   select user_id into v_admin from public.admin_users where email = '${emailFor("admin")}';
   if v_admin is null then raise exception 'P517 탐침: 관리자 픽스처를 찾지 못했다'; end if;
 
-  insert into public.reservations (public_code, created_at, status, name, phone, vehicle_slug, purpose_code, origin_code, destination_code, trip_type, depart_at, privacy_consent_at, privacy_policy_version, retention_until, withdrawal_consent_at)
+  insert into public.reservations (public_code, intake, bus_count, created_at, status, name, phone, vehicle_slug, purpose_code, origin_code, destination_code, trip_type, depart_at, privacy_consent_at, privacy_policy_version, retention_until, withdrawal_consent_at)
   select
-    '${PREFIX}S' || v.i, v.at, 'new', 'x', '+821000000000', 'bus45', v.purpose, 'SEL', 'BSN', 'oneway',
+    '${PREFIX}S' || v.i, 'wizard', 1, v.at, 'new', 'x', '+821000000000', 'bus45', v.purpose, 'SEL', 'BSN', 'oneway',
     v.at + interval '10 days', v.at, '2026-09-11', v.at + interval '900 days', v.at
   from (values
     (1, timestamptz '2032-05-02 09:00+09', 'family'), (2, timestamptz '2032-05-03 09:00+09', 'family'),
@@ -1519,9 +1520,9 @@ begin
   select user_id into v_admin from public.admin_users where email = '${emailFor("admin")}';
   if v_admin is null then raise exception 'P517 탐침: 관리자 픽스처를 찾지 못했다'; end if;
 
-  insert into public.reservations (public_code, created_at, status, confirmed_at, name, phone, vehicle_slug, purpose_code, origin_code, destination_code, trip_type, depart_at, privacy_consent_at, privacy_policy_version, retention_until, withdrawal_consent_at)
+  insert into public.reservations (public_code, intake, bus_count, created_at, status, confirmed_at, name, phone, vehicle_slug, purpose_code, origin_code, destination_code, trip_type, depart_at, privacy_consent_at, privacy_policy_version, retention_until, withdrawal_consent_at)
   select
-    '${PREFIX}T' || v.i, v.at, v.st::reservation_status,
+    '${PREFIX}T' || v.i, 'wizard', 1, v.at, v.st::reservation_status,
     case when v.st in ('confirmed', 'done') then v.at + interval '2 hours' end,
     'x', '+821000000000', 'bus45', 'family', 'SEL', 'BSN', 'oneway',
     v.at + interval '10 days', v.at, '2026-09-11', v.at + interval '900 days', v.at
@@ -1556,6 +1557,73 @@ end $$;`);
     expect(text, "1건짜리 칸이 섞이면 쪼개지 않는다").toContain("W2=4/false/NULL,NULL,NULL");
     expect(text, "0 인 칸은 드러낼 것이 없다 — 쪼갠다").toContain("W3=3/true/3,0,0");
     expect(text).toContain("W4=6/true/3,3,0");
+  });
+
+  test("E-4 P3-8 간편 접수(0023) — 차종·여행 구분 null 은 한 칸(other=false · 값 null)으로 묶이고 k=3 숨김을 똑같이 받는다 (탐침은 되돌려진다)", async () => {
+    const { axisLabelKind } = await import("@/lib/admin/stats");
+    //   W1 간편 3 · family 3 → 두 칸 다 보인다: purposes = [family:3, (null):3] · vehicles = [bus45:3/buses 3, (null):3/buses null]
+    //   W2 간편 1 · family 4 → 1건짜리 미정 칸을 가리고, 가릴 칸이 하나뿐이라 family 도 함께 기타로(보완 숨김) — 기타 5
+    const out = runLocalSqlExpectingError(`
+do $$
+declare
+  v_admin uuid;
+  j jsonb;
+  o text[] := '{}';
+  w record;
+begin
+  select user_id into v_admin from public.admin_users where email = '${emailFor("admin")}';
+  if v_admin is null then raise exception 'P517 탐침: 관리자 픽스처를 찾지 못했다'; end if;
+
+  insert into public.reservations (public_code, intake, created_at, status, name, phone, vehicle_slug, purpose_code, bus_count, origin_code, destination_code, trip_type, depart_at, passengers, privacy_consent_at, privacy_policy_version, retention_until, withdrawal_consent_at)
+  select
+    '${PREFIX}Q' || v.i, v.intake, v.at, 'new', 'x', '+821000000000',
+    case when v.intake = 'wizard' then 'bus45' end,
+    case when v.intake = 'wizard' then 'family' end,
+    case when v.intake = 'wizard' then 1 end,
+    'SEL', 'BSN',
+    case when v.intake = 'wizard' then 'oneway' end,
+    date_trunc('day', v.at) + interval '10 days', 30, v.at, '2026-09-11', v.at + interval '900 days', v.at
+  from (values
+    (1, 'quick', timestamptz '2034-01-02 09:00+09'), (2, 'quick', timestamptz '2034-01-03 09:00+09'), (3, 'quick', timestamptz '2034-01-04 09:00+09'),
+    (4, 'wizard', timestamptz '2034-01-05 09:00+09'), (5, 'wizard', timestamptz '2034-01-06 09:00+09'), (6, 'wizard', timestamptz '2034-01-07 09:00+09'),
+    (7, 'quick', timestamptz '2034-02-02 09:00+09'),
+    (8, 'wizard', timestamptz '2034-02-03 09:00+09'), (9, 'wizard', timestamptz '2034-02-04 09:00+09'),
+    (10, 'wizard', timestamptz '2034-02-05 09:00+09'), (11, 'wizard', timestamptz '2034-02-06 09:00+09')
+  ) as v(i, intake, at);
+  -- W3 위저드만 — bus45 3(대수 1씩) · bus16 1(대수 2) · bus25 2(대수 1씩) → 1~2건 칸 둘이 "기타" 3건으로 접힌다. 대수를 모두 알므로 합 4 가 그대로 나온다.
+  insert into public.reservations (public_code, intake, created_at, status, name, phone, vehicle_slug, purpose_code, bus_count, origin_code, destination_code, trip_type, depart_at, passengers, privacy_consent_at, privacy_policy_version, retention_until, withdrawal_consent_at)
+  select '${PREFIX}R' || v.i, 'wizard', v.at, 'new', 'x', '+821000000000', v.slug, 'family', v.buses, 'SEL', 'BSN', 'oneway',
+         date_trunc('day', v.at) + interval '10 days', 30, v.at, '2026-09-11', v.at + interval '900 days', v.at
+  from (values
+    (1, 'bus45', 1, timestamptz '2034-03-02 09:00+09'), (2, 'bus45', 1, timestamptz '2034-03-03 09:00+09'), (3, 'bus45', 1, timestamptz '2034-03-04 09:00+09'),
+    (4, 'bus16', 2, timestamptz '2034-03-05 09:00+09'),
+    (5, 'bus25', 1, timestamptz '2034-03-06 09:00+09'), (6, 'bus25', 1, timestamptz '2034-03-07 09:00+09')
+  ) as v(i, slug, buses, at);
+
+  perform set_config('request.jwt.claims', json_build_object('sub', v_admin, 'role', 'authenticated')::text, true);
+  execute 'set local role authenticated';
+  for w in select * from (values ('W1', date '2034-01-01', date '2034-01-31'), ('W2', date '2034-02-01', date '2034-02-28'), ('W3', date '2034-03-01', date '2034-03-31')) t(tag, f, u) loop
+    j := public.admin_stats(w.f, w.u);
+    o := o || (w.tag || '=' || (j->'intake'->>'total')
+      || '|P:' || coalesce((select string_agg(format('%s/%s/%s', coalesce(e->>'code', 'NULL'), e->>'other', coalesce(e->>'count', 'HIDDEN')), ',' order by e->>'other', e->>'code' nulls last)
+                             from jsonb_array_elements(j->'purposes') e), 'NONE')
+      || '|V:' || coalesce((select string_agg(format('%s/%s/%s/%s', coalesce(e->>'slug', 'NULL'), e->>'other', coalesce(e->>'count', 'HIDDEN'), coalesce(e->>'buses', 'NULL')), ',' order by e->>'other', e->>'slug' nulls last)
+                             from jsonb_array_elements(j->'vehicles') e), 'NONE'));
+  end loop;
+  execute 'set local role postgres';
+  raise exception 'P38STATS %', array_to_string(o, ' ');
+end $$;`);
+    const text = sqlErrorText(out);
+    expect(text).toContain("P38STATS");
+    expect(text).toContain("W1=6|P:family/false/3,NULL/false/3|V:bus45/false/3/3,NULL/false/3/NULL");
+    // P3-8 리뷰 P2-7 (0023 §2) — 미정 칸(대수 미상)이 "기타" 로 접히면 대수 합을 내지 않는다. 옛 판은 5건 · 4대(간편 1건을 조용히 뺐다).
+    expect(text).toContain("W2=5|P:NULL/true/5|V:NULL/true/5/NULL");
+    // 위저드만 접힌 "기타" 는 대수 합을 그대로 낸다(바뀐 것은 대수 미상이 섞일 때뿐)
+    expect(text).toContain("W3=6|P:family/false/6|V:bus45/false/3/3,NULL/true/3/4");
+    // 화면의 이름 판정 — 값 null · other=false 는 "미정", other=true 는 "기타"
+    expect(axisLabelKind(false, null)).toEqual({ kind: "undecided" });
+    expect(axisLabelKind(true, null)).toEqual({ kind: "other" });
+    expect(axisLabelKind(false, "family")).toEqual({ kind: "code", code: "family" });
   });
 
   // ---------------------------------------------------------------------------

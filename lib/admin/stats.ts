@@ -340,6 +340,21 @@ export function medianDuration(minutes: number): MedianDuration {
   return { unit: "days", value: (minutes / (MINUTES_IN_HOUR * HOURS_IN_DAY)).toFixed(1) };
 }
 
+/**
+ * 분해표 한 칸의 이름 종류 (P3-8 · 0023). 0022 는 값이 null 인 칸을 두 가지로 돌려준다:
+ *   - `other: true`  — 1~2건 칸을 합친 "기타"(값 자리는 null)
+ *   - `other: false` 인데 값이 null — **간편 접수(intake='quick')의 차종·여행 구분 미정** 칸. 0022 는 null 을 한 칸으로 묶어
+ *     다른 칸과 똑같이 k=3 숨김·보완 숨김을 적용한다(그래서 3건 미만이면 이 칸도 "기타" 에 들어간다).
+ * 예전 화면은 둘 다 "기타" 로 그려 미정 칸이 소수 항목처럼 보였다 — 이 함수가 가른다.
+ */
+export type AxisLabelKind = { kind: "other" } | { kind: "undecided" } | { kind: "code"; code: string };
+
+export function axisLabelKind(other: boolean, value: string | null): AxisLabelKind {
+  if (other) return { kind: "other" };
+  if (value === null) return { kind: "undecided" };
+  return { kind: "code", code: value };
+}
+
 /** 화면이 그릴 세 가지 상태. `null` = 가드가 막았다(권한 없음) · 0건 = 빈 상태 · 그 밖 = 정상. */
 export type StatsViewState = "denied" | "empty" | "ready";
 

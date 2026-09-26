@@ -20,7 +20,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { LOCATION_CODES, PURPOSES } from "@/lib/codes";
+import { LOCATION_CODES } from "@/lib/codes";
 import {
   FORM_MAX_AGE_MS,
   FORM_MIN_MS,
@@ -63,16 +63,15 @@ const IP = "192.168.77.5";
 const IP_PROXY = "10.0.0.9";
 const TURNSTILE_SECRET = "unit-test-turnstile-secret";
 
+/** P3-8 — 공개 접수는 홈 간편 견적 하나다(lib/types.ts quickReservationSchema). 날짜는 NOW(KST 9/13) 이후. */
 const VALID_RAW = {
   name: "홍길동",
   phone: "010-1234-5678",
-  vehicleSlug: "bus45",
-  purposeCode: PURPOSES[0],
   originCode: LOCATION_CODES[0],
   destinationCode: LOCATION_CODES[1],
-  tripType: "round",
-  departAtLocal: "2026-10-01T08:00",
-  returnAtLocal: "2026-10-01T18:00",
+  departDate: "2026-10-01",
+  returnDate: "2026-10-02",
+  passengers: 30,
   turnstileToken: "tok-valid",
   privacyConsent: true,
   withdrawalConsent: true, // P1-7 — 청약철회 제한 확인(필수)
@@ -211,6 +210,16 @@ describe("runGuards 순서: zod → honeypot → timetrap → turnstile → rate
     expect(totalLimitCalls(limiters)).toBe(0);
   });
 
+  test("P3-8 리뷰 P2-6 — 통과 결과는 guard 가 읽은 시각(now)을 싣고, 시계는 한 번만 읽는다(create 가 같은 값을 쓴다)", async () => {
+    let calls = 0;
+    const deps = { ...makeDeps(), now: () => (calls++, new Date(NOW.getTime() + calls * 1_000)) };
+    const out = await runGuards(VALID_RAW, makeCtx(), deps);
+    expect(calls).toBe(1);
+    expect(out.ok && !out.silent).toBe(true);
+    if (!out.ok || out.silent) return;
+    expect(out.now.getTime()).toBe(NOW.getTime() + 1_000);
+  });
+
   test("zod 실패의 detail 은 path·code·message 뿐 — 입력값을 되돌려주지 않는다", async () => {
     const out = await runGuards({ ...VALID_RAW, phone: "02-123-4567" }, makeCtx(), makeDeps());
     expect(out.ok).toBe(false);
@@ -296,17 +305,17 @@ describe("runGuards 순서: zod → honeypot → timetrap → turnstile → rate
     expect(totalLimitCalls(limiters)).toBe(1);
   });
 
-  test("전부 통과 → ok:true·silent:false·파싱된 ReservationInput(기본값 적용). fetch 1 · limit 2(10분·1시간 창)", async () => {
+  test("전부 통과 → ok:true·silent:false·파싱된 간편 견적 입력(기본값 적용). fetch 1 · limit 2(10분·1시간 창)", async () => {
     const fetch = fetchOk();
     const limiters = sameLimiterEverywhere(limiterOk());
     const out = await runGuards(VALID_RAW, makeCtx(), makeDeps({ fetch, limiters }));
     expect(out.ok).toBe(true);
     if (!out.ok || out.silent) throw new Error("expected non-silent success");
     expect(out.input.name).toBe("홍길동");
-    expect(out.input.waypointCodes).toEqual([]);
-    expect(out.input.busCount).toBe(1);
+    expect(out.input.passengers).toBe(30);
+    expect(out.input.departDate).toBe("2026-10-01");
     expect(out.input.locale).toBe("ko");
-    expect(out.input.marketingConsent).toBe(false);
+    expect("marketingConsent" in out.input).toBe(false);
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(totalLimitCalls(limiters)).toBe(2);
   });

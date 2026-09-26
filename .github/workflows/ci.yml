@@ -233,8 +233,8 @@ jobs:
 
       - name: Start production server on :3111
         env:
-          # P3-4: /quote 의 폼 토큰(타임트랩)은 요청마다 이 시크릿으로 서명된다. 일회용 문자열 — 원격 자격 아님(GitHub 시크릿 참조 0 유지).
-          # 없으면 페이지가 fail-closed("접수 준비 중")로 토큰을 내리지 않아 아래 "요청마다 새 토큰" 단언을 할 수 없다.
+          # P3-4 · P3-8: 폼 토큰(타임트랩)은 이 시크릿으로 서명된다(P3-8 부터 모달을 열 때 서버액션이 발급). 일회용 문자열 — 원격 자격 아님
+          # (GitHub 시크릿 참조 0 유지). 없어도 서버는 뜬다(fail-closed "접수 준비 중") — 토큰 서명 경로가 env 가 있을 때도 죽지 않는지 보려고 둔다.
           GUARD_SECRET: ci-only-throwaway-form-token-secret-0123456789abcdef
         run: |
           nohup npm start -- -p 3111 > /tmp/next-start.log 2>&1 &
@@ -264,21 +264,22 @@ jobs:
           # ADMIN_EMAILS 가 없는 잡이므로 로그인은 닫힌 상태로 떠야 한다(fail-closed).
           grep -q 'disabled' /tmp/admin-login.html || { echo "/admin/login is open without ADMIN_EMAILS"; exit 1; }
 
-      - name: Assert /quote is rendered per request (P3-4 — a baked form token would expire for everyone after 1h)
+      - name: Assert the quick quote lives on the home page and the retired /quote redirects there (P3-8)
         run: |
-          # 빌드 표는 이 라우트를 ●(SSG) 로 찍지만(Turbopack 이 generateStaticParams 하위를 그렇게 표기) 실제 판정은 런타임이다:
-          # prerender 산출물 없음 + no-store + 두 요청의 formToken 이 다르면 동적이다. 같으면 토큰이 HTML 에 구워진 것 — 1시간 뒤 전원 bot.
-          a=$(curl -s -D /tmp/quote.h "http://127.0.0.1:3111/quote?step=6"); b=$(curl -s "http://127.0.0.1:3111/quote?step=6")
-          grep -q '^HTTP/1.1 200' /tmp/quote.h || { echo "/quote is not 200"; cat /tmp/quote.h; exit 1; }
-          grep -qi '^cache-control:.*no-store' /tmp/quote.h || { echo "/quote is cacheable"; cat /tmp/quote.h; exit 1; }
-          ta=$(printf '%s' "$a" | grep -o '<input[^>]*name="formToken"[^>]*>' | grep -o 'value="[^"]*"' | head -1)
-          tb=$(printf '%s' "$b" | grep -o '<input[^>]*name="formToken"[^>]*>' | grep -o 'value="[^"]*"' | head -1)
-          [ -n "$ta" ] || { echo "no formToken hidden input — GUARD_SECRET missing or step 6 not rendered"; exit 1; }
-          [ "$ta" != "$tb" ] || { echo "same formToken on two requests — /quote is prerendered"; exit 1; }
-          printf '%s' "$a" | grep -q 'data-legal="withdrawal-notice"' || { echo "withdrawal notice missing on /quote"; exit 1; }
-          code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:3111/quote/done?code=ABCDEFGH")
-          [ "$code" = "200" ] || { echo "/quote/done -> $code"; exit 1; }
-          echo "/quote: 200, no-store, two requests -> two tokens, withdrawal notice present; /quote/done 200"
+          # P3-8: 6단계 위저드(/quote)를 지우고 홈 간편 견적 하나로 모았다. 홈은 ISR 이므로 폼 토큰을 HTML 에 굽지 않는다 —
+          # 구우면 1시간 뒤 전원 bot 이다(FORM_MAX_AGE_MS). 토큰은 모달을 열 때 서버액션(actions/quote-form-token.ts)으로 받는다.
+          h=$(curl -s -D /tmp/home.h -o /tmp/home.html "http://127.0.0.1:3111/")
+          grep -q '^HTTP/1.1 200' /tmp/home.h || { echo "/ is not 200"; cat /tmp/home.h; exit 1; }
+          grep -q 'id="quote"' /tmp/home.html || { echo "home has no #quote anchor (quick quote widget)"; exit 1; }
+          if grep -q 'name="formToken"' /tmp/home.html; then echo "home HTML carries a baked formToken — it would expire for everyone"; exit 1; fi
+          # 옛 경로 — 영구 리디렉트(301)로 홈 #quote 에. 쿼리(옛 프리필·?code=)는 따라가도 된다(홈은 읽지 않는다).
+          for pair in "/quote|/#quote" "/quote/done?code=ABCDEFGH|#quote" "/en/quote|/en#quote" "/en/quote/done|/en#quote"; do
+            src=${pair%%|*}; want=${pair##*|}
+            r=$(curl -s -D- -o /dev/null "http://127.0.0.1:3111$src")
+            printf '%s\n' "$r" | grep -q '^HTTP/1.1 301' || { echo "$src is not 301"; printf '%s\n' "$r"; exit 1; }
+            printf '%s\n' "$r" | grep -i '^location:' | grep -qF "$want" || { echo "$src does not redirect to $want"; printf '%s\n' "$r"; exit 1; }
+            echo "$src -> 301 $want"
+          done
 
       - name: Assert every public route answers 200 (P6-3 — legacy menu "삭제 금지, 재배치만" must not hide a 404 behind a live link)
         run: |

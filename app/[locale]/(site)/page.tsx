@@ -40,6 +40,15 @@ import h from "@/components/home/home.module.css";
 export const revalidate = 600;
 
 /**
+ * 함수 시간 한도 (P4-7 수정 라운드 3 · 리뷰 P2-3 → P3-8 에서 옛 /quote 로부터 옮김). 이 화면의 간편 견적 모달이 서버액션 submitReservation 을
+ * 부르고, 그 액션이 응답 뒤에 즉시 발송을 돌린다 — 서버액션의 POST 는 **부른 페이지의 라우트**(홈)에서 돈다. 한도가 즉시 발송 마감(40초)보다
+ * 짧으면 send 와 markSent 사이에서 잘려 행이 다시 집히고 **손님이 두 번 받는다.** 60초 = Vercel 문서(2026-08-24 판)상 Hobby 가 Fluid compute 에서
+ * 받는 값(기본·최대 300초)이자 Fluid 가 아닌 Hobby 의 최대치(60초). ISR(revalidate) 과 함께 써도 된다 — 페이지 렌더의 정적성과 무관한 함수 설정이다.
+ * tests/notify-inline.test.ts §7 이 잠근다.
+ */
+export const maxDuration = 60;
+
+/**
  * 접수 현황(P3-5) — 서비스 롤 읽기(lib/queries/recent.ts)를 60초 태그 캐시로 감싼다. 쿼리 계층은 캐시를 모른다(ADR-3).
  * 접수 서버액션(actions/reservation.ts, P3-3)이 성공 뒤 QUERY_TAGS.recent 를 무효화하므로 새 접수는 즉시, 그 외엔 60초
  * (페이지 자체의 ISR 600초 안에서). 서비스 롤 키가 없으면 여기서 throw 해 빌드가 죽는다(fail-loud, 의도) — DB 오류는 [] 로

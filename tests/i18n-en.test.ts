@@ -172,9 +172,11 @@ describe("2. ko ↔ en 키 패리티 (공개 네임스페이스)", () => {
     }
   });
 
-  test("패리티 검사가 빈 통과가 아니다 — 공개 잎 350개 이상", () => {
+  // P3-8: 6단계 위저드의 quote.* 잎 약 140개를 지웠다(간편 견적 모달 키로 대체). 하한은 "빈 통과가 아니다" 를 보는 값이라
+  // 지운 만큼 내렸다 — 목록이 통째로 비거나 네임스페이스 하나가 빠지면 여전히 걸린다.
+  test("패리티 검사가 빈 통과가 아니다 — 공개 잎 250개 이상", () => {
     const total = PUBLIC_NAMESPACES.reduce((n, ns) => n + [...leafMap(en[ns]).keys()].filter((p) => !p.endsWith("#length")).length, 0);
-    expect(total).toBeGreaterThan(350);
+    expect(total).toBeGreaterThan(250);
   });
 });
 
@@ -344,11 +346,6 @@ const HANGUL_CODE_ALLOW: ReadonlyArray<{ file: string; line: string; reason: str
     reason: "개발자용 불변식 예외 문구 — 화면에 렌더되지 않는다((site)/error.tsx 는 message 를 렌더하지 않는다).",
   },
   {
-    file: "components/quote/options.ts",
-    line: "throw new Error",
-    reason: "개발자용 불변식 예외 문구 — 화면에 렌더되지 않는다.",
-  },
-  {
     file: "components/home/popup-preview.ts",
     line: "title:",
     reason: "개발 전용 프리뷰 더미(?previewPopup=1, production 죽은 코드) — 운영 팝업은 DB 의 사장님 글이다.",
@@ -424,9 +421,10 @@ const LEDGER_ON_EN: ReadonlyArray<{ file: string; refs: readonly string[]; scree
   { file: "app/[locale]/(site)/about/page.tsx", screen: "/en/about 회사 정보 표 · 찾아오시는 길 주소", notice: true, refs: ["COMPANY.address", "COMPANY.branchAddress", "COMPANY.legalName", "COMPANY.mailOrderIssuer", "COMPANY.mailOrderNo"] },
   { file: "app/[locale]/(site)/fares/page.tsx", screen: "/en/fares 산정 기준 칩 · 대금 지급", notice: true, refs: ["PAYMENT", "QUOTE_BASIS"] },
   { file: "app/[locale]/(site)/fleet/page.tsx", screen: "/en/fleet 보험 본문", notice: true, refs: ["INSURANCE"] },
-  { file: "app/[locale]/(site)/quote/page.tsx", screen: "/en/quote 6단계 동의 고지 본문", notice: true, refs: ["PRIVACY_NOTICE"] },
+  // P3-8: 위저드(/quote)를 지우고 홈 간편 견적 모달로 옮겼다 — 동의 고지 본문은 Hero(서버)가 원장에서 읽어 모달에 내린다.
+  { file: "components/home/Hero.tsx", screen: "/en 간편 견적 모달의 개인정보 수집·이용 고지 본문", notice: true, refs: ["PRIVACY_NOTICE"] },
   // P1-7: 청약철회 제한 문장이 약관 제8조 발췌(withdrawal.ts — 삭제)에서 원장 WITHDRAWAL.notice 로 바뀌었다. 체크박스 라벨은 원장 확정 영문(consentLabelEn).
-  { file: "components/quote/WithdrawalNotice.tsx", screen: "/en/quote 6단계 접수 전 확인 사항 · 청약철회 제한 고지", notice: true, refs: ["CANCELLATION", "PAYMENT", "QUOTE_BASIS", "WITHDRAWAL"] },
+  { file: "components/quote/WithdrawalNotice.tsx", screen: "/en 간편 견적 모달의 신청 전 확인 사항 · 청약철회 제한 고지", notice: true, refs: ["CANCELLATION", "PAYMENT", "QUOTE_BASIS", "WITHDRAWAL"] },
   { file: "components/home/HowItWorks.tsx", screen: "/en 이용 방법 4단계 · 산정 기준 · 대금 지급", notice: true, refs: ["GUIDE_SECTIONS", "PAYMENT", "QUOTE_BASIS"] },
   { file: "components/home/RecentFeed.tsx", screen: "/en 접수 현황 공개 고지(행이 있을 때만)", notice: true, refs: ["PRIVACY_NOTICE"] },
   { file: "components/home/TrustBar.tsx", screen: "/en 신뢰 지표 — 통신판매업 신고번호 · 법인 상호", notice: false, refs: ["COMPANY.legalName", "COMPANY.mailOrderNo"] },
@@ -571,8 +569,6 @@ const EN_ROUTES = [
   "/en/about",
   "/en/fleet",
   "/en/fares",
-  "/en/quote",
-  "/en/quote/done",
   "/en/reservation/check",
   "/en/notices",
   "/en/gallery",
@@ -580,6 +576,13 @@ const EN_ROUTES = [
   "/en/terms",
   "/en/guide",
 ] as const;
+describe("8-e. 렌더 실측 경로 목록 — 없어진 위저드 경로를 200 으로 기대하지 않는다 (P3-8 리뷰 P2-9 · 항상 돈다)", () => {
+  test("EN_ROUTES 에 /en/quote · /en/quote/done 이 없다 (그 주소는 301 — 8-b 의 이동 테스트가 본다)", () => {
+    const routes = EN_ROUTES as readonly string[];
+    expect(routes.filter((r) => r.startsWith("/en/quote"))).toEqual([]);
+  });
+});
+
 /** 원장 블록이 있어 안내가 보여야 하는 영문 경로 */
 const NOTICE_ROUTES = ["/en", "/en/about", "/en/fleet", "/en/fares", "/en/privacy", "/en/terms", "/en/guide"] as const;
 
@@ -614,6 +617,29 @@ describe.runIf(Boolean(EN_BASE))("8-b. 렌더 실측 — /en (GET)", { timeout: 
       expect(html, p).not.toContain("official-korean-notice");
       expect(html, p).toMatch(/<html[^>]*\slang="ko"/);
     }
+  });
+
+  // P3-8 (리뷰 P2-9) — 위저드 경로는 없어졌다. 옛 주소는 홈의 간편 견적 위젯(#quote)으로 영구 이동한다.
+  test.for([
+    ["/quote", "/#quote"],
+    ["/quote/done", "/#quote"],
+    ["/en/quote", "/en#quote"],
+    ["/en/quote/done", "/en#quote"],
+  ] as const)("%s — 옛 위저드 주소는 %s 로 영구 이동한다(301/308)", async ([route, target]) => {
+    const res = await fetch(`${EN_BASE}${route}`, { redirect: "manual" });
+    await res.text();
+    expect([301, 308], route).toContain(res.status);
+    const location = res.headers.get("location") ?? "";
+    expect(new URL(location, EN_BASE).pathname + new URL(location, EN_BASE).hash, route).toBe(target);
+  });
+
+  test.for([["/"], ["/en"]] as const)("%s — 간편 견적 위젯(id=quote)이 있고, 모달은 닫힌 채로 시작한다(role=dialog 0)", async ([route]) => {
+    const { status, html } = await fetchHtml(route);
+    expect(status).toBe(200);
+    const widget = findElements(html, (tag, a) => tag === "aside" && a.get("id") === "quote");
+    expect(widget, route).toHaveLength(1);
+    expect(findElements(html, (_t, a) => a.get("data-testid") === "quote-cta"), route).toHaveLength(1);
+    expect(findElements(html, (_t, a) => a.get("role") === "dialog"), route).toHaveLength(0);
   });
 
   test("/en 은 hreflang 대안(ko·en·x-default)을 선언하고 canonical 이 자기 자신(/en)이다", async () => {
@@ -671,7 +697,9 @@ describe.runIf(Boolean(EN_BASE))("8-d. 렌더 실측 — 청약철회 고지 영
   const html = async (p: string) => (await fetch(`${EN_BASE}${p}`)).text();
   const decodeText = (s: string) => s.replace(/&#x27;|&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
 
-  test.for([["/en/quote"], ["/en/guide"], ["/en/terms"]] as const)("%s — noticeEn(lang=en) 다음에 한국어 원문(lang=ko)", async ([route]) => {
+  // P3-8 (리뷰 P2-9): /quote · /en/quote 는 홈으로 이동하고, 홈의 모달은 닫힌 채 SSR 된다 — 청약철회 고지가 HTML 에 없다.
+  // 모달 안의 고지 렌더는 tests/quick-quote.test.ts §4(열린 모달 SSR)가 본다. 여기서는 고지가 늘 렌더되는 두 화면만 본다.
+  test.for([["/en/guide"], ["/en/terms"]] as const)("%s — noticeEn(lang=en) 다음에 한국어 원문(lang=ko)", async ([route]) => {
     const page = await html(route);
     const en = findElements(page, (tag, a) => tag === "p" && a.get("data-legal") === "withdrawal-restriction-en");
     const ko = findElements(page, (tag, a) => tag === "p" && a.get("data-legal") === "withdrawal-restriction");
@@ -684,14 +712,14 @@ describe.runIf(Boolean(EN_BASE))("8-d. 렌더 실측 — 청약철회 고지 영
     expect(page.indexOf('data-legal="withdrawal-restriction-en"')).toBeLessThan(page.indexOf('data-legal="withdrawal-restriction"'));
   });
 
-  test.for([["/quote"], ["/guide"], ["/terms"]] as const)("%s — 한국어 화면에는 영문 번역본이 없다", async ([route]) => {
+  test.for([["/guide"], ["/terms"]] as const)("%s — 한국어 화면에는 영문 번역본이 없다", async ([route]) => {
     const page = await html(route);
     expect(page, route).not.toContain('data-legal="withdrawal-restriction-en"');
     expect(page, route).toContain('data-legal="withdrawal-restriction"');
   });
 
   // R3 [P2-F] — 표·요약 바로 아래 "이 규정은 고객 사정 취소에 적용" 문장이 실제로 렌더된다(ko·en 화면 모두 한국어 원문).
-  test.for([["/quote"], ["/guide"], ["/terms"], ["/en/quote"], ["/en/guide"], ["/en/terms"]] as const)(
+  test.for([["/guide"], ["/terms"], ["/en/guide"], ["/en/terms"]] as const)(
     "%s — 취소·환불 적용 범위 문장이 렌더된다",
     async ([route]) => {
       const page = await html(route);

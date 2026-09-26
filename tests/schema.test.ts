@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { isAirport, PURPOSES, REGIONS } from "@/lib/codes";
-import { ReservationInput } from "@/lib/types";
+import { quickReservationSchema } from "@/lib/types";
 import { loadDotEnvLocal } from "./helpers/load-env-local";
 
 loadDotEnvLocal();
@@ -20,18 +20,17 @@ describe("codes", () => {
   });
 });
 
-describe("ReservationInput", () => {
+// P3-8: 공개 접수는 홈 간편 견적 하나다 — 옛 위저드 스키마(ReservationInput) 대신 quickReservationSchema(now). 상세 규칙은 tests/reservation-input.test.ts.
+describe("quickReservationSchema (간편 견적)", () => {
+  const ReservationInput = quickReservationSchema(new Date("2026-08-31T03:00:00.000Z"));
   const validInput = {
     name: "홍길동",
     phone: "010-1234-5678",
-    vehicleSlug: "bus45" as const,
-    purposeCode: "family" as const,
     originCode: "SEL" as const,
     destinationCode: "BSN" as const,
-    waypointCodes: [],
-    tripType: "oneway" as const,
-    departAtLocal: "2026-09-01T08:00",
-    busCount: 1,
+    departDate: "2026-09-01",
+    returnDate: "2026-09-01",
+    passengers: 30,
     locale: "ko" as const,
     turnstileToken: "test-turnstile-token",
     // 0003(P1-3): 필수 동의는 literal(true). 동의 필드 자체의 계약은 tests/consent.test.ts 가 단언한다.
@@ -50,25 +49,15 @@ describe("ReservationInput", () => {
     expect(result.success).toBe(false);
   });
 
-  test("rejects more than 5 waypoint codes", () => {
-    const result = ReservationInput.safeParse({
-      ...validInput,
-      waypointCodes: ["SEL", "BSN", "INC", "DGU", "GWJ", "DJN"],
-    });
-    expect(result.success).toBe(false);
+  test("rejects passengers over 900 and a missing passenger count", () => {
+    expect(ReservationInput.safeParse({ ...validInput, passengers: 901 }).success).toBe(false);
+    expect(ReservationInput.safeParse({ ...validInput, passengers: undefined }).success).toBe(false);
   });
 
-  test("rejects busCount over 20", () => {
-    const result = ReservationInput.safeParse({ ...validInput, busCount: 21 });
-    expect(result.success).toBe(false);
-  });
-
-  test("rejects departAtLocal with a trailing Z (UTC suffix)", () => {
-    const result = ReservationInput.safeParse({
-      ...validInput,
-      departAtLocal: "2026-09-01T08:00Z",
-    });
-    expect(result.success).toBe(false);
+  test("rejects a departure date that carries a time or a UTC suffix — dates only (KST calendar)", () => {
+    for (const departDate of ["2026-09-01T08:00", "2026-09-01Z", "2026-09-01T00:00:00Z"]) {
+      expect(ReservationInput.safeParse({ ...validInput, departDate }).success, departDate).toBe(false);
+    }
   });
 
   test("rejects when the honeypot field is filled in", () => {

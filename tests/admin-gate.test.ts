@@ -134,7 +134,7 @@ const GATED_ROUTE = [
   "",
 ].join("\n");
 
-/** 공개(인증 전) 액션 3종 — 게이트가 없어야 정상이다. */
+/** 공개(인증 전) 액션 4종(P3-8 폼 토큰 포함) — 게이트가 없어야 정상이다. */
 const PUBLIC_ACTION_SRC = (fn: string): string => [SERVER, "", `export async function ${fn}(): Promise<number> {`, "  return 1;", "}", ""].join("\n");
 
 /** 게이트가 통과시켜야 하는 최소 저장소. 각 red 케이스는 여기에 파일 하나를 덮어쓰거나 더한다. */
@@ -142,6 +142,7 @@ function seed(fx: Fixture): Fixture {
   fx.put("lib/auth/requireAdmin.ts", GATE_MODULE);
   fx.put("actions/reservation.ts", PUBLIC_ACTION_SRC("submitReservation"));
   fx.put("actions/reservation-check.ts", PUBLIC_ACTION_SRC("checkReservation"));
+  fx.put("actions/quote-form-token.ts", PUBLIC_ACTION_SRC("requestQuoteFormToken"));
   fx.put("actions/admin/auth.ts", PUBLIC_ACTION_SRC("requestAdminLoginLink"));
   fx.put("actions/admin/popup.ts", GATED_ACTION);
   fx.put("app/admin/layout.tsx", ["export default function AdminShell({ children }: { children: unknown }) {", "  return children;", "}", ""].join("\n"));
@@ -177,8 +178,9 @@ describe("0. 산출물", () => {
    * 독립 리뷰 F2·M7: 목록은 게이트에서 가장 무른 곳이다. 이제 **해석된 배열 자체**를 단언한다 —
    * 따옴표 유무·줄바꿈·주석 같은 텍스트 문제를 통째로 건너뛴다. 인덱스 대입·재선언은 스크립트가 스스로 막는다.
    */
-  test("예외 목록 — 해석된 배열이 공개 접수 3건 · 공개 화면 2건, 그게 전부다", () => {
-    expect([...PUBLIC_ACTIONS]).toEqual(["actions/reservation.ts", "actions/reservation-check.ts", "actions/admin/auth.ts"]);
+  // P3-8: 간편 견적 모달의 폼 토큰 액션이 네 번째 공개 액션이다(홈이 ISR 이라 토큰을 HTML 에 구울 수 없다 — actions/quote-form-token.ts 헤더).
+  test("예외 목록 — 해석된 배열이 공개 액션 4건 · 공개 화면 2건, 그게 전부다", () => {
+    expect([...PUBLIC_ACTIONS]).toEqual(["actions/reservation.ts", "actions/reservation-check.ts", "actions/quote-form-token.ts", "actions/admin/auth.ts"]);
     expect([...PUBLIC_ROUTES]).toEqual(["app/admin/login/page.tsx", "app/admin/auth/callback/route.ts"]);
     for (const rel of PUBLIC_ACTIONS) expect((PUBLIC_ACTION_REASONS as Record<string, string>)[rel]?.length, rel).toBeGreaterThan(20);
     for (const rel of PUBLIC_ROUTES) expect((PUBLIC_ROUTE_REASONS as Record<string, string>)[rel]?.length, rel).toBeGreaterThan(10);

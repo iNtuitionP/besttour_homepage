@@ -83,7 +83,9 @@ const ROUTE_FILES = collectRouteFiles();
  * canonical 을 내지 **않는** 정적 라우트 — 페이지가 `robots: { index: false }` 를 내는 곳.
  * 여기 넣는 것은 "색인하지 마라"와 "정본은 여기다"를 동시에 말하지 않겠다는 결정이다.
  */
-const NO_CANONICAL = new Set<string>(["/quote/done"]);
+// P3-8: 유일한 항목이던 `/quote/done`(접수 완료 화면)은 위저드와 함께 지웠다 — 완료 화면은 이제 홈 모달 안이다(주소가 없다).
+// 목록은 규칙으로 남겨 둔다(noindex 라우트가 새로 생기면 여기 넣는다).
+const NO_CANONICAL = new Set<string>();
 
 /** 동적 라우트의 canonical 인자 — 소스에 그대로 있어야 하는 텍스트. */
 const DYNAMIC_CANONICAL_ARG: Record<string, string> = {
@@ -301,12 +303,9 @@ describe("P7-2b — 공개 라우트 전수 × canonical", () => {
     },
   );
 
-  test("/quote/done — noindex 를 유지하고 canonical 은 없다", () => {
-    const file = ROUTE_FILES.find((r) => r.route === "/quote/done");
-    expect(file, "/quote/done 페이지가 있어야 한다").toBeDefined();
-    const src = code(file!.rel);
-    expect(src).toMatch(/robots:\s*\{\s*index:\s*false/);
-    expect(src).not.toContain("canonical");
+  test("P3-8 — /quote · /quote/done 라우트는 없다(홈 간편 견적 · 옛 주소는 next.config 가 /#quote 로 보낸다)", () => {
+    expect(ROUTE_FILES.find((r) => r.route === "/quote")).toBeUndefined();
+    expect(ROUTE_FILES.find((r) => r.route === "/quote/done")).toBeUndefined();
   });
 
   test("/notices/[id] — 공지가 있으면 id 를 담은 canonical, 부재(noindex)면 canonical 없음", () => {
@@ -460,20 +459,21 @@ describe("P7-2b — sitemap 과 canonical 이 같은 집합을 가리킨다", ()
   /** sitemap URL → 로케일 prefix 를 뗀 라우트 (`/en/about` → `/about`, `/en` → `/`) */
   const routeOf = (url: string) => new URL(canonicalUrl(new URL(url).pathname)).pathname;
 
-  test("sitemap 의 정적 라우트 == canonical 을 내는 정적 라우트 (11개) — 로케일마다 한 번씩 (ko·en = 22)", async () => {
+  // P3-8: /quote 가 없어져 11 → 10(견적 신청은 홈 `/` 안이다).
+  test("sitemap 의 정적 라우트 == canonical 을 내는 정적 라우트 (10개) — 로케일마다 한 번씩 (ko·en = 20)", async () => {
     const sitemap = (await import("@/app/sitemap")).default;
     const entries = sitemap();
 
     const canonicalRoutes = ROUTE_FILES.filter((r) => !r.dynamic && canonicalArgs(code(r.rel)).length > 0)
       .map((r) => r.route)
       .sort();
-    expect(canonicalRoutes.length).toBe(11);
+    expect(canonicalRoutes.length).toBe(10);
 
     for (const locale of ["ko", "en"]) {
       const urls = entries.map((e) => e.url).filter((u) => (locale === "en" ? /\/en(\/|$)/.test(new URL(u).pathname) : !/^\/en(\/|$)/.test(new URL(u).pathname)));
       expect(urls.map(routeOf).sort(), locale).toEqual(canonicalRoutes);
     }
-    expect(entries.length).toBe(22);
+    expect(entries.length).toBe(20);
   });
 
   /**

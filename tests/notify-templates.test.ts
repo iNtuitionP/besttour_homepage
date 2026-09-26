@@ -61,18 +61,38 @@ const ORIGIN = "https://bestour.co.kr";
 
 const CUSTOMER: CustomerVars = { publicCode: "BT12ABCD", origin: ORIGIN };
 
+/** 옛 위저드 접수분(intake='wizard') — 문안이 바뀌지 않았음을 이 픽스처로 잠근다. */
 const OWNER: OwnerVars = {
   publicCode: "BT12ABCD",
   origin: ORIGIN,
   reservationId: "3f2b9c14-5f0a-4a2e-9c1b-8d7e6f5a4b3c",
   name: "한지원",
   phone: "+821020488585",
+  intake: "wizard",
   vehicleLabel: "45인승 우등",
   departAtKst: "2026-10-03 08:00",
+  returnDateKst: null,
   originLabel: "서울",
   destinationLabel: "부산",
   busCount: 2,
   passengers: 80,
+};
+
+/** 홈 간편 견적(P3-8 · intake='quick') — 차종·대수·시각이 없다. 날짜만 · 인원 필수. */
+const QUICK_OWNER: OwnerVars = {
+  publicCode: "BT34EFGH",
+  origin: ORIGIN,
+  reservationId: "5a1c2d3e-4f50-4a61-8b72-9c83d4e5f607",
+  name: "김서연",
+  phone: "+821055512345",
+  intake: "quick",
+  vehicleLabel: null,
+  departAtKst: "2026-10-03",
+  returnDateKst: "2026-10-05",
+  originLabel: "인천공항",
+  destinationLabel: "서울",
+  busCount: null,
+  passengers: 30,
 };
 
 const OWNER_KEYS = ["created.owner.sms", "created.owner.email"] as const;
@@ -313,6 +333,66 @@ describe("4. 개인정보 경계", () => {
       // 마스킹하지 않는다 — 사장님은 전화를 걸어야 한다.
       expect(text, key).not.toContain("*");
     }
+  });
+
+  test("P3-8 간편 접수 — 사장님 알림에 '간편 접수' 와 전화로 확인할 항목이 드러나고, 날짜만(시각 0) · 차종·대수는 지어내지 않는다", () => {
+    for (const key of OWNER_KEYS) {
+      const v = renderVariants(key, QUICK_OWNER);
+      for (const [variant, text] of [["sms", v.sms], ["lms", v.lms]] as const) {
+        const where = `${key}.${variant}`;
+        for (const needle of [
+          QUICK_OWNER.publicCode,
+          QUICK_OWNER.name,
+          QUICK_OWNER.phone,
+          QUICK_OWNER.departAtKst,
+          "2026-10-05",
+          QUICK_OWNER.originLabel,
+          QUICK_OWNER.destinationLabel,
+          `${QUICK_OWNER.passengers}명`,
+          `${ORIGIN}${ADMIN_RESERVATIONS_PATH}/${QUICK_OWNER.reservationId}`,
+          "간편",
+          "전화",
+          "차종",
+          "시각",
+        ]) {
+          expect(text, `${where} 에 ${needle} 가 없다`).toContain(needle);
+        }
+        // 시각이 없다 — 저장된 00:00 은 자리값이다(손님이 고르지 않았다)
+        expect(text, where).not.toMatch(/\b\d{2}:\d{2}\b/);
+        // 차종·대수를 지어내지 않는다
+        expect(text, where).not.toMatch(/\d+대/);
+        expect(text, where).not.toContain("null");
+        expect(text, where).not.toContain("undefined");
+        expect(text, where).not.toContain(VERBATIM.bookingNotice);
+      }
+    }
+  });
+
+  test("P3-8 간편 접수 · 같은 날 — 도착일이 없으면 날짜 하나(당일)", () => {
+    const sameDay: OwnerVars = { ...QUICK_OWNER, returnDateKst: null };
+    const text = renderVariants("created.owner.sms", sameDay).lms;
+    expect(text).toContain("2026-10-03 (당일)");
+    expect(text).not.toContain("~");
+  });
+
+  test("P3-8 — 위저드 접수분의 사장님 알림은 한 글자도 바뀌지 않았다(옛 문안 그대로)", () => {
+    const v = renderVariants("created.owner.sms", OWNER);
+    expect(v.lms).toBe(
+      [
+        "[베스트투어] 새 예약이 접수되었습니다.",
+        "",
+        "접수번호 BT12ABCD",
+        "고객 한지원 +821020488585",
+        "운행 2026-10-03 08:00",
+        "구간 서울 → 부산",
+        "차량 45인승 우등 2대 · 80명",
+        "",
+        `확인 ${ORIGIN}${ADMIN_RESERVATIONS_PATH}/${OWNER.reservationId}`,
+      ].join("\n"),
+    );
+    expect(v.sms).toBe(
+      `[베스트투어] 접수 BT12ABCD 한지원 +821020488585 2026-10-03 08:00 서울 → 부산 45인승 우등 2대 · 80명 ${ORIGIN}${ADMIN_RESERVATIONS_PATH}/${OWNER.reservationId}`,
+    );
   });
 
   test("고객 템플릿 — 남의 이름·번호가 들어갈 자리가 없다 (여분 필드를 넘겨도 새지 않는다)", () => {

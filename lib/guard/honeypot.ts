@@ -8,7 +8,7 @@
  */
 import type { GuardResult } from "./types";
 
-/** 숨은 필드 이름. lib/types.ts ReservationInput 의 `website: z.string().max(0).optional()` 과 같은 이름이다. */
+/** 숨은 필드 이름. lib/types.ts QuickReservationShape 의 `website: z.string().max(0).optional()` 과 같은 이름이다. */
 export const HONEYPOT_FIELD = "website";
 
 const isEmpty = (v: unknown): boolean => v === undefined || v === null || v === "";

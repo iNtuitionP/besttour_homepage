@@ -12,7 +12,7 @@ import {
 import { requireAdmin } from "@/lib/auth/requireAdmin";
 import { isLocationCode, locationLabelKo } from "@/lib/codes";
 import { getVehicles } from "@/lib/queries";
-import { kstWallClock } from "@/lib/reservation-check/view";
+import { kstWallClock, tripDateText } from "@/lib/reservation-check/view";
 
 import a from "@/components/admin/admin.module.css";
 import q from "@/components/quote/quote.module.css";
@@ -34,6 +34,9 @@ import q from "@/components/quote/quote.module.css";
  *
  * 개발용 우회 경로는 없다. 이 화면을 보려면 실제 관리자 세션이 있어야 한다 — 세션 없이 더미 행을 그리던 개발 분기는
  * P5-3 독립 리뷰에서 제거됐다(production 번들에 남아 환경변수 두 개로 열렸다).
+ *
+ * 간편 접수(P3-8 · 0023 intake='quick'): 접수번호 옆에 "간편 접수" 배지, 출발일은 **날짜만**(저장된 00:00 은 자리값),
+ * 차량은 "미정(전화 확인)", 대수·인원 칸은 인원만. 손님이 고르지 않은 값을 지어내 보이지 않는다.
  */
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -55,6 +58,7 @@ export default async function AdminReservationsPage({ searchParams }: { searchPa
 
   const params = await searchParams;
   const t = await getTranslations({ locale: routing.defaultLocale, namespace: "admin.reservations" });
+  const tLabels = await getTranslations({ locale: routing.defaultLocale, namespace: "admin.labels" });
   const status = parseStatusFilter(params.status);
   const cursor = parseCursor(params.cursor);
 
@@ -115,6 +119,14 @@ export default async function AdminReservationsPage({ searchParams }: { searchPa
                       <Link className={a.rowLink} href={`/admin/reservations/${r.id}`}>
                         {r.public_code}
                       </Link>
+                      {r.intake === "quick" ? (
+                        <>
+                          {" "}
+                          <span className={a.badge} data-intake="quick" data-testid="admin-quick-badge">
+                            {tLabels("quickBadge")}
+                          </span>
+                        </>
+                      ) : null}
                     </td>
                     <td className={`${a.td} ${a.tdStrong} ${a.tdNowrap}`}>{r.name}</td>
                     <td className={`${a.td} ${a.tdNowrap}`}>
@@ -125,12 +137,18 @@ export default async function AdminReservationsPage({ searchParams }: { searchPa
                     <td className={a.td}>
                       {t("routeValue", { origin: label(r.origin_code), destination: label(r.destination_code) })}
                     </td>
-                    <td className={`${a.td} ${a.tdNowrap}`}>{kstWallClock(r.depart_at)}</td>
-                    <td className={`${a.td} ${a.tdNowrap}`}>{vehicles.get(r.vehicle_slug) ?? r.vehicle_slug}</td>
+                    <td className={`${a.td} ${a.tdNowrap}`}>{tripDateText(r.depart_at, r.intake)}</td>
                     <td className={`${a.td} ${a.tdNowrap}`}>
-                      {r.passengers === null
-                        ? t("countBusesOnly", { buses: r.bus_count })
-                        : t("countValue", { buses: r.bus_count, passengers: r.passengers })}
+                      {r.vehicle_slug === null ? tLabels("undecided") : (vehicles.get(r.vehicle_slug) ?? r.vehicle_slug)}
+                    </td>
+                    <td className={`${a.td} ${a.tdNowrap}`}>
+                      {r.bus_count === null
+                        ? r.passengers === null
+                          ? tLabels("undecided")
+                          : t("countPaxOnly", { passengers: r.passengers })
+                        : r.passengers === null
+                          ? t("countBusesOnly", { buses: r.bus_count })
+                          : t("countValue", { buses: r.bus_count, passengers: r.passengers })}
                     </td>
                     <td className={a.td}>
                       <span className={a.badge} data-status={r.status}>

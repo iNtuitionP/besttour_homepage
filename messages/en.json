@@ -81,17 +81,27 @@
       "widget": {
         "label": "Quote request widget",
         "title": "Request a quote",
-        "sub": "Just choose your schedule and we will send you a quote by text message",
+        "sub": "Leave your dates and group size, and the owner will review them and contact you",
         "origin": "From",
         "dest": "To",
         "date": "Departure date",
+        "returnDate": "Return date",
         "pax": "Passengers",
         "groupAirport": "★ Airport route (specialist)",
         "groupRegions": "Provinces & metropolitan cities",
         "groupCities": "Featured route cities",
         "airNote": "This is an <b>Airport Pickup & Drop-off (Transfer Specialists)</b> route.",
         "cta": "Request a quote",
-        "note": "There is no online payment."
+        "note": "There is no online payment.",
+        "errors": {
+          "origin": "Please choose where you are leaving from.",
+          "dest": "Please choose your destination.",
+          "departDate": "Please choose a departure date.",
+          "departPast": "Please choose a departure date from today onward.",
+          "returnDate": "Please choose a return date.",
+          "returnBefore": "The return date must be the same as or after the departure date.",
+          "pax": "Please enter the number of passengers (1 to 900)."
+        }
       }
     },
     "routes": {
@@ -129,7 +139,7 @@
     "how": {
       "eyebrow": "How it works",
       "title": "From request to payment in just <ac>four steps</ac>",
-      "desc": "We take care of the complicated parts. All you need to do is choose a vehicle and a schedule. There is no online payment."
+      "desc": "We take care of the complicated parts. All you need to do is tell us where you are going, when, and how many people. There is no online payment."
     },
     "fleet": {
       "eyebrow": "Vehicles",
@@ -137,7 +147,7 @@
       "seat": "{n}-seat",
       "capacityLabel": "Capacity",
       "capacity": "Up to <b>{n} people</b>",
-      "cta": "Get a quote for this vehicle",
+      "cta": "Request a quote",
       "disc": "Seating capacity and options may vary slightly depending on the vehicle assigned. Whether parking fees and 10% VAT are included will be stated separately on your quote.",
       "lines": {
         "bus45": "A large coach used for group workshops, field trips and religious groups.",
@@ -179,7 +189,8 @@
       "listLabel": "Recent quote requests",
       "statusNew": "Received",
       "statusConfirmed": "Confirmed",
-      "itemLabel": "{name} · {vehicle} · {date}"
+      "itemLabel": "{name} · {vehicle} · {date}",
+      "itemLabelNoVehicle": "{name} · {date}"
     }
   },
   "reservation": {
@@ -193,178 +204,50 @@
     }
   },
   "quote": {
-    "meta": {
-      "title": "Request a Quote — {brand}",
-      "description": "Request a charter bus quote in 6 steps. Just tell us your vehicle and schedule to submit a request; we will review it and send you a quote by text message."
-    },
-    "eyebrow": "Online quote",
-    "title": "Request a charter bus quote in 6 steps",
-    "sub": "Just tell us your vehicle and schedule to submit a request. We will review it and send you a quote by text message.",
-    "progressLabel": "Quote progress",
-    "progressNow": "{n} / {total} · {name}",
-    "kicker": "STEP {n} / {total}",
-    "required": "Required",
-    "optional": "Optional",
-    "errorSummary": "Please check your entries",
-    "nav": {
-      "prev": "← Back",
-      "next": "Next →"
-    },
-    "steps": {
-      "purpose": {
-        "name": "Purpose",
-        "title": "What is the trip for?",
-        "desc": "Choose the trip purpose that is closest to yours.",
-        "label": "Trip purpose",
-        "feature": "Main service",
-        "options": {
-          "airport_pickup": "Airport pickup",
-          "family": "Family trip",
-          "ceremony": "Wedding / funeral",
-          "workshop": "Workshop",
-          "social": "Social gathering",
-          "religious": "Religious group",
-          "univ_mt": "University retreat",
-          "field_trip": "Field trip",
-          "foreign_vip": "Foreign VIP · sightseeing",
-          "etc": "Other"
-        },
-        "error": "Please choose a trip purpose."
+    "modal": {
+      "title": "Request a quote with these details",
+      "close": "Close",
+      "summaryLabel": "Your request",
+      "summaryRoute": "Route",
+      "summaryDates": "Travel dates",
+      "summaryPax": "Passengers",
+      "routeValue": "{origin} → {destination}",
+      "dateSingle": "{date} (same day)",
+      "dateRange": "{from} – {to}",
+      "paxValue": "{n, plural, one {# person} other {# people}}",
+      "summaryHint": "We will confirm the vehicle type, departure time and other details with you by phone.",
+      "edit": "Edit",
+      "widgetFix": "Please tap Edit and check your route, dates and number of passengers.",
+      "nameLabel": "Name",
+      "phoneLabel": "Mobile number",
+      "phoneHint": "Enter a Korean mobile number as 010-0000-0000. For an international number, start with + and your country code.",
+      "security": "Security check",
+      "notReadyTitle": "Online requests are being set up",
+      "notReadyBody": "We can't take online requests right now. Please call {tel} and we will help you right away.",
+      "call": "Call",
+      "consentRequired": "You need to tick both required consents to submit.",
+      "submit": "Request a quote",
+      "submitting": "Submitting…",
+      "errors": {
+        "name": "Please enter your name. (Up to 30 characters)",
+        "phone": "Please enter your mobile number as 010-0000-0000.",
+        "phoneIntl": "Please enter an international number as + and your country code, then digits only.",
+        "consent": "Please tick the required consent."
       },
-      "vehicle": {
-        "name": "Vehicle",
-        "title": "Which vehicle do you need?",
-        "desc": "Choose a vehicle that fits your group size. Picking one with a little more capacity than you need makes loading luggage easier.",
-        "label": "Vehicle type",
-        "capacity": "Capacity: {n} people",
-        "lines": {
-          "bus45": "A large coach for group events · Ask about DVD, karaoke, refrigerator and other amenities",
-          "bus35": "Mid-size groups and workshops · A mid-size coach that gets into narrow roads and parking lots easily",
-          "limo28": "Wide seats, comfortable over long distances · Premium seating · Recommended for trips with older passengers",
-          "bus25": "Small gatherings and training trips · A coach suited to all kinds of small-group itineraries",
-          "bus16": "Suited to airport pickup & drop-off · A small bus that gets into narrow streets easily"
-        },
-        "empty": "We could not load the vehicle list. Please refresh the page and try again.",
-        "error": "Please choose one vehicle.",
-        "notice": "This page only takes quote requests. Because the price depends on the route, schedule and vehicle availability, we review your request personally and then send you a quote by text message."
-      },
-      "route": {
-        "name": "Route",
-        "title": "Where are you traveling from and to?",
-        "desc": "If your departure point or destination is Incheon Airport, it is an Airport Pickup & Drop-off (Transfer Specialists) route.",
-        "label": "From · To",
-        "origin": "From",
-        "dest": "To",
-        "originPlaceholder": "Choose a departure point",
-        "destPlaceholder": "Choose a destination",
-        "groupCities": "Cities",
-        "groupRegions": "Other areas (provinces)",
-        "airNote": "This is an Airport Pickup & Drop-off (Transfer Specialists) route.",
-        "waypoints": "Stops",
-        "waypointsHint": "Add any stops along the way. The bus travels in the order you add them. (Up to {max} stops)",
-        "waypointEmpty": "No stops added — the bus goes straight from the departure point to the destination.",
-        "waypointLabel": "Stop {n}",
-        "waypointPlaceholder": "Choose stop {n}",
-        "waypointRemove": "Remove stop {n}",
-        "waypointAdd": "＋ Add a stop",
-        "waypointMax": "You can add up to {max} stops",
-        "error": "Please choose both a departure point and a destination.",
-        "errorWaypoint": "Please choose a place for each stop you added, or remove it."
-      },
-      "schedule": {
-        "name": "Schedule",
-        "title": "When, and how many people?",
-        "desc": "We plan the vehicle around your departure date and time. If your schedule is flexible, an estimate is fine.",
-        "tripType": "Trip type",
-        "trip": {
-          "round": "Round trip",
-          "roundSub": "Go and come back together",
-          "oneway": "One way",
-          "onewaySub": "Outbound only",
-          "oneway_oneway": "One way + one way",
-          "oneway_onewaySub": "Separate trips there and back"
-        },
-        "depart": "Departure date & time",
-        "departDate": "Departure date",
-        "departTime": "Departure time",
-        "return": "Return date & time",
-        "returnHint": "If it is the same day as departure, it is recorded as a same-day round trip; if it is the next day, as a 2-day, 1-night trip.",
-        "returnOptionalHint": "If you don't know your return date and time yet, you can leave them blank.",
-        "returnDate": "Return date",
-        "returnTime": "Return time",
-        "onewayNote": "You chose one way, so no return date or time is needed.",
-        "busCount": "Number of buses",
-        "passengers": "Estimated passengers",
-        "unitBus": "{count, plural, one {bus} other {buses}}",
-        "unitPax": "{count, plural, one {person} other {people}}",
-        "busMinus": "Fewer buses",
-        "busPlus": "More buses",
-        "paxMinus": "Fewer passengers",
-        "paxPlus": "More passengers",
-        "capBase": "{buses, plural, one {# bus} other {# buses}} ({vehicle}) can seat up to {total, plural, one {# person} other {# people}}.",
-        "capNote": "{buses, plural, one {# bus} other {# buses}} ({vehicle}) can seat up to {total, plural, one {# person} other {# people}}. (Currently {pax, plural, one {# person} other {# people}})",
-        "capWarn": "{buses, plural, one {# bus} other {# buses}} ({vehicle}) can seat up to {total, plural, one {# person} other {# people}}. You have {pax, plural, one {# person} other {# people}} — add more buses, or adjust with our staff after you submit your request.",
-        "capEmpty": "Choose a vehicle to see its capacity.",
-        "errorTrip": "Please choose a trip type.",
-        "errorDepart": "Please enter the departure date and time.",
-        "errorReturn": "Please enter a return date and time after the departure.",
-        "errorBus": "You can enter 1 to 20 buses.",
-        "errorPax": "Please enter 1 to 900 passengers."
-      },
-      "options": {
-        "name": "Preferences",
-        "title": "How would you like your quote?",
-        "desc": "Everything here is optional. You can leave it all blank and still submit.",
-        "contactMethod": "How to receive your quote",
-        "contact": {
-          "mobile": "Mobile",
-          "phone": "Phone call",
-          "fax": "Fax"
-        },
-        "paymentMethod": "Payment method",
-        "payment": {
-          "cash": "Cash",
-          "card": "Card",
-          "tax_invoice": "Tax invoice"
-        },
-        "conditions": "Quote conditions",
-        "parking": "Include parking fees in the quote",
-        "parkingDesc": "Would you like a quote that includes parking and toll fees?",
-        "vat": "Include 10% VAT in the quote",
-        "vatDesc": "Check this and we will prepare your quote with VAT included.",
-        "message": "Anything else you'd like to tell us",
-        "messagePlaceholder": "e.g. Please come to the main gate by 7:30 a.m. Many of our group are older, so a bus with low steps would be great.",
-        "errorMessage": "Please keep your message to 1,000 characters or fewer."
-      },
-      "contact": {
-        "name": "Contact · Consent",
-        "title": "How can we reach you?",
-        "desc": "We only need your name and mobile number to receive your request. Everything else is optional.",
-        "nameLabel": "Name",
-        "namePlaceholder": "e.g. Jane Smith",
-        "phoneKind": "Phone number type",
-        "phoneKr": "Korean mobile",
-        "phoneIntlKind": "International number",
-        "phoneLabel": "Mobile number",
-        "phoneHint": "Enter it as 010-0000-0000. If you type digits only, hyphens are added automatically.",
-        "phoneIntlLabel": "International phone number",
-        "phoneIntlHint": "Start with + and your country code, then digits only. e.g. +14155550123",
-        "email": "Email",
-        "emailPlaceholder": "e.g. name@example.com",
-        "errorName": "Please enter your name. (Up to 30 characters)",
-        "errorPhone": "Please enter your mobile number as 010-0000-0000.",
-        "errorPhoneIntl": "Please enter an international number as + and your country code, then digits only.",
-        "errorEmail": "Please check your email address.",
-        "consentRequired": "You need to tick the required consent to submit.",
-        "noticeTitle": "Please read before submitting",
-        "cancelTitle": "Cancellation and refund policy",
-        "security": "Security check",
-        "notReadyTitle": "Online requests are being set up",
-        "notReadyBody": "We can't take online requests right now. Please call {tel} and we will help you right away.",
+      "done": {
+        "title": "Your quote request has been received",
+        "codeLabel": "Request number",
+        "codeHint": "You can look up your request in Check Booking with this number and the last 4 digits of your mobile number.",
+        "noCode": "We will contact you after reviewing your request.",
+        "sub": "There is no online payment. You will not be charged anything before your booking is confirmed. If it is urgent, feel free to call {tel}.",
+        "check": "Check Booking",
         "call": "Call",
-        "submit": "Request a quote",
-        "submitting": "Submitting…"
+        "close": "Close"
       }
+    },
+    "notice": {
+      "title": "Please read before submitting",
+      "cancelTitle": "Cancellation and refund policy"
     },
     "consent": {
       "purpose": "Purpose of collection",
@@ -372,17 +255,6 @@
       "retention": "Retention period",
       "full": "View the full Privacy Policy",
       "newTab": "(new tab)"
-    },
-    "done": {
-      "meta": "Quote request received",
-      "title": "Your quote request has been received",
-      "codeLabel": "Request number",
-      "codeHint": "You can look up your request in Check Booking with this number and the last 4 digits of your mobile number.",
-      "noCode": "We will contact you after reviewing your request.",
-      "body": "We will review your request and send you a quote by text message.",
-      "sub": "There is no online payment. You will not be charged anything before your booking is confirmed. If it is urgent, feel free to call {tel}.",
-      "home": "Go to home page",
-      "again": "Request another quote"
     }
   },
   "reservationCheck": {
@@ -419,6 +291,8 @@
       "tripType": "Trip type",
       "departAt": "Departure",
       "returnAt": "Return",
+      "departDate": "Departure date",
+      "returnDate": "Return date",
       "busCount": "Buses",
       "busCountValue": "{n}",
       "passengers": "Passengers",

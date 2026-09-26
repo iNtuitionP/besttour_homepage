@@ -58,10 +58,12 @@ export async function submitReservation(formData: FormData): Promise<SubmitResul
   if (outcome.silent) return silentResult();
 
   let created: CreateReservationResult;
+  // 시계는 guard 가 한 번 읽은 값 하나만 쓴다(P3-8 리뷰 P2-6) — 다시 읽으면 KST 자정 경계에서 guard 통과 · create 거부(server 오류)가 난다.
+  const guardNow = outcome.now;
   try {
     created = await createReservation(outcome.input, {
       db: supabaseReservationDb(createServiceClient()),
-      now: () => new Date(),
+      now: () => guardNow,
       randomBytes,
       ownerPhone: process.env.OWNER_PHONE || undefined,
       ownerEmail: process.env.OWNER_EMAIL || undefined,

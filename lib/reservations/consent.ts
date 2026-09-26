@@ -13,7 +13,7 @@
  *     문자열" 규칙은 방문자가 입력하는 운행 일시에 대한 것이고, 서버가 찍는 동의·파기 시각은 인스턴트가 맞다.
  */
 import { LEGAL_PAGES, PRIVACY_NOTICE } from "../legal/disclosures";
-import type { ReservationConsentColumns, ReservationInput } from "../types";
+import type { ReservationConsentColumns } from "../types";
 
 /**
  * 개인정보 처리방침 문안 버전 — 처리방침 페이지(`/privacy`)가 표시하는 **시행일(원장 LEGAL_PAGES.privacy.effectiveDate)을 그대로 읽는다**(P1-7 R2 [P2-9]).
@@ -39,8 +39,15 @@ export function retentionUntil(createdAt: Date): Date {
   return new Date(createdAt.getTime() + PRIVACY_NOTICE.retentionDays * MS_PER_DAY);
 }
 
-/** consentFields 가 필요로 하는 입력 — zod 파싱 결과(ReservationInput)를 그대로 넘길 수 있다. */
-export type ConsentInput = Pick<ReservationInput, "privacyConsent" | "marketingConsent" | "withdrawalConsent">;
+/**
+ * consentFields 가 필요로 하는 입력. 간편 견적(P3-8)은 선택 동의(광고성 정보 수신)를 **받지 않는다** — 호출자(create.ts)가
+ * `marketingConsent: false` 를 명시해 넘기고, 그러면 marketing_consent_at 은 null 이다(받지 않은 동의의 시각을 만들지 않는다).
+ */
+export interface ConsentInput {
+  privacyConsent: boolean;
+  withdrawalConsent: boolean;
+  marketingConsent?: boolean;
+}
 
 /**
  * 0003 컬럼 4개 + 0021 컬럼 1개. `now` 는 서버가 접수 요청을 받은 인스턴트 — 동의 시각이자 retention_until 의 기산점이다.

@@ -16,7 +16,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 
-import { PREFILL_PARAMS } from "@/components/quote/prefill";
+import { QUOTE_ANCHOR } from "@/components/home/quote-anchor";
 import { splitParagraphs } from "@/components/pages/paragraphs";
 import { LEGACY_MENU } from "@/lib/legacy-menu-map";
 import { COMPANY, INSURANCE, PAYMENT, QUOTE_BASIS, VERBATIM } from "@/lib/legal/disclosures";
@@ -492,11 +492,13 @@ describe("5. /fleet", () => {
     expect(koText.includes("손해보험회사")).toBe(false);
   });
 
-  test("차량 카드는 홈 FleetSection 재사용 — CTA 는 /quote?vehicle=<slug> 프리필(위저드가 vehicle 을 받는다)", () => {
+  test("차량 카드는 홈 FleetSection 재사용 — CTA 는 홈 간편 견적 `/#quote`(P3-8 — 위저드·차종 프리필 폐지)", () => {
     expect(src).toMatch(/from\s+["']@\/components\/home\/FleetSection["']/);
     expect(code).toMatch(/<FleetSection\s+vehicles=/);
-    expect(PREFILL_PARAMS).toContain("vehicle");
-    expect(read("components/home/FleetSection.tsx")).toMatch(/quoteHref\(\{\s*vehicle:/);
+    expect(QUOTE_ANCHOR).toEqual({ pathname: "/", hash: "quote" });
+    const fleet = codeOf("components/home/FleetSection.tsx");
+    expect(fleet).toMatch(/href=\{QUOTE_ANCHOR\}/);
+    expect(fleet).not.toMatch(/quoteHref|\/quote\?/);
   });
 
   test("차량이 0대여도 페이지가 비지 않는다 (FleetSection 은 null 을 돌려주므로 빈 상태 문구가 따로 있다)", () => {
@@ -560,8 +562,9 @@ describe("6. /fares (P6-3b)", () => {
     }
   });
 
-  test("CTA — /quote 링크 + 예약·상담 전화 링크(P1-7 — consultPhone(locale), E.164 href)", () => {
-    expect(code).toMatch(/href="\/quote"/);
+  test("CTA — 홈 간편 견적 `/#quote` 링크(P3-8) + 예약·상담 전화 링크(P1-7 — consultPhone(locale), E.164 href)", () => {
+    expect(code).toMatch(/href=\{QUOTE_ANCHOR\}/);
+    expect(code).not.toMatch(/href="\/quote"/);
     expect(code).toMatch(/consultPhone\(\s*locale\s*\)/);
     expect(code).toMatch(/href=\{phone\.href\}/);
     expect(code).not.toMatch(/COMPANY\.tel\b/);

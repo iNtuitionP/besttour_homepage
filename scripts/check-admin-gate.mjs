@@ -73,6 +73,8 @@ const PUBLIC_ACTION_REASONS = Object.freeze({
     "공개 접수 폼 — 방문자가 로그인 없이 부른다. zod + Upstash RateLimit + Turnstile + 허니팟이 이 액션의 방어선이다(CLAUDE.md §3)",
   "actions/reservation-check.ts":
     "공개 예약 확인 — 접수번호+전화번호로 본인 건만 조회한다. 같은 4종 가드가 붙어 있고 부재/불일치를 구분하지 않는다",
+  "actions/quote-form-token.ts":
+    "공개 간편 견적 모달의 타임트랩 폼 토큰(P3-8) — 방문자가 로그인 없이 모달을 열 때 부른다. 발급 시각의 HMAC 서명만 돌려주고(데이터·개인정보 0) 접수 자체는 actions/reservation.ts 의 4종 가드가 막는다",
   "actions/admin/auth.ts":
     "관리자 로그인 링크 요청 — 인증 전이므로 requireAdmin 을 부를 수 없다. 허용 목록·레이트리밋·허니팟·중립 응답이 지킨다",
 });

@@ -24,7 +24,7 @@ vi.mock("next/headers", () => ({ cookies: vi.fn(async () => ({ getAll: () => [],
 
 import { getNotificationSummary } from "@/lib/admin/notifications";
 import { getNotifyCorrections } from "@/lib/admin/stats";
-import { PURPOSES } from "@/lib/codes";
+import { toKstDateString } from "@/lib/kst";
 import { notifyAfterResponse } from "@/lib/notify/deps";
 import { runInlineNotify } from "@/lib/notify/inline";
 import { resendSender } from "@/lib/notify/mail";
@@ -37,7 +37,7 @@ import { createReservation } from "@/lib/reservations/create";
 import { supabaseReservationDb } from "@/lib/reservations/db";
 import { formDataToRaw } from "@/lib/reservations/formData";
 import { createServiceClient } from "@/lib/supabase/server";
-import { ReservationInput } from "@/lib/types";
+import { quickReservationSchema } from "@/lib/types";
 
 const gate = dbWriteGate();
 const env = dbSmokeEnv();
@@ -110,24 +110,22 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("DB — 접수 뒤 즉시 
   /** 진짜 접수 한 건 — reservations 1행 + notifications_log 고객 SMS pending 1행(사장님 env 를 지웠으므로). */
   async function book(): Promise<string> {
     const fd = new FormData();
+    // P3-8 — 공개 접수는 홈 간편 견적 하나다. 출발일은 실행 시각 기준 30일 뒤(KST) — 날짜 하한(KST 오늘)에 걸리지 않게.
+    const depart = toKstDateString(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
     const fields: Record<string, string> = {
       name: MARK,
       phone: "010-1234-5678",
-      vehicleSlug: "bus45",
-      purposeCode: PURPOSES[0],
       originCode: "SEL",
       destinationCode: "ICN",
-      tripType: "round",
-      departAtLocal: "2026-10-01T08:00",
-      returnAtLocal: "2026-10-01T18:00",
-      busCount: "1",
+      departDate: depart,
+      returnDate: depart,
       passengers: "30",
       locale: "ko",
       privacyConsent: "on",
       withdrawalConsent: "on",
     };
     for (const [k, v] of Object.entries(fields)) fd.append(k, v);
-    const input = ReservationInput.parse(formDataToRaw(fd).raw);
+    const input = quickReservationSchema(new Date()).parse(formDataToRaw(fd).raw);
     const created = await createReservation(input, {
       db: supabaseReservationDb(createServiceClient()),
       now: () => new Date(),

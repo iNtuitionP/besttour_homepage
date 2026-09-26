@@ -33,6 +33,13 @@ const TABLE = "reservations";
 export const DEFAULT_ADMIN_PAGE_SIZE = 20;
 export const MAX_ADMIN_PAGE_SIZE = 100;
 
+/**
+ * 옛 6단계 위저드가 받던 연락·결제 방법 코드(P3-4 components/quote/options.ts — P3-8 에서 위저드와 함께 지웠다).
+ * 위저드 접수분(intake='wizard')의 상세 화면이 라벨(admin.labels.contact·payment)을 찾을 때만 쓴다. 간편 접수는 이 칸이 null 이다.
+ */
+export const LEGACY_CONTACT_METHODS = ["mobile", "phone", "fax"] as const;
+export const LEGACY_PAYMENT_METHODS = ["cash", "card", "tax_invoice"] as const;
+
 /** 목록 필터 — `all` 은 필터 없음. */
 export const STATUS_FILTERS = ["all", ...RESERVATION_STATUSES] as const;
 export type StatusFilter = (typeof STATUS_FILTERS)[number];
@@ -41,15 +48,19 @@ export interface ReservationListRow {
   id: string;
   public_code: string;
   status: ReservationStatus;
+  /** 0023 — 접수 경로. quick(홈 간편 견적)은 차종·목적·대수·왕복 구분이 null 이고 운행일의 시각(00:00)은 자리값이다. */
+  intake: "wizard" | "quick";
   name: string;
   phone: string;
-  vehicle_slug: string;
+  /** 간편 접수는 null — 사장님이 전화로 확인한다(0023). */
+  vehicle_slug: string | null;
   origin_code: string;
   destination_code: string;
   trip_type: string | null;
   depart_at: string;
   return_at: string | null;
-  bus_count: number;
+  /** 간편 접수는 null(0023). */
+  bus_count: number | null;
   passengers: number | null;
   created_at: string;
   confirmed_at: string | null;
@@ -57,7 +68,8 @@ export interface ReservationListRow {
 
 export interface ReservationDetailRow extends ReservationListRow {
   email: string | null;
-  purpose_code: string;
+  /** 간편 접수는 null(0023). */
+  purpose_code: string | null;
   waypoint_codes: unknown;
   contact_method: string | null;
   payment_method: string | null;
@@ -79,6 +91,7 @@ export const RESERVATION_LIST_COLUMNS = [
   "id",
   "public_code",
   "status",
+  "intake",
   "name",
   "phone",
   "vehicle_slug",

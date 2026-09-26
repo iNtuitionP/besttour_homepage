@@ -26,16 +26,16 @@ select version, name from supabase_migrations.schema_migrations order by version
 
 ### 🔴 적용 경로 — `supabase db push` 하나 (P5-15 R6 · 컨트롤러 결정 2026-09-17)
 - 🔴 **2026-09-21 부터: 시험 프로젝트(`gjnieoojgmhulkohdcnl`)에 먼저, 운영에 나중.** 시험 프로젝트가 생겼다(`docs/ops/environments.md`). 새 마이그레이션은 CI green 뒤 **시험 프로젝트에 `db push --db-url` 로 먼저** 적용하고, 자기검증 통과·프리뷰 정상을 본 뒤 운영에 아래 절차대로 적용한다. 저장소의 `supabase link` 는 운영을 가리키므로 **시험 프로젝트로 다시 link 하지 않는다.**
-- **0012~0022 의 원격 적용 경로는 `supabase db push` 하나다.** CLI 는 마이그레이션 파일 하나를 한 트랜잭션으로 돌리고, 성공한 버전을 `supabase_migrations.schema_migrations` 에 기록한다.
+- **0012~0023 의 원격 적용 경로는 `supabase db push` 하나다.** CLI 는 마이그레이션 파일 하나를 한 트랜잭션으로 돌리고, 성공한 버전을 `supabase_migrations.schema_migrations` 에 기록한다.
 - **SQL Editor 는 읽기 확인 전용이다** — 적용 전·후 행렬, 이력 조회처럼 카탈로그를 읽는 질의만 붙인다. **마이그레이션 본문을 SQL Editor 에 붙여 적용하지 않는다**: 그러면 이력이 남지 않아, 다음 `supabase db push` 가 **같은 마이그레이션을 다시 돌린다**(두 번 도는 것을 전제로 검토한 파일이 아니다).
 - **`psql -f` 도 쓰지 않는다**(리뷰 K1 — 파일이 원자적이지 않다. 이력도 남지 않는다).
 - 🔴 **적용 직후 필수 — 이력 확인**(읽기 질의):
   ```sql
   select version, name from supabase_migrations.schema_migrations order by version;
   ```
-  기대: 적용 전 목록 뒤에 이번에 적용한 버전이 한 줄씩 붙고, 저장소의 마지막 마이그레이션과 같은 번호로 끝난다 — 지금은 **마지막이 `0022`**(P5-17 이 `0021` 뒤에 더했다). 한 줄이라도 빠졌거나 마지막이 `0022` 가 아니면 **멈추고 컨트롤러에게 보고한다**(`db push` 는 실패한 파일에서 멈추고 그 뒤 버전을 돌리지 않는다 — 어디서 멈췄는지가 이 목록에 보인다). (2026-09-21 의 첫 적용에서는 `0011` 뒤에 `0012`~`0019` 여덟 줄이, 두 번째 적용에서는 `0020` 한 줄이 붙는 것이 기대였고 그대로 됐다 — 맨 아래 「원격 적용 기록」.)
+  기대: 적용 전 목록 뒤에 이번에 적용한 버전이 한 줄씩 붙고, 저장소의 마지막 마이그레이션과 같은 번호로 끝난다 — 지금은 **마지막이 `0023`**(P3-8 이 `0022` 뒤에 더했다). 한 줄이라도 빠졌거나 마지막이 `0023` 이 아니면 **멈추고 컨트롤러에게 보고한다**(`db push` 는 실패한 파일에서 멈추고 그 뒤 버전을 돌리지 않는다 — 어디서 멈췄는지가 이 목록에 보인다). (2026-09-21 의 첫 적용에서는 `0011` 뒤에 `0012`~`0019` 여덟 줄이, 두 번째 적용에서는 `0020` 한 줄이 붙는 것이 기대였고 그대로 됐다 — 맨 아래 「원격 적용 기록」.)
 - **예외 — 이미 수동 적용(SQL Editor·psql)을 해 버렸다면**: 본문이 실제로 전부 적용됐는지 해당 절의 행렬로 먼저 확인한 뒤, `supabase migration repair --status applied <번호>` 로 이력을 맞춘다 — **이 경로는 컨트롤러 승인이 있을 때만 쓴다.** `repair` 는 이력만 고치고 본문을 돌리지 않으므로, 적용되지 않은 버전을 `applied` 로 적으면 그 마이그레이션은 **영영 건너뛰어진다**.
-- **잠금 대기 상한 — 파일 안의 `set local lock_timeout = '5s';`** (P5-15 R7 · 컨트롤러 결정): 0012 이후 파일(0012~0022, 열한 개) 모두 **첫 실행문**이 이것이고, 둘째 실행문이 **그 시점에 `lock_timeout` 이 실제로 `5s` 인지**만 확인한다 — 아니면 아무것도 바꾸기 전에 멈춘다. ⚠️ 이 확인은 **원자성을 증명하지 않는다**(astra R7 P2-b): 자동 커밋 세션이라도 서버·롤·DB 기본값이 이미 5초면 통과한다. 잡아 주는 것은 "`set local` 이 그 문장에서 끝나 설정이 남지 않은 경우"(예: 기본값이 5초가 아닌 서버에서 `psql -f`)뿐이다. **파일 하나가 한 트랜잭션이라는 보장은 적용 경로(`supabase db push`)에서 오고**, 아래 실측이 그것을 확인한 것이다. CLI 는 파일 하나를 한 트랜잭션으로 보내므로 이 설정은 **그 파일에만** 걸리고 다음 파일로 새지 않는다. 어떤 문장이 잠금을 5초 넘게 기다리면 `ERROR: canceling statement due to lock timeout (SQLSTATE 55P03)` 로 그 파일이 실패한다 — 접수 트랜잭션을 줄 세우지 않는다.
+- **잠금 대기 상한 — 파일 안의 `set local lock_timeout = '5s';`** (P5-15 R7 · 컨트롤러 결정): 0012 이후 파일(0012~0023, 열두 개) 모두 **첫 실행문**이 이것이고, 둘째 실행문이 **그 시점에 `lock_timeout` 이 실제로 `5s` 인지**만 확인한다 — 아니면 아무것도 바꾸기 전에 멈춘다. ⚠️ 이 확인은 **원자성을 증명하지 않는다**(astra R7 P2-b): 자동 커밋 세션이라도 서버·롤·DB 기본값이 이미 5초면 통과한다. 잡아 주는 것은 "`set local` 이 그 문장에서 끝나 설정이 남지 않은 경우"(예: 기본값이 5초가 아닌 서버에서 `psql -f`)뿐이다. **파일 하나가 한 트랜잭션이라는 보장은 적용 경로(`supabase db push`)에서 오고**, 아래 실측이 그것을 확인한 것이다. CLI 는 파일 하나를 한 트랜잭션으로 보내므로 이 설정은 **그 파일에만** 걸리고 다음 파일로 새지 않는다. 어떤 문장이 잠금을 5초 넘게 기다리면 `ERROR: canceling statement due to lock timeout (SQLSTATE 55P03)` 로 그 파일이 실패한다 — 접수 트랜잭션을 줄 세우지 않는다.
 - **부분 적용 — push 전체는 원자적이지 않다**: 한 파일이 시간 초과(또는 다른 오류)로 실패하면 **앞 파일들은 커밋·기록된 채 남고**, **그 파일은 롤백되며**(이력에도 없다), 뒤 파일은 돌지 않는다. 막던 세션이 끝난 뒤 **다음 `supabase db push` 가 그 파일부터** 이어서 적용한다. 시간 초과는 **멈추고 보고할 일**이다 — 수동 적용이나 `repair` 로 건너뛰지 않는다. 어디서 멈췄는지는 적용 직후 이력 확인이 보여 준다.
 - **실측** (2026-09-17 · supabase CLI 2.117.0 · 로컬 전용 `--db-url postgresql://…@127.0.0.1:…`):
   - 합성 마이그레이션(PG 15.17 일회용 컨테이너 · PG 17.6 로컬 스택의 일회용 DB 둘 다): 한 파일의 행들이 **같은 xid**, `set local` 뒤 `lock_timeout=5s`, 다음 파일에서는 `0`(새지 않음). 다른 세션이 표를 쥔 채 push → 약 5초 뒤 `55P03` · 그 파일의 표·행·이력 없음 · 앞 파일 이력 유지 → 풀린 뒤 push 가 그 파일부터 재개. 대조군(`set local` 없음)은 잠금이 풀릴 때까지 **기다렸다**(20초 잡음 → 20초 걸림).
@@ -1114,6 +1114,41 @@ select
 ① 열리는 권한이 없고(함수가 사라지면 그 ACL 도 사라진다 · 표 권한은 처음부터 안 건드렸다) ② 조용하지 않으며(통계 탭이 곧바로 PGRST202)
 ③ 데이터가 사라지지 않는다. 근거는 그 파일 헤더에 적혀 있다. ⚠️ **앱을 0022 이전 코드로 먼저 되돌린 뒤** 돌린다.
 되돌린 뒤 `supabase migration repair --status reverted 0022`.
+
+## 0023 — 홈 간편 견적 접수(`intake='quick'`) (**원격 미적용** · P3-8 · 구현자 초안 — 컨트롤러 검토 전)
+
+**무엇을 하나**: `reservations` 에 `intake text not null`(`wizard|quick`)을 더하고(적용 순간의 기존 행은 전부 `wizard` — 빠른 기본값 → **같은 트랜잭션에서 기본값 제거**),
+`vehicle_slug`·`purpose_code`·`bus_count` 의 NOT NULL 을 푼다(**`bus_count` 기본값 1 도 제거** — 남기면 간편 insert 가 "1대" 를 지어낸다).
+CHECK 셋: `reservations_intake_fields_ck`(`intake = 'quick'` 이거나 셋 다 not null) · `reservations_round_trip_return_ck` 재작성(CASE —
+`trip_type` 없음은 `quick` 에만 허용, 나머지는 0006 과 같다) · `reservations_quick_passengers_ck`(`intake = 'wizard' or passengers is not null` —
+간편 행은 인원 필수, 리뷰 P2-5). 권한 문장 0 · 새 표·함수·시퀀스 0 · `drop function` 0.
+**§2 — `admin_stats` 본문 한 줄 교체**(리뷰 P2-7): "기타" 로 접힌 차량 칸에 대수 미상(간편 접수)이 섞이면 대수 합을 `null` 로 낸다
+(0022 판은 간편 행을 빼고 더해 "기타 N건 · M대" 가 서로 다른 모집단을 셌다). `create or replace` 라 소유자·EXECUTE 가 그대로다 —
+자기검증 §2 가 proacl·소유자·definer·search_path 를 전후로 대조하고 anon·service_role EXECUTE 0 · authenticated 1 을 확인한다.
+본문은 0022 와 그 한 줄만 다르다(`tests/quick-intake.test.ts` 가 줄 단위로 대조).
+**잠금** — ① 재실행 가드 바로 뒤에 `lock table public.reservations in access exclusive mode` 를 먼저 잡고 센다(리뷰 P2-2 — 세고 나서 잠그면
+그 사이 커밋된 접수가 "행 수가 바뀌었다" 거짓 중단을 만든다). 대기는 lock_timeout 5초 상한.
+
+**조여지는 곳** — `trip_type` 이 없는 **위저드** 행. 0006 판에서는 NULL 로 통과하던 자리다. 자기검증 ② 가 제약 추가 전에 건수를 세어 있으면 멈춘다.
+원격 적용 전 읽기 질의로 먼저 본다: `select count(*) from public.reservations where trip_type is null;` → 기대 `0`.
+
+### 🔴 배포 순서 — 0021 과 같은 짝(환경마다 **적용 → 배포**)
+- 적용 뒤 **옛 코드**(위저드 — `intake` 를 모른다)가 접수를 받으면 그 접수는 `23502`(intake not null)로 실패한다.
+- **새 코드**를 먼저 배포하면 `intake` 칸이 없어 접수가 `PGRST204` 로 실패한다.
+- 그 사이 창(수 분)의 실패는 화면이 "일시적 오류 · 전화" 로 안내한다(fail-closed). 시험 DB → 프리뷰 → 운영 DB → 운영 배포.
+
+### 로컬 실측 (2026-09-27 · 구현자)
+- `npx supabase migration up --local` 적용 → 롤백 파일 실행 → `psql -1 -f` 재적용 순서로 돌렸다. 재적용 NOTICE:
+  `0023: intake 추가(기존 0 건 wizard · 기본값 없음) · … · 탐침 no_intake=23502:intake wizard_no_vehicle=23514:reservations_intake_fields_ck …`
+  (전문은 `.superpowers/sdd/2026-09-06-bestour-implementation-v4/P3-8-report.md` ②).
+- vitest `tests/quick-intake.test.ts`(실제 표에 치고 되돌리는 거동) · `tests/admin-stats.test.ts` E-4(null 버킷 · k=3) · 권한 게이트 전량.
+- 수정 라운드(리뷰 P2-2·P2-5·P2-7) 뒤 롤백 → `psql -1` 재적용 NOTICE 끝부분: `… quick_no_pax=23514:reservations_quick_passengers_ck wizard_no_pax=OK` ·
+  `0023 §2: admin_stats "기타" 대수 — … 권한·소유자·definer·search_path 불변 ({postgres=X/postgres,authenticated=X/postgres}|postgres|t|search_path=public, pg_temp)`.
+
+### 롤백
+`supabase/rollbacks/0023_quick_intake.down.sql` — **간편 행이 한 건이라도 있으면 멈춘다**(쓰기 잠금을 쥔 뒤에 센다). 차종·목적·대수를
+지어내거나 행을 지우지 않는다 — 사람이 앱을 먼저 되돌리고 간편 행을 처리한 뒤 다시 돌린다(그 파일 헤더 ①~④). 승인 플래그는 없다. 되돌린 뒤
+`supabase migration repair --status reverted 0023`. §2 의 `admin_stats` 본문은 되돌리지 않는다(0022 스키마에서도 그대로 돈다).
 
 ---
 

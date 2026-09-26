@@ -19,7 +19,8 @@ import { maskName } from "./mask";
 
 export interface RecentReservationRow {
   name: string;
-  vehicle_slug: string;
+  /** 간편 접수(0023 intake='quick')는 null — 차종을 받지 않았다. */
+  vehicle_slug: string | null;
   /** timestamptz — PostgREST 가 ISO 문자열로 준다. */
   depart_at: string;
   status: string;
@@ -44,8 +45,11 @@ export type RecentPublicStatus = (typeof RECENT_PUBLIC_STATUSES)[number];
 export interface RecentFeedItem {
   /** maskName(name) — 첫 글자 + '*' 1~2개. 예: "한**" */
   maskedName: string;
-  /** vehicles.name_ko — slug 가 아니다. */
-  vehicleLabel: string;
+  /**
+   * vehicles.name_ko — slug 가 아니다. **간편 접수(P3-8 · 0023)는 null** — 손님이 차종을 고르지 않았다. 화면은 차종 칸을 빼고 보인다
+   * (원장 publicFeedNotice 의 한정 열거 "성명 일부·차종·운행일·접수 상태" 안에서 **더 적게** 보이는 것이다).
+   */
+  vehicleLabel: string | null;
   /** 운행일, KST 달력 날짜 "M/D"(제로패딩 없음). 시각·출발지·도착지·인원은 내리지 않는다(원장 고지 범위 밖). */
   departDateKst: string;
   status: RecentPublicStatus;
@@ -78,8 +82,13 @@ export function mapRecentRows(
   const items: RecentFeedItem[] = [];
   for (const row of rows) {
     if (!isPublicStatus(row.status)) continue;
-    const vehicleLabel = vehicleLabelBySlug.get(row.vehicle_slug);
-    if (!vehicleLabel) continue;
+    // 차종이 없는 간편 접수(slug null)는 라벨 없이 싣는다. slug 가 **있는데** 라벨을 못 찾으면 예전처럼 버린다(slug 를 대신 보이지 않는다).
+    let vehicleLabel: string | null = null;
+    if (row.vehicle_slug !== null) {
+      const found = vehicleLabelBySlug.get(row.vehicle_slug);
+      if (!found) continue;
+      vehicleLabel = found;
+    }
     const instant = new Date(row.depart_at);
     if (Number.isNaN(instant.getTime())) continue;
     items.push({

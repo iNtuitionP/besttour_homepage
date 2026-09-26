@@ -118,6 +118,7 @@ const ROW: ReservationCheckRow = {
   name: RAW_NAME,
   phone: RAW_PHONE_E164,
   status: "confirmed",
+  intake: "wizard",
   trip_type: "round",
   depart_at: "2026-09-30T23:30:00.000Z", // KST 2026-10-01 08:30 — UTC 날짜와 다르다
   return_at: "2026-10-01T09:00:00.000Z", // KST 2026-10-01 18:00
@@ -377,6 +378,7 @@ describe("3. lookupReservation — 부재와 불일치는 같은 결과, 일치�
       statusKey: "reservationCheck.status.confirmed",
       tripType: "round",
       tripTypeKey: "reservationCheck.tripType.round",
+      intake: "wizard",
       departAtKst: "2026-10-01 08:30",
       returnAtKst: "2026-10-01 18:00",
       vehicleLabel: VEHICLE_NAME,
@@ -388,6 +390,67 @@ describe("3. lookupReservation — 부재와 불일치는 같은 결과, 일치�
       maskedPhone: "010-****-5678",
       createdAtKst: "2026-09-13 14:04",
     });
+  });
+
+  // P3-8 — 홈 간편 견적(0023 intake='quick'): 날짜만(저장된 00:00 은 자리값) · 차종·대수 줄 없음 · 차량 라벨을 읽지 않는다.
+  test("(c') 간편 접수 → 날짜만 · vehicleLabel·busCount null · vehicles 조회 0", async () => {
+    const quick: ReservationCheckRow = {
+      ...ROW,
+      intake: "quick",
+      trip_type: null,
+      vehicle_slug: null,
+      bus_count: null,
+      passengers: 30,
+      depart_at: "2026-09-30T15:00:00.000Z", // KST 2026-10-01 00:00
+      return_at: "2026-10-02T15:00:00.000Z", // KST 2026-10-03 00:00
+    };
+    const db = fakeDb(quick);
+    const out = await lookupReservation(input, { db });
+    if (!out.found) throw new Error("unreachable");
+    expect(out.view).toMatchObject({
+      intake: "quick",
+      tripType: null,
+      tripTypeKey: null,
+      departAtKst: "2026-10-01",
+      returnAtKst: "2026-10-03",
+      vehicleLabel: null,
+      busCount: null,
+      passengers: 30,
+    });
+    expect(out.view.departAtKst).not.toMatch(/\d{2}:\d{2}/);
+    expect(db.veh).not.toHaveBeenCalled();
+  });
+
+  test("(c'') 결과 카드 렌더 — 간편 접수는 차량·대수 줄이 없고 라벨이 '출발일·도착일'(시각 없음) · 위저드 카드는 그대로", async () => {
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const { createElement } = await import("react");
+    const { NextIntlClientProvider } = await import("next-intl");
+    const { ReservationCard } = await import("@/components/reservation-check/ReservationCard");
+    const { consultPhone } = await import("@/lib/contact-phone");
+    const messages = JSON.parse(read("messages/ko.json")) as Record<string, unknown>;
+    const providerProps = { locale: "ko", messages, timeZone: "Asia/Seoul" } as unknown as Parameters<typeof NextIntlClientProvider>[0];
+    const render = (view: ReservationView) =>
+      renderToStaticMarkup(
+        createElement(
+          NextIntlClientProvider,
+          providerProps,
+          createElement(ReservationCard, { view, bookingNotice: VERBATIM.bookingNotice, tel: consultPhone("ko"), onAgain: () => {} }),
+        ),
+      );
+    const card = (messages.reservationCheck as { card: Record<string, string> }).card;
+    const quickView = toReservationView(
+      { ...ROW, intake: "quick", trip_type: null, vehicle_slug: null, bus_count: null, depart_at: "2026-09-30T15:00:00.000Z", return_at: "2026-10-02T15:00:00.000Z" },
+      null,
+    );
+    const quickHtml = render(quickView);
+    expect(quickHtml).not.toContain(`<dt>${card.vehicle}</dt>`);
+    expect(quickHtml).not.toContain(`<dt>${card.busCount}</dt>`);
+    expect(quickHtml).toContain(`<dt>${card.departDate}</dt><dd>2026-10-01</dd>`);
+    expect(quickHtml).toContain(`<dt>${card.returnDate}</dt><dd>2026-10-03</dd>`);
+    expect(quickHtml).not.toContain(`<dt>${card.departAt}</dt>`);
+    const wizardHtml = render(toReservationView(ROW, VEHICLE_NAME));
+    expect(wizardHtml).toContain(`<dt>${card.vehicle}</dt><dd>${VEHICLE_NAME}</dd>`);
+    expect(wizardHtml).toContain(`<dt>${card.departAt}</dt><dd>2026-10-01 08:30</dd>`);
   });
 
   test("(c) 4자리 이상 숫자열은 날짜·대수·인원·마스킹 뒷자리 외 0 · 5자리 이상 숫자열 0 (전화 원문이 어떤 형식으로도 없다)", async () => {
@@ -555,7 +618,8 @@ describe("4. supabaseReservationCheckDb — select 화이트리스트", () => {
     expect(c.select).toBe(RESERVATION_CHECK_COLUMNS.join(","));
     const cols = (c.select ?? "").split(",");
     expect(cols.sort()).toEqual(
-      ["public_code", "name", "phone", "status", "trip_type", "depart_at", "return_at", "vehicle_slug", "origin_code", "destination_code", "bus_count", "passengers", "created_at"].sort(),
+      // P3-8: intake(간편 접수면 날짜만 · 차종 줄 없음)를 더했다 — 14열
+      ["public_code", "name", "phone", "status", "intake", "trip_type", "depart_at", "return_at", "vehicle_slug", "origin_code", "destination_code", "bus_count", "passengers", "created_at"].sort(),
     );
     for (const banned of ["email", "message", "admin_memo", "id", "*", "waypoint_codes", "confirmed_at"]) expect(cols, banned).not.toContain(banned);
     expect(c.select).not.toMatch(/\*/);
@@ -963,9 +1027,9 @@ describe("7. messages/ko.json — reservationCheck 네임스페이스", () => {
     expect(nsText.includes("결제 진행됩니다")).toBe(false);
   });
 
-  test("기존 네임스페이스는 그대로 — reservation.errors 6키·quote.done 존재", () => {
+  test("기존 네임스페이스는 그대로 — reservation.errors 6키·접수 완료 안내(P3-8: quote.done → quote.modal.done) 존재", () => {
     expect(Object.keys((ko.reservation as { errors: object }).errors).sort()).toEqual(["bot", "infra", "ratelimit", "server", "turnstile", "validation"]);
-    expect(typeof resolve("quote.done.codeHint")).toBe("string");
+    expect(typeof resolve("quote.modal.done.codeHint")).toBe("string");
   });
 });
 
@@ -1086,9 +1150,11 @@ describe("8. 컴포넌트·페이지 정적", () => {
     expect(sp).toBeGreaterThan(guard);
     expect(page).toMatch(/previewResult=\{/);
     expect(page).not.toMatch(/name:\s*["']|phone:\s*["']/);
-    expect([...PREVIEW_RESULT_MODES]).toEqual(["ok", "not_found", "ratelimit"]);
+    // P3-8: quick — 간편 접수 카드(날짜만 · 차종·대수 줄 없음)를 실측하는 모드
+    expect([...PREVIEW_RESULT_MODES]).toEqual(["ok", "quick", "not_found", "ratelimit"]);
     expect(parsePreviewResult("1")).toBe("ok");
     expect(parsePreviewResult("ok")).toBe("ok");
+    expect(parsePreviewResult("quick")).toBe("quick");
     expect(parsePreviewResult("not_found")).toBe("not_found");
     expect(parsePreviewResult("ratelimit")).toBe("ratelimit");
     for (const bad of [undefined, "", "infra", ["ok"], "OK"]) expect(parsePreviewResult(bad as never), String(bad)).toBeNull();
@@ -1182,9 +1248,9 @@ describe("8. 컴포넌트·페이지 정적", () => {
     );
   });
 
-  test("뷰 모델 키 목록 — RESERVATION_VIEW_KEYS 15개, 원문 키 없음(타입 단언은 view.ts 의 keyof 잠금)", () => {
+  test("뷰 모델 키 목록 — RESERVATION_VIEW_KEYS 16개(P3-8 intake 추가), 원문 키 없음(타입 단언은 view.ts 의 keyof 잠금)", () => {
     expect([...RESERVATION_VIEW_KEYS].sort()).toEqual(
-      ["publicCode", "status", "statusKey", "tripType", "tripTypeKey", "departAtKst", "returnAtKst", "vehicleLabel", "originLabel", "destinationLabel", "busCount", "passengers", "maskedName", "maskedPhone", "createdAtKst"].sort(),
+      ["publicCode", "status", "statusKey", "tripType", "tripTypeKey", "intake", "departAtKst", "returnAtKst", "vehicleLabel", "originLabel", "destinationLabel", "busCount", "passengers", "maskedName", "maskedPhone", "createdAtKst"].sort(),
     );
     for (const k of ["name", "phone", "email", "message", "adminMemo", "admin_memo", "id"]) expect(RESERVATION_VIEW_KEYS as readonly string[], k).not.toContain(k);
     const src = read(`${LIB_DIR}/view.ts`);

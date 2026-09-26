@@ -27,6 +27,7 @@ import {
   LEGAL_PAGES,
   OVERSEAS_TRANSFERS,
   PRIVACY_NOTICE,
+  PRIVACY_POLICY_ITEMS,
   PRIVACY_POLICY_SECTIONS,
   PROCESSORS,
   TERMS,
@@ -179,7 +180,15 @@ describe("1. 원장 소스 — 새 상수 4종", () => {
       expect(s.body?.trim().length, k).toBeGreaterThan(0);
     }
     expect((byKey.purpose as { from: unknown }).from).toBe(PRIVACY_NOTICE.purpose);
-    expect((byKey.items as { from: unknown }).from).toBe(PRIVACY_NOTICE.items);
+    // P3-8 리뷰 P1-1: 처리방침 항목 = 지금 받는 항목(동의 화면과 같은 목록, 같은 순서) + 옛 6단계 접수분의 보관 항목 한 줄
+    expect((byKey.items as { from: unknown }).from).toBe(PRIVACY_POLICY_ITEMS);
+    expect(PRIVACY_POLICY_ITEMS.slice(0, PRIVACY_NOTICE.items.length)).toEqual([...PRIVACY_NOTICE.items]);
+    expect(PRIVACY_POLICY_ITEMS).toHaveLength(PRIVACY_NOTICE.items.length + 1);
+    expect(PRIVACY_POLICY_ITEMS.at(-1)).toMatch(/^이전 견적 신청 화면\(6단계\)으로 접수된 건은/);
+    // 재검토 P1: 원장만 맞고 화면이 옛 상수를 읽으면 누락이 그대로 남는다 — 처리방침 페이지가 이 상수를 렌더하는지 소스로 잠근다
+    const privacySrc = read(PAGE_FILES.privacy);
+    expect(privacySrc).toMatch(/case "items":[\s\S]{0,300}?<LegalList items=\{PRIVACY_POLICY_ITEMS\} \/>/);
+    expect(privacySrc).not.toContain("PRIVACY_NOTICE.items");
     expect((byKey.retention as { from: unknown }).from).toBe(PRIVACY_NOTICE.retention);
     expect((byKey.processors as { from: unknown }).from).toBe(PROCESSORS);
     expect((byKey.overseas as { from: unknown }).from).toBe(OVERSEAS_TRANSFERS);
@@ -301,6 +310,7 @@ export const LEGAL_MAPPING: readonly MappingRow[] = [
   { law: "시행령 §31② — 처리방침 변경 공지", ledgerKey: "PRIVACY_POLICY_SECTIONS.12.body", page: "/privacy" },
   { law: "플랜 ADR-6 — 접수 현황 마스킹 공개 고지", ledgerKey: "PRIVACY_NOTICE.publicFeedNotice", page: "/privacy" },
   { law: "PIPA §30① — 처리방침 절 순서·제목 13절", ledgerKey: "PRIVACY_POLICY_SECTIONS", page: "/privacy" },
+  { law: "PIPA §30①2호 — 처리하는 개인정보 항목(지금 받는 것 + 보관 중인 옛 접수분, P3-8)", ledgerKey: "PRIVACY_POLICY_ITEMS", page: "/privacy" },
   { law: "PIPA §30② — 처리방침 제목·시행일 공개", ledgerKey: "LEGAL_PAGES.privacy", page: "/privacy" },
   // ── 공통 셸 ──
   { law: "시행규칙 §7② — 법정 문서 링크 상시 노출", ledgerKey: "LEGAL_LINKS", page: "(legal)/layout" },

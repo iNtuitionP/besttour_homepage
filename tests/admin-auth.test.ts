@@ -998,6 +998,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("7. DB — is_admin() RLS 
         public_code: `P51${RUN.slice(0, 5).toUpperCase()}`,
         name: "P51",
         phone: "010-0000-0000",
+        intake: "wizard", // 0023 — 기본값 없음
         vehicle_slug: "bus45",
         purpose_code: "family",
         origin_code: "SEL",
@@ -1069,6 +1070,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("7. DB — is_admin() RLS 
       public_code: `P51X${RUN.slice(0, 4).toUpperCase()}`,
       name: "X",
       phone: "010-0000-0000",
+      intake: "wizard", // 0023 — 기본값 없음(거부가 intake 누락이 아니라 권한 때문이어야 한다)
       vehicle_slug: "bus45",
       purpose_code: "family",
       origin_code: "SEL",

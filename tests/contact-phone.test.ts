@@ -93,8 +93,8 @@ describe("3. 소스 — 전화 안내는 consultPhone, 1566 은 푸터 사업자
     ["components/home/NoticeSection.tsx"],
     ["app/[locale]/(site)/fares/page.tsx"],
     ["app/[locale]/(site)/not-found.tsx"],
-    ["app/[locale]/(site)/quote/page.tsx"],
-    ["app/[locale]/(site)/quote/done/page.tsx"],
+    // P3-8: 위저드 두 화면 대신 홈 간편 견적 — 모달의 전화 폴백은 Hero(서버)가 고른다.
+    ["components/home/Hero.tsx"],
     ["app/[locale]/(site)/reservation/check/page.tsx"],
     ["app/[locale]/(site)/about/page.tsx"],
     ["app/[locale]/(legal)/guide/page.tsx"],
@@ -119,7 +119,7 @@ describe("3. 소스 — 전화 안내는 consultPhone, 1566 은 푸터 사업자
   });
 
   test("클라이언트 컴포넌트는 표시 문자열과 링크를 따로 받는다 — tel: 에 표시 문자열(+82 공백)을 넣지 않는다", () => {
-    for (const f of ["components/quote/QuoteWizard.tsx", "components/reservation-check/CheckForm.tsx", "components/reservation-check/ReservationCard.tsx"]) {
+    for (const f of ["components/quote/QuickQuoteModal.tsx", "components/reservation-check/CheckForm.tsx", "components/reservation-check/ReservationCard.tsx"]) {
       const code = codeOf(f);
       expect(code, f).not.toMatch(/tel:\$\{tel\}/);
       expect(code, f).toMatch(/href=\{tel\.href\}/);
@@ -188,14 +188,11 @@ describe.runIf(Boolean(BASE))("5. 렌더 실측 — 전화 배치 (GET)", { time
     ["/about"],
     ["/fares"],
     ["/fleet"],
-    ["/quote"],
-    ["/quote/done"],
     ["/reservation/check"],
     ["/notices"],
     ["/en"],
     ["/en/about"],
     ["/en/fares"],
-    ["/en/quote"],
     ["/guide"],
     ["/privacy"],
     ["/terms"],

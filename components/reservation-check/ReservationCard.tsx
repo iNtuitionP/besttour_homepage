@@ -54,10 +54,13 @@ export function ReservationCard({ view, bookingNotice, tel, onAgain }: Reservati
           <dt>{t("card.phone")}</dt>
           <dd data-testid="reservation-phone">{view.maskedPhone}</dd>
         </div>
-        <div>
-          <dt>{t("card.vehicle")}</dt>
-          <dd>{view.vehicleLabel}</dd>
-        </div>
+        {/* 간편 접수(P3-8)는 차종을 받지 않았다 — 줄을 숨긴다(사장님이 전화로 확인). */}
+        {view.vehicleLabel !== null ? (
+          <div>
+            <dt>{t("card.vehicle")}</dt>
+            <dd>{view.vehicleLabel}</dd>
+          </div>
+        ) : null}
         <div>
           <dt>{t("card.route")}</dt>
           <dd>{t("card.routeValue", { origin: view.originLabel, destination: view.destinationLabel })}</dd>
@@ -68,20 +71,23 @@ export function ReservationCard({ view, bookingNotice, tel, onAgain }: Reservati
             <dd>{tRoot(view.tripTypeKey)}</dd>
           </div>
         ) : null}
+        {/* 간편 접수는 날짜만 받는다 — 라벨도 "일시" 가 아니라 "일"(값은 view 가 날짜만 만든다). */}
         <div>
-          <dt>{t("card.departAt")}</dt>
+          <dt>{view.intake === "quick" ? t("card.departDate") : t("card.departAt")}</dt>
           <dd>{view.departAtKst}</dd>
         </div>
         {view.returnAtKst ? (
           <div>
-            <dt>{t("card.returnAt")}</dt>
+            <dt>{view.intake === "quick" ? t("card.returnDate") : t("card.returnAt")}</dt>
             <dd>{view.returnAtKst}</dd>
           </div>
         ) : null}
-        <div>
-          <dt>{t("card.busCount")}</dt>
-          <dd>{t("card.busCountValue", { n: view.busCount })}</dd>
-        </div>
+        {view.busCount !== null ? (
+          <div>
+            <dt>{t("card.busCount")}</dt>
+            <dd>{t("card.busCountValue", { n: view.busCount })}</dd>
+          </div>
+        ) : null}
         {view.passengers !== null ? (
           <div>
             <dt>{t("card.passengers")}</dt>

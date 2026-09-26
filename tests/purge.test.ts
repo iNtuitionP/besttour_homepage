@@ -555,6 +555,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("DB — 파기 실증 (로
       created_at: createdAt.toISOString(),
       name: "테스트",
       phone: "010-0000-0000",
+      intake: "wizard", // 0023 — 기본값 없음
       vehicle_slug: "bus45",
       purpose_code: "family",
       origin_code: "SEL",

@@ -29,16 +29,14 @@ import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 
 import { withdrawalParagraphs } from "@/components/legal/withdrawal-text";
-import { serializeDraft } from "@/components/quote/draft";
 import { F } from "@/components/quote/fields";
 import { submitBlock } from "@/components/quote/submit-gate";
-import { INITIAL_STATE, reducer, toFormValues, validateStep, type WizardState } from "@/components/quote/wizard-state";
 import { ledgerUi } from "@/lib/i18n/ledger-ui";
 import { CANCELLATION, TERMS, WITHDRAWAL } from "@/lib/legal/disclosures";
 import { consentFields } from "@/lib/reservations/consent";
 import { createReservation, type ReservationDb } from "@/lib/reservations/create";
 import { BOOLEAN_FORM_FIELDS, RESERVATION_FORM_FIELDS, formDataToRaw } from "@/lib/reservations/formData";
-import { ReservationInput, type ReservationInsert } from "@/lib/types";
+import { quickReservationSchema, type ReservationInsert } from "@/lib/types";
 
 import { withNotificationsLock } from "./helpers/db-lock";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
@@ -55,17 +53,17 @@ const compact = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const GUARD_FN = "public.reservations_withdrawal_legacy_guard()";
 
+/** P3-8 — 공개 접수는 홈 간편 견적 하나다. 날짜 하한(KST 오늘)을 고정하려고 now 를 박는다. */
+const INPUT_NOW = new Date("2026-09-22T03:00:00.000Z");
+const ReservationInput = quickReservationSchema(INPUT_NOW);
 const validInput = {
   name: "홍길동",
   phone: "010-1234-5678",
-  vehicleSlug: "bus45" as const,
-  purposeCode: "family" as const,
   originCode: "SEL" as const,
   destinationCode: "BSN" as const,
-  waypointCodes: [],
-  tripType: "oneway" as const,
-  departAtLocal: "2026-10-01T08:00",
-  busCount: 1,
+  departDate: "2026-10-01",
+  returnDate: "2026-10-01",
+  passengers: 30,
   locale: "ko" as const,
   turnstileToken: "test-turnstile-token",
   privacyConsent: true as const,
@@ -91,7 +89,7 @@ describe("1. 서버 — 동의 없는 payload 는 zod 에서 거부된다", () =
     if (value === undefined) delete input.withdrawalConsent;
     const r = ReservationInput.safeParse(input);
     expect(r.success).toBe(false);
-    if (!r.success) expect(r.error.issues.some((i) => i.path.join(".") === "withdrawalConsent")).toBe(true);
+    if (!r.success) expect(r.error.issues.some((i: { path: PropertyKey[] }) => i.path.join(".") === "withdrawalConsent")).toBe(true);
   });
 
   test("폼 계약 — withdrawalConsent 는 체크박스 필드다 (없으면 undefined → zod 가 잡는다)", () => {
@@ -143,34 +141,24 @@ describe("1. 서버 — 동의 없는 payload 는 zod 에서 거부된다", () =
 });
 
 // =============================================================================
-// 2. UI — 사전 체크 없음 · 미체크면 제출 불가 · 초안에 남지 않음 · 라벨 · 영문 번역본
+// 2. UI — 사전 체크 없음 · 미체크면 제출 불가 · 저장소에 남지 않음 · 라벨 · 영문 번역본
+//    (P3-8: 위저드 → 홈 간편 견적 모달 components/quote/QuickQuoteModal.tsx)
 // =============================================================================
-describe("2. 위저드 — 체크하지 않으면 제출할 수 없다", () => {
-  const filled = (over: Partial<WizardState> = {}): WizardState => ({
-    ...INITIAL_STATE,
-    name: "홍길동",
-    phone: "010-1234-5678",
-    privacyConsent: true,
-    withdrawalConsent: true,
-    ...over,
+describe("2. 간편 견적 모달 — 체크하지 않으면 제출할 수 없다", () => {
+  const MODAL = "components/quote/QuickQuoteModal.tsx";
+  const modal = () => stripComments(read(MODAL), "QuickQuoteModal.tsx");
+
+  test("초기값은 false — 사전 체크 없음 (useState(false))", () => {
+    expect(modal()).toMatch(/const \[withdrawalConsent, setWithdrawalConsent\] = useState\(false\)/);
   });
 
-  test("초기값은 false — 사전 체크 없음", () => {
-    expect(INITIAL_STATE.withdrawalConsent).toBe(false);
+  test("저장소(localStorage·sessionStorage)에 남지 않는다 — 초안 기능이 없다", () => {
+    expect(modal()).not.toMatch(/localStorage|sessionStorage/);
+    expect(existsSync(path.join(ROOT, "components/quote/draft.ts"))).toBe(false);
   });
 
-  test("init(초안·프리필 복원)은 청약철회 동의를 켜지 않는다", () => {
-    const s = reducer(INITIAL_STATE, { type: "init", draft: { withdrawalConsent: true } as never, prefill: {} });
-    expect(s.withdrawalConsent).toBe(false);
-  });
-
-  test("초안(sessionStorage)에 직렬화되지 않는다", () => {
-    expect("withdrawalConsent" in JSON.parse(serializeDraft(filled()))).toBe(false);
-  });
-
-  test("6단계 검증 — 미체크면 withdrawalConsent 필드 오류", () => {
-    expect(validateStep(filled({ withdrawalConsent: false }), 6).map((e) => e.field)).toEqual(["withdrawalConsent"]);
-    expect(validateStep(filled(), 6)).toEqual([]);
+  test("제출 직전 검증 — 미체크면 withdrawalConsent 필드 오류를 낸다", () => {
+    expect(modal()).toMatch(/if \(!withdrawalConsent\) errs\.push\(\{ field: "withdrawalConsent"/);
   });
 
   test("제출 게이트 — 개인정보 동의가 있어도 청약철회 동의가 없으면 consent 로 닫힌다", () => {
@@ -180,10 +168,8 @@ describe("2. 위저드 — 체크하지 않으면 제출할 수 없다", () => {
     expect(submitBlock({ ...base, privacyConsent: false, withdrawalConsent: true })).toBe("consent");
   });
 
-  test("폼 값 — 체크박스 값이 그대로 실린다 (시각은 싣지 않는다 — 서버가 찍는다)", () => {
-    const v = toFormValues(filled());
-    expect(v.withdrawalConsent).toBe(true);
-    expect(Object.keys(v).some((k) => /At$|time/i.test(k))).toBe(false);
+  test("폼 필드 — 체크박스 값이 그대로 실린다 (시각 필드는 없다 — 서버가 찍는다)", () => {
+    expect(Object.keys(F).some((k) => /At$|time/i.test(k))).toBe(false);
     expect(F.withdrawalConsent).toBe("withdrawalConsent");
   });
 
@@ -193,15 +179,15 @@ describe("2. 위저드 — 체크하지 않으면 제출할 수 없다", () => {
   });
 
   test("체크박스 — name={F.withdrawalConsent} · checked 는 상태 · defaultChecked 0 · 필수 오류 연결", () => {
-    const src = stripComments(read("components/quote/Step6Contact.tsx"), "Step6Contact.tsx");
+    const src = modal();
     expect(src).toMatch(/name=\{F\.withdrawalConsent\}/);
-    expect(src).toMatch(/checked=\{state\.withdrawalConsent\}/);
+    expect(src).toMatch(/checked=\{withdrawalConsent\}/);
     expect(src).not.toMatch(/defaultChecked/);
     expect(src).toMatch(/errorFor\(\s*["']withdrawalConsent["']\s*\)/);
     expect(src).toMatch(/data-testid="consent-withdrawal"/);
     // 청약철회 고지(서버 컴포넌트 노드) 바로 뒤에 체크박스가 온다
-    expect(src.indexOf("{withdrawalNotice}")).toBeGreaterThan(-1);
-    expect(src.indexOf("{withdrawalNotice}")).toBeLessThan(src.indexOf("F.withdrawalConsent"));
+    expect(src.indexOf("{legal.withdrawalNotice}")).toBeGreaterThan(-1);
+    expect(src.indexOf("{legal.withdrawalNotice}")).toBeLessThan(src.indexOf("F.withdrawalConsent"));
   });
 
   test("고지 — 위저드는 원장 WITHDRAWAL.notice·noticeEn 을 취소·환불 규정 바로 아래에서 로케일에 맞춰 렌더한다", () => {
@@ -532,8 +518,8 @@ if (!gate.allowed) console.warn(`[withdrawal-consent.test] DB 블록 skip — ${
 /** legacy 행 한 건을 트리거를 끈 채(session_replication_role = replica) 넣는 SQL 조각 — 슈퍼유저 탐침 안에서만, 되돌린다. */
 const insertLegacyRow = (varName: string, code: string) => `
   set local session_replication_role = replica;
-  insert into public.reservations (public_code, created_at, name, phone, vehicle_slug, purpose_code, origin_code, destination_code, trip_type, depart_at, privacy_consent_at, privacy_policy_version, retention_until, withdrawal_consent_legacy)
-    values ('${code}' || substr(md5(random()::text), 1, 4), now() - interval '30 days', 'x', '+821000000000', 'bus45', 'family', 'SEL', 'BSN', 'oneway', now() + interval '7 days', now() - interval '30 days', '2026-09-11', now() + interval '300 days', true)
+  insert into public.reservations (public_code, intake, bus_count, created_at, name, phone, vehicle_slug, purpose_code, origin_code, destination_code, trip_type, depart_at, privacy_consent_at, privacy_policy_version, retention_until, withdrawal_consent_legacy)
+    values ('${code}' || substr(md5(random()::text), 1, 4), 'wizard', 1, now() - interval '30 days', 'x', '+821000000000', 'bus45', 'family', 'SEL', 'BSN', 'oneway', now() + interval '7 days', now() - interval '30 days', '2026-09-11', now() + interval '300 days', true)
     returning id into ${varName};
   set local session_replication_role = origin;`;
 
@@ -568,6 +554,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("4. DB — 0021 새 행만
       public_code: `${PREFIX}${randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}`,
       name: "테스트",
       phone: "+821000000000",
+      intake: "wizard", // 0023 — 기본값 없음
       vehicle_slug: "bus45",
       purpose_code: "family",
       origin_code: "SEL",
@@ -678,8 +665,8 @@ begin
   insert into public.admin_users (user_id, email, note) values (v_uid, 'p17-' || v_uid || '@example.invalid', 'P1-7 probe (rolled back)');
   ${insertLegacyRow("v_old", "P17A")}
   ${insertLegacyRow("v_old2", "P17B")}
-  insert into public.reservations (public_code, name, phone, vehicle_slug, purpose_code, origin_code, destination_code, trip_type, depart_at, privacy_consent_at, privacy_policy_version, retention_until, withdrawal_consent_at)
-    values ('P17C' || substr(md5(v_uid::text), 1, 4), 'x', '+821000000000', 'bus45', 'family', 'SEL', 'BSN', 'oneway', now() + interval '7 days', now(), '2026-09-21', now() + interval '365 days', now())
+  insert into public.reservations (public_code, intake, bus_count, name, phone, vehicle_slug, purpose_code, origin_code, destination_code, trip_type, depart_at, privacy_consent_at, privacy_policy_version, retention_until, withdrawal_consent_at)
+    values ('P17C' || substr(md5(v_uid::text), 1, 4), 'wizard', 1, 'x', '+821000000000', 'bus45', 'family', 'SEL', 'BSN', 'oneway', now() + interval '7 days', now(), '2026-09-21', now() + interval '365 days', now())
     returning id into v_new;
   o := o || ('old_legacy=' || (select withdrawal_consent_legacy::text from public.reservations where id = v_old));
   perform set_config('request.jwt.claims', json_build_object('sub', v_uid, 'role', 'authenticated')::text, true);

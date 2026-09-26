@@ -9,7 +9,7 @@
  * ready 플래그 규약 — 이게 이 파일의 핵심이다
  *   ready 는 "지금 링크해도 404 가 아니다"를 뜻한다. **라우트 파일이 있는지 런타임에 뒤지지 않고**
  *   여기 손으로 적은 플래그를 믿는다. 페이지를 만드는 태스크가 그 페이지를 만들면서 자기 항목의
- *   ready 를 true 로 올린다(P2-4 /about·/fleet, P3 /quote, P4 /notices·/gallery, P5 /reservation/check).
+ *   ready 를 true 로 올린다(P2-4 /about·/fleet, P3 /quote(P3-8 부터 홈 `/#quote`), P4 /notices·/gallery, P5 /reservation/check).
  *   플래그만 올리고 페이지를 안 만들면 tests/layout.test.ts 의 "라우트 파일이 있다" 단언이 잡고,
  *   페이지만 만들고 플래그를 안 올리면 "아직 없다" 단언이 잡는다. 양쪽 다 테스트가 막는다.
  *
@@ -51,7 +51,8 @@ export const LEGACY_MENU: readonly MenuItem[] = [
   { key: "location", labelKo: "찾아오시는 길", href: "/about#location", ready: true, group: "company" },
   { key: "fleet", labelKo: "차량소개 · 보험내용", href: "/fleet", ready: true, group: "fleet" },
   { key: "fares", labelKo: "차량운임료", href: "/fares", ready: true, group: "fleet" },
-  { key: "quote", labelKo: "견적요청", href: "/quote", ready: true, group: "quote" },
+  // P3-8: 6단계 위저드(/quote)를 지우고 홈 간편 견적 위젯(`id="quote"`)으로 모았다. /quote 는 next.config 가 `/#quote` 로 영구 리디렉트한다.
+  { key: "quote", labelKo: "견적요청", href: "/#quote", ready: true, group: "quote" },
   { key: "reservationCheck", labelKo: "예약확인", href: "/reservation/check", ready: true, group: "quote" },
   { key: "notices", labelKo: "공지사항", href: "/notices", ready: true, group: "support" },
   { key: "guide", labelKo: "이용안내", href: "/guide", ready: true, group: "support" },

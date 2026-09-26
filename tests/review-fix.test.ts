@@ -29,7 +29,7 @@ import {
   type LocationCode,
 } from "@/lib/codes";
 import { contactPhone } from "@/lib/reservations/phone";
-import { ReservationInput } from "@/lib/types";
+import { quickReservationSchema } from "@/lib/types";
 
 import { stripComments } from "./helpers/strip-comments";
 
@@ -46,18 +46,20 @@ const MESSAGES_KO = "messages/ko.json";
 /** 리뷰 M5 가 "접수 폼에서 선택 불가"로 지적한 11개 도시 코드 */
 const REVIEW_M5_REJECTED = ["TYG", "PHG", "JJU", "YSU", "HNM", "SJG", "SCH", "GNG", "TBK", "HCN", "WJU"] as const;
 
-/** 유효한 접수 입력 — tests/schema.test.ts 의 validInput 과 같은 모양 */
+/**
+ * 유효한 접수 입력 — P3-8 부터 공개 접수는 홈 간편 견적 하나다(lib/types.ts quickReservationSchema).
+ * 옛 위저드 스키마(ReservationInput)에 걸던 M5·M6 성질을 같은 이름으로 간편 스키마에 건다.
+ */
+const NOW = new Date("2026-08-31T03:00:00.000Z"); // KST 2026-08-31 12:00 — 아래 출발일(9/1)이 "오늘 이후" 가 되게 고정
+const ReservationInput = quickReservationSchema(NOW);
 const validInput = {
   name: "홍길동",
   phone: "010-1234-5678",
-  vehicleSlug: "bus45" as const,
-  purposeCode: "family" as const,
   originCode: "SEL" as const,
   destinationCode: "BSN" as const,
-  waypointCodes: [] as string[],
-  tripType: "oneway" as const,
-  departAtLocal: "2026-09-01T08:00",
-  busCount: 1,
+  departDate: "2026-09-01",
+  returnDate: "2026-09-01",
+  passengers: 30,
   locale: "ko" as const,
   turnstileToken: "test-turnstile-token",
   privacyConsent: true as const,
@@ -159,12 +161,10 @@ describe("M5 — ReservationInput 이 도시·시도 코드를 모두 받는다"
     expect(ReservationInput.safeParse({ ...validInput, destinationCode: "통영" }).success).toBe(false);
   });
 
-  test("경유지: 도시·시도 혼합 통과, 미지 코드 거부, 5개 초과 거부", () => {
-    expect(ReservationInput.safeParse({ ...validInput, waypointCodes: ["TYG", "GW", "SJG"] }).success).toBe(true);
-    expect(ReservationInput.safeParse({ ...validInput, waypointCodes: ["TYG", "XXX"] }).success).toBe(false);
-    expect(
-      ReservationInput.safeParse({ ...validInput, waypointCodes: ["TYG", "PHG", "JJU", "YSU", "HNM", "SJG"] }).success,
-    ).toBe(false);
+  test("경유지는 간편 견적에서 받지 않는다(P3-8) — 보내도 파싱 결과에 없다", () => {
+    const r = ReservationInput.safeParse({ ...validInput, waypointCodes: ["TYG", "GW", "SJG"] });
+    expect(r.success).toBe(true);
+    if (r.success) expect("waypointCodes" in r.data).toBe(false);
   });
 
   test("파싱 결과의 코드 타입이 LocationCode 로 좁혀진다(컴파일 계약)", () => {
@@ -209,7 +209,7 @@ describe("M6 — phone XOR phoneIntl (로케일 무관)", () => {
       const result = ReservationInput.safeParse({ ...noPhone, ...patch });
       expect(result.success).toBe(false);
       if (result.success) return;
-      expect(result.error.issues.map((i) => i.path.join("."))).toEqual(["phone"]);
+      expect(result.error.issues.map((i: { path: PropertyKey[] }) => i.path.join("."))).toEqual(["phone"]);
       expect(result.error.issues[0].code).toBe("custom");
     }
   });
@@ -251,7 +251,7 @@ describe("M6 — contactPhone(): E.164 하나로 정규화", () => {
     expect(() => contactPhone({ phoneIntl: "010-1234-5678" })).toThrow();
   });
 
-  test("ReservationInput 파싱 결과를 그대로 넣을 수 있다(타입·값 왕복)", () => {
+  test("간편 견적 파싱 결과를 그대로 넣을 수 있다(타입·값 왕복)", () => {
     const kr = ReservationInput.parse(validInput);
     expect(contactPhone(kr).e164).toBe("+821012345678");
     const intl = ReservationInput.parse({ ...validInput, phone: undefined, phoneIntl: "+15551234567" });
@@ -390,14 +390,18 @@ describe("M9 — ci.yml legal-pages-http 잡", () => {
     expect(job).toMatch(/\/notices\/does-not-exist/);
   });
 
-  test("P3-4 — /quote 를 두 번 받아 formToken 이 다름·no-store·청약철회 고지·/quote/done 200 을 단언한다", () => {
+  // P3-8 (2026-09-27): 위저드(/quote)를 지웠다. 홈(ISR)에 간편 견적 앵커가 있고 **폼 토큰이 구워지지 않았는지**, 옛 경로 넷이 301 로
+  // 홈 #quote 에 가는지를 런타임으로 잠근다(토큰은 모달을 열 때 서버액션으로 받는다 — 구우면 1시간 뒤 전원 bot).
+  test("P3-8 — 홈 #quote 앵커 · 구운 formToken 0 · /quote·/quote/done·/en/quote·/en/quote/done → 301 #quote 를 단언한다", () => {
     const iStart = job.search(/npm start|next start/);
-    const iQuote = job.indexOf("/quote?step=6");
-    expect(iQuote).toBeGreaterThan(iStart);
-    expect(job).toMatch(/formToken/);
-    expect(job).toMatch(/no-store/);
-    expect(job).toMatch(/withdrawal-notice/);
-    expect(job).toMatch(/\/quote\/done/);
+    const iQuick = job.indexOf('id="quote"');
+    expect(iQuick).toBeGreaterThan(iStart);
+    expect(job).toMatch(/name="formToken"/);
+    expect(job).toMatch(/baked formToken/);
+    for (const p of ["/quote|/#quote", "/quote/done?code=ABCDEFGH|#quote", "/en/quote|/en#quote", "/en/quote/done|/en#quote"]) {
+      expect(job, p).toContain(p);
+    }
+    expect(job).toMatch(/HTTP\/1\.1 301/);
     expect(job).toMatch(/GUARD_SECRET:\s*\S+/);
     expect(job).not.toMatch(/GUARD_SECRET:\s*\$\{\{\s*secrets/);
   });

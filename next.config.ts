@@ -65,10 +65,25 @@ const LEGACY_URLS: readonly LegacyRedirect[] = [
   //   estimate: 인벤토리 머리말 "견적 게시판(bo_table=estimate)은 개인정보 우려로 크롤링하지 않았다" — 정체는 확실하다.
   //   confirm : 옛 예약확인 게시판 — 사장님 확인(2026-09-21). (인벤토리 §5 의 추정을 컨트롤러가 2026-09-13 에 먼저 반영했고,
   //             보고서 §미확정 Q2 가 이것으로 닫혔다.)
-  { source: LEGACY_BOARD, query: { key: "bo_table", value: "estimate" }, destination: "/quote" },
+  // P3-8: 견적 게시판의 후신은 홈 간편 견적이다(위저드 /quote 폐지) — 한 번에 도착하게 앵커로 보낸다(/quote 를 거치면 두 번 튄다).
+  { source: LEGACY_BOARD, query: { key: "bo_table", value: "estimate" }, destination: "/#quote" },
   { source: LEGACY_BOARD, query: { key: "bo_table", value: "confirm" }, destination: "/reservation/check" },
 
   // 남겨 두는 것: bo_table=free(자유게시판 — 후신 없음) · story · rentcar(정체 불명). 지어낸 목적지보다 404 가 낫다.
+];
+
+/**
+ * P3-8 — 이 사이트가 스스로 없앤 경로. 6단계 견적 위저드(/quote)와 그 완료 화면(/quote/done)을 지우고 접수를 홈 간편 견적 하나로 모았다.
+ * 이미 나간 링크(문자·즐겨찾기·검색 결과)가 404 가 되지 않게 홈의 견적 위젯 앵커로 영구 리디렉트한다. 쿼리(옛 프리필·`?code=`)는
+ * Next 규칙대로 목적지에 그대로 붙는다 — 홈은 그 쿼리를 읽지 않는다(정적 페이지). 옛 사이트 URL 표(LEGACY_URLS)와는 계약이 달라
+ * (로케일별 목적지 · 쿼리 매칭 없음) 따로 둔다. tests/redirects.test.ts §1-b 가 잠근다.
+ *   ko(접두 없음) → `/#quote` · en → `/en#quote`. `/ko/quote` 는 미들웨어가 먼저 `/quote` 로 보내고 여기서 다시 한 번 튄다.
+ */
+const RETIRED_ROUTES: readonly { source: string; destination: string }[] = [
+  { source: "/quote", destination: "/#quote" },
+  { source: "/quote/done", destination: "/#quote" },
+  { source: "/en/quote", destination: "/en#quote" },
+  { source: "/en/quote/done", destination: "/en#quote" },
 ];
 
 const nextConfig: NextConfig = {
@@ -81,12 +96,15 @@ const nextConfig: NextConfig = {
     ],
   },
   async redirects() {
-    return LEGACY_URLS.map(({ source, query, destination }) => ({
+    const legacy = LEGACY_URLS.map(({ source, query, destination }) => ({
       source,
       destination,
       statusCode: 301,
       ...(query ? { has: [{ type: "query" as const, key: query.key, value: query.value }] } : {}),
     }));
+    // 옛 URL 이 아니라 이 사이트가 없앤 경로(P3-8) — 같은 301 규칙.
+    const retired = RETIRED_ROUTES.map(({ source, destination }) => ({ source, destination, statusCode: 301 }));
+    return [...legacy, ...retired];
   },
   /**
    * P1-7 R3 [P2-D] — 전역 `Referrer-Policy: strict-origin`.

@@ -19,6 +19,7 @@ export const RESERVATION_CHECK_COLUMNS = [
   "name",
   "phone",
   "status",
+  "intake",
   "trip_type",
   "depart_at",
   "return_at",
@@ -40,13 +41,17 @@ export interface ReservationCheckRow {
   /** E.164(lib/reservations/phone.ts). 뷰 모델에는 마스킹된 값만 간다. */
   phone: string;
   status: string;
+  /** 0023 — quick(홈 간편 견적)이면 날짜만 보이고 차종·대수 줄이 없다. */
+  intake: string;
   trip_type: string | null;
   depart_at: string;
   return_at: string | null;
-  vehicle_slug: string;
+  /** 간편 접수는 null(0023). */
+  vehicle_slug: string | null;
   origin_code: string;
   destination_code: string;
-  bus_count: number;
+  /** 간편 접수는 null(0023). */
+  bus_count: number | null;
   passengers: number | null;
   created_at: string;
 }
@@ -83,6 +88,7 @@ export async function lookupReservation(input: CheckInput, deps: { db: Reservati
   const matched = phoneLast4Matches(row?.phone ?? null, input.phoneLast4);
   if (row === null || !matched) return { found: false };
 
-  const vehicleNameKo = await deps.db.vehicleNameKo(row.vehicle_slug);
+  // 간편 접수(차종 미정)는 차량 라벨을 읽지 않는다 — 읽을 slug 가 없다.
+  const vehicleNameKo = row.vehicle_slug === null ? null : await deps.db.vehicleNameKo(row.vehicle_slug);
   return { found: true, view: toReservationView(row, vehicleNameKo) };
 }

@@ -45,11 +45,14 @@ export async function RecentFeed({
                 {t(recentStatusKey(item.status))}
               </span>
               <span className={s.text}>
-                {t("itemLabel", {
-                  name: item.maskedName,
-                  vehicle: vehicleLabels?.get(item.vehicleLabel) ?? item.vehicleLabel,
-                  date: item.departDateKst,
-                })}
+                {/* 간편 접수(P3-8)는 차종을 받지 않았다 — 차종 칸을 빼고 보인다(고지 범위 안에서 더 적게). */}
+                {item.vehicleLabel === null
+                  ? t("itemLabelNoVehicle", { name: item.maskedName, date: item.departDateKst })
+                  : t("itemLabel", {
+                      name: item.maskedName,
+                      vehicle: vehicleLabels?.get(item.vehicleLabel) ?? item.vehicleLabel,
+                      date: item.departDateKst,
+                    })}
               </span>
             </li>
           ))}

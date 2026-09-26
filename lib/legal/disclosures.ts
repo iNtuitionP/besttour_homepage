@@ -95,7 +95,7 @@ export const CANCELLATION = {
   source: "사장님 답변 2026-09-21 A-1 (사용자 경유)",
 } as const;
 
-// ── 청약철회 제한 — 전자상거래법 §17②·③·⑥. 위저드 6단계(필수 체크) · 이용안내 · 약관 · 확정 통지에 싣는다 ──
+// ── 청약철회 제한 — 전자상거래법 §17②·③·⑥. 홈 간편 견적 모달(필수 체크, P3-8) · 이용안내 · 약관 · 확정 통지에 싣는다 ──
 // P1-7 R2 [P1-1]: 제한은 실제 손해가 나는 운행 2일 전부터로 좁히고 조건부로 쓴다. §17③ 권리(표시·광고·계약과 다른 경우)를 남긴다.
 // 영문 화면은 noticeEn(번역본 — 한국어가 법적 원문이라는 문장이 그 안에 있다)을 보여 주고 한국어 원문을 lang="ko" 로 함께 둔다.
 export const WITHDRAWAL = {
@@ -114,8 +114,10 @@ export const WITHDRAWAL = {
 export const PRIVACY_NOTICE = {
   title: "개인정보 수집·이용 안내",
   purpose: "전세버스 견적 상담 및 예약 접수·확정",
-  items: ["이름", "휴대폰 번호", "운행 희망 일시", "출발지·도착지·경유지", "탑승 인원"],
-  itemsLine: "이름, 휴대폰 번호, 운행 희망 일시, 출발지·도착지·경유지, 탑승 인원",
+  // P3-8(2026-09-27): 접수가 홈 간편 견적 하나가 되면서 받는 항목이 줄었다 — 경유지·시각은 더 받지 않는다(전화 상담에서 확인).
+  // 실제 폼 필드와 1:1 이어야 한다(더 적게 고지해도, 더 많이 고지해도 사실과 다르다). 옛 위저드 접수분은 당시 고지로 받았다.
+  items: ["이름", "휴대폰 번호", "운행 희망일(출발일·도착일)", "출발지·도착지", "탑승 인원"],
+  itemsLine: "이름, 휴대폰 번호, 운행 희망일(출발일·도착일), 출발지·도착지, 탑승 인원",
   // 이 문구는 lib/retention/purge.ts 의 실제 파기 동작과 일치해야 한다. 배치는 확정 이력이 있는 예약을
   // created_at + CONFIRMED_KEEP_YEARS(5년) 까지 보관하므로, 그 예외가 문구에도 있어야 고지가 참이 된다.
   retention:
@@ -361,9 +363,18 @@ export const TERMS = {
 
 // ── 처리방침 필수 기재 (PIPA §30① + 시행령 §31) — 절 순서와 각 절의 출처 상수 ──
 //    from: 이미 원장에 있는 상수를 그대로 가리킨다(복제하지 않는다). body: 이 절에서만 쓰는 문안.
+// 처리방침의 "처리하는 항목"은 **지금 받는 것 + 아직 보관 중인 것** 이다(P3-8 독립 리뷰 P1-1, 2026-09-27).
+// 접수 동의 화면(PRIVACY_NOTICE.items)은 새 간편 접수가 받는 항목만 고지한다. 그러나 옛 6단계 화면으로 받은 접수는 보유 기간
+// (1년 · 확정 이력 5년) 동안 아래 항목을 함께 들고 있으므로, 처리방침에서 빼면 실제 처리보다 적게 고지하게 된다.
+// 옛 접수분이 전부 파기되면(lib/retention/purge.ts) 마지막 줄을 지운다.
+export const PRIVACY_POLICY_ITEMS = [
+  ...PRIVACY_NOTICE.items,
+  "이전 견적 신청 화면(6단계)으로 접수된 건은 보유 기간 동안 다음 항목을 함께 보관합니다: 이메일(선택 입력), 운행 희망 시각, 경유지, 차량 종류·대수, 여행 목적, 운행 구분(왕복·편도), 연락·결제 희망 방법, 주차비·부가세 포함 여부, 요청사항, 광고성 정보 수신 동의 여부",
+] as const;
+
 export const PRIVACY_POLICY_SECTIONS = [
   { key: "purpose", title: "개인정보의 처리 목적", from: PRIVACY_NOTICE.purpose },
-  { key: "items", title: "처리하는 개인정보의 항목", from: PRIVACY_NOTICE.items },
+  { key: "items", title: "처리하는 개인정보의 항목", from: PRIVACY_POLICY_ITEMS },
   { key: "retention", title: "개인정보의 처리 및 보유 기간", from: PRIVACY_NOTICE.retention },
   { key: "processors", title: "개인정보 처리업무의 위탁", from: PROCESSORS },
   { key: "overseas", title: "개인정보의 국외 이전", from: OVERSEAS_TRANSFERS },

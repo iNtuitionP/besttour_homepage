@@ -254,7 +254,7 @@ describe("1. 누출 0 property test (100 케이스, seed 고정)", () => {
     expect(Object.keys(item).sort()).toEqual(["departDateKst", "maskedName", "status", "vehicleLabel"]);
     expect(item.maskedName).toBe(maskName(c.row.name));
     expect(item.maskedName).toMatch(/^[\s\S]\*{1,2}$/);
-    expect(item.vehicleLabel).toBe(LABELS.get(c.row.vehicle_slug));
+    expect(item.vehicleLabel).toBe(c.row.vehicle_slug === null ? null : LABELS.get(c.row.vehicle_slug));
     expect(item.departDateKst).toBe(kstMonthDay(new Date(c.row.depart_at)));
     expect(item.status).toBe(c.row.status);
   });
@@ -388,7 +388,8 @@ describe("4·8. components/home/RecentFeed.tsx 정적 검사", () => {
   test("home.recentFeed 네임스페이스만 쓰고, 부르는 키가 전부 ko.json 에 있다", () => {
     expect(code).toMatch(/getTranslations\(\s*["']home\.recentFeed["']\s*\)/);
     const keys = new Set(Object.keys(ko.home.recentFeed));
-    expect([...keys].sort()).toEqual(["eyebrow", "itemLabel", "listLabel", "statusConfirmed", "statusNew", "title"]);
+    // P3-8: 간편 접수(차종 없음) 항목은 차종 칸을 뺀 itemLabelNoVehicle 로 그린다.
+    expect([...keys].sort()).toEqual(["eyebrow", "itemLabel", "itemLabelNoVehicle", "listLabel", "statusConfirmed", "statusNew", "title"]);
     const used = [...code.matchAll(/\bt(?:\.rich)?\(\s*["']([A-Za-z]+)["']/g)].map((m) => m[1]);
     expect(used.length).toBeGreaterThan(0);
     for (const k of used) expect(keys.has(k), `ko.json 에 없는 키 ${k}`).toBe(true);
@@ -455,6 +456,14 @@ describe("5. status 필터", () => {
     expect(entry.event).toBe("recent_feed.rows_skipped");
     const logged = JSON.stringify(logMock.mock.calls);
     for (const name of ["가나다", "라마바", "차카타"]) expect(logged.includes(name)).toBe(false);
+  });
+
+  test("매퍼: P3-8 간편 접수(차종 null)는 버리지 않고 vehicleLabel null 로 싣는다 — 화면이 차종 칸을 뺀다(고지 범위 안에서 더 적게)", () => {
+    const items = mapRecentRows([{ ...base, name: "가나다", status: "new", vehicle_slug: null }], LABELS);
+    expect(items).toEqual([{ maskedName: "가**", vehicleLabel: null, departDateKst: "9/20", status: "new" }]);
+    const src = codeOf("components/home/RecentFeed.tsx");
+    expect(src).toMatch(/item\.vehicleLabel === null/);
+    expect(src).toMatch(/itemLabelNoVehicle/);
   });
 
   test("매퍼: 라벨이 없는 차량 slug · 파싱 불가 운행일은 fail-closed 로 버린다 (slug 를 대신 보여 주지 않는다)", () => {

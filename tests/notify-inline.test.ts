@@ -105,7 +105,7 @@ import {
 import { runAfter } from "@/lib/ports/after";
 import { createReservation } from "@/lib/reservations/create";
 import { createSsrClient } from "@/lib/supabase/ssr";
-import type { ReservationInput } from "@/lib/types";
+import type { QuickReservationInput } from "@/lib/types";
 
 import { allowInlineNotifyInTests } from "./helpers/notify-env";
 
@@ -486,11 +486,11 @@ describe("4. notifyAfterResponse — env 스위치", () => {
 // 5. 호출 지점
 // =============================================================================
 describe("5-a. 공개 접수 — actions/reservation.ts", () => {
-  const input = {} as ReservationInput;
+  const input = {} as QuickReservationInput;
   const created = { reservationId: RES_ID, publicCode: "ABCDEFGH", notifyQueued: true, warnings: [] as string[] };
 
   beforeEach(() => {
-    vi.mocked(runGuards).mockResolvedValue({ ok: true, silent: false, input });
+    vi.mocked(runGuards).mockResolvedValue({ ok: true, silent: false, input, now: new Date("2026-09-27T00:00:00Z") });
     vi.mocked(createReservation).mockResolvedValue(created);
   });
 
@@ -862,11 +862,12 @@ describe("7. 정적", () => {
   /**
    * 수정 라운드 3 · 리뷰 P2-3 — 즉시 발송은 응답 뒤(after)에 돈다. 함수 시간 한도가 즉시 발송 마감보다 짧으면
    * send 와 markSent 사이에서 잘려 행이 lease 뒤 다시 집히고 **손님이 두 번 받는다.** 그래서 즉시 발송이 도는 두 페이지
-   * (견적 제출 서버액션을 부르는 /quote · 확정 버튼이 있는 관리자 예약 상세)에 maxDuration 을 명시한다.
+   * (견적 제출 서버액션을 부르는 홈 — P3-8 부터 간편 견적 모달이 홈에 있다(옛 /quote 는 삭제) · 확정 버튼이 있는 관리자 예약 상세)에
+   * maxDuration 을 명시한다. 서버액션의 POST 는 그 액션을 부른 페이지의 라우트로 가므로 한도도 그 페이지가 정한다.
    * 60초: Vercel 문서(2026-08-24 판) 기준 Hobby 는 Fluid compute 에서 기본·최대 300초이고, Fluid 가 아닌 옛 방식의 Hobby 최대는 60초다
    * (changelog "Vercel Functions for Hobby can now run up to 60 seconds") — 어느 쪽이든 받아들여지는 가장 큰 공통값이다.
    */
-  test.each(["app/[locale]/(site)/quote/page.tsx", "app/admin/(protected)/reservations/[id]/page.tsx"])(
+  test.each(["app/[locale]/(site)/page.tsx", "app/admin/(protected)/reservations/[id]/page.tsx"])(
     "%s — export const maxDuration = 60 (즉시 발송 마감 + 여유 ≤ 60 ≤ Hobby 상한)",
     (rel) => {
       const src = read(rel);

@@ -2,13 +2,12 @@ import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 
 import { ReservationActions } from "@/components/admin/ReservationActions";
-import { CONTACT_METHODS, PAYMENT_METHODS } from "@/components/quote/options";
 import { routing } from "@/i18n/routing";
-import { getReservation, isUuid } from "@/lib/admin/reservations";
+import { LEGACY_CONTACT_METHODS, LEGACY_PAYMENT_METHODS, getReservation, isUuid } from "@/lib/admin/reservations";
 import { requireAdmin } from "@/lib/auth/requireAdmin";
 import { PURPOSES, isLocationCode, locationLabelKo } from "@/lib/codes";
 import { getVehicles } from "@/lib/queries";
-import { TRIP_TYPES, kstWallClock } from "@/lib/reservation-check/view";
+import { TRIP_TYPES, kstWallClock, tripDateText } from "@/lib/reservation-check/view";
 
 import a from "@/components/admin/admin.module.css";
 import q from "@/components/quote/quote.module.css";
@@ -29,8 +28,11 @@ import q from "@/components/quote/quote.module.css";
  * (빈 칸이 누락으로 읽히지 않게 · 날짜를 박지 않는다 — 경계는 날짜가 아니라 적용 순간이다, P1-7 R2). legacy 가 아니면서 값이 없는 행은
  * 0021 의 CHECK 가 만들지 못한다 — 만약 보이면 "—" 로 둔다(지어내지 않는다).
  *
- * 값 라벨(여행 구분·운행 구분·연락/결제 방법)은 **위저드가 쓰는 문구를 그대로 재사용한다**(quote.* · reservationCheck.*).
- * 같은 코드에 두 벌의 한국어를 두면 사장님이 보는 말과 고객이 고른 말이 갈라진다. 관리자 전용 문구만 admin.* 에 있다.
+ * 값 라벨(여행 구분·연락/결제 방법)은 옛 위저드가 쓰던 문구를 그대로 admin.labels.* 로 옮겼다(P3-8 — 위저드 폐지. 옛 접수분의 코드를
+ * 사장님이 같은 말로 읽게). 운행 구분은 예약확인과 같은 reservationCheck.tripType.* 이다.
+ *
+ * 간편 접수(P3-8 · 0023 intake='quick'): "접수 경로" 줄에 간편 접수임과 전화로 확인할 항목을 적고, 출발일·도착일은 **날짜만**
+ * (저장된 00:00 은 자리값), 여행 구분·차량·운행 구분·대수는 "미정(전화 확인)". 손님이 고르지 않은 값을 지어내 보이지 않는다.
  *
  * 개발용 우회 경로는 없다(목록 화면 헤더 참조 — P5-3 독립 리뷰에서 제거).
  */
@@ -38,8 +40,8 @@ type Params = Promise<{ id: string }>;
 
 const isPurpose = (c: string): boolean => (PURPOSES as readonly string[]).includes(c);
 const isTripType = (c: string): boolean => (TRIP_TYPES as readonly string[]).includes(c);
-const isContact = (c: string): boolean => (CONTACT_METHODS as readonly string[]).includes(c);
-const isPayment = (c: string): boolean => (PAYMENT_METHODS as readonly string[]).includes(c);
+const isContact = (c: string): boolean => (LEGACY_CONTACT_METHODS as readonly string[]).includes(c);
+const isPayment = (c: string): boolean => (LEGACY_PAYMENT_METHODS as readonly string[]).includes(c);
 const placeLabel = (code: string): string => (isLocationCode(code) ? locationLabelKo(code) : code);
 
 /** jsonb 경유지 — 문자열 배열이 아니면 빈 목록으로 본다(표시 계층은 DB 모양을 신뢰하지 않는다). */
@@ -89,8 +91,10 @@ export default async function AdminReservationDetailPage({ params }: { params: P
   }
 
   const none = t("value.none");
-  // 차량 라벨은 공개 표(vehicles)에서 — 없으면 slug 폴백(목록 화면 주석 참조).
-  const vehicle = await vehicleLabel(row.vehicle_slug);
+  const quick = row.intake === "quick";
+  const undecided = tRoot("admin.labels.undecided");
+  // 차량 라벨은 공개 표(vehicles)에서 — 없으면 slug 폴백(목록 화면 주석 참조). 간편 접수는 차종이 없다(미정).
+  const vehicle = row.vehicle_slug === null ? undecided : await vehicleLabel(row.vehicle_slug);
   const waypoints = waypointLabels(row.waypoint_codes);
   const boolLabel = (v: boolean | null): string => (v === null ? none : v ? t("value.included") : t("value.excluded"));
 
@@ -146,9 +150,28 @@ export default async function AdminReservationDetailPage({ params }: { params: P
           <h2 className={a.sectionTitle}>{t("sectionTrip")}</h2>
           <dl className={a.dl}>
             <div className={a.row}>
+              <dt className={a.dt}>{t("field.intake")}</dt>
+              <dd className={a.dd} data-testid="admin-intake">
+                {quick ? (
+                  <>
+                    <span className={a.badge} data-intake="quick">
+                      {tRoot("admin.labels.quickBadge")}
+                    </span>{" "}
+                    {t("value.intakeQuick")}
+                  </>
+                ) : (
+                  t("value.intakeWizard")
+                )}
+              </dd>
+            </div>
+            <div className={a.row}>
               <dt className={a.dt}>{t("field.purpose")}</dt>
               <dd className={a.dd}>
-                {isPurpose(row.purpose_code) ? tRoot(`quote.steps.purpose.options.${row.purpose_code}`) : row.purpose_code}
+                {row.purpose_code === null
+                  ? undecided
+                  : isPurpose(row.purpose_code)
+                    ? tRoot(`admin.labels.purpose.${row.purpose_code}`)
+                    : row.purpose_code}
               </dd>
             </div>
             <div className={a.row}>
@@ -173,20 +196,26 @@ export default async function AdminReservationDetailPage({ params }: { params: P
               <dd className={a.dd}>
                 {row.trip_type !== null && isTripType(row.trip_type)
                   ? tRoot(`reservationCheck.tripType.${row.trip_type}`)
-                  : (row.trip_type ?? none)}
+                  : (row.trip_type ?? (quick ? undecided : none))}
               </dd>
             </div>
             <div className={a.row}>
-              <dt className={a.dt}>{t("field.departAt")}</dt>
-              <dd className={a.dd}>{kstWallClock(row.depart_at)}</dd>
+              <dt className={a.dt}>{quick ? t("field.departDate") : t("field.departAt")}</dt>
+              <dd className={a.dd} data-testid="admin-depart">
+                {tripDateText(row.depart_at, row.intake)}
+              </dd>
             </div>
             <div className={a.row}>
-              <dt className={a.dt}>{t("field.returnAt")}</dt>
-              <dd className={a.dd}>{row.return_at === null ? none : kstWallClock(row.return_at)}</dd>
+              <dt className={a.dt}>{quick ? t("field.returnDate") : t("field.returnAt")}</dt>
+              <dd className={a.dd}>
+                {row.return_at === null ? (quick ? tripDateText(row.depart_at, row.intake) : none) : tripDateText(row.return_at, row.intake)}
+              </dd>
             </div>
             <div className={a.row}>
               <dt className={a.dt}>{t("field.busCount")}</dt>
-              <dd className={a.dd}>{tRoot("reservationCheck.card.busCountValue", { n: row.bus_count })}</dd>
+              <dd className={a.dd}>
+                {row.bus_count === null ? undecided : tRoot("reservationCheck.card.busCountValue", { n: row.bus_count })}
+              </dd>
             </div>
             <div className={a.row}>
               <dt className={a.dt}>{t("field.passengers")}</dt>
@@ -206,7 +235,7 @@ export default async function AdminReservationDetailPage({ params }: { params: P
                 {row.contact_method === null
                   ? none
                   : isContact(row.contact_method)
-                    ? tRoot(`quote.steps.options.contact.${row.contact_method}`)
+                    ? tRoot(`admin.labels.contact.${row.contact_method}`)
                     : row.contact_method}
               </dd>
             </div>
@@ -216,7 +245,7 @@ export default async function AdminReservationDetailPage({ params }: { params: P
                 {row.payment_method === null
                   ? none
                   : isPayment(row.payment_method)
-                    ? tRoot(`quote.steps.options.payment.${row.payment_method}`)
+                    ? tRoot(`admin.labels.payment.${row.payment_method}`)
                     : row.payment_method}
               </dd>
             </div>

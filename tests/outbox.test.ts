@@ -607,6 +607,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("DB — 0005 아웃박스 
         public_code: `${TEST_PREFIX}${randomUUID().slice(0, 8)}`,
         name: "테스트",
         phone: "010-0000-0000",
+        intake: "wizard", // 0023 — 기본값 없음
         vehicle_slug: "bus45",
         purpose_code: "family",
         origin_code: "SEL",

@@ -2,18 +2,19 @@
  * 예약 접수 입력 zod 스키마 및 관련 타입.
  *
  * 절대 규칙: 가격 필드 없음. 이 파일은 가격 계산/추정과 무관하며, 접수
- * 입력값의 형태(shape)만 검증한다. 장소·여행구분은 lib/codes.ts의
+ * 입력값의 형태(shape)만 검증한다. 장소는 lib/codes.ts의
  * canonical code(enum)로만 받는다 — 번역 문자열은 허용하지 않는다.
  */
 import { z } from "zod";
-import { LOCATION_CODES, PURPOSES, type LocationCode, type PlaceKind } from "./codes";
-import { parseKst } from "./kst";
+import { LOCATION_CODES, type LocationCode, type PlaceKind } from "./codes";
+import { toKstDateString } from "./kst";
 
 /** 국내 휴대전화(01x, 하이픈 선택). lib/reservations/phone.ts contactPhone() 이 +82 E.164 로 정규화한다. */
 export const PHONE_KR_PATTERN = /^01[016789]-?\d{3,4}-?\d{4}$/;
 /** 국제 E.164(+국가번호, 7~15자리). 해외 번호 전용 — 로케일과 무관하게 받는다(M6). */
 export const PHONE_INTL_PATTERN = /^\+[1-9]\d{6,14}$/;
-const KST_LOCAL_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+/** 달력 날짜 `YYYY-MM-DD` (`<input type="date">` 값 그대로). 달력에 실제로 있는지는 superRefine 이 따로 본다. */
+export const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * 장소 코드 = LOCATION_CODES(도시 PlaceCode ∪ 시도 RegionCode, 28개 — REVIEW-FIX M5).
@@ -22,44 +23,61 @@ const KST_LOCAL_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
  */
 const LocationCodeEnum = z.enum(LOCATION_CODES as [LocationCode, ...LocationCode[]]);
 
-export const ReservationInput = z
-  .object({
-    name: z.string().min(1).max(30),
-    // 연락처는 phone(국내) XOR phoneIntl(해외 E.164) — 정확히 하나(아래 superRefine). 로케일로 강제하지 않는다:
-    // 한국 SIM 을 쓰는 외국인은 phone, 해외 번호는 phoneIntl. 빈 문자열은 "없음"이 아니라 형식 위반이다(폼은 빈 칸을 빼서 보낸다).
-    phone: z.string().regex(PHONE_KR_PATTERN).optional(),
-    phoneIntl: z.string().regex(PHONE_INTL_PATTERN).optional(),
-    email: z.string().email().optional(),
-    vehicleSlug: z.enum(["bus45", "bus35", "limo28", "bus25", "bus16"]),
-    purposeCode: z.enum(PURPOSES),
-    originCode: LocationCodeEnum,
-    destinationCode: LocationCodeEnum,
-    waypointCodes: z.array(LocationCodeEnum).max(5).default([]),
-    tripType: z.enum(["round", "oneway", "oneway_oneway"]),
-    departAtLocal: z.string().regex(KST_LOCAL_PATTERN),
-    returnAtLocal: z.string().regex(KST_LOCAL_PATTERN).optional(),
-    busCount: z.number().int().min(1).max(20).default(1),
-    passengers: z.number().int().min(1).max(900).optional(),
-    contactMethod: z.string().optional(),
-    paymentMethod: z.string().optional(),
-    parkingIncluded: z.boolean().optional(),
-    vatIncluded: z.boolean().optional(),
-    message: z.string().max(1000).optional(),
-    locale: z.enum(["ko", "en"]).default("ko"),
-    turnstileToken: z.string(),
-    // 허니팟: 사람 방문자에게는 보이지 않아야 하는 필드. 값이 채워지면(길이>0)
-    // 봇으로 간주해 검증 단계에서 거부한다.
-    website: z.string().max(0).optional(),
-    // 동의 (ADR-6 · 0003). 필수 동의는 literal(true) — false·누락·"true" 문자열이면 파싱 자체가 실패한다.
-    // 사전 선택 금지는 UI(P3) 책임. 동의 시각·방침 버전은 서버가 lib/reservations/consent.ts consentFields() 로 찍는다.
-    privacyConsent: z.literal(true),
-    marketingConsent: z.boolean().default(false),
-    // 청약철회 제한 확인 (P1-7 · 전자상거래법 §17⑥ · 0021). 필수 — 위저드 체크박스만 막으면 공개 POST 로 우회되므로 서버가 거부한다.
-    // 동의 시각은 여기서 받지 않는다(폼에 시각 필드가 없다) — 서버가 consentFields() 로 찍는다.
-    withdrawalConsent: z.literal(true),
-  })
-  .superRefine((data, ctx) => {
-    // REVIEW-FIX M6: 예전 refine(locale 이 en 일 때만 phone||phoneIntl)은 phone 이 필수라 절대 거짓이 될 수 없었다(죽은 코드).
+/** 간편 견적의 이름 길이 상한 — 0001 CHECK `char_length(name) between 1 and 30` 과 같다. */
+export const NAME_MAX_LENGTH = 30;
+/** 탑승 인원 범위 — 0001 CHECK `passengers between 1 and 900` 과 같다. 간편 견적은 **필수**다. */
+export const PASSENGERS_RANGE = { min: 1, max: 900 } as const;
+
+/**
+ * 간편 견적 입력의 **모양** (P3-8 — 공개 접수 경로는 이것 하나다). 날짜 규칙은 "오늘"이 필요해 아래 quickReservationSchema(now) 가 더한다.
+ *
+ * 받는 것: 이름 · 연락처(phone XOR phoneIntl) · 출발지 · 도착지 · 출발일 · 도착일 · 인원 · 로케일 · 동의 2종 + guard 필드.
+ * 받지 않는 것(사장님이 전화로 확인): 차종 · 여행 목적 · 출발 시각 · 왕복 구분 · 대수 — 그리고 메일·경유지·요청사항.
+ * 선택 동의(광고성 정보 수신)는 받지 않는다 — 서버가 marketing_consent_at 을 null 로 둔다(원장 고지와 같은 범위).
+ * 계약 밖 키는 zod 가 버린다(strip) — 옛 위저드 필드(vehicleSlug 등)를 보내도 저장 경로로 가지 않는다.
+ */
+export const QuickReservationShape = z.object({
+  name: z.string().min(1).max(NAME_MAX_LENGTH),
+  // 연락처는 phone(국내) XOR phoneIntl(해외 E.164) — 정확히 하나(아래 superRefine). 로케일로 강제하지 않는다:
+  // 한국 SIM 을 쓰는 외국인은 phone, 해외 번호는 phoneIntl. 빈 문자열은 "없음"이 아니라 형식 위반이다(폼은 빈 칸을 빼서 보낸다).
+  phone: z.string().regex(PHONE_KR_PATTERN).optional(),
+  phoneIntl: z.string().regex(PHONE_INTL_PATTERN).optional(),
+  originCode: LocationCodeEnum,
+  destinationCode: LocationCodeEnum,
+  departDate: z.string().regex(ISO_DATE_PATTERN),
+  returnDate: z.string().regex(ISO_DATE_PATTERN),
+  passengers: z.number().int().min(PASSENGERS_RANGE.min).max(PASSENGERS_RANGE.max),
+  locale: z.enum(["ko", "en"]).default("ko"),
+  turnstileToken: z.string(),
+  // 허니팟: 사람 방문자에게는 보이지 않아야 하는 필드. 값이 채워지면(길이>0) 봇으로 간주한다(guard 가 zod 전에 떼어 조용한 성공으로 돌린다).
+  website: z.string().max(0).optional(),
+  // 동의 (ADR-6 · 0003). 필수 동의는 literal(true) — false·누락·"true" 문자열이면 파싱 자체가 실패한다.
+  // 사전 선택 금지는 UI 책임. 동의 시각·방침 버전은 서버가 lib/reservations/consent.ts consentFields() 로 찍는다.
+  privacyConsent: z.literal(true),
+  // 청약철회 제한 확인 (P1-7 · 전자상거래법 §17⑥ · 0021). 필수 — 체크박스만 막으면 공개 POST 로 우회되므로 서버가 거부한다.
+  withdrawalConsent: z.literal(true),
+});
+
+export type QuickReservationInput = z.infer<typeof QuickReservationShape>;
+
+/** `YYYY-MM-DD` 가 달력에 실제로 있는가(02-30 · 비윤년 02-29 거부). 서버 TZ 와 무관(UTC 로만 계산). */
+export function isCalendarDate(iso: string): boolean {
+  if (!ISO_DATE_PATTERN.test(iso)) return false;
+  const [y, m, d] = iso.split("-").map(Number);
+  const rt = new Date(Date.UTC(y, m - 1, d));
+  return rt.getUTCFullYear() === y && rt.getUTCMonth() === m - 1 && rt.getUTCDate() === d;
+}
+
+/**
+ * 간편 견적 스키마 — `now` 는 서버 시계(guard 의 deps.now · create 의 deps.now). 날짜 규칙:
+ *   규칙 0  형식(regex)은 맞지만 달력에 없는 날짜 → 그 필드에 issue(regex 가 이미 실패했으면 더하지 않는다).
+ *   규칙 1  출발일 ≥ **KST 오늘**(now 의 KST 달력 날짜). 옛 위저드의 날짜 하한(`min = toKstDateString(new Date())`)을 서버로 올렸다 —
+ *           전에는 브라우저 min 속성뿐이라 공개 POST 로 과거 날짜가 들어왔다. 상한은 옛 위저드에도 없었다(보고서 §판단).
+ *   규칙 2  도착일 ≥ 출발일(같은 날 = 당일). 문자열 비교는 같은 자릿수 형식이라 달력 순서와 같다.
+ * 비교는 둘 다 달력에 있을 때만 한다 — 이미 issue 가 있는 필드에 두 번째 issue 를 만들지 않는다.
+ */
+export function quickReservationSchema(now: Date) {
+  return QuickReservationShape.superRefine((data, ctx) => {
     if (Boolean(data.phone) === Boolean(data.phoneIntl)) {
       ctx.addIssue({
         code: "custom",
@@ -68,60 +86,22 @@ export const ReservationInput = z
       });
     }
 
-    // P3-3-FIX M1: 운행 일시 규칙 3개를 zod 단계로 올린다. 전에는 lib/reservations/create.ts scheduleColumns 의 throw 만 잡아
-    // 사용자에게 `server`(일시적 오류 문구)가 나가고 시도마다 error 스택 로그가 남았다 — 사람이 흔히 내는 입력(왕복인데 귀가 비움, 귀가 ≤ 출발)이다.
-    // 여기서 잡으면 `validation` + fieldErrors.returnAtLocal 로 내려간다. create.ts 의 throw 는 방어선으로 그대로 둔다(0001·0006 CHECK 와 같은 결과).
-    // message 의 토큰(returnAtLocal · 출발 · round_trip_return_ck)은 tests/reservation-create.test.ts 가 재검증 throw 를 정규식으로 잠근 것과
-    // 맞춘 것이다 — createReservation 은 step 0 에서 safeParse 를 다시 돌리고 issue 문자열을 담아 throw 하므로, message 를 바꾸면 그쪽이 깨진다.
-    // 규칙 0 (컨트롤러 결정 2026-09-13): 형식(regex)은 통과했지만 달력에 없는 일시(2026-02-30T08:00 · …T24:00 · 비윤년 02-29)는 그 필드에 issue.
-    // 전에는 이 값이 zod 를 지나 create.ts:113 의 parseKst 에서 throw → `server`. regex 가 이미 실패한 값에는 두 번째 issue 를 내지 않는다.
-    // `<input type="datetime-local">` 은 이런 값을 만들지 않으므로 사람 경로가 아니라 조작 요청이 대상이다 — 그래도 500·server 가 아니라 validation.
-    const departAt = kstInstant(data.departAtLocal);
-    if (departAt.state === "not-a-date") {
-      ctx.addIssue({ code: "custom", message: "존재하지 않는 일시입니다 — 달력에 없는 날짜이거나 시·분 범위 밖 (departAtLocal)", path: ["departAtLocal"] });
+    const departOk = isCalendarDate(data.departDate);
+    const returnOk = isCalendarDate(data.returnDate);
+    if (ISO_DATE_PATTERN.test(data.departDate) && !departOk) {
+      ctx.addIssue({ code: "custom", message: "달력에 없는 날짜입니다 (departDate)", path: ["departDate"] });
     }
-    const returnAt = data.returnAtLocal === undefined ? undefined : kstInstant(data.returnAtLocal);
-    if (returnAt?.state === "not-a-date") {
-      ctx.addIssue({ code: "custom", message: "존재하지 않는 일시입니다 — 달력에 없는 날짜이거나 시·분 범위 밖 (returnAtLocal)", path: ["returnAtLocal"] });
+    if (ISO_DATE_PATTERN.test(data.returnDate) && !returnOk) {
+      ctx.addIssue({ code: "custom", message: "달력에 없는 날짜입니다 (returnDate)", path: ["returnDate"] });
     }
-
-    if (data.tripType === "round" && data.returnAtLocal === undefined) {
-      ctx.addIssue({ code: "custom", message: "round trip requires returnAtLocal", path: ["returnAtLocal"] });
+    if (departOk && data.departDate < toKstDateString(now)) {
+      ctx.addIssue({ code: "custom", message: "출발일은 오늘(KST) 이후여야 합니다 (departDate)", path: ["departDate"] });
     }
-    if (data.tripType === "oneway" && data.returnAtLocal !== undefined) {
-      ctx.addIssue({
-        code: "custom",
-        message: "oneway 에는 returnAtLocal 을 보낼 수 없습니다 (0006 reservations_round_trip_return_ck — oneway 의 return_at 은 null)",
-        path: ["returnAtLocal"],
-      });
-    }
-    // 규칙 2: 문자열 비교가 아니라 parseKst 인스턴트 비교. 둘 중 하나라도 인스턴트가 없으면(regex 실패 또는 규칙 0) 건너뛴다 —
-    // 그 필드에는 이미 issue 가 있으므로 이중 issue 를 만들지 않는다.
-    if (departAt.state === "ok" && returnAt?.state === "ok" && returnAt.ms <= departAt.ms) {
-      ctx.addIssue({
-        code: "custom",
-        message: "귀가 일시는 출발 일시 이후여야 합니다 (0001 return_at > depart_at)",
-        path: ["returnAtLocal"],
-      });
+    if (departOk && returnOk && data.returnDate < data.departDate) {
+      ctx.addIssue({ code: "custom", message: "도착일은 출발일과 같거나 뒤여야 합니다 (returnDate)", path: ["returnDate"] });
     }
   });
-
-/**
- * KST 벽시계 문자열 → 인스턴트(ms) 3상태.
- *   ok          — 형식·달력 모두 유효
- *   bad-format  — regex 불일치. zod 의 regex 가 이미 issue 를 냈으므로 superRefine 은 아무것도 더하지 않는다
- *   not-a-date  — regex 는 통과했으나 parseKst 가 거부(달력에 없는 날짜, 시 > 23, 분 > 59). superRefine 규칙 0 이 issue 를 낸다
- */
-function kstInstant(local: string): { state: "ok"; ms: number } | { state: "bad-format" } | { state: "not-a-date" } {
-  if (!KST_LOCAL_PATTERN.test(local)) return { state: "bad-format" };
-  try {
-    return { state: "ok", ms: parseKst(local).getTime() };
-  } catch {
-    return { state: "not-a-date" };
-  }
 }
-
-export type ReservationInput = z.infer<typeof ReservationInput>;
 
 /**
  * 동의 기록 컬럼 — 0003_consent.sql 의 4개 + 0021_withdrawal_consent.sql 의 1개. lib/reservations/consent.ts consentFields() 가 만든다.
@@ -141,35 +121,39 @@ export interface ReservationConsentColumns {
   retention_until: string;
 }
 
+/** 0023 reservations.intake — 접수 경로. 기본값이 없어 insert 가 반드시 적는다. */
+export const RESERVATION_INTAKES = ["wizard", "quick"] as const;
+export type ReservationIntake = (typeof RESERVATION_INTAKES)[number];
+
 /**
- * reservations insert 페이로드 — 서비스 롤 서버 코드(P3 접수 액션) 전용. snake_case = 0001·0003 컬럼명.
+ * reservations insert 페이로드 — 서비스 롤 서버 코드(공개 접수 액션) 전용. snake_case = 0001·0003·0021·0023 컬럼명.
  * DB 가 채우는 id·created_at·status 와 admin 이 채우는 confirmed_at·admin_memo 는 없다.
- * 운행 일시(depart_at·return_at)는 lib/kst.ts parseKst 로 KST 벽시계를 해석한 인스턴트의 ISO 문자열이다.
+ *
+ * 공개 접수는 **간편 견적 하나**다(P3-8) — 그래서 이 타입은 간편 행의 모양으로 좁혀져 있다:
+ * intake 는 'quick' 리터럴, 손님이 고르지 않은 차종·목적·대수·왕복 구분은 **null 리터럴**이다(지어내지 않는다 — 0023 헤더).
+ * 날짜만 받으므로 depart_at = 출발일 00:00 KST 의 인스턴트, return_at = 도착일 00:00 KST(같은 날이면 null)다.
+ * 이메일·경유지·요청사항·연락/결제 방법·주차·부가세 칸은 보내지 않는다(DB 기본값·null 그대로 — 받은 적 없는 값이다).
  */
 export interface ReservationInsert extends ReservationConsentColumns {
   public_code: string;
+  intake: "quick";
   name: string;
   /** 정규화된 연락처 하나 — lib/reservations/phone.ts contactPhone(input).e164 (국내 010… 도 +82 E.164 로). */
   phone: string;
-  email?: string | null;
-  vehicle_slug: ReservationInput["vehicleSlug"];
-  purpose_code: string;
+  vehicle_slug: null;
+  purpose_code: null;
+  trip_type: null;
+  bus_count: null;
   origin_code: string;
   destination_code: string;
-  waypoint_codes: string[];
-  trip_type: ReservationInput["tripType"];
+  /** 출발일 00:00 KST 의 UTC 인스턴트(ISO). 시각은 의미가 없다 — 표시면은 intake='quick' 이면 날짜만 보인다. */
   depart_at: string;
-  /** 0001 제약: trip_type = 'round' 일 때만 not null. */
+  /** 도착일 00:00 KST(도착일이 출발일보다 뒤일 때만). 같은 날이면 null. */
   return_at: string | null;
+  /** 도착일 − 출발일(KST 달력 일수). */
   nights: number;
-  bus_count: number;
-  passengers?: number | null;
-  contact_method?: string | null;
-  payment_method?: string | null;
-  parking_included?: boolean | null;
-  vat_included?: boolean | null;
-  message?: string | null;
-  locale: ReservationInput["locale"];
+  passengers: number;
+  locale: QuickReservationInput["locale"];
 }
 
 /** 홈 Top-5 예시 견적(showcase_routes) 표시용 타입. 가격 필드는 정적 표시값(null 가능)뿐. */
@@ -292,7 +276,8 @@ export interface Popup {
 export interface ReservationPublic {
   publicCode: string;
   status: "new" | "confirmed" | "done" | "cancelled";
-  vehicleSlug: string;
+  /** 간편 접수(0023 intake='quick')는 차종을 받지 않는다 — null. */
+  vehicleSlug: string | null;
   originCode: string;
   destinationCode: string;
   departAt: string;

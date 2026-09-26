@@ -6,11 +6,14 @@
  * `deps` 로 받는다. 그래서 vitest 가 mock deps 로 모든 경로(재시도·통지 실패·순서)를 돈다(tests/reservation-create.test.ts 가
  * 이 금지 목록을 정적 grep 으로 잠근다). `after()`·`revalidateTag()` 는 lib/ports/* 에 있고 래퍼(P3-3)가 쓴다.
  *
- * 흐름
- *   0. ReservationInput.safeParse 를 **다시** 한다(방어 심층). P3-1 runGuards 가 이미 통과시켰지만, 실패하면 호출자 버그라 throw.
- *   1. origin/destination/waypoint 코드를 isLocationCode 로 재확인 — 이 컬럼들엔 DB CHECK 가 없다(0001, 리뷰 M5).
- *   2. KST 벽시계(`YYYY-MM-DDTHH:mm`) → parseKst 로 인스턴트. 서버 TZ 와 무관(CLAUDE.md §3). nights = nightsBetween(round) / 0.
- *   3. phone ← contactPhone(input).e164 (`+82…`). 동의 4컬럼 ← consentFields(input, now).
+ * 흐름 (P3-8 — 공개 접수는 홈 간편 견적 하나다. intake='quick')
+ *   0. quickReservationSchema(now).safeParse 를 **다시** 한다(방어 심층). runGuards 가 이미 통과시켰지만, 실패하면 호출자 버그라 throw.
+ *   1. origin/destination 코드를 isLocationCode 로 재확인 — 이 컬럼들엔 DB CHECK 가 없다(0001, 리뷰 M5).
+ *   2. 날짜(`YYYY-MM-DD`, KST 달력) → `${날짜}T00:00` 을 parseKst 로 인스턴트. 서버 TZ 와 무관(CLAUDE.md §3).
+ *      depart_at = 출발일 00:00 KST · return_at = 도착일 00:00 KST(도착일이 뒤일 때만, 같은 날이면 null) · nights = 두 날짜 차.
+ *      **00:00 은 의미 없는 자리값이다** — 손님은 시각을 고르지 않았다. 모든 표시면이 intake='quick' 이면 날짜만 보인다.
+ *   2'. 차종·목적·대수·왕복 구분은 **null** 로 보낸다(지어내지 않는다 — 0023 이 intake='quick' 에만 허용한다).
+ *   3. phone ← contactPhone(input).e164 (`+82…`). 동의 컬럼 ← consentFields(input + marketingConsent:false, now).
  *   4. reservations insert. public_code 는 randomBytes → 31자 알파벳 8자(publicCode.ts). unique 충돌(23505)이면 최대 3회 재생성.
  *   5. planNotifications(created) → db.enqueue. **동기**다(아래).
  *
@@ -28,7 +31,13 @@
 import { isLocationCode } from "../codes";
 import { nightsBetween, parseKst } from "../kst";
 import { planNotifications } from "../notify/outbox";
-import { ReservationInput, type CreateReservationResult, type NewOutboxRow, type ReservationInsert } from "../types";
+import {
+  quickReservationSchema,
+  type CreateReservationResult,
+  type NewOutboxRow,
+  type QuickReservationInput,
+  type ReservationInsert,
+} from "../types";
 import { consentFields } from "./consent";
 import { contactPhone } from "./phone";
 import { generatePublicCode, type RandomBytes } from "./publicCode";
@@ -101,57 +110,32 @@ export interface CreateReservationDeps {
 // =============================================================================
 
 function callerBug(detail: string): Error {
-  return new Error(`createReservation: ${detail} — 호출자 버그 (P3-1 runGuards 가 ReservationInput 을 먼저 통과시켜야 한다)`);
+  return new Error(`createReservation: ${detail} — 호출자 버그 (P3-1 runGuards 가 quickReservationSchema 를 먼저 통과시켜야 한다)`);
 }
 
 function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-/** 운행 일시 — KST 벽시계 → 인스턴트 + nights. 0001 의 두 제약(round ⇔ return_at, return_at > depart_at)을 insert 전에 막는다. */
-function scheduleColumns(data: ReservationInput): Pick<ReservationInsert, "depart_at" | "return_at" | "nights"> {
-  const departAt = parseKst(data.departAtLocal);
+/** 날짜의 자리값 시각 — 손님은 시각을 고르지 않았다(표시면은 날짜만 보인다). KST 벽시계로 해석한다(CLAUDE.md §3). */
+export const QUICK_DATE_TIME = "00:00";
 
-  if (data.tripType === "round") {
-    if (data.returnAtLocal === undefined) {
-      throw callerBug("tripType=round 인데 returnAtLocal 이 없다 (0001 reservations_round_trip_return_ck)");
-    }
-    const returnAt = parseKst(data.returnAtLocal);
-    if (returnAt.getTime() <= departAt.getTime()) {
-      throw callerBug(
-        `귀가 일시(${data.returnAtLocal})가 출발 일시(${data.departAtLocal}) 이후가 아니다 (0001 return_at > depart_at)`,
-      );
-    }
-    return {
-      depart_at: departAt.toISOString(),
-      return_at: returnAt.toISOString(),
-      nights: nightsBetween(data.departAtLocal, data.returnAtLocal),
-    };
+/**
+ * 운행일 — KST 달력 날짜 → 그 날 00:00 KST 의 인스턴트 + nights.
+ * 도착일이 출발일보다 뒤일 때만 return_at 을 둔다(같은 날 = 당일 운행 → null). 0001 의 `return_at > depart_at` 을 insert 전에 지킨다.
+ */
+function scheduleColumns(data: QuickReservationInput): Pick<ReservationInsert, "depart_at" | "return_at" | "nights"> {
+  const departLocal = `${data.departDate}T${QUICK_DATE_TIME}`;
+  const returnLocal = `${data.returnDate}T${QUICK_DATE_TIME}`;
+  const departAt = parseKst(departLocal);
+  const returnAt = parseKst(returnLocal);
+  if (returnAt.getTime() < departAt.getTime()) {
+    throw callerBug(`도착일(${data.returnDate})이 출발일(${data.departDate})보다 앞선다`);
   }
-
-  if (data.tripType === "oneway_oneway" && data.returnAtLocal !== undefined) {
-    // 편도·편도 — 두 번째 운행(귀가) 일시. 0006_trip_return_check 가 이 조합의 return_at 을 허용한다.
-    // 사장님이 견적을 내려면 두 번째 운행일이 필요하므로 저장한다. nights 는 두 운행 사이의 KST 달력 일수.
-    const returnAt = parseKst(data.returnAtLocal);
-    if (returnAt.getTime() <= departAt.getTime()) {
-      throw callerBug(
-        `귀가 일시(${data.returnAtLocal})가 출발 일시(${data.departAtLocal}) 이후가 아니다 (0001 return_at > depart_at)`,
-      );
-    }
-    return {
-      depart_at: departAt.toISOString(),
-      return_at: returnAt.toISOString(),
-      nights: nightsBetween(data.departAtLocal, data.returnAtLocal),
-    };
+  if (returnAt.getTime() === departAt.getTime()) {
+    return { depart_at: departAt.toISOString(), return_at: null, nights: 0 };
   }
-
-  if (data.returnAtLocal !== undefined) {
-    // 단순 편도(oneway)에 귀가 일시가 온 것은 호출자 버그다. 0006 후에도 oneway 는 return_at 금지.
-    throw callerBug(
-      `tripType=${data.tripType} 에 returnAtLocal 이 왔다 — reservations_round_trip_return_ck(0006) 는 oneway 의 return_at 을 금지한다`,
-    );
-  }
-  return { depart_at: departAt.toISOString(), return_at: null, nights: 0 };
+  return { depart_at: departAt.toISOString(), return_at: returnAt.toISOString(), nights: nightsBetween(departLocal, returnLocal) };
 }
 
 /** public_code 를 새로 뽑아 insert. 23505 면 재생성, 상한에 닿으면 throw. 다른 오류는 그대로 throw(재시도 없음). */
@@ -186,53 +170,47 @@ async function insertWithFreshCode(
  * insert 가 실패하면 throw 하고 enqueue 는 호출되지 않는다.
  */
 export async function createReservation(
-  input: ReservationInput,
+  input: QuickReservationInput,
   deps: CreateReservationDeps,
 ): Promise<CreateReservationResult> {
-  // 0. 재검증
-  const parsed = ReservationInput.safeParse(input);
-  if (!parsed.success) {
-    const issues = parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`).join("; ");
-    throw callerBug(`입력이 ReservationInput 을 통과하지 못했다 [${issues}]`);
-  }
-  const data = parsed.data;
-
   const now = deps.now();
   if (!(now instanceof Date) || Number.isNaN(now.getTime())) {
     throw new Error("createReservation: deps.now() 가 유효한 Date 가 아니다");
   }
 
+  // 0. 재검증 — guard 와 같은 규칙(날짜 하한은 같은 서버 시계로)
+  const parsed = quickReservationSchema(now).safeParse(input);
+  if (!parsed.success) {
+    const issues = parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`).join("; ");
+    throw callerBug(`입력이 quickReservationSchema 를 통과하지 못했다 [${issues}]`);
+  }
+  const data = parsed.data;
+
   // 1. 장소 코드 재확인 (DB CHECK 없음)
-  const codes = [data.originCode, data.destinationCode, ...data.waypointCodes];
+  const codes = [data.originCode, data.destinationCode];
   const unknownCodes = codes.filter((c) => !isLocationCode(c));
   if (unknownCodes.length > 0) {
     throw callerBug(`장소 코드가 LOCATION_CODES 에 없다: ${unknownCodes.join(", ")} (이 컬럼엔 DB CHECK 가 없어 여기서 막는다)`);
   }
 
-  // 2~3. 페이로드 — DB 컬럼명 그대로 (ReservationInsert)
+  // 2~3. 페이로드 — DB 컬럼명 그대로 (ReservationInsert). 받지 않은 칸은 null 로 명시한다(지어내지 않는다 · 0023).
   const schedule = scheduleColumns(data);
   const phone = contactPhone(data);
-  const consent = consentFields(data, now);
+  const consent = consentFields({ privacyConsent: data.privacyConsent, withdrawalConsent: data.withdrawalConsent, marketingConsent: false }, now);
   const base: Omit<ReservationInsert, "public_code"> = {
+    intake: "quick",
     name: data.name,
     phone: phone.e164,
-    email: data.email ?? null,
-    vehicle_slug: data.vehicleSlug,
-    purpose_code: data.purposeCode,
+    vehicle_slug: null,
+    purpose_code: null,
+    trip_type: null,
+    bus_count: null,
     origin_code: data.originCode,
     destination_code: data.destinationCode,
-    waypoint_codes: [...data.waypointCodes],
-    trip_type: data.tripType,
     depart_at: schedule.depart_at,
     return_at: schedule.return_at,
     nights: schedule.nights,
-    bus_count: data.busCount,
-    passengers: data.passengers ?? null,
-    contact_method: data.contactMethod ?? null,
-    payment_method: data.paymentMethod ?? null,
-    parking_included: data.parkingIncluded ?? null,
-    vat_included: data.vatIncluded ?? null,
-    message: data.message ?? null,
+    passengers: data.passengers,
     locale: data.locale,
     ...consent,
   };

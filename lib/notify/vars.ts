@@ -40,7 +40,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { isLocationCode, locationLabelKo } from "../codes";
 import { structuredLog, type StructuredLogEntry } from "../log";
-import { kstWallClock } from "../reservation-check/view";
+import { kstDate, kstWallClock } from "../reservation-check/view";
 import type { TemplateVarsPort } from "./solapi";
 import type { CustomerVars, OwnerVars } from "./templates";
 
@@ -61,17 +61,20 @@ const VEHICLES = "vehicles";
 export const CUSTOMER_VARS_COLUMNS = ["public_code"] as const;
 
 /**
- * 사장님 접수 알림이 읽는 전부. 문안(templates.ts `ownerVariants`)이 실제로 쓰는 9컬럼이다 —
- * 접수번호·성명·연락처·차량·구간·운행일·대수·인원. `reservations.id` 는 인자로 이미 받았으므로 읽지 않는다.
+ * 사장님 접수 알림이 읽는 전부. 문안(templates.ts `ownerVariants`)이 실제로 쓰는 11컬럼이다 —
+ * 접수번호·접수 경로·성명·연락처·차량·구간·운행일(출발·도착)·대수·인원. `reservations.id` 는 인자로 이미 받았으므로 읽지 않는다.
+ * P3-8: `intake`(간편 접수면 차종·시각 대신 "전화로 확인" 을 적는다) · `return_at`(간편 접수의 도착일)을 더했다.
  */
 export const OWNER_VARS_COLUMNS = [
   "public_code",
+  "intake",
   "name",
   "phone",
   "vehicle_slug",
   "origin_code",
   "destination_code",
   "depart_at",
+  "return_at",
   "bus_count",
   "passengers",
 ] as const;
@@ -113,8 +116,10 @@ export const OWNER_VARS_KEYS = [
   "reservationId",
   "name",
   "phone",
+  "intake",
   "vehicleLabel",
   "departAtKst",
+  "returnDateKst",
   "originLabel",
   "destinationLabel",
   "busCount",
@@ -188,6 +193,20 @@ function requiredInteger(row: Row, column: string): number {
   const value = row[column];
   if (typeof value !== "number" || !Number.isFinite(value)) throw badColumn(column, "가 비었거나 수가 아니다");
   return value;
+}
+
+function nullableString(row: Row, column: string): string | null {
+  const value = row[column];
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "string" || value.length === 0) throw badColumn(column, "가 문자열이 아니다");
+  return value;
+}
+
+/** 0023 접수 경로 — 두 값 밖이면 throw(값은 문구에 싣지 않는다). */
+function intakeOf(row: Row): "wizard" | "quick" {
+  const value = row.intake;
+  if (value === "wizard" || value === "quick") return value;
+  throw badColumn("intake", "가 wizard·quick 이 아니다");
 }
 
 function nullableInteger(row: Row, column: string): number | null {
@@ -282,16 +301,41 @@ export function templateVars(deps: TemplateVarsDeps): TemplateVarsPort {
       if (row === null) return null;
 
       const publicCode = requiredString(row, "public_code");
+      const intake = intakeOf(row);
       const name = requiredString(row, "name");
       const phone = requiredString(row, "phone");
-      const slug = requiredString(row, "vehicle_slug");
       const originCode = requiredString(row, "origin_code");
       const destinationCode = requiredString(row, "destination_code");
+      const departAt = requiredString(row, "depart_at");
+      const returnAt = nullableString(row, "return_at");
+      const passengers = nullableInteger(row, "passengers");
+
+      if (intake === "quick") {
+        // P3-8 간편 접수 — 차종·대수는 받지 않았다(null). 운행일은 **날짜만**: 저장된 00:00 은 자리값이라 시각을 싣지 않는다.
+        // vehicles 는 읽지 않는다(읽을 slug 가 없다).
+        return {
+          publicCode,
+          origin: deps.origin,
+          reservationId,
+          name,
+          phone,
+          intake,
+          vehicleLabel: null,
+          departAtKst: kstDate(departAt),
+          returnDateKst: returnAt === null ? null : kstDate(returnAt),
+          originLabel: labelOf(originCode),
+          destinationLabel: labelOf(destinationCode),
+          busCount: null,
+          passengers,
+        };
+      }
+
+      // 위저드 접수분 — 옛 문안 그대로. 차종·대수가 비어 있으면 반쯤 빈 문안을 보내지 않고 throw(0023 CHECK 가 막는 모양이다).
+      const slug = requiredString(row, "vehicle_slug");
       // KST 벽시계 변환은 lib/reservation-check/view.ts kstWallClock 하나뿐이다(서버 TZ 와 무관한 고정 +09:00).
       // 사본을 두면 한쪽만 고쳐지고 다른 쪽이 계속 틀린다 — 형식이 유효하지 않으면 여기서 throw 한다.
-      const departAtKst = kstWallClock(requiredString(row, "depart_at"));
+      const departAtKst = kstWallClock(departAt);
       const busCount = requiredInteger(row, "bus_count");
-      const passengers = nullableInteger(row, "passengers");
 
       return {
         publicCode,
@@ -299,8 +343,10 @@ export function templateVars(deps: TemplateVarsDeps): TemplateVarsPort {
         reservationId,
         name,
         phone,
+        intake,
         vehicleLabel: (await vehicleLabel(reservationId, slug)) ?? slug,
         departAtKst,
+        returnDateKst: null,
         originLabel: labelOf(originCode),
         destinationLabel: labelOf(destinationCode),
         busCount,

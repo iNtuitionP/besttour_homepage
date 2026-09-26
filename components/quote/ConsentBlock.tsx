@@ -1,9 +1,10 @@
 /**
- * 개인정보 수집·이용 동의 블록 — 6단계 (ADR-6 · UIUX 브리프 §3-②).
+ * 개인정보 수집·이용 동의 블록 — 홈 간편 견적 모달 (ADR-6 · UIUX 브리프 §3-② · P3-8).
  *
- * 문구는 전부 props(ConsentText)로 받는다 — 원장 PRIVACY_NOTICE·LEGAL_LINKS 는 서버 페이지(app/[locale]/(site)/quote/page.tsx)가 읽어
+ * 문구는 전부 props(ConsentText)로 받는다 — 원장 PRIVACY_NOTICE·LEGAL_LINKS 는 서버 컴포넌트(components/home/Hero.tsx)가 읽어
  * 내린다. 이 파일에는 원장 import 도, 법정 문구 리터럴도 없다(클라이언트 번들에 원장이 실리지 않는다).
- * 체크박스 2종은 **기본 해제**(defaultChecked 없음, 상태 초기값 false, 초안에서 복원하지 않음). 필수 미체크면 제출이 닫힌다(submit-gate).
+ * 체크박스는 필수 동의 하나이고 **기본 해제**(defaultChecked 없음, 상태 초기값 false). 미체크면 제출이 닫힌다(submit-gate).
+ * 선택 동의(광고성 정보 수신)는 간편 견적에서 **받지 않는다**(P3-8 컨트롤러 확정 §A) — 체크박스를 그리지 않고, 서버는 marketing_consent_at 을 null 로 둔다.
  *
  * 영문 화면 (P2-6 브리프 §3): 제목·체크박스 라벨은 영문(컨트롤러 확정 — page.tsx 가 ledgerUi 에서 넣는다), 고지 본문(목적·항목·기간·
  * 거부 안내·접수 현황 공개)은 원장 한국어 그대로 — 본문 위에 컨트롤러 확정 안내(officialNotice), 본문에 lang="ko"(bodyLang).
@@ -27,7 +28,6 @@ export interface ConsentText {
   retention: string;
   refusal: string;
   consentLabel: string;
-  marketingConsentLabel: string;
   publicFeedNotice: string;
   privacyHref: string;
   /** en 전용 컨트롤러 확정 안내 — ko 는 null */
@@ -39,17 +39,13 @@ export interface ConsentText {
 export function ConsentBlock({
   text,
   privacyConsent,
-  marketingConsent,
   onPrivacyChange,
-  onMarketingChange,
   error,
   idPrefix,
 }: {
   text: ConsentText;
   privacyConsent: boolean;
-  marketingConsent: boolean;
   onPrivacyChange: (checked: boolean) => void;
-  onMarketingChange: (checked: boolean) => void;
   error?: string;
   idPrefix: string;
 }) {
@@ -92,16 +88,6 @@ export function ConsentBlock({
           data-testid="consent-privacy"
         />
         <span>{text.consentLabel}</span>
-      </label>
-      <label className={s.consentRow} data-checked={marketingConsent}>
-        <input
-          type="checkbox"
-          name={F.marketingConsent}
-          checked={marketingConsent}
-          onChange={(e) => onMarketingChange(e.target.checked)}
-          data-testid="consent-marketing"
-        />
-        <span>{text.marketingConsentLabel}</span>
       </label>
       <ErrorText id={errId} message={error} />
 

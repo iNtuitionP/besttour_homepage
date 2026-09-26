@@ -1,16 +1,18 @@
 /**
- * 청약철회 고지 — 6단계 제출 버튼 바로 위 (플랜 §11 M2 · 전자상거래법 §17⑥). **서버 컴포넌트** — 원장에서만 가져온다.
+ * 청약철회 고지 — 간편 견적 모달의 개인정보 동의 다음 (플랜 §11 M2 · 전자상거래법 §17⑥ · P3-8). **서버 컴포넌트** — 원장에서만 가져온다.
  *
- * 순서(브리프 §청약철회 고지 · P1-7 브리프 1-B): VERBATIM.bookingNotice(원문) → QUOTE_BASIS.line → PAYMENT.line →
+ * 순서(P1-7 브리프 1-B · P3-8 브리프 §D-2): QUOTE_BASIS.line → PAYMENT.line →
  * CANCELLATION 2단계 + referenceTime → **바로 아래** 청약철회 제한 고지(원장 WITHDRAWAL.notice — 사장님 확정 2026-09-21 A-2, 눈에 띄게).
- * 그 바로 아래에 필수 체크박스(WITHDRAWAL.consentLabel)가 온다 — 상태가 필요해 클라이언트 Step6Contact 가 그린다.
- * `data-legal="withdrawal-notice"` 를 테스트·browse 가 존재의 증거로 잠근다. 페이지가 이 노드를 만들어 클라이언트 위저드에 props 로 내린다.
+ * 그 바로 아래에 필수 체크박스(WITHDRAWAL.consentLabel)가 온다 — 상태가 필요해 클라이언트 QuickQuoteModal 이 그린다.
+ * P3-8: verbatim("사장님 확정 후 연락드리며…")은 이 블록의 맨 위에서 **모달의 체크박스 다음·제출 바로 위**로 옮겼다(브리프 §D-2 순서).
+ * 한 화면에 같은 문장을 두 번 싣지 않는다 — 모달이 원장 값(props)으로 한 번 그린다.
+ * `data-legal="withdrawal-notice"` 를 테스트·browse 가 존재의 증거로 잠근다. Hero(서버)가 이 노드를 만들어 클라이언트 위젯에 props 로 내린다.
  *
  * P1-7 변경: 예전(P3-4)에는 약관 제8조 본문의 첫 문장을 잘라 여기 실었다(components/quote/withdrawal.ts — 삭제). 사장님이 확정한 고지 문안이
  * 원장 WITHDRAWAL 로 생겨 그것으로 바꿨다. "위 취소·환불 규정" 이 가리키는 표가 바로 위에 있다. 약관 제8조 자체는 /terms 에 그대로 있다.
  *
- * 영문 화면 (P2-6 브리프 §3): verbatim 은 컨트롤러 확정 영문(localizeVerbatim), 그 아래 법정 문안(산정 기준·대금·취소환불)은
- * 원장 한국어 그대로 — 그 위에 컨트롤러 확정 안내("한국어가 법적 효력")를 두고 한국어 블록에 lang="ko". 제목·소제목은 messages(quote.steps.contact).
+ * 영문 화면 (P2-6 브리프 §3): 법정 문안(산정 기준·대금·취소환불)은 원장 한국어 그대로 — 그 위에 컨트롤러 확정 안내("한국어가 법적 효력")를
+ * 두고 한국어 블록에 lang="ko". 제목·소제목은 messages(quote.notice).
  * 청약철회 제한 고지만은 번역본(WITHDRAWAL.noticeEn)을 먼저 싣고 한국어 원문을 lang="ko" 로 함께 둔다(P1-7 R2 — 동의하는 문장을 읽을 수 있게).
  * 체크박스 라벨은 원장의 확정 영문(WITHDRAWAL.consentLabelEn)이다. ko 화면은 안내도 lang 속성도 내지 않는다(마크업 불변).
  */
@@ -18,23 +20,20 @@ import { getLocale, getTranslations } from "next-intl/server";
 
 import { OfficialKoreanNotice } from "@/components/legal/OfficialKoreanNotice";
 import { WithdrawalRestrictionText } from "@/components/legal/WithdrawalRestrictionText";
-import { koLang, ledgerUi, localizeVerbatim } from "@/lib/i18n/ledger-ui";
-import { CANCELLATION, PAYMENT, QUOTE_BASIS, VERBATIM, WITHDRAWAL } from "@/lib/legal/disclosures";
+import { koLang, ledgerUi } from "@/lib/i18n/ledger-ui";
+import { CANCELLATION, PAYMENT, QUOTE_BASIS, WITHDRAWAL } from "@/lib/legal/disclosures";
 
 import s from "./quote.module.css";
 
 export async function WithdrawalNotice() {
-  const [t, locale] = await Promise.all([getTranslations("quote.steps.contact"), getLocale()]);
+  const [t, locale] = await Promise.all([getTranslations("quote.notice"), getLocale()]);
   const lang = koLang(locale);
 
   return (
     <aside className={s.withdrawal} data-legal="withdrawal-notice" aria-labelledby="quote-withdrawal-title">
       <h3 className={s.withdrawalTitle} id="quote-withdrawal-title">
-        {t("noticeTitle")}
+        {t("title")}
       </h3>
-      <p className={s.withdrawalVerbatim} data-legal="booking-notice">
-        {localizeVerbatim(locale, VERBATIM.bookingNotice)}
-      </p>
       <OfficialKoreanNotice notice={ledgerUi(locale).officialNotice} />
       <p data-legal="quote-basis" lang={lang}>
         {QUOTE_BASIS.line}

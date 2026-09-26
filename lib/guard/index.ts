@@ -2,7 +2,7 @@
  * 공개 뮤테이션 방어 4종 — 진입점 (플랜 v4 P3-1 · CLAUDE.md §3 "전부 통과 후").
  *
  * 순서 고정 (싼 것 → 비싼 것, 검증된 사람만 슬롯 소비):
- *   1. zod        ReservationInput.safeParse   — 무료. 쓰레기가 뒤로 못 간다
+ *   1. zod        quickReservationSchema(now).safeParse — 무료. 쓰레기가 뒤로 못 간다 (P3-8: 공개 접수는 간편 견적 하나. now = deps.now())
  *   2. honeypot   숨은 필드 채워짐 → 조용한 성공 — 무료
  *   3. timetrap   렌더~제출 < 3초 → bot          — 무료
  *   4. turnstile  siteverify (네트워크)           — 사람 증명. 실패하면 슬롯을 쓰지 않는다
@@ -16,7 +16,7 @@
  * 이 파일은 서버 액션 지시어 없는 lib 순수 모듈이다. 서버 액션(P3-3)이 `runGuards(raw, ctx, defaultGuardDeps())` 로 부르고, 통과하면 `input` 을 저장한다.
  * defaultGuardDeps 는 ./deps.ts(server-only) 에 있고 여기서 re-export 하지 않는다 — 이 모듈은 어디서든(테스트 포함) import 할 수 있어야 한다.
  */
-import { ReservationInput } from "../types";
+import { quickReservationSchema } from "../types";
 import { HONEYPOT_FIELD, checkHoneypot } from "./honeypot";
 import { clientIp, clientIpKey } from "./ipKey";
 import { checkRateLimit } from "./rateLimit";
@@ -49,7 +49,8 @@ export async function runGuards(raw: unknown, ctx: GuardContext, deps: GuardDeps
   const { body, fields } = splitHoneypot(raw, ctx.honeypot ?? {});
 
   // 1. zod
-  const parsed = ReservationInput.safeParse(body);
+  // 날짜 하한(KST 오늘)은 서버 시계로 — 같은 now 가 타임트랩에도 쓰인다.
+  const parsed = quickReservationSchema(now).safeParse(body);
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => ({ path: i.path.map(String).join("."), code: i.code, message: i.message }));
     return { ok: false, reason: "validation", detail: issues };
@@ -83,5 +84,5 @@ export async function runGuards(raw: unknown, ctx: GuardContext, deps: GuardDeps
   }
   if (!rl.ok) return rl;
 
-  return { ok: true, silent: false, input: parsed.data };
+  return { ok: true, silent: false, input: parsed.data, now };
 }

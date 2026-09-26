@@ -13,7 +13,7 @@
  *   3. 커스텀 이벤트 0 — `track(` 호출이 저장소에 없다(이번 범위 밖).
  *   4. 새 패키지는 `@vercel/analytics` 하나.
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, test } from "vitest";
 
@@ -380,21 +380,18 @@ describe("5. 방문 통계 거부 버튼", () => {
 // =============================================================================
 // 6. [P2-7] Referer 누출 — /quote/done 은 no-referrer
 // =============================================================================
-describe("6. /quote/done — referrer: no-referrer", () => {
-  test("접수번호가 든 주소가 같은 출처 요청의 Referer 로 새지 않게 no-referrer 메타를 낸다 · 다른 페이지는 그대로", () => {
-    expect(codeOf("app/[locale]/(site)/quote/done/page.tsx")).toMatch(/referrer:\s*["']no-referrer["']/);
-    for (const f of ["app/[locale]/(site)/quote/page.tsx", "app/[locale]/layout.tsx", "app/layout.tsx"]) {
+// P3-8: 옛 /quote/done 은 접수번호를 주소(?code=)에 실어 no-referrer 메타로 막았다. 완료 화면이 홈 모달 안으로 들어오면서
+// 접수번호는 **주소에 실리지 않는다** — 막을 것 자체가 없어졌다. 그 사실을 잠근다.
+describe("6. 접수번호는 주소에 실리지 않는다 (P3-8 — 완료 화면은 홈 모달 안)", () => {
+  test("/quote/done 페이지가 없고 · 모달은 라우터로 이동하지 않는다(접수번호를 쿼리에 싣지 않는다) · 레이아웃에 referrer 메타 0", () => {
+    expect(existsSync(path.join(ROOT, "app/[locale]/(site)/quote/done/page.tsx"))).toBe(false);
+    const modal = codeOf("components/quote/QuickQuoteModal.tsx");
+    expect(modal).not.toMatch(/useRouter|router\.(push|replace)|pushState|replaceState/);
+    expect(modal).not.toMatch(/[?&]code=/);
+    for (const f of ["app/[locale]/(site)/page.tsx", "app/[locale]/layout.tsx", "app/layout.tsx"]) {
       expect(/referrer:/.test(codeOf(f)), f).toBe(false);
     }
   });
-
-  const BASE = process.env.EN_BASE_URL;
-  test.runIf(Boolean(BASE))("렌더 실측(GET) — /quote/done 에 <meta name=\"referrer\" content=\"no-referrer\"> · /quote 에는 없다", async () => {
-    const done = await (await fetch(`${BASE}/quote/done?code=ABCDEFGH`)).text();
-    expect(done).toMatch(/<meta name="referrer" content="no-referrer"\s*\/?>/);
-    const quote = await (await fetch(`${BASE}/quote`)).text();
-    expect(quote).not.toMatch(/<meta name="referrer"/);
-  }, 120_000);
 });
 
 // =============================================================================
@@ -409,13 +406,11 @@ describe("7. Referrer-Policy 헤더 — 전역 strict-origin", () => {
     expect(code).toMatch(/source:\s*["']\/:path\*["']/);
     expect(code).toMatch(/key:\s*["']Referrer-Policy["']/);
     expect(code).toMatch(/value:\s*["']strict-origin["']/);
-    // /quote/done 의 no-referrer 메타는 그대로 둔다(더 좁은 규칙이 이긴다)
-    expect(codeOf("app/[locale]/(site)/quote/done/page.tsx")).toMatch(/referrer:\s*["']no-referrer["']/);
   });
 
   const BASE = process.env.EN_BASE_URL;
   test.runIf(Boolean(BASE))("렌더 실측(GET) — 응답 헤더에 Referrer-Policy: strict-origin 이 실제로 실린다", async () => {
-    for (const p of ["/", "/en", "/privacy", "/quote", "/quote/done?code=ABCDEFGH"]) {
+    for (const p of ["/", "/en", "/privacy", "/reservation/check"]) {
       const res = await fetch(`${BASE}${p}`);
       expect(res.status, p).toBe(200);
       expect(res.headers.get("referrer-policy"), p).toBe("strict-origin");

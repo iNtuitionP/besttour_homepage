@@ -770,6 +770,7 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
           status: "new",
           name: "P59",
           phone: "010-0000-0000",
+          intake: "wizard", // 0023 — 기본값 없음
           vehicle_slug: "bus45",
           purpose_code: "family",
           origin_code: "SEL",
@@ -867,7 +868,7 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
     });
 
     test("관리자 세션 · reservations — insert·delete 가 권한 거부(42501) 다 (update 는 0010 이 이미 닫았다)", async () => {
-      const post = await asUser(adminToken, "POST", "/reservations", { public_code: `P59X${RUN.slice(0, 3)}`, name: "X", phone: "010-0000-0000", vehicle_slug: "bus45", purpose_code: "family", origin_code: "SEL", destination_code: "BSN", trip_type: "oneway", depart_at: new Date(Date.now() + 864e5).toISOString() });
+      const post = await asUser(adminToken, "POST", "/reservations", { public_code: `P59X${RUN.slice(0, 3)}`, intake: "wizard", name: "X", phone: "010-0000-0000", vehicle_slug: "bus45", purpose_code: "family", origin_code: "SEL", destination_code: "BSN", trip_type: "oneway", depart_at: new Date(Date.now() + 864e5).toISOString() });
       expectPermissionDenied(post, "관리자 세션의 reservations INSERT");
 
       const del = await asUser(adminToken, "DELETE", `/reservations?id=eq.${resId}`);

@@ -63,7 +63,9 @@ export default function Nav({ items, labels, classes, ariaLabel, onNavigate }: N
             );
           }
 
-          const isCurrent = pathname === item.href.split("#")[0];
+          // 홈 안의 구역으로 가는 항목(P3-8 견적요청 `/#quote`)은 홈에 있다고 "현재 페이지" 가 되지 않는다 — 홈 자체가 메뉴 항목이 아니다.
+          const base = item.href.split("#")[0];
+          const isCurrent = pathname === base && !(base === "/" && item.href.includes("#"));
           const className = isCurrent && classes.current ? `${classes.link} ${classes.current}` : classes.link;
 
           return (

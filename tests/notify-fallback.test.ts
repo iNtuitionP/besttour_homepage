@@ -581,8 +581,10 @@ describe("4. 문안", () => {
     reservationId: "3f2b9c14-5f0a-4a2e-9c1b-8d7e6f5a4b3c",
     name: "한지원",
     phone: "+821020488585",
+    intake: "wizard", // P3-8 — 위저드 접수분의 문안은 한 글자도 바뀌지 않았다(아래 해시가 그 증거)
     vehicleLabel: "45인승 우등",
     departAtKst: "2026-10-03 08:00",
+    returnDateKst: null,
     originLabel: "서울",
     destinationLabel: "부산",
     busCount: 2,
@@ -793,6 +795,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("6. DB — 실제 행으�
         public_code: `${TEST_PREFIX}${randomUUID().slice(0, 8)}`,
         name: PII.name,
         phone: PII.phoneDashed,
+        intake: "wizard", // 0023 — 기본값 없음
         vehicle_slug: "bus45",
         purpose_code: "family",
         origin_code: "SEL",

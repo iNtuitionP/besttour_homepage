@@ -1,6 +1,7 @@
 /**
  * 섹션 6 — 차량 (#fleet, 목업 variant-08 §04). 서버 컴포넌트. **가격 없음.**
- * 카드 = 이름(vehicles.name_ko) · 정원(capacity) · 한 줄(ko.json home.fleet.lines[slug], 목업 .bus__spec) · 견적 CTA(/quote?vehicle=).
+ * 카드 = 이름(vehicles.name_ko) · 정원(capacity) · 한 줄(ko.json home.fleet.lines[slug], 목업 .bus__spec) · 견적 CTA(홈 간편 견적 `/#quote`).
+ * P3-8: 차종 프리필(`/quote?vehicle=`)은 위저드와 함께 없어졌다 — 간편 견적은 차종을 받지 않고 사장님이 전화로 확인한다.
  * 옛 사이트 차량소개 원문·용도·옵션 표는 P6-3 /fleet 몫. 사진은 목업의 slug↔사진 대응 그대로(public/hero).
  * 차량이 0대면 섹션을 숨긴다.
  */
@@ -12,7 +13,7 @@ import type { Vehicle } from "@/lib/types";
 
 import h from "./home.module.css";
 import s from "./Sections.module.css";
-import { quoteHref } from "./quote-href";
+import { QUOTE_ANCHOR } from "./quote-anchor";
 import { RICH } from "./rich";
 import { SectionHead } from "./SectionHead";
 
@@ -68,7 +69,7 @@ export async function FleetSection({ vehicles }: { vehicles: readonly Vehicle[] 
                       <dd>{t.rich("capacity", { ...RICH, n: String(v.capacity) })}</dd>
                     </div>
                   </dl>
-                  <Link href={quoteHref({ vehicle: v.slug })} className={`${h.btnGhost} ${h.btnBlock} ${h.btnSm} ${s.busCta}`}>
+                  <Link href={QUOTE_ANCHOR} className={`${h.btnGhost} ${h.btnBlock} ${h.btnSm} ${s.busCta}`}>
                     {t("cta")}
                   </Link>
                 </div>

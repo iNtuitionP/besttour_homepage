@@ -115,14 +115,22 @@ export interface OwnerVars extends CustomerVars {
   reservationId: string;
   name: string;
   phone: string;
-  /** 표시용 차량 라벨(vehicles.name_ko). 코드가 아니라 사람이 읽는 값이다. */
-  vehicleLabel: string;
-  /** KST 벽시계 `YYYY-MM-DD HH:mm` — lib/reservation-check/view.ts kstWallClock 의 결과. */
+  /**
+   * 접수 경로(0023). `quick`(홈 간편 견적 — P3-8)은 차종·여행 구분·출발 시각·왕복 구분·대수를 받지 않았다 —
+   * 문안은 그 사실과 **전화로 확인할 항목**을 적고, 날짜만 싣는다. `wizard`(옛 6단계 접수분)는 옛 문안 그대로다.
+   */
+  intake: "wizard" | "quick";
+  /** 표시용 차량 라벨(vehicles.name_ko). 코드가 아니라 사람이 읽는 값이다. 간편 접수는 null(차종 미정). */
+  vehicleLabel: string | null;
+  /** 위저드: KST 벽시계 `YYYY-MM-DD HH:mm`(kstWallClock). 간편: KST 달력 날짜 `YYYY-MM-DD`(시각은 자리값이라 싣지 않는다). */
   departAtKst: string;
+  /** 간편 접수의 도착일 `YYYY-MM-DD` — 출발일과 같은 날이면 null. 위저드는 언제나 null(옛 문안은 귀가 일시를 싣지 않았다). */
+  returnDateKst: string | null;
   originLabel: string;
   destinationLabel: string;
-  busCount: number;
-  /** 미입력이면 null — 그 줄에서 인원만 뺀다. */
+  /** 간편 접수는 null(대수 미정). */
+  busCount: number | null;
+  /** 미입력이면 null — 그 줄에서 인원만 뺀다(간편 접수는 필수라 언제나 값이 있다). */
   passengers: number | null;
 }
 
@@ -182,18 +190,58 @@ const checkLink = (v: CustomerVars): string => link(v.origin, RESERVATION_CHECK_
 const guideLink = (v: CustomerVars): string => link(v.origin, GUIDE_PATH);
 const adminLink = (v: OwnerVars): string => `${link(v.origin, ADMIN_RESERVATIONS_PATH)}/${v.reservationId}`;
 
-/** 대수 · 인원. 인원 미입력이면 대수만. */
+/** 대수 · 인원. 인원 미입력이면 대수만. (위저드 접수분 전용 — 간편 접수는 차종·대수가 없다.) */
 const fleetLine = (v: OwnerVars): string =>
   v.passengers === null ? `${v.vehicleLabel} ${v.busCount}대` : `${v.vehicleLabel} ${v.busCount}대 · ${v.passengers}명`;
 
 const route = (v: OwnerVars): string => `${v.originLabel} → ${v.destinationLabel}`;
 
 /**
+ * 간편 접수(P3-8)에서 사장님이 **전화로 확인할 항목**. 손님이 고르지 않은 것들이다 — 문안이 이 목록을 그대로 적어,
+ * 사장님이 "무엇을 물어야 하는지" 를 문자만 보고 안다(관리자 화면의 "미정(전화 확인)" 과 같은 목록).
+ */
+export const QUICK_CONFIRM_BY_PHONE = "차종·대수·출발 시각·여행 구분·왕복 여부";
+
+/** 간편 접수의 운행일 — 같은 날이면 `날짜 (당일)`, 다르면 `출발일 ~ 도착일`. 시각은 싣지 않는다(자리값). */
+const quickDates = (v: OwnerVars): string => (v.returnDateKst === null ? `${v.departAtKst} (당일)` : `${v.departAtKst} ~ ${v.returnDateKst}`);
+
+/** 간편 접수의 인원 — 필수 항목이지만 타입이 null 을 허용하므로 없으면 줄에서 뺀다(지어내지 않는다). */
+const quickPax = (v: OwnerVars): string | null => (v.passengers === null ? null : `${v.passengers}명`);
+
+/**
+ * 사장님 접수 알림 — 간편 접수(P3-8 · 0023 intake='quick').
+ * 차종·시각 대신 **간편 접수임**과 **전화로 확인할 항목**을 적는다. 날짜만 · 인원 · 구간 · 고객 연락처 · 관리자 링크.
+ * verbatim 은 넣지 않는다(아래 위저드 판과 같은 이유). 이 판도 언제나 90바이트를 넘어 LMS 로 나간다.
+ */
+function quickOwnerVariants(v: OwnerVars): MessageVariants {
+  const pax = quickPax(v);
+  return {
+    sms: [`${BRAND} 간편 접수 ${v.publicCode}`, v.name, v.phone, quickDates(v), route(v), pax, `차종·시각 전화 확인`, adminLink(v)]
+      .filter((p): p is string => p !== null)
+      .join(" "),
+    lms: lines(
+      `${BRAND} 새 견적 신청이 접수되었습니다(간편 접수).`,
+      "",
+      `접수번호 ${v.publicCode}`,
+      `고객 ${v.name} ${v.phone}`,
+      `운행일 ${quickDates(v)}`,
+      `구간 ${route(v)}`,
+      pax === null ? null : `인원 ${pax}`,
+      `전화로 확인할 것: ${QUICK_CONFIRM_BY_PHONE}`,
+      "",
+      `확인 ${adminLink(v)}`,
+    ),
+  };
+}
+
+/**
  * 사장님 접수 알림 — 접수번호·성명·연락처·차량·운행일·구간·인원·관리자 링크(브리프 Part 1).
  * verbatim 은 넣지 않는다: "사장님 확정 후 연락드리며" 는 고객에게 하는 약속이고, 사장님에게 되돌려 보내면 뜻이 뒤집힌다.
  * SMS 판은 같은 항목을 한 줄로 붙인 최소형이다 — 이 항목들을 더 뺄 수 없어 실제로는 언제나 LMS 로 나간다.
+ * P3-8: 간편 접수는 quickOwnerVariants 로 간다. 아래 위저드 판은 옛 접수분(통지가 아직 대기열에 있는 행)을 위해 한 글자도 바꾸지 않았다.
  */
 function ownerVariants(v: OwnerVars): MessageVariants {
+  if (v.intake === "quick") return quickOwnerVariants(v);
   return {
     sms: `${BRAND} 접수 ${v.publicCode} ${v.name} ${v.phone} ${v.departAtKst} ${route(v)} ${fleetLine(v)} ${adminLink(v)}`,
     lms: lines(
@@ -316,7 +364,10 @@ type BuilderMap = { [K in TemplateKey]: (vars: TemplateVarsByKey[K]) => MessageV
 const BUILDERS: BuilderMap = {
   "created.owner.sms": ownerVariants,
   // 사장님 번호가 없을 때의 폴백(outbox.ts planNotifications). 본문은 같고 제목만 더 붙는다.
-  "created.owner.email": (v) => ({ ...ownerVariants(v), subject: `${BRAND} 새 예약 접수 ${v.publicCode}` }),
+  "created.owner.email": (v) => ({
+    ...ownerVariants(v),
+    subject: v.intake === "quick" ? `${BRAND} 새 견적 신청(간편 접수) ${v.publicCode}` : `${BRAND} 새 예약 접수 ${v.publicCode}`,
+  }),
   "created.customer.sms": createdCustomerVariants,
   "confirmed.customer.sms": confirmedCustomerVariants,
   // 발송 실패 알림(P4-4). 본문은 같은 틀이고 event 만 다르다 — 사장님께 가지만 고객 변수만 받는다(위 주석).

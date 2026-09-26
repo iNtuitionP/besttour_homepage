@@ -20,16 +20,14 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { PURPOSES } from "@/lib/codes";
 import { HONEYPOT_FIELD, TURNSTILE_ACTION, issueFormToken, type FetchLike, type GuardDeps, type GuardFailure, type RateLimiterSet } from "@/lib/guard";
 import { COMPANY } from "@/lib/legal/disclosures";
 import { QUERY_TAGS } from "@/lib/queries/tags";
-import { ReservationInput } from "@/lib/types";
+import { QuickReservationShape, quickReservationSchema } from "@/lib/types";
 import {
   BOOLEAN_FORM_FIELDS,
   GUARD_FORM_FIELDS,
   GUARD_HEADER_NAMES,
-  MULTI_FORM_FIELDS,
   NUMBER_FORM_FIELDS,
   RESERVATION_FORM_FIELDS,
   formDataToRaw,
@@ -77,38 +75,27 @@ const ROOT = path.resolve(import.meta.dirname, "..");
 const read = (...rel: string[]) => readFileSync(path.join(ROOT, ...rel), "utf-8");
 
 // =============================================================================
-// §계약 — 폼 필드명 (브리프 표 그대로. lib/reservations/formData.ts 의 상수와 같아야 한다 — P3-4 는 lib 쪽을 import 한다)
+// §계약 — 폼 필드명 (P3-8 간편 견적. lib/reservations/formData.ts 의 상수와 같아야 한다 — 모달은 components/quote/fields.ts 사본을 쓴다)
 // =============================================================================
 const FORM_FIELD_CONTRACT = {
   name: "name",
   phone: "phone",
   phoneIntl: "phoneIntl",
-  email: "email",
-  vehicleSlug: "vehicleSlug",
-  purposeCode: "purposeCode",
   originCode: "originCode",
   destinationCode: "destinationCode",
-  waypointCodes: "waypointCodes",
-  tripType: "tripType",
-  departAtLocal: "departAtLocal",
-  returnAtLocal: "returnAtLocal",
-  busCount: "busCount",
+  departDate: "departDate",
+  returnDate: "returnDate",
   passengers: "passengers",
-  contactMethod: "contactMethod",
-  paymentMethod: "paymentMethod",
-  parkingIncluded: "parkingIncluded",
-  vatIncluded: "vatIncluded",
-  message: "message",
   locale: "locale",
   privacyConsent: "privacyConsent",
-  marketingConsent: "marketingConsent",
   // P1-7 — 청약철회 제한 동의(필수). 없으면 zod literal(true) 가 거부한다.
   withdrawalConsent: "withdrawalConsent",
 } as const;
 const GUARD_FIELD_CONTRACT = { website: "website", formToken: "formToken", turnstile: "cf-turnstile-response" } as const;
-const NUMBER_CONTRACT = ["busCount", "passengers"] as const;
-const BOOLEAN_CONTRACT = ["privacyConsent", "marketingConsent", "parkingIncluded", "vatIncluded", "withdrawalConsent"] as const;
-const MULTI_CONTRACT = ["waypointCodes"] as const;
+const NUMBER_CONTRACT = ["passengers"] as const;
+const BOOLEAN_CONTRACT = ["privacyConsent", "withdrawalConsent"] as const;
+/** 옛 위저드 필드 — 이제 계약 밖이다. 보내도 읽지 않는다(지어낸 값이 저장 경로로 가지 않는다). */
+const RETIRED_WIZARD_FIELDS = ["email", "vehicleSlug", "purposeCode", "waypointCodes", "tripType", "departAtLocal", "returnAtLocal", "busCount", "contactMethod", "paymentMethod", "parkingIncluded", "vatIncluded", "message", "marketingConsent"] as const;
 
 // =============================================================================
 // 픽스처
@@ -126,25 +113,13 @@ function form(overrides: Record<string, FormValue> = {}): FormData {
   const base: Record<string, FormValue> = {
     name: "홍길동",
     phone: "010-1234-5678",
-    email: "",
-    vehicleSlug: "bus45",
-    purposeCode: PURPOSES[0],
     originCode: "SEL",
     destinationCode: "ICN",
-    waypointCodes: ["BSN"],
-    tripType: "round",
-    departAtLocal: "2026-10-01T08:00",
-    returnAtLocal: "2026-10-01T18:00",
-    busCount: "2",
+    departDate: "2026-10-01",
+    returnDate: "2026-10-02",
     passengers: "40",
-    contactMethod: "sms",
-    paymentMethod: "",
-    parkingIncluded: "on",
-    vatIncluded: "",
-    message: "",
     locale: "ko",
     privacyConsent: "on",
-    marketingConsent: "",
     withdrawalConsent: "on",
     formToken: validToken(),
     "cf-turnstile-response": "unit-test-turnstile-token",
@@ -281,10 +256,11 @@ describe("1. 순서 — runGuards → createReservation → runAfter(revalidate(
 
     const { raw } = formDataToRaw(fd);
     const [input, deps] = vi.mocked(createReservation).mock.calls[0];
-    expect(input).toEqual(ReservationInput.parse(raw));
-    expect(input.busCount).toBe(2);
-    expect(input.waypointCodes).toEqual(["BSN"]);
-    expect(input.marketingConsent).toBe(false);
+    expect(input).toEqual(quickReservationSchema(NOW).parse(raw));
+    expect(input.passengers).toBe(40);
+    expect(input.departDate).toBe("2026-10-01");
+    // 옛 위저드 필드는 입력에 없다 — 차종·대수·광고 동의를 지어내는 경로가 없다
+    for (const k of RETIRED_WIZARD_FIELDS) expect(k in input, k).toBe(false);
 
     expect(createServiceClient).toHaveBeenCalledTimes(1);
     expect(supabaseReservationDb).toHaveBeenCalledWith({ kind: "fake-service-client" });
@@ -294,6 +270,25 @@ describe("1. 순서 — runGuards → createReservation → runAfter(revalidate(
     expect(deps.ownerPhone).toBe("01000000000");
     expect(deps.ownerEmail).toBe("owner@example.com");
     expect(deps.log).toBe(structuredLog);
+  });
+
+  test("P3-8 리뷰 P2-6 — guard 와 create 가 **같은 시계 읽기**를 쓴다(KST 자정 경계에서 guard 통과 · create 거부가 없다)", async () => {
+    // 시계를 부를 때마다 다른 값을 내게 한다 — 자정 직전에 guard, 직후에 create 가 도는 상황과 같은 모양.
+    const readings: Date[] = [];
+    const ticking = () => {
+      const d = new Date(NOW.getTime() + readings.length * 60_000);
+      readings.push(d);
+      return d;
+    };
+    vi.mocked(defaultGuardDeps).mockReturnValue({ ...fakeDeps(), now: ticking });
+    await submitReservation(form());
+
+    expect(readings.length).toBe(1); // guard 가 한 번 읽는다
+    const [, deps] = vi.mocked(createReservation).mock.calls[0];
+    // create 는 시계를 새로 읽지 않고 guard 의 읽기를 그대로 받는다
+    expect(deps.now().getTime()).toBe(readings[0].getTime());
+    expect(deps.now().getTime()).toBe(readings[0].getTime());
+    expect(readings.length).toBe(1);
   });
 
   test("OWNER_PHONE·OWNER_EMAIL 이 비어 있으면 undefined 로 간다(빈 문자열을 번호로 넘기지 않는다)", async () => {
@@ -355,40 +350,59 @@ describe("2. 매핑 — GuardFailure.reason → SubmitResult", () => {
     expect(Object.keys(result.fieldErrors ?? {})).toContain("phone");
   });
 
-  test("validation — round 인데 returnAtLocal 없음 → code validation · fieldErrors.returnAtLocal · create 0 · structuredLog 0 (P3-3-FIX M1: server 가 아니다)", async () => {
+  test("validation — 도착일 없음 → code validation · fieldErrors.returnDate · create 0 · structuredLog 0 (server 가 아니다)", async () => {
     const deps = fakeDeps();
     vi.mocked(defaultGuardDeps).mockReturnValue(deps);
-    const result = await submitReservation(form({ returnAtLocal: null }));
+    const result = await submitReservation(form({ returnDate: null }));
     expect(result).toMatchObject({ ok: false, code: "validation", messageKey: "reservation.errors.validation" });
     if (result.ok) throw new Error("unreachable");
-    expect(result.fieldErrors).toEqual({ returnAtLocal: "reservation.errors.validation" });
+    expect(result.fieldErrors).toEqual({ returnDate: "reservation.errors.validation" });
     expect(createReservation).toHaveBeenCalledTimes(0);
     expect(structuredLog).toHaveBeenCalledTimes(0);
     expect(deps.fetchMock).toHaveBeenCalledTimes(0);
   });
 
-  test("validation — round 인데 귀가 ≤ 출발 → fieldErrors.returnAtLocal · create 0 · structuredLog 0 (P3-3-FIX M1)", async () => {
-    const same = await submitReservation(form({ returnAtLocal: "2026-10-01T08:00" }));
-    const before = await submitReservation(form({ returnAtLocal: "2026-09-30T18:00" }));
-    for (const result of [same, before]) {
-      expect(result).toMatchObject({ ok: false, code: "validation" });
-      if (result.ok) throw new Error("unreachable");
-      expect(result.fieldErrors).toEqual({ returnAtLocal: "reservation.errors.validation" });
+  test("validation — 도착일 < 출발일 → fieldErrors.returnDate · 같은 날은 통과(당일 운행) · create 0 · structuredLog 0", async () => {
+    const before = await submitReservation(form({ returnDate: "2026-09-30" }));
+    expect(before).toMatchObject({ ok: false, code: "validation" });
+    if (before.ok) throw new Error("unreachable");
+    expect(before.fieldErrors).toEqual({ returnDate: "reservation.errors.validation" });
+    expect(createReservation).toHaveBeenCalledTimes(0);
+    expect(structuredLog).toHaveBeenCalledTimes(0);
+
+    const sameDay = await submitReservation(form({ returnDate: "2026-10-01" }));
+    expect(sameDay).toMatchObject({ ok: true });
+  });
+
+  test("validation — 달력에 없는 출발일(2026-02-30, 형식은 맞음) → fieldErrors.departDate · create 0 · structuredLog 0 (server 가 아니다)", async () => {
+    const deps = fakeDeps();
+    vi.mocked(defaultGuardDeps).mockReturnValue(deps);
+    const result = await submitReservation(form({ departDate: "2026-02-30", returnDate: "2026-10-02" }));
+    expect(result).toMatchObject({ ok: false, code: "validation", messageKey: "reservation.errors.validation" });
+    if (result.ok) throw new Error("unreachable");
+    expect(result.fieldErrors).toEqual({ departDate: "reservation.errors.validation" });
+    expect(createReservation).toHaveBeenCalledTimes(0);
+    expect(structuredLog).toHaveBeenCalledTimes(0);
+    expect(deps.fetchMock).toHaveBeenCalledTimes(0);
+  });
+
+  test("validation — 과거 출발일(서버 시계 기준 KST 어제) → fieldErrors.departDate · KST 오늘은 통과", async () => {
+    // NOW = 2026-09-13T03:00Z = KST 2026-09-13 12:00
+    const yesterday = await submitReservation(form({ departDate: "2026-09-12", returnDate: "2026-09-12" }));
+    if (yesterday.ok) throw new Error("unreachable");
+    expect(yesterday.fieldErrors).toEqual({ departDate: "reservation.errors.validation" });
+    expect(createReservation).toHaveBeenCalledTimes(0);
+    const today = await submitReservation(form({ departDate: "2026-09-13", returnDate: "2026-09-13" }));
+    expect(today).toMatchObject({ ok: true });
+  });
+
+  test("validation — 인원 없음·0·901·소수 → fieldErrors.passengers (간편 견적은 인원이 필수다)", async () => {
+    for (const passengers of [null, "0", "901", "1.5", "many"]) {
+      const result = await submitReservation(form({ passengers }));
+      if (result.ok) throw new Error(`unreachable: ${passengers}`);
+      expect(result.fieldErrors, String(passengers)).toEqual({ passengers: "reservation.errors.validation" });
     }
     expect(createReservation).toHaveBeenCalledTimes(0);
-    expect(structuredLog).toHaveBeenCalledTimes(0);
-  });
-
-  test("validation — 달력에 없는 출발 일시(2026-02-30T08:00, 형식은 맞음) → fieldErrors.departAtLocal 만 · create 0 · structuredLog 0 (P3-3-FIX 규칙 0: server 가 아니다)", async () => {
-    const deps = fakeDeps();
-    vi.mocked(defaultGuardDeps).mockReturnValue(deps);
-    const result = await submitReservation(form({ departAtLocal: "2026-02-30T08:00" }));
-    expect(result).toMatchObject({ ok: false, code: "validation", messageKey: "reservation.errors.validation" });
-    if (result.ok) throw new Error("unreachable");
-    expect(result.fieldErrors).toEqual({ departAtLocal: "reservation.errors.validation" });
-    expect(createReservation).toHaveBeenCalledTimes(0);
-    expect(structuredLog).toHaveBeenCalledTimes(0);
-    expect(deps.fetchMock).toHaveBeenCalledTimes(0);
   });
 
   test("bot — formToken 없음 → code bot · messageKey bot · fieldErrors 없음 · detail 없음", async () => {
@@ -639,15 +653,7 @@ describe("4. IP 비노출 — x-forwarded-for 값이 결과·로그 어디에도
 // =============================================================================
 describe("5. formDataToRaw — 모양만 바꾼다(zod 는 guard 가 돌린다)", () => {
   test("계약 표 전 필드 변환 + guardFields 분리", () => {
-    const fd = form({
-      email: "a@b.co",
-      paymentMethod: "transfer",
-      vatIncluded: "true",
-      message: " 안녕하세요 ",
-      marketingConsent: "1",
-      waypointCodes: ["BSN", "DGU", "TYG"],
-      website: "",
-    });
+    const fd = form({ name: " 홍길동 ", website: "" });
     const token = fd.get("formToken");
     const { raw, guardFields } = formDataToRaw(fd);
 
@@ -655,25 +661,13 @@ describe("5. formDataToRaw — 모양만 바꾼다(zod 는 guard 가 돌린다)"
       name: "홍길동",
       phone: "010-1234-5678",
       phoneIntl: undefined,
-      email: "a@b.co",
-      vehicleSlug: "bus45",
-      purposeCode: PURPOSES[0],
       originCode: "SEL",
       destinationCode: "ICN",
-      waypointCodes: ["BSN", "DGU", "TYG"],
-      tripType: "round",
-      departAtLocal: "2026-10-01T08:00",
-      returnAtLocal: "2026-10-01T18:00",
-      busCount: 2,
+      departDate: "2026-10-01",
+      returnDate: "2026-10-02",
       passengers: 40,
-      contactMethod: "sms",
-      paymentMethod: "transfer",
-      parkingIncluded: true,
-      vatIncluded: true,
-      message: "안녕하세요",
       locale: "ko",
       privacyConsent: true,
-      marketingConsent: true,
       withdrawalConsent: true,
       turnstileToken: "unit-test-turnstile-token",
     });
@@ -683,37 +677,51 @@ describe("5. formDataToRaw — 모양만 바꾼다(zod 는 guard 가 돌린다)"
     expect("cf-turnstile-response" in raw).toBe(false);
   });
 
+  test("옛 위저드 필드(vehicleSlug·busCount·marketingConsent …)를 보내도 읽지 않는다 — 지어낸 값이 저장 경로로 가지 않는다", () => {
+    const extra: Record<string, FormValue> = {
+      email: "a@b.co",
+      vehicleSlug: "bus45",
+      purposeCode: "family",
+      waypointCodes: ["BSN"],
+      tripType: "round",
+      departAtLocal: "2026-10-01T08:00",
+      returnAtLocal: "2026-10-01T18:00",
+      busCount: "2",
+      contactMethod: "sms",
+      paymentMethod: "cash",
+      parkingIncluded: "on",
+      vatIncluded: "on",
+      message: "hi",
+      marketingConsent: "on",
+    };
+    const { raw } = formDataToRaw(form(extra));
+    for (const k of RETIRED_WIZARD_FIELDS) expect(k in raw, k).toBe(false);
+    const parsed = quickReservationSchema(NOW).parse(raw);
+    for (const k of RETIRED_WIZARD_FIELDS) expect(k in parsed, k).toBe(false);
+  });
+
   test("checkbox — 'on'·'true'·'1' → true, 그 밖의 값 → false, 없음·빈 문자열 → undefined", () => {
-    for (const v of ["on", "true", "1"]) expect(formDataToRaw(form({ vatIncluded: v })).raw.vatIncluded).toBe(true);
-    for (const v of ["off", "false", "0", "yes"]) expect(formDataToRaw(form({ vatIncluded: v })).raw.vatIncluded).toBe(false);
-    expect(formDataToRaw(form({ vatIncluded: null })).raw.vatIncluded).toBeUndefined();
-    expect(formDataToRaw(form({ vatIncluded: "" })).raw.vatIncluded).toBeUndefined();
+    for (const v of ["on", "true", "1"]) expect(formDataToRaw(form({ withdrawalConsent: v })).raw.withdrawalConsent).toBe(true);
+    for (const v of ["off", "false", "0", "yes"]) expect(formDataToRaw(form({ withdrawalConsent: v })).raw.withdrawalConsent).toBe(false);
+    expect(formDataToRaw(form({ withdrawalConsent: null })).raw.withdrawalConsent).toBeUndefined();
+    expect(formDataToRaw(form({ withdrawalConsent: "" })).raw.withdrawalConsent).toBeUndefined();
     // privacyConsent 도 같은 규칙 — 없으면 undefined 라 zod literal(true) 가 잡는다
     expect(formDataToRaw(form({ privacyConsent: null })).raw.privacyConsent).toBeUndefined();
-    expect(ReservationInput.safeParse(formDataToRaw(form({ privacyConsent: null })).raw).success).toBe(false);
+    expect(quickReservationSchema(NOW).safeParse(formDataToRaw(form({ privacyConsent: null })).raw).success).toBe(false);
   });
 
   test("빈 문자열·공백만 → undefined (optional 필드를 zod 가 optional 로 본다)", () => {
-    const { raw } = formDataToRaw(form({ email: "", returnAtLocal: "   ", passengers: "", message: "", phoneIntl: "" }));
-    expect(raw.email).toBeUndefined();
-    expect(raw.returnAtLocal).toBeUndefined();
+    const { raw } = formDataToRaw(form({ returnDate: "   ", passengers: "", phoneIntl: "" }));
+    expect(raw.returnDate).toBeUndefined();
     expect(raw.passengers).toBeUndefined();
-    expect(raw.message).toBeUndefined();
     expect(raw.phoneIntl).toBeUndefined();
   });
 
-  test("숫자 — busCount·passengers 는 number. 숫자가 아니면 NaN 으로 남겨 zod 가 거부하게 한다(조용한 보정 없음)", () => {
-    expect(formDataToRaw(form({ busCount: "3", passengers: "120" })).raw).toMatchObject({ busCount: 3, passengers: 120 });
-    const bad = formDataToRaw(form({ busCount: "three" })).raw;
-    expect(Number.isNaN(bad.busCount)).toBe(true);
-    const parsed = ReservationInput.safeParse(bad);
-    expect(parsed.success).toBe(false);
-  });
-
-  test("waypointCodes — getAll: 3개 → 배열 3, 빈 항목 제거, 없음 → []", () => {
-    expect(formDataToRaw(form({ waypointCodes: ["BSN", "DGU", "TYG"] })).raw.waypointCodes).toEqual(["BSN", "DGU", "TYG"]);
-    expect(formDataToRaw(form({ waypointCodes: ["BSN", "", "DGU"] })).raw.waypointCodes).toEqual(["BSN", "DGU"]);
-    expect(formDataToRaw(form({ waypointCodes: null })).raw.waypointCodes).toEqual([]);
+  test("숫자 — passengers 는 number. 숫자가 아니면 NaN 으로 남겨 zod 가 거부하게 한다(조용한 보정 없음)", () => {
+    expect(formDataToRaw(form({ passengers: "120" })).raw).toMatchObject({ passengers: 120 });
+    const bad = formDataToRaw(form({ passengers: "three" })).raw;
+    expect(Number.isNaN(bad.passengers)).toBe(true);
+    expect(quickReservationSchema(NOW).safeParse(bad).success).toBe(false);
   });
 
   test("website(허니팟) — raw 에 없고 guardFields 에 있다. 채워진 값도 그대로 guardFields 로(trim 하지 않는다)", () => {
@@ -731,7 +739,7 @@ describe("5. formDataToRaw — 모양만 바꾼다(zod 는 guard 가 돌린다)"
     expect(without.guardFields.turnstileToken).toBeUndefined();
     expect(without.raw.turnstileToken).toBe("");
     // '' 은 zod z.string() 을 통과한다 → 거부는 turnstile 단계(missing-token)에서 난다
-    expect(ReservationInput.safeParse(without.raw).success).toBe(true);
+    expect(quickReservationSchema(NOW).safeParse(without.raw).success).toBe(true);
   });
 
   test("계약 밖 키는 무시된다 (status·adminMemo 같은 것을 폼으로 밀어 넣지 못한다) · File 값은 undefined", () => {
@@ -749,13 +757,12 @@ describe("5. formDataToRaw — 모양만 바꾼다(zod 는 guard 가 돌린다)"
     expect(formDataToRaw(onlyFile).raw.name).toBeUndefined();
   });
 
-  test("FormData 가 아닌 입력(null·undefined·{}·useActionState prevState·문자열·숫자) → 빈 폼과 동일: 필드 전부 undefined, waypointCodes [], turnstileToken '', guardFields 전부 undefined, throw 없음 (P3-3-FIX M3)", () => {
+  test("FormData 가 아닌 입력(null·undefined·{}·useActionState prevState·문자열·숫자) → 빈 폼과 동일: 필드 전부 undefined, turnstileToken '', guardFields 전부 undefined, throw 없음 (P3-3-FIX M3)", () => {
     const empty = formDataToRaw(new FormData());
-    expect(empty.raw.waypointCodes).toEqual([]);
     expect(empty.raw.turnstileToken).toBe("");
     expect(empty.guardFields).toEqual({ website: undefined, formToken: undefined, turnstileToken: undefined });
-    const rest = Object.entries(empty.raw).filter(([k]) => k !== "waypointCodes" && k !== "turnstileToken");
-    expect(rest).toHaveLength(Object.keys(RESERVATION_FORM_FIELDS).length - 1);
+    const rest = Object.entries(empty.raw).filter(([k]) => k !== "turnstileToken");
+    expect(rest).toHaveLength(Object.keys(RESERVATION_FORM_FIELDS).length);
     for (const [k, v] of rest) expect(v, k).toBeUndefined();
 
     const prevState: SubmitResult = { ok: false, code: "validation", messageKey: "reservation.errors.validation" };
@@ -764,20 +771,19 @@ describe("5. formDataToRaw — 모양만 바꾼다(zod 는 guard 가 돌린다)"
       expect(out, String(notForm)).toEqual(empty);
       expect(Object.keys(out.raw).sort()).toEqual(Object.keys(empty.raw).sort());
       // 빈 폼은 zod 를 통과하지 못한다 → 액션은 validation 을 돌려준다(500 이 아니라)
-      expect(ReservationInput.safeParse(out.raw).success).toBe(false);
+      expect(quickReservationSchema(NOW).safeParse(out.raw).success).toBe(false);
     }
   });
 
-  test("계약 상수 — lib 의 RESERVATION_FORM_FIELDS·GUARD_FORM_FIELDS·종류 목록이 이 파일의 표와 같다 (P3-4 는 lib 을 import 한다)", () => {
+  test("계약 상수 — lib 의 RESERVATION_FORM_FIELDS·GUARD_FORM_FIELDS·종류 목록이 이 파일의 표와 같다 (모달은 components/quote/fields.ts 사본을 쓴다)", () => {
     expect(RESERVATION_FORM_FIELDS).toEqual(FORM_FIELD_CONTRACT);
     expect(GUARD_FORM_FIELDS).toEqual(GUARD_FIELD_CONTRACT);
     expect([...NUMBER_FORM_FIELDS]).toEqual([...NUMBER_CONTRACT]);
     expect([...BOOLEAN_FORM_FIELDS]).toEqual([...BOOLEAN_CONTRACT]);
-    expect([...MULTI_FORM_FIELDS]).toEqual([...MULTI_CONTRACT]);
   });
 
   test("계약 상수 — zod 스키마 키와 1:1 (website·turnstileToken 만 guard 쪽)", () => {
-    const zodKeys = Object.keys(ReservationInput.shape).sort();
+    const zodKeys = Object.keys(QuickReservationShape.shape).sort();
     const contractKeys = [...Object.values(RESERVATION_FORM_FIELDS), "turnstileToken", HONEYPOT_FIELD].sort();
     expect(contractKeys).toEqual(zodKeys);
   });

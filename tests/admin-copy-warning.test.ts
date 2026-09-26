@@ -152,7 +152,8 @@ describe("1. 단일 원장 — 정의는 lib/copy/rules.ts 하나", { timeout: 6
   });
 
   /**
-   * tests/ 쪽 — P6-6 이전부터 있던 **로컬 사본 다섯 개**가 남아 있다(P6-6 은 home·pages 만 통합했다).
+   * tests/ 쪽 — P6-6 이전부터 있던 **로컬 사본**이 남아 있다(P6-6 은 home·pages 만 통합했다). P3-8 에서 tests/quote-wizard.test.ts 가
+   * 위저드와 함께 지워져 넷이 됐다(후계 tests/quick-quote.test.ts 는 사본 없이 ./helpers/forbidden-copy 를 쓴다).
    * 전부 금지어 6종(또는 그 부분집합 + 파일 고유 낱말)을 자기 파일에 다시 적은 것이다. 이 태스크는 그 파일들을 고치지 않는다 —
    * tests/admin-notifications.test.ts 는 다음 태스크의 편집 대상이라 손대지 말라는 지시가 있었다(P6-12 브리프 "하지 말 것").
    * 대신 **목록을 고정한다**: 여기에 없는 새 사본이 생기면 실패한다. 후속 태스크가 각 파일을 re-export 로 바꾸면 이 표에서 지운다.
@@ -161,11 +162,10 @@ describe("1. 단일 원장 — 정의는 lib/copy/rules.ts 하나", { timeout: 6
     "tests/admin-notifications.test.ts", // const FORBIDDEN_WORDS = new RegExp([...6종].join("|"))
     "tests/layout.test.ts", // const UNPROVEN = [연중무휴·24시간·운행 13년·대 보유·누적] (레이아웃 전용 좁은 목록)
     "tests/legal.test.ts", // const FORBIDDEN = [6종 + 70만 + 4,800]
-    "tests/quote-wizard.test.ts", // const FORBIDDEN = [6종 — 코드포인트 조립]
     "tests/reservation-check.test.ts", // const FORBIDDEN = [6종] · const UNPROVEN = [5종]
   ];
 
-  test("tests/ 의 목록 정의는 helpers 입구가 아니라 **알려진 옛 사본 다섯 곳**뿐이다 — 새 사본 금지", () => {
+  test("tests/ 의 목록 정의는 helpers 입구가 아니라 **알려진 옛 사본 네 곳**뿐이다 — 새 사본 금지", () => {
     const files = sourcesUnder(["tests"]).filter((f) => f !== "tests/admin-copy-warning.test.ts");
     expect(files.length).toBeGreaterThan(50);
     const hits = files.filter(definesList);

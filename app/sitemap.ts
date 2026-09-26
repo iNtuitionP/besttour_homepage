@@ -21,7 +21,8 @@ import { pageAlternates } from "@/lib/site-url";
  *   URL·언어 대안은 페이지 메타데이터와 같은 헬퍼(`pageAlternates`)에서 나온다 — 페이지의 hreflang 과 여기가 갈라질 수 없다.
  *
  * 제외
- *   - `/quote/done`(접수 완료 화면, 페이지가 noindex) · `/notices/[id]`(동적 세그먼트) · `/admin`(로케일 밖·인증 영역)
+ *   - `/notices/[id]`(동적 세그먼트) · `/admin`(로케일 밖·인증 영역)
+ *   - `/quote`·`/quote/done` 은 P3-8 에서 **지웠다**(접수는 홈 간편 견적 하나 — 홈 `/` 가 이미 목록에 있다). 옛 주소는 next.config 가 `/#quote` 로 보낸다.
  *
  * `lastModified` 는 넣지 않는다. 빌드 시각을 넣으면 배포마다 전 URL 의 갱신일이 바뀌어
  * 검색엔진에 거짓 신호를 준다(무의미한 노이즈). 실제 갱신일을 아는 경로가 생기면 그때 넣는다.
@@ -31,7 +32,6 @@ const STATIC_ROUTES = [
   "/about",
   "/fleet",
   "/fares",
-  "/quote",
   "/reservation/check",
   "/notices",
   "/gallery",

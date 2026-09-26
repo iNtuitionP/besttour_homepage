@@ -20,7 +20,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
 
 import { PRIVACY_NOTICE } from "@/lib/legal/disclosures";
 import { PRIVACY_POLICY_VERSION, consentFields, retentionUntil } from "@/lib/reservations/consent";
-import { ReservationInput } from "@/lib/types";
+import { quickReservationSchema } from "@/lib/types";
 import { dbSmokeEnv, dbWriteGate, isLocalStack, isLocalStackUrl } from "./helpers/load-env-local";
 import { stripComments } from "./helpers/strip-comments";
 
@@ -149,32 +149,30 @@ describe("supabase/rollbacks/0003_consent.down.sql", () => {
 });
 
 // =============================================================================
-// 3. zod — ReservationInput 동의 필드
+// 3. zod — 간편 견적(P3-8 — 공개 접수 경로는 이것 하나) 동의 필드
 // =============================================================================
+const ReservationInput = quickReservationSchema(new Date("2026-08-31T03:00:00.000Z"));
 const validInput = {
   name: "홍길동",
   phone: "010-1234-5678",
-  vehicleSlug: "bus45" as const,
-  purposeCode: "family" as const,
   originCode: "SEL" as const,
   destinationCode: "BSN" as const,
-  waypointCodes: [],
-  tripType: "oneway" as const,
-  departAtLocal: "2026-09-01T08:00",
-  busCount: 1,
+  departDate: "2026-09-01",
+  returnDate: "2026-09-01",
+  passengers: 30,
   locale: "ko" as const,
   turnstileToken: "test-turnstile-token",
   privacyConsent: true as const,
   withdrawalConsent: true as const, // P1-7 — 청약철회 제한 확인(필수). 거부 경로는 tests/withdrawal-consent.test.ts
 };
 
-describe("ReservationInput — 동의 필드 (ADR-6)", () => {
-  test("privacyConsent: true 면 성공하고 marketingConsent 는 기본 false", () => {
+describe("간편 견적 입력 — 동의 필드 (ADR-6)", () => {
+  test("privacyConsent: true 면 성공하고, 선택 동의(광고성 정보 수신)는 받지 않는다 — 결과에 marketingConsent 키가 없다", () => {
     const r = ReservationInput.safeParse(validInput);
     expect(r.success).toBe(true);
     if (r.success) {
       expect(r.data.privacyConsent).toBe(true);
-      expect(r.data.marketingConsent).toBe(false);
+      expect("marketingConsent" in r.data).toBe(false);
     }
   });
 
@@ -197,14 +195,10 @@ describe("ReservationInput — 동의 필드 (ADR-6)", () => {
     expect(ReservationInput.safeParse({ ...validInput, privacyConsent: 1 }).success).toBe(false);
   });
 
-  test("marketingConsent: true 는 그대로 통과한다", () => {
+  test("marketingConsent 를 보내도 버린다 — 간편 견적은 선택 동의를 받지 않는다(P3-8 컨트롤러 확정 §A)", () => {
     const r = ReservationInput.safeParse({ ...validInput, marketingConsent: true });
     expect(r.success).toBe(true);
-    if (r.success) expect(r.data.marketingConsent).toBe(true);
-  });
-
-  test("marketingConsent 는 boolean 만 받는다", () => {
-    expect(ReservationInput.safeParse({ ...validInput, marketingConsent: "yes" }).success).toBe(false);
+    if (r.success) expect("marketingConsent" in r.data).toBe(false);
   });
 });
 
@@ -294,7 +288,7 @@ describe("consentFields", () => {
     }
   });
 
-  test("zod 출력(parse 결과)을 그대로 넣을 수 있다", () => {
+  test("zod 출력(parse 결과)을 그대로 넣을 수 있다 — 선택 동의가 없으면 marketing_consent_at 은 null", () => {
     const parsed = ReservationInput.parse(validInput);
     const f = consentFields(parsed, now);
     expect(f.privacy_consent_at).toBe(now.toISOString());
@@ -410,6 +404,8 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("DB — 0003 제약 실증
     const now = new Date();
     const row: Record<string, unknown> = {
       public_code: `${TEST_PREFIX}${randomUUID().slice(0, 8)}`,
+      // 0023 — intake 에 기본값이 없다(insert 가 반드시 적는다). 이 픽스처는 위저드 모양의 행이다.
+      intake: "wizard",
       name: "테스트",
       phone: "010-0000-0000",
       vehicle_slug: "bus45",

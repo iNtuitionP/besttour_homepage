@@ -23,7 +23,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 
-import { PURPOSES } from "@/lib/codes";
+import { parseKst, toKstDateString } from "@/lib/kst";
 import {
   RATE_LIMITS,
   RATE_LIMIT_TIMEOUT_MS,
@@ -174,18 +174,19 @@ const CUSTOMER_PHONE_FORM = "010-1234-5678";
 const CUSTOMER_PHONE_E164 = "+821012345678";
 
 type FormValue = string | string[] | null;
+/** P3-8 간편 견적 — 출발일은 실행 시각 기준 30일 뒤, 도착일은 그다음 날(KST 달력). 날짜 하한(KST 오늘)에 걸리지 않게 동적으로 만든다. */
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DEPART_DATE = toKstDateString(new Date(Date.now() + 30 * DAY_MS));
+const RETURN_DATE = toKstDateString(new Date(Date.now() + 31 * DAY_MS));
+
 function form(overrides: Record<string, FormValue> = {}): FormData {
   const base: Record<string, FormValue> = {
     name: MARK,
     phone: CUSTOMER_PHONE_FORM,
-    vehicleSlug: "bus45",
-    purposeCode: PURPOSES[0],
     originCode: "SEL",
     destinationCode: "ICN",
-    tripType: "round",
-    departAtLocal: "2026-10-01T08:00",
-    returnAtLocal: "2026-10-01T18:00",
-    busCount: "1",
+    departDate: DEPART_DATE,
+    returnDate: RETURN_DATE,
     passengers: "30",
     locale: "ko",
     privacyConsent: "on",
@@ -249,8 +250,16 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("E2E — 진짜 guards + �
     name: string;
     phone: string;
     status: string;
-    trip_type: string;
+    intake: string;
+    vehicle_slug: string | null;
+    purpose_code: string | null;
+    bus_count: number | null;
+    passengers: number | null;
+    depart_at: string;
+    return_at: string | null;
+    trip_type: string | null;
     nights: number;
+    marketing_consent_at: string | null;
     privacy_consent_at: string | null;
     retention_until: string | null;
     withdrawal_consent_at: string | null;
@@ -297,7 +306,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("E2E — 진짜 guards + �
 
     const rows = await rest<ReservationRow[]>(
       "GET",
-      `/reservations?public_code=eq.${result.publicCode}&select=id,public_code,name,phone,status,trip_type,nights,privacy_consent_at,retention_until,withdrawal_consent_at`,
+      `/reservations?public_code=eq.${result.publicCode}&select=id,public_code,name,phone,status,intake,vehicle_slug,purpose_code,bus_count,passengers,depart_at,return_at,trip_type,nights,marketing_consent_at,privacy_consent_at,retention_until,withdrawal_consent_at`,
     );
     expect(rows.status).toBe(200);
     expect(rows.body).toHaveLength(1);
@@ -305,8 +314,14 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("E2E — 진짜 guards + �
     expect(row.name).toBe(MARK);
     expect(row.phone).toBe(CUSTOMER_PHONE_E164);
     expect(row.status).toBe("new");
-    expect(row.trip_type).toBe("round");
-    expect(row.nights).toBe(0);
+    // P3-8 — 간편 접수: 받지 않은 칸은 null(지어내지 않는다 · 0023), 날짜는 그날 00:00 KST 의 인스턴트
+    expect(row.intake).toBe("quick");
+    expect([row.vehicle_slug, row.purpose_code, row.bus_count, row.trip_type]).toEqual([null, null, null, null]);
+    expect(row.passengers).toBe(30);
+    expect(new Date(row.depart_at).getTime()).toBe(parseKst(`${DEPART_DATE}T00:00`).getTime());
+    expect(new Date(row.return_at as string).getTime()).toBe(parseKst(`${RETURN_DATE}T00:00`).getTime());
+    expect(row.nights).toBe(1);
+    expect(row.marketing_consent_at).toBeNull();
     expect(row.privacy_consent_at).toBeTruthy();
     expect(row.retention_until).toBeTruthy();
     // P1-7 — 청약철회 제한 확인 시각은 서버가 찍고(폼에 시각 필드 없음) 필수 동의와 같은 인스턴트다

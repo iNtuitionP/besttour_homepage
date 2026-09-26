@@ -3,8 +3,8 @@
  *
  * 브리프 §검증 1~9 를 그대로 단언한다:
  *   1. generatePublicCode — 길이 8 · 알파벳 31자 밖 문자 0 · 0/O/1/I/L 0 · 1만 번 중복 0 · 같은 randomBytes → 같은 코드
- *   2. KST — departAtLocal '2026-09-13T08:00' → depart_at '2026-09-12T23:00:00.000Z'. **TZ=UTC / Asia/Seoul / America/New_York 3회 동일**.
- *      대조군: 같은 벽시계를 로컬 Date 생성자로 만들면 TZ 마다 다르다(= TZ 전환이 실제로 먹힌다는 증명). nights = nightsBetween, 편도 0
+ *   2. KST — (P3-8 간편 견적) 출발일 '2026-09-13' → depart_at = 그날 00:00 KST '2026-09-12T15:00:00.000Z'. **TZ=UTC / Asia/Seoul / America/New_York 3회 동일**.
+ *      대조군: 같은 벽시계를 로컬 Date 생성자로 만들면 TZ 마다 다르다(= TZ 전환이 실제로 먹힌다는 증명). nights = 두 날짜 차, 같은 날 → return_at null · 0
  *   3. phone — '010-1234-5678' → '+821012345678', phoneIntl 그대로. 원문 '010-…' 은 페이로드 어디에도 없다
  *   4. 동의 — privacy_consent_at = now, retention_until = retentionUntil(now), marketingConsent:false → null
  *   5. unique — insert 가 23505 를 2회 throw → 3번째 성공(코드 매번 다름) · 3회 → 4번째 성공 · 4회 연속 → throw(insert 정확히 4회)
@@ -44,7 +44,7 @@ import {
   PUBLIC_CODE_PATTERN,
   generatePublicCode,
 } from "@/lib/reservations/publicCode";
-import type { NewOutboxRow, ReservationInput, ReservationInsert } from "@/lib/types";
+import type { NewOutboxRow, QuickReservationInput, ReservationInsert } from "@/lib/types";
 
 // ── 모듈 mock (hoisted) ───────────────────────────────────────────────────
 // server-only: db.ts·ports 는 서버 전용 마커를 import 한다. vitest(node) 에서는 빈 모듈로 대체 — purge.test.ts 와 같은 방식.
@@ -72,23 +72,19 @@ const NOW = new Date("2026-09-12T03:00:00.000Z");
 const OWNER_PHONE = "+821000000000"; // 테스트 픽스처(형식만 맞춘 가짜 값) — 사장님 실번호 아님
 const OWNER_EMAIL = "owner@example.com";
 
-function validInput(overrides: Partial<ReservationInput> = {}): ReservationInput {
+/** P3-8 간편 견적 입력 — 공개 접수 경로는 이것 하나다. */
+function validInput(overrides: Partial<QuickReservationInput> = {}): QuickReservationInput {
   return {
     name: "홍길동",
     phone: "010-1234-5678",
-    vehicleSlug: "bus45",
-    purposeCode: "family",
     originCode: "SEL",
     destinationCode: "BSN",
-    waypointCodes: [],
-    tripType: "round",
-    departAtLocal: "2026-09-13T08:00",
-    returnAtLocal: "2026-09-14T18:00",
-    busCount: 1,
+    departDate: "2026-09-13",
+    returnDate: "2026-09-14",
+    passengers: 40,
     locale: "ko",
     turnstileToken: "test-token",
     privacyConsent: true,
-    marketingConsent: false,
     withdrawalConsent: true,
     ...overrides,
   };
@@ -220,7 +216,7 @@ const TZ_CASES: { tz: string; localCtorInstant: string }[] = [
   { tz: "Asia/Seoul", localCtorInstant: "2026-09-12T23:00:00.000Z" },
   { tz: "America/New_York", localCtorInstant: "2026-09-13T12:00:00.000Z" }, // 9월 = EDT(UTC-4)
 ];
-const EXPECTED_DEPART = "2026-09-12T23:00:00.000Z"; // KST 2026-09-13 08:00
+const EXPECTED_DEPART = "2026-09-12T15:00:00.000Z"; // KST 2026-09-13 00:00
 
 describe.each(TZ_CASES)("KST 해석 (process.env.TZ=$tz)", ({ tz, localCtorInstant }) => {
   let originalTz: string | undefined;
@@ -237,129 +233,88 @@ describe.each(TZ_CASES)("KST 해석 (process.env.TZ=$tz)", ({ tz, localCtorInsta
     expect(new Date(2026, 8, 13, 8, 0).toISOString()).toBe(localCtorInstant);
   });
 
-  test("departAtLocal '2026-09-13T08:00' → depart_at '2026-09-12T23:00:00.000Z' (TZ 무관)", async () => {
+  test("출발일 '2026-09-13' → depart_at = 그날 00:00 KST = '2026-09-12T15:00:00.000Z' (TZ 무관) · 도착일 다음 날 → return_at · nights 1", async () => {
     const { db, inserts } = fakeDb();
     const { deps } = makeDeps(db);
     await createReservation(validInput(), deps);
     const row = inserts()[0];
     expect(row.depart_at).toBe(EXPECTED_DEPART);
-    expect(row.depart_at).toBe(parseKst("2026-09-13T08:00").toISOString());
-    expect(row.return_at).toBe("2026-09-14T09:00:00.000Z");
-    expect(row.nights).toBe(nightsBetween("2026-09-13T08:00", "2026-09-14T18:00"));
+    expect(row.depart_at).toBe(parseKst("2026-09-13T00:00").toISOString());
+    expect(row.return_at).toBe("2026-09-13T15:00:00.000Z");
+    expect(row.nights).toBe(nightsBetween("2026-09-13T00:00", "2026-09-14T00:00"));
     expect(row.nights).toBe(1);
   });
 
-  test("KST 자정 경계 — 23:00 출발 · 다음날 01:00 귀가는 UTC 로는 같은 날이지만 nights=1 (KST 달력)", async () => {
+  test("같은 날(도착일 = 출발일) → return_at null · nights 0 (당일 운행 — 0001 return_at > depart_at 을 지킨다)", async () => {
     const { db, inserts } = fakeDb();
     const { deps } = makeDeps(db);
-    await createReservation(validInput({ departAtLocal: "2026-09-13T23:00", returnAtLocal: "2026-09-14T01:00" }), deps);
+    await createReservation(validInput({ returnDate: "2026-09-13" }), deps);
     const row = inserts()[0];
-    expect(row.depart_at).toBe("2026-09-13T14:00:00.000Z");
-    expect(row.return_at).toBe("2026-09-13T16:00:00.000Z");
-    expect(row.nights).toBe(1);
-  });
-
-  test("편도 → return_at null, nights 0", async () => {
-    const { db, inserts } = fakeDb();
-    const { deps } = makeDeps(db);
-    await createReservation(validInput({ tripType: "oneway", returnAtLocal: undefined }), deps);
-    const row = inserts()[0];
-    expect(row.trip_type).toBe("oneway");
+    expect(row.depart_at).toBe(EXPECTED_DEPART);
     expect(row.return_at).toBeNull();
     expect(row.nights).toBe(0);
   });
+
+  test("여러 날 — 2026-09-13 ~ 2026-09-16 → nights 3", async () => {
+    const { db, inserts } = fakeDb();
+    const { deps } = makeDeps(db);
+    await createReservation(validInput({ returnDate: "2026-09-16" }), deps);
+    expect(inserts()[0].return_at).toBe("2026-09-15T15:00:00.000Z");
+    expect(inserts()[0].nights).toBe(3);
+  });
 });
 
-describe("KST/일정 — 0001 제약을 insert 전에 막는다", () => {
-  test("round 인데 returnAtLocal 없음 → throw, insert 0 (reservations_round_trip_return_ck)", async () => {
+describe("날짜 — 규칙을 insert 전에 막는다", () => {
+  test("도착일 < 출발일 → throw(호출자 버그), insert 0", async () => {
     const { db, inserts } = fakeDb();
     const { deps } = makeDeps(db);
-    await expect(createReservation(validInput({ returnAtLocal: undefined }), deps)).rejects.toThrow(/returnAtLocal/);
+    await expect(createReservation(validInput({ returnDate: "2026-09-12" }), deps)).rejects.toThrow(/호출자 버그/);
     expect(inserts()).toHaveLength(0);
   });
 
-  test("round 인데 귀가가 출발과 같거나 앞섬 → throw, insert 0 (return_at > depart_at)", async () => {
+  test("과거 출발일(deps.now 의 KST 어제) → throw, insert 0 · KST 오늘은 통과", async () => {
     const { db, inserts } = fakeDb();
     const { deps } = makeDeps(db);
-    await expect(createReservation(validInput({ returnAtLocal: "2026-09-13T08:00" }), deps)).rejects.toThrow(/출발/);
-    await expect(createReservation(validInput({ returnAtLocal: "2026-09-12T08:00" }), deps)).rejects.toThrow(/출발/);
+    // NOW = KST 2026-09-12 12:00
+    await expect(createReservation(validInput({ departDate: "2026-09-11", returnDate: "2026-09-11" }), deps)).rejects.toThrow(/departDate/);
     expect(inserts()).toHaveLength(0);
+    await createReservation(validInput({ departDate: "2026-09-12", returnDate: "2026-09-12" }), deps);
+    expect(inserts()).toHaveLength(1);
   });
 
-  test("단순 편도(oneway) 에 returnAtLocal 이 오면 throw — 0006 후에도 oneway 는 return_at 금지", async () => {
+  test("달력에 없는 날짜(2026-02-30 · 비윤년 02-29) → throw, insert 0", async () => {
     const { db, inserts } = fakeDb();
     const { deps } = makeDeps(db);
-    await expect(createReservation(validInput({ tripType: "oneway" }), deps)).rejects.toThrow(/round_trip_return_ck/);
+    await expect(createReservation(validInput({ departDate: "2027-02-29", returnDate: "2027-03-01" }), deps)).rejects.toThrow(/departDate/);
+    await expect(createReservation(validInput({ returnDate: "2026-09-31" }), deps)).rejects.toThrow(/returnDate/);
     expect(inserts()).toHaveLength(0);
-  });
-
-  test("편도·편도(oneway_oneway) 에 returnAtLocal 이 오면 저장한다 — 0006 이 허용, nights 는 두 운행 사이 KST 일수", async () => {
-    // 목업 wizard-b 가 받는 귀가 일시. 0001 CHECK 는 왕복에만 허용해 P3-2 가 throw 했으나, 사장님 견적에 두 번째
-    // 운행일이 필수라 0006 으로 CHECK 를 넓혔다(컨트롤러 결정 2026-09-13).
-    const { db, inserts } = fakeDb();
-    const { deps } = makeDeps(db);
-    await createReservation(
-      validInput({ tripType: "oneway_oneway", departAtLocal: "2026-09-13T08:00", returnAtLocal: "2026-09-15T18:00" }),
-      deps,
-    );
-    const row = inserts()[0];
-    expect(row.trip_type).toBe("oneway_oneway");
-    expect(row.return_at).toBe(new Date("2026-09-15T09:00:00.000Z").toISOString()); // 18:00 KST = 09:00Z
-    expect(row.nights).toBe(2);
-  });
-
-  test("oneway_oneway 의 귀가 일시가 출발 이후가 아니면 throw (0001 return_at > depart_at)", async () => {
-    const { db, inserts } = fakeDb();
-    const { deps } = makeDeps(db);
-    await expect(
-      createReservation(
-        validInput({ tripType: "oneway_oneway", departAtLocal: "2026-09-13T08:00", returnAtLocal: "2026-09-13T08:00" }),
-        deps,
-      ),
-    ).rejects.toThrow(/출발/);
-    expect(inserts()).toHaveLength(0);
-  });
-
-  test("oneway_oneway 에 returnAtLocal 이 없으면 정상 접수 (return_at null, nights 0) — 0006 은 허용이지 강제가 아니다", async () => {
-    const { db, inserts } = fakeDb();
-    const { deps } = makeDeps(db);
-    await createReservation(validInput({ tripType: "oneway_oneway", returnAtLocal: undefined }), deps);
-    expect(inserts()[0].trip_type).toBe("oneway_oneway");
-    expect(inserts()[0].return_at).toBeNull();
-    expect(inserts()[0].nights).toBe(0);
   });
 });
 
 // =============================================================================
-// 3·4. 페이로드 — phone E.164 · 동의 4컬럼 · DB 컬럼명 그대로
+// 3·4. 페이로드 — 간편 행 · phone E.164 · 동의 컬럼 · DB 컬럼명 그대로
 // =============================================================================
-describe("insert 페이로드 — ReservationInsert 컬럼명 그대로", () => {
-  test("전체 행 — 국내 번호는 +82 E.164, 동의 4컬럼은 consentFields(now), 선택 필드는 null", async () => {
+describe("insert 페이로드 — 간편 행(intake='quick'), ReservationInsert 컬럼명 그대로", () => {
+  test("전체 행 — intake quick · 차종·목적·대수·왕복 구분 null(지어내지 않는다) · 국내 번호는 +82 E.164 · 광고 동의 null", async () => {
     const { db, inserts } = fakeDb();
     const { deps } = makeDeps(db);
     const result = await createReservation(validInput(), deps);
     const row = inserts()[0];
     expect(row).toEqual({
       public_code: result.publicCode,
+      intake: "quick",
       name: "홍길동",
       phone: "+821012345678",
-      email: null,
-      vehicle_slug: "bus45",
-      purpose_code: "family",
+      vehicle_slug: null,
+      purpose_code: null,
+      trip_type: null,
+      bus_count: null,
       origin_code: "SEL",
       destination_code: "BSN",
-      waypoint_codes: [],
-      trip_type: "round",
-      depart_at: "2026-09-12T23:00:00.000Z",
-      return_at: "2026-09-14T09:00:00.000Z",
+      depart_at: "2026-09-12T15:00:00.000Z",
+      return_at: "2026-09-13T15:00:00.000Z",
       nights: 1,
-      bus_count: 1,
-      passengers: null,
-      contact_method: null,
-      payment_method: null,
-      parking_included: null,
-      vat_included: null,
-      message: null,
+      passengers: 40,
       locale: "ko",
       privacy_consent_at: NOW.toISOString(),
       privacy_policy_version: PRIVACY_POLICY_VERSION,
@@ -368,6 +323,10 @@ describe("insert 페이로드 — ReservationInsert 컬럼명 그대로", () => 
       withdrawal_consent_at: NOW.toISOString(),
     } satisfies ReservationInsert);
     expect(row.public_code).toMatch(PUBLIC_CODE_PATTERN);
+    // 받지 않은 칸은 키 자체가 없다 — DB 기본값(경유지 [])·null 그대로
+    for (const k of ["email", "waypoint_codes", "contact_method", "payment_method", "parking_included", "vat_included", "message"]) {
+      expect(k in row, k).toBe(false);
+    }
   });
 
   test("원문 '010-1234-5678' 은 페이로드 어디에도 없다 (Solapi 는 E.164)", async () => {
@@ -389,44 +348,31 @@ describe("insert 페이로드 — ReservationInsert 컬럼명 그대로", () => 
     expect(customerRow?.to).toBe("+14155550100");
   });
 
-  test("선택 필드가 있으면 그대로, 경유지는 배열 복사, locale en", async () => {
+  test("인원·locale en 은 그대로", async () => {
     const { db, inserts } = fakeDb();
     const { deps } = makeDeps(db);
-    const waypoints: ReservationInput["waypointCodes"] = ["DJN", "DGU"];
-    await createReservation(
-      validInput({
-        email: "a@example.com",
-        waypointCodes: waypoints,
-        busCount: 2,
-        passengers: 80,
-        contactMethod: "phone",
-        paymentMethod: "transfer",
-        parkingIncluded: true,
-        vatIncluded: false,
-        message: "메시지",
-        locale: "en",
-      }),
-      deps,
-    );
+    await createReservation(validInput({ passengers: 80, locale: "en" }), deps);
     const row = inserts()[0];
-    expect(row.email).toBe("a@example.com");
-    expect(row.waypoint_codes).toEqual(["DJN", "DGU"]);
-    expect(row.waypoint_codes).not.toBe(waypoints);
-    expect(row.bus_count).toBe(2);
     expect(row.passengers).toBe(80);
-    expect(row.contact_method).toBe("phone");
-    expect(row.payment_method).toBe("transfer");
-    expect(row.parking_included).toBe(true);
-    expect(row.vat_included).toBe(false);
-    expect(row.message).toBe("메시지");
     expect(row.locale).toBe("en");
   });
 
-  test("marketingConsent:true → marketing_consent_at = now", async () => {
+  test("광고성 정보 수신 동의는 받지 않는다 — 입력에 marketingConsent:true 가 섞여 와도 marketing_consent_at 은 null", async () => {
     const { db, inserts } = fakeDb();
     const { deps } = makeDeps(db);
-    await createReservation(validInput({ marketingConsent: true }), deps);
-    expect(inserts()[0].marketing_consent_at).toBe(NOW.toISOString());
+    const smuggled = { ...validInput(), marketingConsent: true } as unknown as QuickReservationInput;
+    await createReservation(smuggled, deps);
+    expect(inserts()[0].marketing_consent_at).toBeNull();
+  });
+
+  test("옛 위저드 필드(vehicleSlug·busCount·tripType)가 섞여 와도 null 로 저장한다 — 지어낸 값이 저장되지 않는다", async () => {
+    const { db, inserts } = fakeDb();
+    const { deps } = makeDeps(db);
+    const smuggled = { ...validInput(), vehicleSlug: "bus45", busCount: 3, tripType: "round", purposeCode: "family" } as unknown as QuickReservationInput;
+    await createReservation(smuggled, deps);
+    const row = inserts()[0];
+    expect([row.vehicle_slug, row.bus_count, row.trip_type, row.purpose_code]).toEqual([null, null, null, null]);
+    expect(row.intake).toBe("quick");
   });
 
   test("deps.now() 가 유효한 Date 가 아니면 throw, insert 0", async () => {
@@ -613,7 +559,7 @@ describe("재검증 (방어 심층)", () => {
   test("privacyConsent 가 true 가 아니면 throw(호출자 버그 메시지), insert 0", async () => {
     const { db, inserts } = fakeDb();
     const { deps } = makeDeps(db);
-    const bad = { ...validInput(), privacyConsent: false } as unknown as ReservationInput;
+    const bad = { ...validInput(), privacyConsent: false } as unknown as QuickReservationInput;
     await expect(createReservation(bad, deps)).rejects.toThrow(/호출자 버그/);
     await expect(createReservation(bad, deps)).rejects.toThrow(/privacyConsent/);
     expect(inserts()).toHaveLength(0);
@@ -630,8 +576,16 @@ describe("재검증 (방어 심층)", () => {
   test("LOCATION_CODES 밖 코드 → zod 에서 throw, insert 0", async () => {
     const { db, inserts } = fakeDb();
     const { deps } = makeDeps(db);
-    const bad = validInput({ originCode: "XXX" as ReservationInput["originCode"] });
+    const bad = validInput({ originCode: "XXX" as QuickReservationInput["originCode"] });
     await expect(createReservation(bad, deps)).rejects.toThrow(/호출자 버그/);
+    expect(inserts()).toHaveLength(0);
+  });
+
+  test("동의 2종 — withdrawalConsent 가 true 가 아니면 throw, insert 0", async () => {
+    const { db, inserts } = fakeDb();
+    const { deps } = makeDeps(db);
+    const bad = { ...validInput(), withdrawalConsent: "true" } as unknown as QuickReservationInput;
+    await expect(createReservation(bad, deps)).rejects.toThrow(/withdrawalConsent/);
     expect(inserts()).toHaveLength(0);
   });
 
@@ -639,9 +593,9 @@ describe("재검증 (방어 심층)", () => {
     const { db, inserts } = fakeDb();
     const { deps } = makeDeps(db);
     vi.mocked(isLocationCode).mockReturnValue(false);
-    await expect(createReservation(validInput({ waypointCodes: ["DJN"] }), deps)).rejects.toThrow(/LOCATION_CODES/);
-    // origin·destination·waypoint 3개 전부 재확인했다
-    expect(vi.mocked(isLocationCode).mock.calls.map((c) => c[0])).toEqual(["SEL", "BSN", "DJN"]);
+    await expect(createReservation(validInput(), deps)).rejects.toThrow(/LOCATION_CODES/);
+    // origin·destination 2개 전부 재확인했다
+    expect(vi.mocked(isLocationCode).mock.calls.map((c) => c[0])).toEqual(["SEL", "BSN"]);
     expect(inserts()).toHaveLength(0);
   });
 
@@ -732,25 +686,19 @@ describe("supabaseReservationDb — 어댑터", () => {
 
   const sampleRow: ReservationInsert = {
     public_code: "ABCD2345",
+    intake: "quick",
     name: "홍길동",
     phone: "+821012345678",
-    email: null,
-    vehicle_slug: "bus45",
-    purpose_code: "family",
+    vehicle_slug: null,
+    purpose_code: null,
+    trip_type: null,
+    bus_count: null,
     origin_code: "SEL",
     destination_code: "BSN",
-    waypoint_codes: [],
-    trip_type: "oneway",
-    depart_at: "2026-09-12T23:00:00.000Z",
+    depart_at: "2026-09-12T15:00:00.000Z",
     return_at: null,
     nights: 0,
-    bus_count: 1,
-    passengers: null,
-    contact_method: null,
-    payment_method: null,
-    parking_included: null,
-    vat_included: null,
-    message: null,
+    passengers: 40,
     locale: "ko",
     privacy_consent_at: NOW.toISOString(),
     privacy_policy_version: PRIVACY_POLICY_VERSION,

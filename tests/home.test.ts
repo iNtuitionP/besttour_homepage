@@ -2,7 +2,7 @@
  * P2-4 — 홈 이식(목업 variant-08 → app/[locale]/(site)/page.tsx) 계약 테스트.
  *
  * vitest 는 node 환경이다 — DOM 렌더 테스트용 패키지를 설치하지 않는다. 여기서는
- *   (1) 순수 함수(quoteHref · dismissKey · resolveImageUrl · getGallery 매퍼),
+ *   (1) 순수 함수(dismissKey · resolveImageUrl · getGallery 매퍼 — P3-8 에서 quoteHref 는 위저드와 함께 지웠다),
  *   (2) 소스 정적 검사(금지어·실증 불가 수치·'use client' 경계·원장 import·데이터 속성·섹션 순서),
  *   (3) 원격 gallery anon 읽기(행 수 0 이어도 OK)
  * 만 잠그고, 실제 렌더(캐러셀 5초·팝업 dismiss·위젯 href·3폭 오버플로)는 browse 로 실측해 보고서에 남긴다.
@@ -18,9 +18,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 
 import { PREVIEW_POPUP } from "@/components/home/popup-preview";
 import { dismissKey, POPUP_DISMISS_PREFIX } from "@/components/home/popup-dismiss";
-import { quoteHref } from "@/components/home/quote-href";
 import { resolveImageUrl } from "@/components/home/image-url";
-import { LOCATION_CODES } from "@/lib/codes";
 import { parseKst, toKstDateString } from "@/lib/kst";
 import { COMPANY, PAYMENT, QUOTE_BASIS, VERBATIM } from "@/lib/legal/disclosures";
 import { DEFAULT_GALLERY_LIMIT, getGallery, mapGalleryRows, QUERY_TAGS } from "@/lib/queries";
@@ -151,7 +149,8 @@ describe("2. 'use client' 경계", () => {
     for (const { file, text } of homeSources) {
       expect(/from\s+["']next\/link["']/.test(text), file).toBe(false);
     }
-    expect(read(`${HOME_DIR}/QuoteWidget.tsx`)).toMatch(/from\s+["']@\/i18n\/navigation["']/);
+    // P3-8: 위젯의 링크(완료 화면의 예약 확인)는 간편 견적 모달에 있다 — 거기도 i18n Link 만.
+    expect(read("components/quote/QuickQuoteModal.tsx")).toMatch(/from\s+["']@\/i18n\/navigation["']/);
   });
 });
 
@@ -339,67 +338,34 @@ describe.each([["UTC"], ["Asia/Seoul"]])("5. dismissKey (process.env.TZ=%s)", (t
 });
 
 // =============================================================================
-// 6. 견적 위젯 — /quote 프리필 URL 순수 함수 (접수하지 않는다)
+// 6. 견적 위젯 — 접수 경로의 입구 (P3-8: 위저드 폐지 · 홈 간편 견적 하나)
+//    위젯은 다섯 칸을 검사하고 모달을 열 뿐이다. 개인정보·동의·제출은 모달(components/quote/QuickQuoteModal.tsx) 안에만 있다.
+//    상세 계약(검증·요약·동의·fail-closed·필드명)은 tests/quick-quote.test.ts.
 // =============================================================================
-describe("6. quoteHref", () => {
-  test("네 값 전부 → /quote?origin=SEL&dest=TYG&date=…&pax=…", () => {
-    expect(quoteHref({ origin: "SEL", dest: "TYG", date: "2026-09-20", pax: 40 })).toBe(
-      "/quote?origin=SEL&dest=TYG&date=2026-09-20&pax=40",
-    );
-  });
-
-  test("빈 값은 생략 — 아무것도 없으면 /quote", () => {
-    expect(quoteHref({})).toBe("/quote");
-    expect(quoteHref()).toBe("/quote");
-    expect(quoteHref({ origin: "SEL" })).toBe("/quote?origin=SEL");
-    expect(quoteHref({ origin: "", dest: "", date: "", pax: "" })).toBe("/quote");
-    expect(quoteHref({ origin: "ICN", dest: "SEL", pax: 0 })).toBe("/quote?origin=ICN&dest=SEL");
-  });
-
-  test("pax 는 양의 정수만, 문자열 숫자도 받는다", () => {
-    expect(quoteHref({ pax: "12" })).toBe("/quote?pax=12");
-    expect(quoteHref({ pax: "abc" })).toBe("/quote");
-    expect(quoteHref({ pax: -3 })).toBe("/quote");
-    expect(quoteHref({ pax: 2.5 })).toBe("/quote");
-  });
-
-  test("장소는 LOCATION_CODES 에 있는 코드만 — 번역 문자열·미지 코드는 생략", () => {
-    expect(quoteHref({ origin: "서울", dest: "XXX" })).toBe("/quote");
-    for (const code of LOCATION_CODES) expect(quoteHref({ origin: code })).toBe(`/quote?origin=${code}`);
-  });
-
-  test("날짜는 YYYY-MM-DD 만, 차량 slug 는 선택", () => {
-    expect(quoteHref({ date: "2026-9-2" })).toBe("/quote");
-    expect(quoteHref({ date: "2026-09-02T08:00" })).toBe("/quote");
-    expect(quoteHref({ vehicle: "bus45" })).toBe("/quote?vehicle=bus45");
-    expect(quoteHref({ vehicle: "../x" })).toBe("/quote");
-  });
-
-  test("인코딩 — URLSearchParams 규칙(공백·특수문자 인코딩, 인젝션 불가)", () => {
-    expect(quoteHref({ date: "2026-09-02&pax=9" })).toBe("/quote");
-    const href = quoteHref({ origin: "SEL", pax: "7" });
-    expect(href.split("?")[1].split("&")).toEqual(["origin=SEL", "pax=7"]);
-  });
-});
-
-describe("6-b. QuoteWidget 은 접수하지 않는다", () => {
+describe("6. QuoteWidget — 입구만, 개인정보는 모달 안에", () => {
   const src = codeOf(`${HOME_DIR}/QuoteWidget.tsx`);
 
-  test("이름·전화 입력란 없음 (개인정보를 동의 UI 없이 받게 된다 — P3 위저드 몫)", () => {
+  test("`id=\"quote\"` 앵커 — 메뉴·차량 카드·대표 노선·옛 /quote 리디렉트가 여기를 가리킨다", () => {
+    expect(src).toMatch(/id="quote"/);
+  });
+
+  test("위젯 자체에는 이름·전화 입력란이 없다 (동의 UI 가 있는 모달 안에만)", () => {
     expect(/type=["']tel["']/.test(src)).toBe(false);
     expect(/autoComplete=["'](name|tel)["']/.test(src)).toBe(false);
   });
 
-  test("서버 액션·fetch·form action 없음, 모달 없음", () => {
+  test("서버 액션·fetch·form action·다이얼로그 마크업은 위젯에 없다 — 검사 뒤 QuickQuoteModal 을 연다", () => {
     expect(/['"]use server['"]/.test(src)).toBe(false);
     expect(/\bfetch\s*\(/.test(src)).toBe(false);
     expect(/action=/.test(src)).toBe(false);
     expect(/role=["']dialog["']/.test(src)).toBe(false);
+    expect(src).toMatch(/validateWidget\(/);
+    expect(src).toMatch(/<QuickQuoteModal/);
   });
 
-  test("quoteHref 로 만든 href 를 i18n Link 에 건다", () => {
-    expect(src).toMatch(/quoteHref\(/);
-    expect(src).toMatch(/<Link[^>]*href=\{/);
+  test("위저드로 가는 링크(/quote)·프리필 모듈은 없다", () => {
+    expect(src).not.toMatch(/["'`]\/quote\b|quoteHref/);
+    expect(existsSync(path.join(ROOT, `${HOME_DIR}/quote-href.ts`))).toBe(false);
   });
 });
 
