@@ -29,11 +29,6 @@
     gap: var(--space-stack-xl);
     align-items: start;
   }
-  /* 카드 16장이 지도보다 길다 — 스크롤하는 동안 지도를 붙잡아 둔다 */
-  .mapFrame {
-    position: sticky;
-    top: var(--space-stack-sm);
-  }
 }
 
 /* ── 지도 프레임 + 스테이지 (SVG 레이어 / 라벨 레이어가 같은 좌표계를 공유) ── */
@@ -46,6 +41,17 @@
   background: var(--bg-page);
   border: 1px solid var(--border-decorative);
   border-radius: var(--radius-surface);
+}
+/*
+ * 접힌 상태에선 카드 칸이 지도 높이 안이다. "노선 전체 보기"로 펼치면 다시 지도보다 길어지므로 지도를 붙잡아 둔다.
+ * P2-9: 이 규칙은 반드시 위 기본 .mapFrame(position: relative) **뒤**에 둔다 — 전에는 앞에 있어서 relative 가 이겼고,
+ * sticky 는 동작하지 않은 채 top 만 먹어 지도가 16px 아래로 밀려 있었다(브라우저 실측 — 보고서 §5).
+ */
+@media (min-width: 960px) {
+  .mapFrame {
+    position: sticky;
+    top: var(--space-stack-sm);
+  }
 }
 
 .stage {
@@ -65,6 +71,85 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
+}
+
+/* ── 인터랙션 층 (P2-9) — 히트 영역 + 활성 노선 강조. 같은 viewBox 로 MapSvg 위에 겹친다 ── */
+.overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* 선이 가늘어 맞추기 어렵다 — 같은 d 의 투명한 두꺼운 선만 포인터를 받는다 */
+.hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 18;
+  stroke-linecap: round;
+  pointer-events: stroke;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.routeActive {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+/* 활성 노선이 있으면 나머지 선을 흐리게 — 같은 브랜드 색 위에서도 강조 선이 드러난다 */
+.grid[data-has-active] .route,
+.grid[data-has-active] .routeAccent {
+  opacity: 0.28;
+}
+.pinActive {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 3;
+}
+
+/* ── 지도 선 말풍선 (P2-9) — 스테이지 백분율 좌표, 가장자리에서는 안쪽으로 뒤집는다 ── */
+.tip {
+  position: absolute;
+  z-index: 2;
+  width: max-content;
+  max-width: 200px;
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  box-shadow: var(--elevation-overlay);
+  color: var(--text-primary);
+  pointer-events: none;
+  translate: -50% 0;
+  transform: translateY(calc(-100% - var(--space-stack-xs)));
+}
+.tip[data-align="start"] {
+  translate: calc(-1 * var(--space-inline-sm)) 0;
+}
+.tip[data-align="end"] {
+  translate: calc(-100% + var(--space-inline-sm)) 0;
+}
+.tip[data-side="below"] {
+  transform: translateY(var(--space-stack-xs));
+}
+
+.tipRoute {
+  display: block;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  word-break: keep-all;
+}
+.tipAmount {
+  display: block;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--text-brand);
 }
 
 /* ── SVG 마크 ──────────────────────────────────────────────────────────── */
@@ -133,11 +218,27 @@
 }
 
 .cardList {
+  position: relative;
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
   gap: 10px;
+}
+
+/*
+ * 지도 높이를 넘는 카드 (P2-9) — visually-hidden. display:none·visibility:hidden·[hidden] 을 쓰지 않는다:
+ * 스크린리더는 16장을 모두 읽어야 한다. 목록 폭 그대로 흐름에서만 빼고(clip-path 로 가림) 자연 높이를 유지해
+ * RouteExplorer 가 "몇 장이 들어가는지" 잴 수 있게 한다.
+ */
+.cardOffscreen {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .card,
@@ -154,6 +255,12 @@
 }
 .cardAccent {
   border-color: var(--accent-decorative);
+}
+/* 지도 선·카드 hover 로 활성인 노선 (P2-9 양방향 연동) */
+.card[data-active],
+.cardAccent[data-active] {
+  border-color: var(--border-strong);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
 }
 
 .cardIndex {
@@ -211,6 +318,59 @@
 }
 .cardAccent .cardAmount {
   color: var(--text-brand);
+}
+
+/* ── 가려진 카드 안내 · 전체 보기 토글 (P2-9) ─────────────────────────── */
+.more {
+  margin: var(--space-stack-sm) 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  word-break: keep-all;
+}
+
+.toggle {
+  margin-top: var(--space-stack-xs);
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-link);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.toggle:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* 움직임은 줄이기를 원하지 않는 사용자에게만 */
+@media (prefers-reduced-motion: no-preference) {
+  .tip {
+    animation: tipIn var(--motion-base) both;
+  }
+  .card,
+  .cardAccent {
+    transition: border-color var(--motion-base), box-shadow var(--motion-base);
+  }
+  .route,
+  .routeAccent {
+    transition: opacity var(--motion-base);
+  }
+}
+@keyframes tipIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* ── 견적 CTA (보조 버튼) ─────────────────────────────────────────────── */

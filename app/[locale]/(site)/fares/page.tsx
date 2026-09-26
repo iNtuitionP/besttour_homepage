@@ -99,7 +99,7 @@ export default async function FaresPage({ params }: { params: Params }) {
       <section id="routes" className={`${h.section} ${h.toneLav}`} aria-labelledby="routes-h" data-section="routes">
         <div className={h.wrap}>
           <SectionHead id="routes-h" eyebrow={tRoutes("eyebrow")} title={t("routes.title")} desc={t("routes.desc")} />
-          <KrMap routes={routes} id="fares-krmap" />
+          <KrMap routes={routes} id="fares-krmap" collapse={false} />
         </div>
       </section>
 

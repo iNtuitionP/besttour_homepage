@@ -357,10 +357,11 @@ describe("components/KrMap — 디자인 토큰 (CSS Modules)", () => {
 });
 
 describe("components/KrMap — 서버 컴포넌트 · 링크 · verbatim", () => {
-  test("'use client' 0건", () => {
-    for (const { file, text } of tsxSources) {
-      expect(/['"]use client['"]/.test(text), `${file}`).toBe(false);
-    }
+  // P2-9: 지도 선 hover/탭·카드 수 측정은 클라이언트 인터랙션이다 — 'use client' 는 RouteExplorer.tsx 하나에만 허용한다.
+  // 데이터·문구·verbatim 고지·CTA Link 는 여전히 서버(KrMap.tsx)가 만든다(tests/krmap-interactive.test.ts §7).
+  test("'use client' 는 RouteExplorer.tsx 하나뿐", () => {
+    const clients = tsxSources.filter(({ text }) => /['"]use client['"]/.test(text)).map(({ file }) => file);
+    expect(clients).toEqual(["components/KrMap/RouteExplorer.tsx"]);
   });
 
   test("next/link import 0건 — 로케일 프리픽스가 빠진다", () => {

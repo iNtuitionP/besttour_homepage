@@ -104,11 +104,14 @@
       "mapTitle": "Map of popular routes in Korea",
       "legendAirport": "Gold = Airport Pickup & Drop-off (Transfer Specialists) route",
       "descEmpty": "A map of South Korea. There are no popular routes to show.",
-      "desc": "The departure and arrival points of {count} popular routes are shown as pins and curves on a map of South Korea. Details for each route are in the list below.",
+      "desc": "The departure and arrival points of {count} popular routes are shown as pins and curves on a map of South Korea. Every route is described in full in the list that follows.",
       "listLabel": "Sample quotes for popular routes",
       "airport": "Airport Pickup & Drop-off (Transfer Specialists)",
       "cta": "Request a quote for your schedule",
-      "empty": "There are no popular routes to show right now. We will give you a quote through a consultation."
+      "empty": "There are no popular routes to show right now. We will give you a quote through a consultation.",
+      "moreHint": "Hover over or tap a line on the map to see the other {count} routes.",
+      "showAll": "Show all routes ({count})",
+      "showLess": "Show fewer routes"
     },
     "trust": {
       "label": "Company credentials",

@@ -32,6 +32,12 @@ function round1(n: number): number {
  * dx 가 0(완전 수직)이면 (dy,-dx) 쪽. — lib/map-coords.routePath 와 동일 규칙.
  */
 export function routeCurve(origin: PinPoint, destination: PinPoint, curvature: number = CURVATURE): string {
+  const { cx, cy } = controlPoint(origin, destination, curvature);
+  return `M${round1(origin.svgX)},${round1(origin.svgY)} Q${round1(cx)},${round1(cy)} ${round1(destination.svgX)},${round1(destination.svgY)}`;
+}
+
+/** routeCurve 의 제어점 (반올림 전). 중점에서 선분에 수직, 위쪽으로 curvature×거리. */
+function controlPoint(origin: PinPoint, destination: PinPoint, curvature: number): { cx: number; cy: number } {
   const x1 = origin.svgX;
   const y1 = origin.svgY;
   const x2 = destination.svgX;
@@ -43,19 +49,23 @@ export function routeCurve(origin: PinPoint, destination: PinPoint, curvature: n
 
   const mx = (x1 + x2) / 2;
   const my = (y1 + y2) / 2;
-  let cx = mx;
-  let cy = my;
+  if (dist === 0) return { cx: mx, cy: my };
 
-  if (dist > 0) {
-    const candidate = dx >= 0 ? { x: dy, y: -dx } : { x: -dy, y: dx };
-    const ux = candidate.x / dist;
-    const uy = candidate.y / dist;
-    const offset = curvature * dist;
-    cx = mx + ux * offset;
-    cy = my + uy * offset;
-  }
+  const candidate = dx >= 0 ? { x: dy, y: -dx } : { x: -dy, y: dx };
+  const offset = curvature * dist;
+  return { cx: mx + (candidate.x / dist) * offset, cy: my + (candidate.y / dist) * offset };
+}
 
-  return `M${round1(x1)},${round1(y1)} Q${round1(cx)},${round1(cy)} ${round1(x2)},${round1(y2)}`;
+/**
+ * 곡선 위 t=0.5 점 — 지도 선 말풍선(P2-9)의 기준점. B(½) = ¼·P0 + ½·C + ¼·P2 (소수 1자리).
+ * 좌표 계산일 뿐 값(가격)과 무관하다.
+ */
+export function routeMidpoint(origin: PinPoint, destination: PinPoint, curvature: number = CURVATURE): PinPoint {
+  const { cx, cy } = controlPoint(origin, destination, curvature);
+  return {
+    svgX: round1(0.25 * origin.svgX + 0.5 * cx + 0.25 * destination.svgX),
+    svgY: round1(0.25 * origin.svgY + 0.5 * cy + 0.25 * destination.svgY),
+  };
 }
 
 /** 핀 톤 — accent(골드)는 강조 노선에만 닿는 핀, brand(퍼플)는 그 밖의 핀. */
