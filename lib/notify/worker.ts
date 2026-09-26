@@ -21,12 +21,15 @@
  * ① `recordFailure` 의 give_up(5회 소진) ② `reapStale` 의 회수(5회째 claim 뒤 mark 없이 죽어 다시 잡히지 못하는 행).
  * 둘 다 같은 `planFailureNotice` 를 타므로 재귀 차단·묶임 입도·OWNER_EMAIL 부재 처리가 하나다.
  * 죽은 행은 화면에만 남았다 — 아무도 모른다.
- * 그래서 그 자리에서 사장님 앞으로 **새 pending 행 하나**를 넣고(직접 보내지 않는다 — 아웃박스를 그대로 탄다) 다음 크론에 나가게 한다.
+ * 그래서 그 자리에서 사장님 앞으로 **새 pending 행 하나**를 넣고(직접 보내지 않는다 — 아웃박스를 그대로 탄다) 다음 실행에 나가게 한다
+ * (P4-7 부터 "다음 실행" = 다음 즉시 발송(접수·확정) 또는 하루 1회 크론 중 먼저 오는 쪽).
  * 판정은 전부 fallback.ts `planFailureNotice` 이고 그 **첫 줄이 재귀 차단**이다: 죽은 행 자체가 실패 알림이면 아무것도 넣지 않는다.
  * 그 한 줄이 없으면 알림이 실패 → 또 알림 → … 무한이다(사장님 번호가 없어 메일 폴백이 생기고 메일이 거절되는 형태가 실제로 그렇다).
  * give_up 여부는 `retryPlanAfterFailure` 가 이미 낸 값을 그대로 쓴다 — 매 실패마다 넣으면 한 건에 알림이 다섯 번 간다.
  *
  * 실행 순서 (dryRun=false, configured): reapStale → claimPending(limit) → 행마다 [claimedDecision → send → markSent | markFailed(→ give_up 이면 실패 알림)] → pendingStats
+ * (P4-7 수정 라운드 2) markSent 가 throw 하면 발송이 아니라 **기록을** 다시 시도하고, 끝내 못 하면 그 행을 격리한다(recordSent).
+ * deadlineMs 가 있으면(즉시 발송) claim 을 한 행씩, 새 행마다 마감을 확인하며 한다. 제공자 Retry-After 는 다음 시도를 그만큼 미룬다.
  *
  * claim 이후 행의 판정은 outbox.ts nextAttemptDecision 이 아니라 claimedDecision 이다. claim 이 next_attempt_at 을 lease 만큼 미래로
  * 찍어 두므로(0005 :109) nextAttemptDecision 은 모든 행에 wait 를, 5회째 행에는 give_up 을 내 — 아무것도 보내지 못한다.
@@ -44,12 +47,16 @@ import { planFailureNotice, type FailureNoticeSkipReason } from "./fallback";
 import {
   ALL_TEMPLATE_KEYS,
   MAX_ATTEMPTS,
+  SENT_UNMARKED_PREFIX,
   claimPending,
+  parseSentUnmarked,
   enqueue,
   markFailed,
   markSent,
+  quarantineSentUnmarked,
   reapStale,
   retryPlanAfterFailure,
+  type MarkFailedOptions,
   type TemplateKey,
 } from "./outbox";
 import type { NotificationSender, SendOutcome } from "./sender";
@@ -58,14 +65,30 @@ import type { NotificationSender, SendOutcome } from "./sender";
 // 상수
 // =============================================================================
 
-/** 1회 실행에서 claim 하는 행 상한 기본값. 5분 크론 × 20 = 시간당 240건 — 이 사업 규모에 충분하고, 실행 시간이 lease(5분) 안에 끝난다. */
+/**
+ * 1회 실행에서 claim 하는 행 상한 기본값 — 하루 1회 크론(재시도·회수·쓸어 담기)이 쓴다. 실행 시간이 lease(5분) 안에 끝난다.
+ * 첫 시도는 P4-7 부터 접수·확정 응답 뒤의 즉시 발송이 더 작은 배치(inline.ts INLINE_WORKER_LIMIT = 5)로 한다.
+ */
 export const DEFAULT_WORKER_LIMIT = 20;
+
+/**
+ * 보냈는데 markSent 가 throw 했을 때 **기록만** 다시 시도하는 간격 (P4-7 수정 라운드 2 · 리뷰 P1-2).
+ * 길이 + 1 번 시도한다(첫 시도 + 재시도). 끝내 실패하면 그 행을 격리한다(outbox.ts quarantineSentUnmarked) —
+ * 다시 claim 되어 이미 받은 손님에게 또 보내는 일을 막는다. 합(1.25초)은 inline.ts 의 행당 예산에 들어 있다.
+ */
+export const MARK_SENT_RETRY_DELAYS_MS = [250, 1_000] as const;
 
 /** pendingStats 가 읽는 pending 행 상한. 넘으면 보고서 pendingTruncated 로 드러난다. */
 export const PENDING_STATS_SCAN_LIMIT = 1000;
 
-/** pendingStats 가 읽는 컬럼 — 개인정보 컬럼(to_phone) 없음. */
-export const PENDING_STATS_COLUMNS = "id, created_at, attempts, next_attempt_at";
+/**
+ * pendingStats 가 읽는 컬럼 — 개인정보 컬럼(to_phone) 없음. `last_error` 는 격리 행(보냈지만 기록 못 함)을 적체에서 빼려고 읽는다
+ * (수정 라운드 3 · 리뷰 P2-1 — 격리 행은 파기 때까지 pending 이라 "가장 오래된 대기" 를 영구히 가렸다).
+ */
+export const PENDING_STATS_COLUMNS = "id, created_at, attempts, next_attempt_at, last_error";
+
+/** 한 실행에서 자가 복구를 시도하는 격리 행 상한(수정 라운드 3). 격리는 드문 사고라 작게 둔다. */
+export const HEAL_BATCH_LIMIT = 20;
 
 /** 로그·last_error 로 나가는 오류 문구 상한. DB 의 2000자 상한(outbox.ts)보다 훨씬 짧게 — 로그는 덤프가 아니다. */
 const ERROR_MAX_CHARS = 200;
@@ -121,7 +144,19 @@ export interface WorkerDb {
    */
   claimPending(limit: number, channels: readonly NotifyChannel[]): Promise<OutboxRow[]>;
   markSent(id: number, providerMessageId: string | null): Promise<boolean>;
-  markFailed(row: Pick<OutboxRow, "id" | "attempts">, error: string): Promise<void>;
+  /** `opts.minRetryAfterMs` = 제공자 Retry-After(P4-7 수정 라운드 2). 없으면 세 번째 인자 자체를 넘기지 않는다. */
+  markFailed(row: Pick<OutboxRow, "id" | "attempts">, error: string, opts?: MarkFailedOptions): Promise<void>;
+  /**
+   * 보냈는데 기록을 끝내 못 한 행을 pending 그대로 claim 밖으로 민다(P4-7 수정 라운드 2 · 리뷰 P1-2).
+   * `note` = `sent_unmarked:<수신처를 지운 제공자 id>` — last_error 로 간다.
+   */
+  quarantineSentUnmarked(id: number, note: string): Promise<void>;
+  /**
+   * 격리된 행(pending + `sent_unmarked:` 표식)을 최대 limit 개 — 자가 복구 대상(수정 라운드 3 · 리뷰 P1-B). 읽는 칸은 id·last_error 뿐.
+   */
+  listQuarantined(limit: number): Promise<{ id: number; last_error: string | null }[]>;
+  /** 행의 현재 status — markSent 재시도 전에 "첫 기록이 사실은 커밋됐나" 를 본다(수정 라운드 3 · 리뷰 P2-2). 행이 없으면 null. */
+  rowStatus(id: number): Promise<OutboxRow["status"] | null>;
   /**
    * 사장님 실패 알림 행 하나를 pending 으로 넣는다(P4-4). 반환은 새로 생긴 id 들 — **빈 배열이면 이미 있었다는 뜻**이다
    * (outbox.ts `enqueue` 의 사전 확인: 같은 `(reservation_id, event, channel, template)` 에 pending/sent 가 있으면 넣지 않는다).
@@ -136,6 +171,15 @@ export interface WorkerOptions {
   dryRun?: boolean;
   /** 1회 claim 상한. 기본 DEFAULT_WORKER_LIMIT. 1 이상 정수. */
   limit?: number;
+  /**
+   * 마감 시각(epoch ms) — 있으면 **한 행씩** claim 하고, 새 행을 claim 하기 전에 `지금 + rowBudgetMs ≤ deadlineMs` 를 확인한다
+   * (P4-7 수정 라운드 2 · 리뷰 P2-4 — 즉시 발송이 응답 뒤 함수 시간을 무한정 붙들지 않게). 넘으면 멈추고 보고서에 stoppedAtDeadline.
+   * 마감 때문에 claim 하지 않은 행은 attempts 가 오르지 않는다(한꺼번에 claim 해 두고 못 보내면 시도가 타 버린다).
+   * 없으면 예전처럼 limit 만큼 한 번에 claim 한다(크론).
+   */
+  deadlineMs?: number;
+  /** 한 행을 보내는 데 쓸 수 있는 시간의 추정 상한(ms). deadlineMs 와 함께만 쓴다. 기본 0. */
+  rowBudgetMs?: number;
 }
 
 /** 실행 보고서 — 개인정보 0. 행 id·카운트·시각뿐이다. */
@@ -180,6 +224,15 @@ export interface WorkerReport {
    */
   sentUnmarked: number;
   /**
+   * sentUnmarked 중 **격리에 성공한** 행 수(P4-7 수정 라운드 2) — 다시 claim 되지 않는다(재발송 없음).
+   * sentUnmarked - quarantined 가 0 보다 크면 그 행들은 lease 뒤 다시 잡힐 수 있다(DB 가 기록도 격리도 못 받았다) — error 로그 있음.
+   */
+  quarantined: number;
+  /** 격리 행 중 이번 실행의 자가 복구(저장된 제공자 id 로 markSent)가 sent 로 바꾼 수(수정 라운드 3). 발송은 하지 않았다. */
+  healed: number;
+  /** deadlineMs 때문에 limit 전에 멈췄다(P4-7 수정 라운드 2). 멈추지 않았으면 키 자체가 없다. */
+  stoppedAtDeadline?: true;
+  /**
    * **종착한 행마다**(give_up 5회 소진 · reapStale 회수 — 둘 다) 사장님 실패 알림을 어떻게 처리했는지 — 결과별 개수 (P4-4).
    * `enqueued` 가 실제로 넣은 행 수이고, 나머지는 넣지 않은 이유다. 전부 0 이어도 키는 남는다 —
    * 조용히 사라지는 값이 없어야 사람이 "왜 안 왔는가" 를 보고서만 보고 답할 수 있다.
@@ -194,7 +247,16 @@ export interface WorkerReport {
   /** 가장 오래된 pending 행이 기다린 시간(ms). pending 이 없으면 null. */
   oldestPendingAgeMs: number | null;
   /** 행 id 만 — 감사용. sentUnmarked 는 "보냈는데 못 적은" 행 — 사람이 로그 없이도 중복 수신 가능성을 본다. */
-  ids: { reaped: number[]; sent: number[]; failed: number[]; duplicate: number[]; leaseExpired: number[]; sentUnmarked: number[] };
+  ids: {
+    reaped: number[];
+    sent: number[];
+    failed: number[];
+    duplicate: number[];
+    leaseExpired: number[];
+    sentUnmarked: number[];
+    quarantined: number[];
+    healed: number[];
+  };
 }
 
 /** 로그 항목 — 전부 lib/log.ts StructuredLogEntry 의 부분형이라 structuredLog 를 그대로 log 로 넘길 수 있다. `to` 는 어디에도 없다. */
@@ -228,6 +290,25 @@ export type WorkerLogEntry =
       /** enqueue_failed 일 때만 — 수신처를 지우고 200자로 자른 DB 오류 문구. */
       error?: string;
     }
+  | {
+      /** 보냈는데 기록을 끝내 못 했다(P4-7 수정 라운드 2). quarantined=false 면 다시 claim 되어 중복 발송될 수 있다. */
+      level: "error";
+      event: "notify.sent_unmarked";
+      id: number;
+      /** markSent 를 몇 번 시도했나. */
+      markSentAttempts: number;
+      quarantined: boolean;
+      /** 격리 실패 시 — 수신처를 지우고 200자로 자른 DB 오류 문구. */
+      error?: string;
+    }
+  | {
+      /** 격리 행 자가 복구(수정 라운드 3). healed=info · not_transitioned(이미 pending 아님·같은 키 sent 있음)=warn · error=error(멈춤). */
+      level: "info" | "warn" | "error";
+      event: "notify.heal";
+      id: number;
+      outcome: "healed" | "not_transitioned" | "error";
+      error?: string;
+    }
   | { level: "warn"; event: "notify.lease_expired"; id: number; attempts: number }
   | { level: "warn"; event: "notify.duplicate_sent"; id: number; template: string }
   | {
@@ -245,7 +326,7 @@ export interface WorkerDeps {
   sender: NotificationSender;
   /**
    * OWNER_EMAIL — 발송이 끝내 실패했을 때 사장님이 그 사실을 받을 주소 (P4-4).
-   * env 를 읽는 곳은 app/api/cron/notify/route.ts 뿐이므로 여기로 주입받는다(P4-1 경계).
+   * env 를 읽는 곳은 lib/notify/deps.ts 뿐이므로 여기로 주입받는다(P4-1 경계 · P4-7 에서 route.ts 에서 옮김).
    * 비어 있으면 실패 알림을 **넣지 않고** 보고서 `failureNotices.no_owner_email` 로 드러낸다 — 주소를 지어내지 않는다.
    */
   ownerEmail?: string;
@@ -253,6 +334,8 @@ export interface WorkerDeps {
   now: () => Date;
   /** 구조화 로그 — 운영은 lib/log.ts structuredLog. */
   log: (entry: WorkerLogEntry) => void;
+  /** 기록 재시도 간격용 대기(P4-7 수정 라운드 2). 없으면 setTimeout. 테스트는 기다리지 않는 것을 넣는다. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 // =============================================================================
@@ -319,10 +402,27 @@ export async function runNotificationWorker(opts: WorkerOptions, deps: WorkerDep
   const channels = [...(sender.channels ?? [])];
   const skipped = !configured ? ("sender_not_configured" as const) : channels.length === 0 ? ("sender_has_no_channels" as const) : undefined;
 
-  const ids: WorkerReport["ids"] = { reaped: [], sent: [], failed: [], duplicate: [], leaseExpired: [], sentUnmarked: [] };
+  const deadlineMs = opts.deadlineMs;
+  const rowBudgetMs = opts.rowBudgetMs ?? 0;
+  if (deadlineMs !== undefined && (!Number.isFinite(deadlineMs) || !Number.isFinite(rowBudgetMs) || rowBudgetMs < 0)) {
+    throw new Error("runNotificationWorker: deadlineMs·rowBudgetMs 는 유한한 수여야 한다");
+  }
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+
+  const ids: WorkerReport["ids"] = {
+    reaped: [],
+    sent: [],
+    failed: [],
+    duplicate: [],
+    leaseExpired: [],
+    sentUnmarked: [],
+    quarantined: [],
+    healed: [],
+  };
   let claimed = 0;
   let gaveUp = 0;
   let markErrors = 0;
+  let stoppedAtDeadline = false;
   const failureNotices = emptyFailureNoticeCounts();
 
   /**
@@ -371,10 +471,17 @@ export async function runNotificationWorker(opts: WorkerOptions, deps: WorkerDep
   }
 
   /** 실패 기록 — markFailed 로 되돌리고 send_failed 를 남긴다. give_up 여부는 0005 와 같은 계산(retryPlanAfterFailure)으로 보고서에 적는다. */
-  async function recordFailure(row: OutboxRow, error: string, meta: { retryable: boolean; errorName?: string }): Promise<void> {
+  async function recordFailure(
+    row: OutboxRow,
+    error: string,
+    meta: { retryable: boolean; errorName?: string; retryAfterMs?: number },
+  ): Promise<void> {
     const plan = retryPlanAfterFailure(Math.max(1, row.attempts));
     try {
-      await db.markFailed({ id: row.id, attempts: row.attempts }, error);
+      // 제공자가 Retry-After 를 줬으면 다음 시도를 max(백오프, Retry-After) 로 미룬다(P4-7 수정 라운드 2 · 리뷰 P2-5).
+      // 없으면 세 번째 인자를 넘기지 않는다(기존 호출 모양 그대로).
+      if (meta.retryAfterMs === undefined) await db.markFailed({ id: row.id, attempts: row.attempts }, error);
+      else await db.markFailed({ id: row.id, attempts: row.attempts }, error, { minRetryAfterMs: meta.retryAfterMs });
     } catch (err) {
       // 실패를 못 적었다 — 행은 lease 만료 뒤 백오프 없이 다시 잡힌다(무해). 실행은 계속한다.
       markErrors += 1;
@@ -424,54 +531,150 @@ export async function runNotificationWorker(opts: WorkerOptions, deps: WorkerDep
     for (const r of reaped) await noticeAfterGiveUp(r, true);
   }
 
-  // 2. 발송 — 구성된 sender 가 있고, 보낼 수 있는 채널이 있을 때만 claim 한다.
-  if (!dryRun && skipped === undefined) {
-    const rows = await db.claimPending(limit, channels);
-    claimed = rows.length;
-
-    for (const row of rows) {
-      const decision = claimedDecision(row, deps.now());
-      if (decision === "lease_expired") {
-        ids.leaseExpired.push(row.id);
-        log({ level: "warn", event: "notify.lease_expired", id: row.id, attempts: row.attempts });
-        continue;
+  /**
+   * 보냈다 — 이제 **기록**한다 (P4-7 수정 라운드 2 · 리뷰 P1-2).
+   * markSent 가 throw 하면 발송이 아니라 **기록을** 다시 시도한다(같은 providerMessageId, MARK_SENT_RETRY_DELAYS_MS 간격).
+   * 끝내 못 적으면 그 행을 **격리**한다 — pending 으로 두면 lease 뒤 다음 트리거가 다시 집어 이미 받은 손님에게 또 보낸다
+   * (문자 제공자는 중복 방지가 없고, 메일 멱등성 키는 24시간 뒤 잊힌다 — 크론이 하루 1회라 그 창을 넘길 수 있다).
+   * 격리마저 실패하면(DB 가 완전히 죽음) 그 행은 lease 뒤 다시 잡힐 수 있다 — 그 사실을 error 로그(quarantined:false)로 남긴다.
+   * 함수가 send 와 markSent 사이에서 **죽는** 경우(타임아웃·크래시)는 여기서 막을 수 없다 — 보고서 P4-7 §수정 라운드 2 에 남는 위험으로 적었다.
+   */
+  async function recordSent(row: OutboxRow, providerMessageId: string | null): Promise<void> {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt <= MARK_SENT_RETRY_DELAYS_MS.length; attempt += 1) {
+      if (attempt > 0) {
+        await sleep(MARK_SENT_RETRY_DELAYS_MS[attempt - 1]);
+        // 재시도 전에 **행 상태를 먼저 읽는다**(수정 라운드 3 · 리뷰 P2-2). 앞의 markSent 가 DB 에서는 커밋됐는데 응답만 잃었으면
+        // 다시 부른 markSent 는 `where status='pending'` 에 안 걸려 false 를 받고, 그것을 duplicate 로 오분류하게 된다.
+        // 읽기도 실패하면(DB 가 여전히 불안정) 예전처럼 markSent 를 다시 시도한다.
+        let status: OutboxRow["status"] | null | undefined;
+        try {
+          status = await db.rowStatus(row.id);
+        } catch {
+          status = undefined;
+        }
+        if (status === "sent") {
+          ids.sent.push(row.id);
+          return;
+        }
+        if (status === "failed") {
+          // 앞의 markSent 가 커밋되며 부분 유니크에 걸려 failed/duplicate_sent 로 남은 경우 — 같은 통지가 이미 sent 다.
+          ids.duplicate.push(row.id);
+          log({ level: "warn", event: "notify.duplicate_sent", id: row.id, template: row.template });
+          return;
+        }
       }
-      if (decision === "give_up") {
-        await recordFailure(row, "claim_invariant_violated", { retryable: false });
-        continue;
-      }
-      if (!isTemplateKey(row.template)) {
-        await recordFailure(row, "unknown_template", { retryable: false });
-        continue;
-      }
-
-      let outcome: SendOutcome;
       try {
-        outcome = await sender.send({ id: row.id, channel: row.channel, to: row.to, template: row.template, reservationId: row.reservation_id });
-      } catch (err) {
-        // 예외 문구는 버린다 — 제공자 예외에는 요청 본문(수신처)이 섞이곤 한다. 이름만 남긴다.
-        await recordFailure(row, `sender_threw:${sender.name}`, { retryable: true, errorName: err instanceof Error ? err.name : typeof err });
-        continue;
-      }
-
-      if (!outcome.ok) {
-        await recordFailure(row, scrubError(outcome.error, row.to), { retryable: outcome.retryable });
-        continue;
-      }
-
-      try {
-        const transitioned = await db.markSent(row.id, outcome.providerMessageId);
+        const transitioned = await db.markSent(row.id, providerMessageId);
         if (transitioned) {
           ids.sent.push(row.id);
         } else {
           ids.duplicate.push(row.id);
           log({ level: "warn", event: "notify.duplicate_sent", id: row.id, template: row.template });
         }
+        return;
       } catch (err) {
-        // 보냈는데 못 적었다 — lease 만료 뒤 다시 claim 되면 고객이 두 번 받는다(리뷰 N1). 보고서 sentUnmarked 로 드러낸다.
-        markErrors += 1;
-        ids.sentUnmarked.push(row.id);
-        log({ level: "error", event: "notify.mark_failed", id: row.id, op: "markSent", error: errorSummary(err, row.to) });
+        lastErr = err;
+      }
+    }
+    // 보냈는데 못 적었다(리뷰 N1). 보고서 sentUnmarked 로 드러내고, 다시 claim 되지 않게 격리한다.
+    markErrors += 1;
+    ids.sentUnmarked.push(row.id);
+    log({ level: "error", event: "notify.mark_failed", id: row.id, op: "markSent", error: errorSummary(lastErr, row.to) });
+    // 제공자 id 가 없으면 표식 뒤를 비운다 — 자가 복구가 markSent(id, null) 로 되살린다(outbox.ts parseSentUnmarked).
+    const note = `${SENT_UNMARKED_PREFIX}${providerMessageId === null ? "" : scrubError(providerMessageId, row.to)}`;
+    const markSentAttempts = MARK_SENT_RETRY_DELAYS_MS.length + 1;
+    try {
+      await db.quarantineSentUnmarked(row.id, note);
+      ids.quarantined.push(row.id);
+      log({ level: "error", event: "notify.sent_unmarked", id: row.id, markSentAttempts, quarantined: true });
+    } catch (err) {
+      log({ level: "error", event: "notify.sent_unmarked", id: row.id, markSentAttempts, quarantined: false, error: errorSummary(err, row.to) });
+    }
+  }
+
+  /** claim 된 행 하나를 끝까지 처리한다 — 판정 → send → 기록. 행 단위 오류는 이 행에서 끝난다. */
+  async function processRow(row: OutboxRow): Promise<void> {
+    const decision = claimedDecision(row, deps.now());
+    if (decision === "lease_expired") {
+      ids.leaseExpired.push(row.id);
+      log({ level: "warn", event: "notify.lease_expired", id: row.id, attempts: row.attempts });
+      return;
+    }
+    if (decision === "give_up") {
+      await recordFailure(row, "claim_invariant_violated", { retryable: false });
+      return;
+    }
+    if (!isTemplateKey(row.template)) {
+      await recordFailure(row, "unknown_template", { retryable: false });
+      return;
+    }
+
+    let outcome: SendOutcome;
+    try {
+      outcome = await sender.send({ id: row.id, channel: row.channel, to: row.to, template: row.template, reservationId: row.reservation_id });
+    } catch (err) {
+      // 예외 문구는 버린다 — 제공자 예외에는 요청 본문(수신처)이 섞이곤 한다. 이름만 남긴다.
+      await recordFailure(row, `sender_threw:${sender.name}`, { retryable: true, errorName: err instanceof Error ? err.name : typeof err });
+      return;
+    }
+
+    if (!outcome.ok) {
+      await recordFailure(row, scrubError(outcome.error, row.to), {
+        retryable: outcome.retryable,
+        ...(outcome.retryAfterMs === undefined ? {} : { retryAfterMs: outcome.retryAfterMs }),
+      });
+      return;
+    }
+
+    await recordSent(row, outcome.providerMessageId);
+  }
+
+  // 1-b. 격리 행 자가 복구 (수정 라운드 3 · 리뷰 P1-B) — **발송이 아니라 기록이다.**
+  // 보냈는데 기록을 못 해 격리된 행에 저장된 제공자 id 로 markSent 를 다시 시도한다. DB 가 회복됐으면 행이 sent 가 되어
+  // 관리자 통계·발송 내역의 "기록 확인 필요" 에서 사라진다. 0005 mark_notification_sent 는 `where status='pending'` 이라 격리 행을 받는다.
+  // sender 구성과 무관하게 돈다(기록일 뿐). dry-run 은 부작용 0 이라 건너뛴다. throw 하면(DB 가 아직 죽어 있음) 나머지는 두드리지 않고 멈춘다 —
+  // 복구 실패가 발송을 막지 않는다(실행은 계속).
+  if (!dryRun) {
+    const candidates = await db.listQuarantined(HEAL_BATCH_LIMIT);
+    for (const q of candidates) {
+      const parsed = parseSentUnmarked(q.last_error);
+      if (parsed === null) continue; // 방어 — 표식이 아닌 행은 건드리지 않는다
+      try {
+        const transitioned = await db.markSent(q.id, parsed.providerMessageId);
+        if (transitioned) {
+          ids.healed.push(q.id);
+          log({ level: "info", event: "notify.heal", id: q.id, outcome: "healed" });
+        } else {
+          // 이미 pending 이 아니거나, 같은 키에 sent 가 있어 0005 가 failed/duplicate_sent 로 닫았다.
+          log({ level: "warn", event: "notify.heal", id: q.id, outcome: "not_transitioned" });
+        }
+      } catch (err) {
+        log({ level: "error", event: "notify.heal", id: q.id, outcome: "error", error: (err instanceof Error ? err.message : String(err)).slice(0, 200) });
+        break;
+      }
+    }
+  }
+
+  // 2. 발송 — 구성된 sender 가 있고, 보낼 수 있는 채널이 있을 때만 claim 한다.
+  if (!dryRun && skipped === undefined) {
+    if (deadlineMs === undefined) {
+      // 크론: limit 만큼 한 번에 claim 한다(기존 동작).
+      const rows = await db.claimPending(limit, channels);
+      claimed = rows.length;
+      for (const row of rows) await processRow(row);
+    } else {
+      // 즉시 발송(P4-7 수정 라운드 2 · 리뷰 P2-4): 한 행씩 claim 하고, 새 행을 claim 하기 **전에** 마감을 확인한다.
+      // 한꺼번에 claim 해 두고 마감에 걸려 못 보내면 그 행들의 attempts 가 타 버린다 — 한 행씩이면 마감 뒤 행은 claim 조차 되지 않는다.
+      while (claimed < limit) {
+        if (deps.now().getTime() + rowBudgetMs > deadlineMs) {
+          stoppedAtDeadline = true;
+          break;
+        }
+        const rows = await db.claimPending(1, channels);
+        if (rows.length === 0) break;
+        claimed += rows.length;
+        for (const row of rows) await processRow(row);
       }
     }
   }
@@ -498,6 +701,9 @@ export async function runNotificationWorker(opts: WorkerOptions, deps: WorkerDep
     leaseExpired: ids.leaseExpired.length,
     markErrors,
     sentUnmarked: ids.sentUnmarked.length,
+    quarantined: ids.quarantined.length,
+    healed: ids.healed.length,
+    ...(stoppedAtDeadline ? { stoppedAtDeadline: true as const } : {}),
     failureNotices,
     pending: stats.pending,
     pendingTruncated: stats.truncated,
@@ -506,7 +712,7 @@ export async function runNotificationWorker(opts: WorkerOptions, deps: WorkerDep
     ids,
   };
 
-  // 미구성이면 warn 한 줄 — 키가 없는 동안 크론이 5분마다 "보내지 않았다"를 남긴다. 정상 실행은 info.
+  // 미구성이면 warn 한 줄 — 키가 없는 동안 실행마다(크론·즉시 발송) "보내지 않았다"를 남긴다. 정상 실행은 info.
   log({ level: skipped === undefined ? "info" : "warn", event: "notify.worker_run", ...report });
   return report;
 }
@@ -521,6 +727,7 @@ interface PendingStatsRow {
   created_at: string;
   attempts: number;
   next_attempt_at: string;
+  last_error?: string | null;
 }
 
 /** 서비스 롤 클라이언트(lib/supabase/server.ts createServiceClient)를 받는다 — 서버 전용. */
@@ -530,7 +737,25 @@ export function supabaseWorkerDb(client: SupabaseClient): WorkerDb {
     // 채널 화이트리스트를 0014 RPC 로 그대로 넘긴다(p_channels). 구버전 DB 에는 이 인자가 없다 — 0014 를 먼저 적용해야 한다.
     claimPending: (limit, channels) => claimPending(limit, client, channels),
     markSent: (id, providerMessageId) => markSent(id, providerMessageId, client),
-    markFailed: (row, error) => markFailed(row, error, client),
+    markFailed: (row, error, opts) => markFailed(row, error, client, opts),
+    quarantineSentUnmarked: (id, note) => quarantineSentUnmarked(id, note, client),
+    async listQuarantined(limit) {
+      const { data, error } = await client
+        .from(TABLE)
+        .select("id,last_error")
+        .eq("status", "pending")
+        .like("last_error", `${SENT_UNMARKED_PREFIX}%`)
+        .order("id", { ascending: true })
+        .limit(limit);
+      if (error) throw new Error(`worker.listQuarantined: ${error.message}`);
+      return (data ?? []) as { id: number; last_error: string | null }[];
+    },
+    async rowStatus(id) {
+      const { data, error } = await client.from(TABLE).select("status").eq("id", id).limit(1);
+      if (error) throw new Error(`worker.rowStatus: ${error.message}`);
+      const rows = (data ?? []) as { status: OutboxRow["status"] }[];
+      return rows.length === 0 ? null : rows[0].status;
+    },
     // 기존 enqueue 를 그대로 쓴다 — 사전 중복 확인(pending/sent 가 있으면 넣지 않음)이 곧 알림의 묶임이다(P4-4).
     enqueueFailureNotice: (row) => enqueue([row], client),
     async pendingStats(now) {
@@ -541,11 +766,13 @@ export function supabaseWorkerDb(client: SupabaseClient): WorkerDb {
         .order("created_at", { ascending: true })
         .limit(PENDING_STATS_SCAN_LIMIT);
       if (error) throw new Error(`worker.pendingStats: ${error.message}`);
-      const rows = (data ?? []) as unknown as PendingStatsRow[];
+      const scanned = (data ?? []) as unknown as PendingStatsRow[];
+      // 격리 행은 적체가 아니다(보냈다 — 기록만 못 했다). 자가 복구가 따로 다룬다.
+      const rows = scanned.filter((r) => parseSentUnmarked(r.last_error) === null);
       const nowMs = now.getTime();
       return {
         pending: rows.length,
-        truncated: rows.length >= PENDING_STATS_SCAN_LIMIT,
+        truncated: scanned.length >= PENDING_STATS_SCAN_LIMIT,
         oldestCreatedAt: rows.length > 0 ? rows[0].created_at : null,
         wouldReap: rows.filter((r) => r.attempts >= MAX_ATTEMPTS && new Date(r.next_attempt_at).getTime() <= nowMs).length,
       };

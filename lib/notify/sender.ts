@@ -2,7 +2,7 @@
  * 통지 발송 포트 (플랜 v4 P4-1 · ADR-7).
  *
  * 발송기(lib/notify/worker.ts)는 이 인터페이스만 본다. 제공자 어댑터(P4-2)는 이 인터페이스를 구현하는 파일 하나를 추가하고,
- * 어느 구현을 쓸지는 app/api/cron/notify/route.ts 만 정한다 — env 를 보는 곳은 거기뿐이다. 문안 렌더(P4-3)도 여기 없다.
+ * 어느 구현을 쓸지는 lib/notify/deps.ts 만 정한다 — env 를 보는 곳은 거기뿐이다(P4-7 에서 route.ts 에서 옮김). 문안 렌더(P4-3)도 여기 없다.
  * `template` 은 키뿐이다.
  *
  * 두 구현
@@ -10,12 +10,36 @@
  *     claim 은 attempts 를 소모하고 lease 를 건다(0005). 키 없는 몇 주 동안 5회를 태우면 키가 온 뒤 그 행은 영영 보낼 수 없다.
  *     send() 는 호출되면 안 되므로 throw 한다 — 호출됐다면 worker 의 버그다.
  *   - memorySender: 테스트·로컬 실증용. 호출을 기록하고 시나리오(성공 / 재시도 가능 실패 / 영구 실패 / throw)를 낸다. 실제 발송 없음.
- *     운영(VERCEL_ENV=production)에서는 route.ts 가 이 구현을 거부한다 — 발송 없이 sent 처리되는 사고를 막기 위해.
+ *     운영(VERCEL_ENV=production)에서는 deps.ts 가 이 구현을 거부한다 — 발송 없이 sent 처리되는 사고를 막기 위해.
  *
  * 순수 모듈 — env 없음, 네트워크 없음, 서버 지시어 없음. tests/outbox-worker.test.ts 가 정적으로 잠근다.
  */
 import type { NotifyChannel } from "../types";
-import type { TemplateKey } from "./outbox";
+import { RETRY_AFTER_CAP_MS, type TemplateKey } from "./outbox";
+
+export { RETRY_AFTER_CAP_MS };
+
+/**
+ * HTTP `Retry-After` → ms (P4-7 수정 라운드 2 · 리뷰 P2-5). RFC 9110 §10.2.3: delta-seconds(0 이상 정수) 또는 HTTP-date.
+ * 해석할 수 없거나 음수·과거 시각이면 undefined(= 없던 것으로). 값은 RETRY_AFTER_CAP_MS 로 자른다.
+ * HTTP-date 는 `nowMs` 가 있을 때만 해석한다(어댑터가 주입받은 시계). 순수 함수.
+ */
+export function parseRetryAfterMs(value: string | null | undefined, nowMs?: number): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const v = value.trim();
+  if (v.length === 0) return undefined;
+  let ms: number;
+  if (/^\d+$/.test(v)) {
+    ms = Number(v) * 1000;
+  } else {
+    if (nowMs === undefined) return undefined;
+    const at = Date.parse(v);
+    if (Number.isNaN(at)) return undefined;
+    ms = at - nowMs;
+  }
+  if (!Number.isFinite(ms) || ms <= 0) return undefined;
+  return Math.min(ms, RETRY_AFTER_CAP_MS);
+}
 
 /**
  * 통지 채널 전부(lib/types.ts `NotifyChannel` 의 런타임 목록). 전 채널을 다루는 구현(memorySender)과 테스트가 쓴다.
@@ -42,8 +66,12 @@ export interface SendRequest {
  * 실패의 `error` 는 짧은 코드여야 한다(예: 'provider_timeout', 'provider_4xx:1041'). 수신처·문안·응답 덤프를 넣지 않는다 —
  * worker 가 보고서·로그·last_error 에 싣는다(방어로 수신처 문자열은 지우지만, 그것에 기대지 마라).
  * `retryable` 은 기록용이다 — 백오프·give_up 판정은 0005 mark_notification_failed 와 retryPlanAfterFailure 가 attempts 로 한다.
+ * `retryAfterMs` 는 제공자가 Retry-After 로 "이만큼 기다려라" 고 한 값이다(P4-7 수정 라운드 2). 있으면 worker 가 다음 시도를
+ * max(백오프, 이 값) 로 미룬다. 없으면 키 자체를 싣지 않는다.
  */
-export type SendOutcome = { ok: true; providerMessageId: string | null } | { ok: false; error: string; retryable: boolean };
+export type SendOutcome =
+  | { ok: true; providerMessageId: string | null }
+  | { ok: false; error: string; retryable: boolean; retryAfterMs?: number };
 
 export interface NotificationSender {
   /** 보고서·로그에 찍히는 이름(예: 'unconfigured', 'memory'). */

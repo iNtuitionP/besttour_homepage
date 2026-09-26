@@ -279,24 +279,26 @@ describe("nextAttemptDecision / retryPlanAfterFailure", () => {
   const T0 = new Date("2026-09-11T00:00:00.000Z");
   const at = (ms: number) => new Date(T0.getTime() + ms);
 
-  test("상수 — 최대 5회, 백오프 1m·5m·30m·2h·12h, lease 는 첫 백오프보다 길다", () => {
+  // P4-7: 첫 칸 1m → 10s. 크론이 하루 1회가 되면서 첫 실패의 재시도는 즉시 발송 호출 안에서 이 백오프만큼 기다렸다 한다
+  // (lib/notify/inline.ts INLINE_RETRY_DELAY_MS ≥ BACKOFF_MS[0] 은 tests/notify-inline.test.ts 가 잠근다).
+  test("상수 — 최대 5회, 백오프 10s·5m·30m·2h·12h, lease 는 첫 백오프보다 길다", () => {
     expect(MAX_ATTEMPTS).toBe(5);
-    expect([...BACKOFF_MS]).toEqual([1 * MINUTE, 5 * MINUTE, 30 * MINUTE, 120 * MINUTE, 720 * MINUTE]);
-    expect(CLAIM_LEASE_MS).toBeGreaterThan(0);
+    expect([...BACKOFF_MS]).toEqual([10_000, 5 * MINUTE, 30 * MINUTE, 120 * MINUTE, 720 * MINUTE]);
+    expect(CLAIM_LEASE_MS).toBeGreaterThan(BACKOFF_MS[0]);
   });
 
   test("attempts 0 · next_attempt_at 도래 → send", () => {
     expect(nextAttemptDecision(row({ attempts: 0, next_attempt_at: T0.toISOString() }), T0)).toBe("send");
   });
 
-  test("실패 1회 후 백오프(1m) 전 → wait, 도래 후 → send", () => {
+  test("실패 1회 후 백오프(10s) 전 → wait, 도래 후 → send", () => {
     const failedAt = T0;
     const plan = retryPlanAfterFailure(1);
-    expect(plan).toEqual({ giveUp: false, retryAfterMs: 1 * MINUTE });
+    expect(plan).toEqual({ giveUp: false, retryAfterMs: 10_000 });
     const next = at(plan.giveUp ? 0 : plan.retryAfterMs).toISOString();
     const r = row({ attempts: 1, last_error: "x", next_attempt_at: next });
-    expect(nextAttemptDecision(r, at(30_000))).toBe("wait");
-    expect(nextAttemptDecision(r, at(1 * MINUTE))).toBe("send");
+    expect(nextAttemptDecision(r, at(5_000))).toBe("wait");
+    expect(nextAttemptDecision(r, at(10_000))).toBe("send");
     expect(nextAttemptDecision(r, at(2 * MINUTE))).toBe("send");
     expect(failedAt.getTime()).toBe(T0.getTime());
   });
@@ -484,14 +486,14 @@ describe("DB 어댑터 (가짜 클라이언트)", () => {
     expect(calls[0]).toEqual({ kind: "rpc", fn: "mark_notification_sent", args: { p_id: 5, p_provider_message_id: "MSG-1" } });
   });
 
-  test("markFailed — attempts 로 재시도 계획을 계산해 RPC 에 넘긴다 (1회 → 1m 뒤, 5회 → give_up)", async () => {
+  test("markFailed — attempts 로 재시도 계획을 계산해 RPC 에 넘긴다 (1회 → 10s 뒤, 5회 → give_up)", async () => {
     const { client, calls } = fakeClient([{ data: null, error: null }, { data: null, error: null }]);
     await markFailed({ id: 5, attempts: 1 }, "timeout", client);
     await markFailed({ id: 6, attempts: 5 }, "timeout", client);
     expect(calls[0]).toEqual({
       kind: "rpc",
       fn: "mark_notification_failed",
-      args: { p_id: 5, p_error: "timeout", p_give_up: false, p_retry_after_ms: 1 * MINUTE },
+      args: { p_id: 5, p_error: "timeout", p_give_up: false, p_retry_after_ms: 10_000 },
     });
     expect(calls[1]).toEqual({
       kind: "rpc",

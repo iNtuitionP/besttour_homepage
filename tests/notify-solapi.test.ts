@@ -10,7 +10,7 @@
  *   6. 개인정보 0: 수신처·이름·본문은 제공자 요청 본문에만 있고 로그·반환값에는 0
  *   7. 알림톡 거부: channel='alimtalk' 은 조용히 SMS 로 바꾸지 않고 명시적으로 거부(retryable:false)
  *   8. selectSender(): 키가 있으면 solapi, 없으면 unconfigured. 운영에서 memory 거부는 그대로
- *   9. 정적: process.env 는 route.ts 에만 · SDK import 0 · 전역 fetch 0
+ *   9. 정적: process.env 는 lib/notify/deps.ts 에만(P4-7 에서 route.ts 에서 옮김) · SDK import 0 · 전역 fetch 0
  *
  * **실제 네트워크 호출 0** — fetch 는 전부 주입된 가짜다. 이 파일 어디에도 globalThis.fetch 를 쓰지 않는다.
  * 주의: tests/ 아래라 세 게이트의 검사 대상이다 — 임시값 마커·금지어 리터럴을 두지 않는다.
@@ -22,7 +22,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { structuredLog } from "@/lib/log";
 import { ALL_TEMPLATE_KEYS, TEMPLATE_KEYS } from "@/lib/notify/outbox";
-import { UNCONFIGURED_SENDER_NAME } from "@/lib/notify/sender";
+import { RETRY_AFTER_CAP_MS, UNCONFIGURED_SENDER_NAME } from "@/lib/notify/sender";
 import type { SendOutcome, SendRequest } from "@/lib/notify/sender";
 import {
   ALIMTALK_REFUSED_CODE,
@@ -335,6 +335,27 @@ describe("4. 실패 분류", () => {
     expect(out).toEqual({ ok: false, error: `provider_${status}:ProviderCode`, retryable });
   });
 
+  // P4-7 수정 라운드 2 · 리뷰 P2-5 — Retry-After 를 버리지 않는다. 워커가 다음 시도를 max(백오프, Retry-After) 로 미룬다.
+  test.each([
+    ["429 · 초 단위", 429, "120", 120_000],
+    ["503 · HTTP-date(고정 시계 기준 90초 뒤)", 503, "Tue, 15 Sep 2026 00:01:30 GMT", 90_000],
+  ])("Retry-After(%s) → retryAfterMs", async (_label, status, header, ms) => {
+    const { out } = await send(
+      () => new Response(JSON.stringify({ errorCode: "TooManyRequests" }), { status, headers: { "content-type": "application/json", "retry-after": header } }),
+    );
+    expect(out).toEqual({ ok: false, error: `provider_${status}:TooManyRequests`, retryable: true, retryAfterMs: ms });
+  });
+
+  test("Retry-After 가 해석 불가·음수면 싣지 않는다 · 12시간을 넘으면 12시간으로 자른다", async () => {
+    for (const bad of ["soon", "-5", ""]) {
+      const { out } = await send(() => new Response("{}", { status: 429, headers: { "retry-after": bad } }));
+      expect(out, bad).not.toHaveProperty("retryAfterMs");
+    }
+    const { out } = await send(() => new Response("{}", { status: 429, headers: { "retry-after": String(7 * 24 * 3600) } }));
+    expect(out).toMatchObject({ retryAfterMs: RETRY_AFTER_CAP_MS });
+    expect(RETRY_AFTER_CAP_MS).toBe(12 * 60 * 60_000);
+  });
+
   test("classifyHttpStatus 단독 — 408·429·5xx 만 재시도 가능", () => {
     for (const s of [408, 429, 500, 503, 599]) expect(classifyHttpStatus(s), String(s)).toBe(true);
     for (const s of [400, 401, 402, 403, 409, 422]) expect(classifyHttpStatus(s), String(s)).toBe(false);
@@ -572,7 +593,8 @@ function routeSupabase() {
     },
     from() {
       const b: Record<string, unknown> = {};
-      for (const op of ["select", "eq", "order", "limit"]) b[op] = () => b;
+      // like — 워커의 격리 행 자가 복구 조회(P4-7 수정 라운드 3)
+      for (const op of ["select", "eq", "like", "order", "limit"]) b[op] = () => b;
       b.then = (onOk: (v: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(onOk);
       return b;
     },
@@ -668,9 +690,11 @@ describe("8. selectSender() — 키가 있으면 solapi", () => {
     );
   });
 
-  test("route.ts 에서 NOTIFY_SENDER 판정이 SOLAPI 키 판정보다 먼저 나온다 (순서를 소스로 잠근다)", () => {
-    const route = readFileSync(path.join(ROOT, "app", "api", "cron", "notify", "route.ts"), "utf-8");
-    const select = route.slice(route.indexOf("function selectSender"));
+  // P4-7: selectSender 는 route.ts 에서 lib/notify/deps.ts 로 옮겨졌다(크론과 즉시 발송이 한 벌을 쓴다). 위 테스트들은 여전히 route 의 GET 을 태운다.
+  test("deps.ts 에서 NOTIFY_SENDER 판정이 SOLAPI 키 판정보다 먼저 나온다 (순서를 소스로 잠근다)", () => {
+    const deps = readFileSync(path.join(ROOT, "lib", "notify", "deps.ts"), "utf-8");
+    const select = deps.slice(deps.indexOf("function selectSender"));
+    expect(deps.indexOf("function selectSender")).toBeGreaterThan(-1);
     expect(select.indexOf("NOTIFY_SENDER")).toBeGreaterThan(-1);
     expect(select.indexOf("NOTIFY_SENDER")).toBeLessThan(select.indexOf("SOLAPI_API_KEY"));
   });
@@ -681,7 +705,8 @@ describe("8. selectSender() — 키가 있으면 solapi", () => {
 // =============================================================================
 describe("9. 정적", () => {
   const src = readFileSync(path.join(ROOT, "lib", "notify", "solapi.ts"), "utf-8");
-  const route = readFileSync(path.join(ROOT, "app", "api", "cron", "notify", "route.ts"), "utf-8");
+  // P4-7: env 를 읽어 sender 를 고르는 곳은 route.ts 에서 lib/notify/deps.ts 로 옮겨졌다.
+  const deps = readFileSync(path.join(ROOT, "lib", "notify", "deps.ts"), "utf-8");
 
   test("solapi.ts — process.env 0 · 'use server' 0 · server-only 0", () => {
     expect(src).not.toMatch(/process\.env/);
@@ -704,12 +729,12 @@ describe("9. 정적", () => {
     expect(src).not.toMatch(/from\s+"solapi"/);
   });
 
-  test("route.ts — SOLAPI 키 3종을 여기서만 읽고 solapiSender 로 넘긴다", () => {
-    expect(route).toContain("SOLAPI_API_KEY");
-    expect(route).toContain("SOLAPI_API_SECRET");
-    expect(route).toContain("SMS_SENDER");
-    expect(route).toContain("solapiSender");
-    expect(route).toContain("NOTIFY_SENDER");
+  test("deps.ts — SOLAPI 키 3종을 여기서만 읽고 solapiSender 로 넘긴다", () => {
+    expect(deps).toContain("SOLAPI_API_KEY");
+    expect(deps).toContain("SOLAPI_API_SECRET");
+    expect(deps).toContain("SMS_SENDER");
+    expect(deps).toContain("solapiSender");
+    expect(deps).toContain("NOTIFY_SENDER");
   });
 
   test(".env.example — SOLAPI 3키가 전부 있다", () => {

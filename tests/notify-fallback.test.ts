@@ -110,6 +110,9 @@ function fakeDb(claim: OutboxRow[], outbox = fakeOutbox(), reap: OutboxRow[] = [
     claimPending: vi.fn<WorkerDb["claimPending"]>(async () => batches.shift() ?? []),
     markSent: vi.fn<WorkerDb["markSent"]>(async () => true),
     markFailed: vi.fn<WorkerDb["markFailed"]>(async () => {}),
+    quarantineSentUnmarked: vi.fn<WorkerDb["quarantineSentUnmarked"]>(async () => {}),
+    listQuarantined: vi.fn<WorkerDb["listQuarantined"]>(async () => []),
+    rowStatus: vi.fn<WorkerDb["rowStatus"]>(async () => "pending"),
     enqueueFailureNotice: outbox.enqueueFailureNotice,
     pendingStats: vi.fn<WorkerDb["pendingStats"]>(async () => emptyStats),
   };
@@ -634,10 +637,12 @@ describe("4. 문안", () => {
 // 5. 배선 · 정적 — env 는 라우트만 본다 · 발신 주소 규약
 // =============================================================================
 describe("5. 배선", () => {
-  const ROUTE = "app/api/cron/notify/route.ts";
+  // P4-7: env 를 읽어 워커 deps 를 조립하는 곳이 route.ts 에서 lib/notify/deps.ts 로 옮겨졌다(크론·즉시 발송이 한 벌을 쓴다).
+  // 이름은 ROUTE 로 두고 가리키는 파일만 바꿨다 — 아래 단언의 뜻("env 를 읽는 단 한 곳")은 그대로다.
+  const ROUTE = "lib/notify/deps.ts";
   const FALLBACK = "lib/notify/fallback.ts";
 
-  test("OWNER_EMAIL 을 읽는 곳은 라우트뿐이고 워커에 주입한다 (P4-1 경계)", () => {
+  test("OWNER_EMAIL 을 읽는 곳은 deps.ts 뿐이고 워커에 주입한다 (P4-1 경계 · P4-7 이동)", () => {
     const route = read(ROUTE);
     expect(route).toMatch(/ownerEmail:\s*process\.env\.OWNER_EMAIL/);
     for (const rel of [FALLBACK, "lib/notify/worker.ts", "lib/notify/templates.ts"]) {

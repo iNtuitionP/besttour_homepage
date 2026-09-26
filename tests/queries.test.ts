@@ -28,7 +28,7 @@ const ANON_CLIENT_FILE = path.join(ROOT, "lib", "supabase", "anon.ts");
 //
 // **이 목록의 범위를 오해하지 말 것**(2026-09-15 독립 리뷰 경미-4): SERVICE_ROLE_EXCEPTIONS 는 전사 등록부가 아니라
 // **아래 scannedFiles(= lib/queries/** + lib/supabase/anon.ts + lib/notify/vars.ts)에 대한 예외 목록**이다.
-// 저장소에서 createServiceClient() 를 실제로 부르는 곳은 이 스캔 밖에도 있다(app/api/cron/notify·app/api/cron/purge·
+// 저장소에서 createServiceClient() 를 실제로 부르는 곳은 이 스캔 밖에도 있다(lib/notify/deps.ts(통지 크론·즉시 발송, P4-7)·app/api/cron/purge·
 // actions/reservation·actions/reservation-check) — 그것들은 이 목록에 없고, 여기 없다고 해서 서비스 롤을 안 쓰는 것이 아니다.
 // 전사 등록부로 넓히는 것은 별도 태스크다(넓히려면 스캔 대상과 「죽은 예외」 판정 방식을 함께 바꿔야 한다).
 const NOTIFY_VARS_FILE = path.join(ROOT, "lib", "notify", "vars.ts");
@@ -60,7 +60,7 @@ const SERVICE_ROLE_EXCEPTIONS: ReadonlyArray<{ file: string; why: string }> = [
   },
   {
     file: "lib/notify/vars.ts",
-    why: "reservations 는 RLS 정책이 없어 anon 이 0행이고(0001) 크론에는 세션이 없다 — 통지 문안(P4-2b)을 그리려면 서비스 롤로 읽는 수밖에 없다. 화이트리스트는 고객 1컬럼(public_code)·사장님 9컬럼뿐이고 email·message·admin_memo·동의 컬럼·retention_until 은 어느 쪽도 읽지 않는다. 클라이언트는 이 파일이 만들지 않고 app/api/cron/notify/route.ts 가 주입한다(env 0·server-only 0). 고객 반환 타입에 이름·전화 키가 아예 없어 누출이 구조적으로 불가능하며 tests/notify-vars.test.ts 가 잠근다.",
+    why: "reservations 는 RLS 정책이 없어 anon 이 0행이고(0001) 크론에는 세션이 없다 — 통지 문안(P4-2b)을 그리려면 서비스 롤로 읽는 수밖에 없다. 화이트리스트는 고객 1컬럼(public_code)·사장님 9컬럼뿐이고 email·message·admin_memo·동의 컬럼·retention_until 은 어느 쪽도 읽지 않는다. 클라이언트는 이 파일이 만들지 않고 lib/notify/deps.ts 가 주입한다(env 0·server-only 0 — P4-7 전에는 app/api/cron/notify/route.ts). 고객 반환 타입에 이름·전화 키가 아예 없어 누출이 구조적으로 불가능하며 tests/notify-vars.test.ts 가 잠근다.",
   },
 ];
 const exceptionFiles = new Set(SERVICE_ROLE_EXCEPTIONS.map((e) => e.file));

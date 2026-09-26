@@ -21,7 +21,7 @@
  * 주의: tests/ 아래라 세 게이트의 검사 대상이다 — 임시값 마커·금지어 리터럴을 두지 않는다.
  */
 import { randomBytes, randomUUID } from "node:crypto";
-import { afterAll, describe, expect, test, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 
 import { PURPOSES } from "@/lib/codes";
 import {
@@ -212,6 +212,18 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("E2E — 진짜 guards + �
   // 진짜 접수는 notifications_log 에 pending 을 넣는다(테스트 안에서 곧 지우지만 그 사이가 창이다).
   // 그 행은 0005 claim 의 사정권 안이라 outbox 계열 파일과 겹치면 서로를 깨뜨린다 (tests/helpers/db-lock.ts).
   withNotificationsLock();
+
+  // P4-7: 이 파일의 runAfter 모의는 맡겨진 작업을 곧바로 돌린다. NOTIFY_INLINE 이 켜져 있으면 접수 뒤 즉시 발송이
+  // 진짜 발송기를 돌리고 — load-env-local 이 .env.local 의 빈 칸을 채우므로 — 거기 든 제공자 키로 실제 문자가 나갈 수 있다.
+  // 이 파일은 발송을 시험하지 않는다(그건 tests/notify-inline.db.test.ts 가 memory sender 로 한다). 블록 동안 끈다.
+  const savedInline = process.env.NOTIFY_INLINE;
+  beforeAll(() => {
+    delete process.env.NOTIFY_INLINE;
+  });
+  afterAll(() => {
+    if (savedInline === undefined) delete process.env.NOTIFY_INLINE;
+    else process.env.NOTIFY_INLINE = savedInline;
+  });
 
   const restHeaders = {
     apikey: env.serviceRoleKey,

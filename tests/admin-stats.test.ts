@@ -656,6 +656,106 @@ describe("4. /admin/stats 화면 · 탭 · messages/ko.json", () => {
 });
 
 // =============================================================================
+// 4-a. 발송 문제 보정 (P4-7 수정 라운드 3 · 리뷰 P1-B·P2-8) — 마이그레이션 없이 앱에서
+// =============================================================================
+/**
+ * 0022 의 ⑤ 는 `status` 만 본다: 격리 행(보냈지만 기록 못 함 — pending)을 "1시간 넘게 보내지 못하고 있는 건" 으로,
+ * 중복 억제된 알림 행(`failed/duplicate_sent` — 메일은 한 통 도착)을 "발송 실패" 로 센다. 둘 다 사장님 화면에 틀린 말이다.
+ * 0022 를 고치려면 600줄 함수를 통째로 다시 정의하는 0023 이 필요해(원격 적용 두 번) **앱에서 보정**한다:
+ * 같은 창(0022 가 돌려준 window_days·stuck_hours 를 그대로 쓴다 — 상수를 두 벌 두지 않는다)으로 세 가지를 따로 세어 빼고,
+ * 격리 행은 "발송됨 · 기록 확인 필요" 로 따로 보여 준다.
+ */
+describe("4-a. 발송 문제 보정 — 격리 행·중복 억제 행", () => {
+  test("notifyAttention — 실패에서 중복 억제를, 멈춘 대기에서 격리 행을 빼고 격리 행은 따로 · 음수는 0 으로", async () => {
+    const { notifyAttention } = await import("@/lib/admin/stats");
+    const n = { failed: 3, stuck: 2, window_days: 7, stuck_hours: 1 };
+    expect(notifyAttention(n, { sentUnconfirmed: 2, sentUnconfirmedStuck: 1, suppressedDuplicates: 1 })).toEqual({
+      failed: 2,
+      stuck: 1,
+      sentUnconfirmed: 2,
+      ok: false,
+    });
+    // 두 쿼리가 다른 순간에 돌아 보정치가 더 커도 음수로 내려가지 않는다
+    expect(notifyAttention({ ...n, failed: 0, stuck: 0 }, { sentUnconfirmed: 0, sentUnconfirmedStuck: 1, suppressedDuplicates: 1 })).toEqual({
+      failed: 0,
+      stuck: 0,
+      sentUnconfirmed: 0,
+      ok: true,
+    });
+    // 격리 행만 있으면 ok 가 아니다 — "이상 없음" 으로 덮지 않는다
+    expect(notifyAttention({ ...n, failed: 0, stuck: 1 }, { sentUnconfirmed: 1, sentUnconfirmedStuck: 1, suppressedDuplicates: 0 })).toMatchObject({
+      failed: 0,
+      stuck: 0,
+      sentUnconfirmed: 1,
+      ok: false,
+    });
+  });
+
+  test("getNotifyCorrections — 0022 가 준 창으로 head 집계 세 번(개인정보 0) · 조건 모양", async () => {
+    const { getNotifyCorrections } = await import("@/lib/admin/stats");
+    const calls: { q: number; method: string; args: unknown[] }[] = [];
+    const counts = [4, 1, 2];
+    let q = -1;
+    const client = {
+      from(table: string) {
+        q += 1;
+        const idx = q;
+        expect(table).toBe("notifications_log");
+        const chain: Record<string, unknown> = {};
+        for (const m of ["select", "eq", "like", "gte", "lt"]) {
+          chain[m] = (...args: unknown[]) => {
+            calls.push({ q: idx, method: m, args });
+            return chain;
+          };
+        }
+        chain.then = (ok: (v: unknown) => unknown) => Promise.resolve({ count: counts[idx], error: null }).then(ok);
+        return chain;
+      },
+    };
+    const now = new Date("2026-09-26T03:00:00.000Z");
+    const got = await getNotifyCorrections({ window_days: 7, stuck_hours: 1 }, now, client as never);
+    expect(got).toEqual({ sentUnconfirmed: 4, sentUnconfirmedStuck: 1, suppressedDuplicates: 2 });
+    const of = (i: number) => calls.filter((c) => c.q === i).map((c) => [c.method, ...c.args]);
+    const since = "2026-09-19T03:00:00.000Z";
+    expect(of(0)).toEqual([
+      ["select", "id", { count: "exact", head: true }],
+      ["eq", "status", "pending"],
+      ["like", "last_error", "sent_unmarked:%"],
+      ["gte", "created_at", since],
+    ]);
+    expect(of(1)).toEqual([
+      ["select", "id", { count: "exact", head: true }],
+      ["eq", "status", "pending"],
+      ["like", "last_error", "sent_unmarked:%"],
+      ["gte", "created_at", since],
+      ["lt", "created_at", "2026-09-26T02:00:00.000Z"],
+    ]);
+    expect(of(2)).toEqual([
+      ["select", "id", { count: "exact", head: true }],
+      ["eq", "status", "failed"],
+      ["eq", "last_error", "duplicate_sent"],
+      ["gte", "created_at", since],
+    ]);
+  });
+
+  test("getNotifyCorrections — count 가 오지 않거나 오류면 0 으로 갈음하지 않고 throw", async () => {
+    const { getNotifyCorrections } = await import("@/lib/admin/stats");
+    const mk = (res: { count: number | null; error: { code?: string; message: string } | null }) => ({
+      from() {
+        const chain: Record<string, unknown> = {};
+        for (const m of ["select", "eq", "like", "gte", "lt"]) chain[m] = () => chain;
+        chain.then = (ok: (v: unknown) => unknown) => Promise.resolve(res).then(ok);
+        return chain;
+      },
+    });
+    await expect(getNotifyCorrections({ window_days: 7, stuck_hours: 1 }, new Date(), mk({ count: null, error: null }) as never)).rejects.toThrow();
+    await expect(
+      getNotifyCorrections({ window_days: 7, stuck_hours: 1 }, new Date(), mk({ count: null, error: { code: "42501", message: "denied" } }) as never),
+    ).rejects.toThrow(/42501/);
+  });
+});
+
+// =============================================================================
 // 4-b. 화면을 **실제로 렌더**해서 분기를 본다 (수정 라운드 3 · astra P2)
 // =============================================================================
 /**
@@ -668,6 +768,10 @@ const MOCKED_FOR_RENDER = ["@/lib/auth/requireAdmin", "next-intl/server", "@/lib
 interface RenderWalk {
   testids: string[];
   components: string[];
+  /** Attention 에 넘긴 보정된 발송 문제 값(P4-7 수정 라운드 3). */
+  attentionNotify?: unknown;
+  /** Attention 을 그 props 로 한 번 호출해 돌려준다(트리 걷기는 함수 컴포넌트를 펼치지 않는다). */
+  renderAttention?: () => unknown;
 }
 
 function walkTree(node: unknown, out: RenderWalk): void {
@@ -677,7 +781,16 @@ function walkTree(node: unknown, out: RenderWalk): void {
     return;
   }
   const el = node as { type?: unknown; props?: Record<string, unknown> };
-  if (typeof el.type === "function") out.components.push((el.type as { name?: string }).name ?? "(anonymous)");
+  if (typeof el.type === "function") {
+    const name = (el.type as { name?: string }).name ?? "(anonymous)";
+    out.components.push(name);
+    if (name === "Attention" && el.props) {
+      const fn = el.type as (p: Record<string, unknown>) => unknown;
+      const props = el.props;
+      out.attentionNotify = props.notify;
+      out.renderAttention = () => fn(props);
+    }
+  }
   if (el.props && typeof el.props === "object") {
     const tid = el.props["data-testid"];
     if (typeof tid === "string") out.testids.push(tid);
@@ -685,7 +798,9 @@ function walkTree(node: unknown, out: RenderWalk): void {
   }
 }
 
-async function renderStatsPage(stats: unknown): Promise<RenderWalk> {
+const NO_CORRECTIONS = { sentUnconfirmed: 0, sentUnconfirmedStuck: 0, suppressedDuplicates: 0 };
+
+async function renderStatsPage(stats: unknown, corrections: typeof NO_CORRECTIONS = NO_CORRECTIONS): Promise<RenderWalk> {
   vi.resetModules();
   vi.doMock("@/lib/auth/requireAdmin", () => ({ requireAdmin: async () => ({ userId: "u", email: "a@example.test" }) }));
   vi.doMock("next-intl/server", () => ({ getTranslations: async () => (k: string) => k }));
@@ -693,7 +808,7 @@ async function renderStatsPage(stats: unknown): Promise<RenderWalk> {
   vi.doMock("@/lib/analytics/dashboard", () => ({ vercelAnalyticsUrl: () => null }));
   vi.doMock("@/lib/admin/stats", async () => {
     const actual = await vi.importActual<Record<string, unknown>>("@/lib/admin/stats");
-    return { ...actual, getAdminStats: async () => stats };
+    return { ...actual, getAdminStats: async () => stats, getNotifyCorrections: async () => corrections };
   });
   const page = (await import("@/app/admin/(protected)/stats/page")) as {
     default: (p: { searchParams: Promise<Record<string, string>> }) => Promise<unknown>;
@@ -741,6 +856,22 @@ describe("4-b. 화면 분기 — 실제 렌더로 확인 (번역 호출 존재�
     expect(r.components).toContain("Overview");
     expect(r.components).toContain("Attention");
     expect(r.components, "0건인데 추이를 그리면 안 된다").not.toContain("Trend");
+  });
+
+  test("격리 행이 있으면 '발송됨 · 기록 확인 필요' 줄을 그리고, 그것만으로 '보내지 못한 건' 을 말하지 않는다 (P4-7 수정 라운드 3)", async () => {
+    const s = emptyStats(3) as { notifications: Record<string, number> };
+    s.notifications = { failed: 1, stuck: 1, window_days: 7, stuck_hours: 1 };
+    const r = await renderStatsPage(s, { sentUnconfirmed: 1, sentUnconfirmedStuck: 1, suppressedDuplicates: 1 });
+    // 페이지는 보정된 값을 Attention 에 넘긴다 — 0022 의 failed 1 · stuck 1 은 각각 중복 억제·격리 행이었다
+    expect(r.attentionNotify).toEqual({ failed: 0, stuck: 0, sentUnconfirmed: 1, ok: false });
+    // Attention 을 실제로 그려 줄을 확인한다(트리 걷기는 함수 컴포넌트를 펼치지 않으므로 여기서 한 번 호출한다)
+    const drawn: RenderWalk = { testids: [], components: [] };
+    walkTree(r.renderAttention?.(), drawn);
+    expect(drawn.testids).toContain("admin-stats-notify-sent-unconfirmed");
+    expect(drawn.testids).not.toContain("admin-stats-notify-failed");
+    expect(drawn.testids).not.toContain("admin-stats-notify-stuck");
+    const clean = await renderStatsPage(emptyStats(3));
+    expect(clean.attentionNotify).toEqual({ failed: 0, stuck: 0, sentUnconfirmed: 0, ok: true });
   });
 
   test("1건 이상이면 빈 상태도 거부도 없고 추이를 그린다", async () => {

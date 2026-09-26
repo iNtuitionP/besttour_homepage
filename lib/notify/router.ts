@@ -19,7 +19,7 @@
  * `sms` · `email` 키는 **보고서에 찍히는 이름표**일 뿐이고, 실제 라우팅은 각 구성원이 스스로 밝힌 `channels` 가 정한다.
  * 같은 채널을 둘이 들고 있으면 먼저 선언된 쪽(sms → email 순)이 담당한다.
  *
- * 순수 모듈 — env 없음, 네트워크 없음, 서버 지시어 없음. env 를 보는 곳은 app/api/cron/notify/route.ts 뿐이다(P4-1 경계).
+ * 순수 모듈 — env 없음, 네트워크 없음, 서버 지시어 없음. env 를 보는 곳은 lib/notify/deps.ts 뿐이다(P4-1 경계 · P4-7 에서 route.ts 에서 옮김).
  */
 import type { NotifyChannel } from "../types";
 import type { NotificationSender, SendOutcome, SendRequest } from "./sender";

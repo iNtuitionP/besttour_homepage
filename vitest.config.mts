@@ -5,6 +5,9 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/**/*.test.ts"],
+    // P4-7 수정 라운드 2 · 리뷰 P1-1 — 실제 발송으로 이어질 수 있는 env(즉시 발송 스위치·제공자 키·사장님 수신처)를
+    // 모든 테스트 파일 시작 전에 빈 문자열로 고정한다. 필요한 테스트는 자기 안에서 가짜 값을 넣는다(tests/helpers/notify-env.ts).
+    setupFiles: ["./tests/helpers/vitest-setup.ts"],
     server: {
       deps: {
         // next-intl 의 ESM 빌드는 `next/server` 를 확장자 없이 import 한다. Node 의 ESM 로더는 exports 맵이 없는 `next` 에서

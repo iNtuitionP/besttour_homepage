@@ -45,6 +45,7 @@ import {
   SUMMARY_WINDOW_HOURS,
   getNotificationSummary,
   listNotifications,
+  notificationRecordState,
   parseChannelFilter,
   parseNotificationStatusFilter,
   parsePeriodFilter,
@@ -104,7 +105,7 @@ function dbStub(byTable: Record<string, StubResult | StubResult[]>): {
   const from = vi.fn((table: string) => {
     const result = queues[table]?.shift() ?? { data: [], count: null, error: null };
     const chain: Record<string, unknown> = {};
-    for (const m of ["select", "order", "eq", "gte", "lte", "in", "range", "limit", "maybeSingle", "overrideTypes"]) {
+    for (const m of ["select", "order", "eq", "gte", "lte", "in", "or", "like", "range", "limit", "maybeSingle", "overrideTypes"]) {
       chain[m] = vi.fn((...args: unknown[]) => {
         calls.push({ table, method: m, args });
         return chain;
@@ -311,6 +312,8 @@ describe("3. 수신처 마스킹", () => {
         "lastError",
         "nextAttemptAt",
         "publicCode",
+        // P4-7 수정 라운드 3 — 기록 상태 표식(고정 낱말 또는 null, 개인정보 아님)
+        "recordState",
         "reservationId",
         "status",
         "template",
@@ -447,30 +450,54 @@ describe("4. 필터 · 페이지네이션", () => {
 // 5. 요약 집계
 // =============================================================================
 describe("5. 요약 집계", () => {
-  test("실패 건수와 '더 시도되지 않는 pending' 건수 두 가지다", async () => {
-    const stub = dbStub({ [NOTIFICATIONS_TABLE]: [{ count: 2, error: null }, { count: 1, error: null }] });
+  const ZERO3 = [{ count: 0, error: null }, { count: 0, error: null }, { count: 0, error: null }];
+
+  test("실패 · 더 시도되지 않는 pending · 발송됨(기록 확인 필요) 세 가지다", async () => {
+    const stub = dbStub({ [NOTIFICATIONS_TABLE]: [{ count: 2, error: null }, { count: 1, error: null }, { count: 0, error: null }] });
     const summary = await getNotificationSummary({ now: NOW }, stub.client);
-    expect(summary).toEqual({ failed: 2, stuck: 1, windowHours: SUMMARY_WINDOW_HOURS, ok: false });
+    expect(summary).toEqual({ failed: 2, stuck: 1, sentUnconfirmed: 0, windowHours: SUMMARY_WINDOW_HOURS, ok: false });
   });
 
-  test("둘 다 0 이면 ok — 화면은 '이상 없음' 을 그린다", async () => {
-    const stub = dbStub({ [NOTIFICATIONS_TABLE]: [{ count: 0, error: null }, { count: 0, error: null }] });
+  test("셋 다 0 이면 ok — 화면은 '이상 없음' 을 그린다", async () => {
+    const stub = dbStub({ [NOTIFICATIONS_TABLE]: ZERO3 });
     expect((await getNotificationSummary({ now: NOW }, stub.client)).ok).toBe(true);
   });
 
-  test("집계 조건 — failed 는 전체 기간, stuck 은 pending + attempts >= MAX_ATTEMPTS + 최근 24시간", async () => {
-    const stub = dbStub({ [NOTIFICATIONS_TABLE]: [{ count: 0, error: null }, { count: 0, error: null }] });
+  // P4-7 수정 라운드 3 · 리뷰 P1-B·P2-8
+  test("격리 행(보냈지만 기록 못 함)은 '발송됨 · 기록 확인 필요' 로 **따로** 센다 — 이상 없음으로 숨기지 않는다", async () => {
+    const stub = dbStub({ [NOTIFICATIONS_TABLE]: [{ count: 0, error: null }, { count: 0, error: null }, { count: 3, error: null }] });
+    const summary = await getNotificationSummary({ now: NOW }, stub.client);
+    expect(summary).toMatchObject({ failed: 0, stuck: 0, sentUnconfirmed: 3, ok: false });
+  });
+
+  test("집계 조건 — failed 는 전체 기간(중복 억제 duplicate_sent 제외) · stuck 은 pending + attempts >= MAX + 최근 24시간(격리 행 제외) · 격리 행은 따로", async () => {
+    const stub = dbStub({ [NOTIFICATIONS_TABLE]: ZERO3 });
     await getNotificationSummary({ now: NOW }, stub.client);
     expect(SUMMARY_WINDOW_HOURS).toBe(24);
-    expect(argsOf(stub.calls, NOTIFICATIONS_TABLE, "eq")).toEqual([["status", "failed"], ["status", "pending"]]);
+    expect(argsOf(stub.calls, NOTIFICATIONS_TABLE, "eq")).toEqual([["status", "failed"], ["status", "pending"], ["status", "pending"]]);
     expect(argsOf(stub.calls, NOTIFICATIONS_TABLE, "gte")).toEqual([
       ["attempts", MAX_ATTEMPTS],
       ["created_at", "2026-09-14T03:00:00.000Z"],
     ]);
+    expect(argsOf(stub.calls, NOTIFICATIONS_TABLE, "or")).toEqual([
+      ["last_error.is.null,last_error.neq.duplicate_sent"],
+      ["last_error.is.null,last_error.not.like.sent_unmarked:*"],
+    ]);
+    expect(argsOf(stub.calls, NOTIFICATIONS_TABLE, "like")).toEqual([["last_error", "sent_unmarked:%"]]);
+  });
+
+  test("행 표식 — 격리 행은 sentUnconfirmed, 중복 억제 행은 duplicateSuppressed, 나머지는 null (화면 배지가 '실패'·'대기' 로 오해하지 않게)", () => {
+    expect(notificationRecordState("pending", "sent_unmarked:pm-1")).toBe("sentUnconfirmed");
+    expect(notificationRecordState("failed", "duplicate_sent")).toBe("duplicateSuppressed");
+    expect(notificationRecordState("pending", "provider_500")).toBeNull();
+    expect(notificationRecordState("failed", "provider_403")).toBeNull();
+    expect(notificationRecordState("sent", null)).toBeNull();
+    // 표식은 상태와 짝일 때만 — 모양만 같은 다른 상태의 문구는 표식이 아니다
+    expect(notificationRecordState("failed", "sent_unmarked:pm-1")).toBeNull();
   });
 
   test("행을 읽지 않고 센다 — head 집계라 개인정보가 응답에 실리지 않는다", async () => {
-    const stub = dbStub({ [NOTIFICATIONS_TABLE]: [{ count: 0, error: null }, { count: 0, error: null }] });
+    const stub = dbStub({ [NOTIFICATIONS_TABLE]: ZERO3 });
     await getNotificationSummary({ now: NOW }, stub.client);
     for (const args of argsOf(stub.calls, NOTIFICATIONS_TABLE, "select")) {
       expect(args[1]).toEqual({ count: "exact", head: true });

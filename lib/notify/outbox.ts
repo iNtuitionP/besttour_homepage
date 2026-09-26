@@ -33,10 +33,65 @@ import type { NewOutboxRow, NotifyChannel, NotifyEvent, OutboxRow } from "../typ
 export const MAX_ATTEMPTS = 5;
 
 /**
- * n 번째 실패 뒤 다음 시도까지의 대기(ms) — 1m, 5m, 30m, 2h, 12h (브리프 그대로).
+ * n 번째 실패 뒤 다음 시도까지의 대기(ms) — 10s, 5m, 30m, 2h, 12h.
  * BACKOFF_MS[k-1] = k번째 실패 뒤 대기. MAX_ATTEMPTS = 5 이면 5번째 실패는 give_up 이라 마지막 칸(12h)은 상한으로만 남는다.
+ *
+ * **첫 칸은 P4-7 에서 1분 → 10초로 줄였다.** 크론이 하루 1회가 되면서 첫 시도는 접수·확정 응답 뒤의 즉시 발송(inline.ts)이 하고,
+ * 그 첫 시도가 실패하면 **같은 호출 안에서** 이 백오프만큼 기다렸다 한 번 더 돈다. 1분이면 응답 뒤 1분을 서버리스 함수가
+ * 붙들고 있어야 한다. 10초로 풀리는 오류가 얼마나 되는지는 **실측하지 않았다**(제공자 키가 아직 없다) — 풀리지 않으면
+ * 두 번째 시도도 실패하고 그 뒤는 다음 트리거의 몫이 될 뿐, 잃는 것은 시도 1회다.
+ * 제공자가 **Retry-After** 를 주면(429·503 등) 다음 시도는 max(백오프, Retry-After) 로 미룬다(markFailed 의 minRetryAfterMs) —
+ * 제공자가 기다리라고 한 시간 안에 시도를 태우지 않는다.
+ * 나머지 칸은 그대로다 — 크론이 하루 1회라 실제 간격은 "백오프 또는 다음 트리거(다른 접수·확정·하루 1회 크론) 중 늦은 쪽" 이다.
+ * 값은 TS 에서 계산해 p_retry_after_ms 로 넘기므로(0005 mark_notification_failed) 마이그레이션이 필요 없다.
  */
-export const BACKOFF_MS = [60_000, 300_000, 1_800_000, 7_200_000, 43_200_000] as const;
+export const BACKOFF_MS = [10_000, 300_000, 1_800_000, 7_200_000, 43_200_000] as const;
+
+/** 제공자 Retry-After 를 받아들이는 상한 — 백오프 마지막 칸(12h)과 같다. 이상한 값(며칠)으로 행이 사실상 멈추지 않게. */
+export const RETRY_AFTER_CAP_MS = 43_200_000;
+
+/**
+ * **격리** — 보냈는데 기록(markSent)을 끝내 못 한 행을 claim 밖으로 미는 거리 (P4-7 수정 라운드 2 · 리뷰 P1-2).
+ * 그 행이 pending 으로 남아 있으면 lease 뒤 다음 트리거가 다시 집어 **이미 받은 손님에게 또 보낸다**(문자 제공자는 중복 방지가 없고,
+ * 메일 제공자의 멱등성 키는 24시간 뒤 잊힌다 — 크론이 하루 1회라 그 창을 넘길 수 있다).
+ * 마이그레이션 없이 막으려고 기존 0005 `mark_notification_failed(p_give_up:false)` 로 next_attempt_at 을 10년 뒤로 민다 —
+ * status 는 pending 그대로라 "보냈다고 기록되지 않았다" 는 사실이 가려지지 않고(관리자 발송 내역·pendingStats 의 가장 오래된
+ * pending 나이로 드러난다), enqueue 의 사전 확인이 같은 통지를 새로 넣지도 않는다. last_error 에 `sent_unmarked:<제공자 id>` 를 남긴다.
+ * (수정 라운드 3) 격리는 끝이 아니다 — 워커가 실행마다 격리 행에 저장된 제공자 id 로 markSent 를 다시 시도해(자가 복구)
+ * DB 가 회복되면 행이 sent 가 된다. 0005 mark_notification_sent 는 `where status='pending'` 이라 격리 행을 받아들인다.
+ * 격리 행은 pendingStats(적체 지표)에서 빠지고, 관리자 화면은 "발송됨 · 기록 확인 필요" 로 따로 보여 준다(notificationRecordState).
+ */
+export const QUARANTINE_RETRY_AFTER_MS = 10 * 365 * 24 * 60 * 60_000;
+
+/** 격리 표식의 접두어 — last_error 가 이것으로 시작하면 "보냈지만 기록 못 함" 이다. 뒤에 제공자 id(없으면 빈 문자열)가 붙는다. */
+export const SENT_UNMARKED_PREFIX = "sent_unmarked:";
+
+/** 0005 mark_notification_sent 가 부분 유니크에 걸린 행에 남기는 last_error — "같은 통지가 이미 sent 로 기록됐다". */
+export const DUPLICATE_SENT_ERROR = "duplicate_sent";
+
+/**
+ * 격리 표식에서 저장된 제공자 id 를 꺼낸다(자가 복구용 — 수정 라운드 3 · 리뷰 P1-B). 격리 표식이 아니면 null.
+ * `sent_unmarked:` 뒤가 비어 있으면 제공자 id 가 없던 발송이다(providerMessageId: null).
+ */
+export function parseSentUnmarked(lastError: string | null | undefined): { providerMessageId: string | null } | null {
+  if (typeof lastError !== "string" || !lastError.startsWith(SENT_UNMARKED_PREFIX)) return null;
+  const rest = lastError.slice(SENT_UNMARKED_PREFIX.length);
+  return { providerMessageId: rest.length === 0 ? null : rest };
+}
+
+/**
+ * 행의 "기록 상태" 표식 — 관리자 화면이 status 배지만 보고 오해하지 않게(수정 라운드 3 · 리뷰 P1-B·P2-8).
+ *   - sentUnconfirmed      pending + 격리 표식 = **발송됨 · 기록 확인 필요**(손님은 받았다). "대기" 가 아니다.
+ *   - duplicateSuppressed  failed + duplicate_sent = 같은 통지가 이미 sent 로 기록됨(실패 알림의 두 번째 행 등). "발송 실패" 가 아니다.
+ *   - null                 그 밖 — status 그대로 읽으면 된다.
+ * 표식은 **상태와 짝일 때만** 인정한다(모양만 같은 문구가 다른 상태에 있으면 표식이 아니다). 순수 함수.
+ */
+export type NotificationRecordState = "sentUnconfirmed" | "duplicateSuppressed" | null;
+export function notificationRecordState(status: string, lastError: string | null | undefined): NotificationRecordState {
+  if (status === "pending" && parseSentUnmarked(lastError) !== null) return "sentUnconfirmed";
+  if (status === "failed" && lastError === DUPLICATE_SENT_ERROR) return "duplicateSuppressed";
+  return null;
+}
 
 /** claim 이 찍는 lease(ms). 0005 의 `interval '5 minutes'` 와 같다. 발송기가 mark 없이 죽으면 이 뒤에 다시 잡힌다. */
 export const CLAIM_LEASE_MS = 5 * 60_000;
@@ -295,15 +350,46 @@ export async function markSent(id: number, providerMessageId: string | null, cli
  * 실패 기록. row.attempts(claim 이 올린 값)로 재시도 계획을 계산해 넘긴다 — give_up 이면 failed(종착),
  * 아니면 pending 유지 + next_attempt_at = now + 백오프. last_error 는 2000자로 자른다.
  */
-export async function markFailed(row: Pick<OutboxRow, "id" | "attempts">, error: string, client: SupabaseClient): Promise<void> {
+export interface MarkFailedOptions {
+  /** 제공자가 준 Retry-After(ms). 있으면 다음 시도는 max(백오프, 이 값) — 상한 RETRY_AFTER_CAP_MS. give_up 이면 무시. */
+  minRetryAfterMs?: number;
+}
+
+/** 백오프와 Retry-After 중 늦은 쪽(Retry-After 는 상한으로 자른다). 순수 — 테스트가 직접 부른다. */
+export function retryDelayMs(backoffMs: number, minRetryAfterMs?: number): number {
+  if (minRetryAfterMs === undefined || !Number.isFinite(minRetryAfterMs) || minRetryAfterMs <= 0) return backoffMs;
+  return Math.max(backoffMs, Math.min(Math.round(minRetryAfterMs), RETRY_AFTER_CAP_MS));
+}
+
+export async function markFailed(
+  row: Pick<OutboxRow, "id" | "attempts">,
+  error: string,
+  client: SupabaseClient,
+  opts: MarkFailedOptions = {},
+): Promise<void> {
   const plan = retryPlanAfterFailure(Math.max(1, row.attempts));
   const { error: rpcError } = await client.rpc("mark_notification_failed", {
     p_id: row.id,
     p_error: error.slice(0, LAST_ERROR_MAX_CHARS),
     p_give_up: plan.giveUp,
-    p_retry_after_ms: plan.giveUp ? 0 : plan.retryAfterMs,
+    p_retry_after_ms: plan.giveUp ? 0 : retryDelayMs(plan.retryAfterMs, opts.minRetryAfterMs),
   });
   if (rpcError) fail("markFailed", rpcError);
+}
+
+/**
+ * 격리(P4-7 수정 라운드 2 · 리뷰 P1-2) — 보냈는데 기록을 끝내 못 한 행을 pending 그대로 claim 밖(QUARANTINE_RETRY_AFTER_MS 뒤)으로 민다.
+ * 기존 0005 `mark_notification_failed(p_give_up:false)` 를 그대로 쓴다 — 마이그레이션이 없다. attempts 는 건드리지 않는다.
+ * `note` 는 `sent_unmarked:<제공자 id>` 형태이고 호출자(worker)가 수신처를 지운 뒤 넘긴다.
+ */
+export async function quarantineSentUnmarked(id: number, note: string, client: SupabaseClient): Promise<void> {
+  const { error: rpcError } = await client.rpc("mark_notification_failed", {
+    p_id: id,
+    p_error: note.slice(0, LAST_ERROR_MAX_CHARS),
+    p_give_up: false,
+    p_retry_after_ms: QUARANTINE_RETRY_AFTER_MS,
+  });
+  if (rpcError) fail("quarantineSentUnmarked", rpcError);
 }
 
 /**

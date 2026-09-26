@@ -14,6 +14,8 @@
  *     "첫 문장이 게이트인가" 만이 조건부·try/catch·앞선 early return 을 한꺼번에 막는다(P5-3 독립 리뷰 §재-2 (가)(나)(라)).
  *   - 서비스 롤을 쓰지 않는다(ADR-2). 0010 함수는 definer 라 RLS 를 우회하지만, **함수 자신이 is_admin() 을 확인한다** —
  *     그래서 세션(anon 키 + 쿠키) 클라이언트로 부르는 것이 맞고, 세션이 관리자가 아니면 DB 가 42501 로 거절한다.
+ *     확정 뒤의 즉시 발송(P4-7)은 응답 뒤에 도는 **서버 쪽 발송기**이고 크론과 같은 클라이언트를 쓴다(lib/notify/deps.ts) —
+ *     이 파일은 트리거 이름만 넘기고, 관리자 조회·전이에 서비스 롤을 쓰지 않는다는 규칙은 그대로다.
  *   - 예외는 여기서 끝난다. 서버액션이 throw 하면 Next 가 500 과 다이제스트만 내고 사장님 화면은 아무 말도 못 한다.
  *     단 requireAdmin() 의 redirect 는 throw 로 전파돼야 한다(그것이 리다이렉트의 구현이다).
  *   - 로그에 개인정보 0: 남기는 것은 `id`(uuid)와 `outcome`(고정 어휘)뿐이다. 이름·전화·메모 본문·DB 오류 원문은 싣지 않는다 —
@@ -35,6 +37,7 @@ import {
 } from "@/lib/admin/result";
 import { requireAdmin } from "@/lib/auth/requireAdmin";
 import { structuredLog, type StructuredLogEntry } from "@/lib/log";
+import { notifyAfterResponse } from "@/lib/notify/deps";
 import { runAfter } from "@/lib/ports/after";
 import { revalidate } from "@/lib/ports/revalidate";
 import { QUERY_TAGS } from "@/lib/queries/tags";
@@ -96,11 +99,15 @@ async function run(action: AdminAction, id: string, memo: string | null): Promis
       revalidate(QUERY_TAGS.reservations);
       revalidatePath(ADMIN_REVALIDATE_PATH, "layout");
     });
+    // 즉시 발송(P4-7) — 확정만. 0010 이 통지를 넣는 전이는 확정 하나뿐이다(취소·완료·메모는 넣지 않는다).
+    // 응답 뒤에 발송기를 한 번 부를 뿐이고 결과를 기다리지 않는다 — 발송이 실패해도 확정은 이미 성공이다.
+    // 스위치(NOTIFY_INLINE)는 lib/notify/deps.ts 가 읽는다 — 관리자 경로에는 env 분기를 두지 않는다(check-admin-gate 규칙 6).
+    if (action === "confirm") notifyAfterResponse("confirmed", runAfter);
   }
   return report(action, id, result);
 }
 
-/** new → confirmed. 성공하면 0010 이 확정 통지 1건을 큐에 넣는다(발송은 P4-2 의 발송기). */
+/** new → confirmed. 성공하면 0010 이 확정 통지 1건을 큐에 넣고, 응답 뒤 즉시 발송(P4-7)이 발송기를 한 번 부른다. */
 export async function confirmReservation(id: string, memo?: string | null): Promise<AdminActionResult> {
   await requireAdmin();
   return run("confirm", id, normalizeMemo(memo));

@@ -17,7 +17,7 @@
  * service_role 권한의 클라이언트로 읽는다. `lib/queries/recent.ts` 와 같은 이유·같은 방식이며, tests/queries.test.ts 의
  * `SERVICE_ROLE_EXCEPTIONS` 에 **사유와 함께** 등록돼 있다(그 외 파일은 여전히 0건).
  * 다만 클라이언트를 **여기서 만들지 않는다**: lib/supabase/server.ts 의 createServiceClient 로 만든 것을
- * app/api/cron/notify/route.ts 가 주입한다. 그래서 이 파일에는 env 도, `server-only` 도, 네트워크 호출도 없다
+ * lib/notify/deps.ts 가 주입한다(P4-7 전에는 route.ts). 그래서 이 파일에는 env 도, `server-only` 도, 네트워크 호출도 없다
  * (lib/notify/** 의 규약 — P4-1 이 세운 경계이고 tests/notify-vars.test.ts §7 이 정적으로 잠근다).
  * 부수 효과: `server-only` 를 import 하지 않으므로 이 모듈은 vitest 에서 **그대로 import 되어 실측**된다.
  *
@@ -212,13 +212,13 @@ function labelOf(code: string): string {
 
 export interface TemplateVarsDeps {
   /**
-   * 서비스 롤 Supabase 클라이언트. app/api/cron/notify/route.ts 가 만들어 주입한다 —
+   * 서비스 롤 Supabase 클라이언트. lib/notify/deps.ts 가 만들어 주입한다 —
    * 이 모듈은 env 를 읽지 않고 클라이언트를 만들지도 않는다(§서비스 롤 예외). 테스트는 mock 을 넣는다.
    */
   client: SupabaseClient;
   /**
    * 사이트 원점(`https://…`, 끝 슬래시 없음). 문안의 예약확인·관리자 링크에 쓴다.
-   * route.ts 가 lib/site-url.ts `siteOrigin()` 으로 얻어 넘긴다 — 문안 모듈도 이 모듈도 env 를 보지 않는다.
+   * deps.ts 가 lib/site-url.ts `siteOrigin()` 으로 얻어 넘긴다 — 문안 모듈도 이 모듈도 env 를 보지 않는다.
    */
   origin: string;
   /** 기본 structuredLog. 개인정보 없는 항목만 싣는다(TemplateVarsLogEntry). */

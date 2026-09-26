@@ -10,7 +10,7 @@
  *   6. 순서: reap → claim → (send → mark)×N
  *   7. 보고서·로그 JSON 에 to 값(전화·메일)·이름 0
  *   8. 정적: worker.ts·sender.ts 에 process.env 0 · 'use server' 0 · 제공자 심볼 0 / route.ts 에 timingSafeEqual·dry·no-store
- * 그리고 라우트(401·dry 기본·?dry=0·sender 선택·no-store) · vercel.json(5분 주기) · supabaseWorkerDb 쿼리 모양.
+ * 그리고 라우트(401·dry 기본·?dry=0·sender 선택·no-store) · vercel.json(P4-7 부터 하루 1회) · supabaseWorkerDb 쿼리 모양.
  *
  * 여기에는 제공자 호출도(P4-2), 문자 문안도(P4-3) 없다. template 은 키뿐이다.
  * 주의: tests/ 아래라 세 게이트의 검사 대상이다 — 임시값 마커·금지어 리터럴을 두지 않는다.
@@ -21,7 +21,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { structuredLog } from "@/lib/log";
-import { CLAIM_LEASE_MS, MAX_ATTEMPTS, nextAttemptDecision } from "@/lib/notify/outbox";
+import { CLAIM_LEASE_MS, MAX_ATTEMPTS, QUARANTINE_RETRY_AFTER_MS, nextAttemptDecision } from "@/lib/notify/outbox";
 import {
   MEMORY_SENDER_NAME,
   UNCONFIGURED_SENDER_NAME,
@@ -33,6 +33,7 @@ import {
 } from "@/lib/notify/sender";
 import {
   DEFAULT_WORKER_LIMIT,
+  MARK_SENT_RETRY_DELAYS_MS,
   PENDING_STATS_COLUMNS,
   PENDING_STATS_SCAN_LIMIT,
   claimedDecision,
@@ -85,6 +86,8 @@ function fakeDb(
     markSent?: (id: number) => boolean;
     /** P4-4 — 실패 알림 insert 의 결과. 기본은 새 id 하나(= 넣었다). [] 를 주면 "이미 있었다"(묶임). */
     enqueueFailureNotice?: number[];
+    /** P4-7 수정 라운드 3 — 격리된 행(자가 복구 대상). */
+    quarantined?: { id: number; last_error: string }[];
   } = {},
 ) {
   const batches = [opts.claim ?? []];
@@ -94,6 +97,9 @@ function fakeDb(
     claimPending: vi.fn<WorkerDb["claimPending"]>(async () => batches.shift() ?? []),
     markSent: vi.fn<WorkerDb["markSent"]>(async (id) => (opts.markSent ? opts.markSent(id) : true)),
     markFailed: vi.fn<WorkerDb["markFailed"]>(async () => {}),
+    quarantineSentUnmarked: vi.fn<WorkerDb["quarantineSentUnmarked"]>(async () => {}),
+    listQuarantined: vi.fn<WorkerDb["listQuarantined"]>(async () => opts.quarantined ?? []),
+    rowStatus: vi.fn<WorkerDb["rowStatus"]>(async () => "pending"),
     enqueueFailureNotice: vi.fn<WorkerDb["enqueueFailureNotice"]>(async () => opts.enqueueFailureNotice ?? [(noticeId += 1)]),
     pendingStats: vi.fn<WorkerDb["pendingStats"]>(async () => ({ ...emptyStats, ...opts.stats })),
   } satisfies WorkerDb;
@@ -113,7 +119,12 @@ function spySender(script?: (req: SendRequest) => SendOutcome | Promise<SendOutc
 
 function deps(db: WorkerDb, sender: NotificationSender) {
   const log = vi.fn<(entry: WorkerLogEntry) => void>();
-  return { deps: { db, sender, now: () => NOW, log }, log };
+  // sleep 은 기록 재시도(markSent) 간격용 — 테스트는 기다리지 않고 요청된 간격만 적어 둔다.
+  const sleeps: number[] = [];
+  const sleep = vi.fn(async (ms: number) => {
+    sleeps.push(ms);
+  });
+  return { deps: { db, sender, now: () => NOW, log, sleep }, log, sleeps };
 }
 
 const logJson = (log: { mock: { calls: unknown[][] } }) => log.mock.calls.map((c) => JSON.stringify(c[0]));
@@ -505,20 +516,235 @@ describe("runNotificationWorker — 실패", () => {
     expect(report).toMatchObject({ failed: 1, gaveUp: 1, sent: 0 });
   });
 
-  test("send 성공 뒤 markSent 가 throw 하면(DB 오류) 그 행은 sentUnmarked +1 · markErrors +1 · ids.sentUnmarked · error 로그(op:markSent), 나머지 행은 계속 — 중복 수신 창을 보고서가 드러낸다(리뷰 N1)", async () => {
+  // ── P4-7 수정 라운드 2 · 리뷰 P1-2: 발송 성공 뒤 기록 실패 → **발송이 아니라 기록을** 다시 한다 ──────────
+  test("send 성공 뒤 markSent 가 한 번 throw 하면 같은 호출 안에서 **기록만** 다시 시도해 sent — send 는 1회, 같은 providerMessageId", async () => {
     const db = fakeDb({ claim: [row({ id: 61 }), row({ id: 62 })] });
     db.markSent.mockImplementationOnce(async () => {
       throw new Error("outbox.markSent: [08006] connection lost");
     });
-    const { deps: d, log } = deps(db, spySender());
+    const sender = spySender();
+    const { deps: d, log, sleeps } = deps(db, sender);
     const report = await runNotificationWorker({ dryRun: false }, d);
-    expect(db.markSent).toHaveBeenCalledTimes(2);
-    expect(report).toMatchObject({ claimed: 2, sent: 1, markErrors: 1, sentUnmarked: 1, failed: 0 });
+    expect(sender.send.mock.calls.map((c) => c[0].id)).toEqual([61, 62]);
+    expect(db.markSent.mock.calls).toEqual([
+      [61, "pm-61"],
+      [61, "pm-61"],
+      [62, "pm-62"],
+    ]);
+    expect(sleeps).toEqual([MARK_SENT_RETRY_DELAYS_MS[0]]);
+    expect(report).toMatchObject({ claimed: 2, sent: 2, markErrors: 0, sentUnmarked: 0, quarantined: 0 });
+    expect(db.quarantineSentUnmarked).not.toHaveBeenCalled();
+    expect(log.mock.calls.map((c) => c[0]).filter((e) => e.event === "notify.mark_failed")).toEqual([]);
+  });
+
+  test("markSent 가 끝내 실패하면(재시도 소진) 그 행을 **격리**한다 — 다시 claim 되지 않게(재발송 방지) · sentUnmarked·quarantined +1 · error 로그", async () => {
+    const db = fakeDb({ claim: [row({ id: 61 }), row({ id: 62 })] });
+    db.markSent.mockImplementation(async (id) => {
+      if (id === 61) throw new Error("outbox.markSent: [08006] connection lost");
+      return true;
+    });
+    const { deps: d, log, sleeps } = deps(db, spySender());
+    const report = await runNotificationWorker({ dryRun: false }, d);
+    expect(db.markSent.mock.calls.filter((c) => c[0] === 61)).toHaveLength(MARK_SENT_RETRY_DELAYS_MS.length + 1);
+    expect(sleeps).toEqual([...MARK_SENT_RETRY_DELAYS_MS]);
+    expect(db.quarantineSentUnmarked).toHaveBeenCalledTimes(1);
+    expect(db.quarantineSentUnmarked.mock.calls[0][0]).toBe(61);
+    expect(db.quarantineSentUnmarked.mock.calls[0][1]).toMatch(/^sent_unmarked:/);
+    expect(db.quarantineSentUnmarked.mock.calls[0][1]).toContain("pm-61");
+    expect(report).toMatchObject({ claimed: 2, sent: 1, markErrors: 1, sentUnmarked: 1, quarantined: 1, failed: 0 });
     expect(report.ids.sentUnmarked).toEqual([61]);
+    expect(report.ids.quarantined).toEqual([61]);
     expect(report.ids.sent).toEqual([62]);
-    expect(log.mock.calls.map((c) => c[0]).filter((e) => e.event === "notify.mark_failed")).toMatchObject([
+    const entries = log.mock.calls.map((c) => c[0]);
+    expect(entries.filter((e) => e.event === "notify.mark_failed")).toMatchObject([
       { level: "error", id: 61, op: "markSent", error: "outbox.markSent: [08006] connection lost" },
     ]);
+    expect(entries.filter((e) => e.event === "notify.sent_unmarked")).toMatchObject([{ level: "error", id: 61, quarantined: true }]);
+  });
+
+  test("격리마저 실패하면(DB 가 완전히 죽음) 그 행은 lease 뒤 다시 잡힐 수 있다 — quarantined 0 · 로그에 quarantined:false 로 남긴다", async () => {
+    const db = fakeDb({ claim: [row({ id: 61 })] });
+    db.markSent.mockImplementation(async () => {
+      throw new Error("outbox.markSent: [08006] connection lost");
+    });
+    db.quarantineSentUnmarked.mockImplementation(async () => {
+      throw new Error("outbox.quarantineSentUnmarked: [08006] connection lost");
+    });
+    const { deps: d, log } = deps(db, spySender());
+    const report = await runNotificationWorker({ dryRun: false }, d);
+    expect(report).toMatchObject({ sentUnmarked: 1, quarantined: 0, markErrors: 1 });
+    expect(log.mock.calls.map((c) => c[0]).filter((e) => e.event === "notify.sent_unmarked")).toMatchObject([
+      { level: "error", id: 61, quarantined: false, error: "outbox.quarantineSentUnmarked: [08006] connection lost" },
+    ]);
+  });
+
+  // ── P4-7 수정 라운드 3 · 리뷰 P2-2: 첫 기록이 커밋됐는데 응답만 잃은 경우 ─────
+  test("markSent 가 throw 했지만 행은 이미 sent(응답만 잃음) — 재시도 전에 상태를 읽어 sent 로 센다 · duplicate 로 오분류하지 않는다", async () => {
+    const db = fakeDb({ claim: [row({ id: 61 })] });
+    db.markSent.mockImplementationOnce(async () => {
+      throw new Error("outbox.markSent: fetch failed (response lost)");
+    });
+    db.rowStatus.mockResolvedValueOnce("sent");
+    const { deps: d, log } = deps(db, spySender());
+    const report = await runNotificationWorker({ dryRun: false }, d);
+    expect(db.markSent).toHaveBeenCalledTimes(1);
+    expect(db.rowStatus).toHaveBeenCalledWith(61);
+    expect(report).toMatchObject({ sent: 1, duplicate: 0, sentUnmarked: 0, markErrors: 0 });
+    expect(log.mock.calls.map((c) => c[0]).filter((e) => e.event === "notify.duplicate_sent")).toEqual([]);
+  });
+
+  test("상태 읽기도 실패하면 예전처럼 markSent 를 다시 시도한다", async () => {
+    const db = fakeDb({ claim: [row({ id: 61 })] });
+    db.markSent.mockImplementationOnce(async () => {
+      throw new Error("outbox.markSent: connection lost");
+    });
+    db.rowStatus.mockRejectedValueOnce(new Error("outbox.rowStatus: connection lost"));
+    const { deps: d } = deps(db, spySender());
+    const report = await runNotificationWorker({ dryRun: false }, d);
+    expect(db.markSent).toHaveBeenCalledTimes(2);
+    expect(report).toMatchObject({ sent: 1, sentUnmarked: 0 });
+  });
+
+  // ── P4-7 수정 라운드 3 · 리뷰 P1-B: 격리 행 자가 복구 ────────────────────
+  test("자가 복구 — 실행마다 격리 행에 저장된 제공자 id 로 markSent 를 다시 시도한다(발송 아님) · 성공하면 healed", async () => {
+    const db = fakeDb({ quarantined: [{ id: 71, last_error: "sent_unmarked:pm-71" }, { id: 72, last_error: "sent_unmarked:" }] });
+    const sender = spySender();
+    const { deps: d } = deps(db, sender);
+    const report = await runNotificationWorker({ dryRun: false }, d);
+    expect(db.markSent.mock.calls).toEqual([
+      [71, "pm-71"],
+      [72, null],
+    ]);
+    expect(sender.send).not.toHaveBeenCalled();
+    expect(report).toMatchObject({ healed: 2 });
+    expect(report.ids.healed).toEqual([71, 72]);
+    // 복구는 reap 다음, claim 전에 돈다
+    const order = [db.reapStale, db.listQuarantined, db.claimPending].map((f) => f.mock.invocationCallOrder[0]);
+    expect(order[0]).toBeLessThan(order[1]);
+    expect(order[1]).toBeLessThan(order[2]);
+  });
+
+  test("자가 복구 — sender 미구성이어도 돈다(DB 기록일 뿐이다) · dry-run 에서는 돌지 않는다", async () => {
+    const db = fakeDb({ quarantined: [{ id: 71, last_error: "sent_unmarked:pm-71" }] });
+    const r1 = await runNotificationWorker({ dryRun: false }, deps(db, unconfiguredSender()).deps);
+    expect(r1).toMatchObject({ healed: 1, skipped: "sender_not_configured" });
+    const db2 = fakeDb({ quarantined: [{ id: 71, last_error: "sent_unmarked:pm-71" }] });
+    const r2 = await runNotificationWorker({ dryRun: true }, deps(db2, spySender()).deps);
+    expect(db2.listQuarantined).not.toHaveBeenCalled();
+    expect(r2.healed).toBe(0);
+  });
+
+  test("자가 복구 — markSent 가 false(이미 pending 아님·같은 키 sent 있음)면 복구로 세지 않고 warn · throw 면 멈추고 error, 실행은 계속", async () => {
+    const db = fakeDb({ quarantined: [{ id: 71, last_error: "sent_unmarked:pm-71" }, { id: 72, last_error: "sent_unmarked:pm-72" }, { id: 73, last_error: "sent_unmarked:pm-73" }], claim: [row({ id: 5 })] });
+    db.markSent.mockImplementation(async (id) => {
+      if (id === 71) return false;
+      if (id === 72) throw new Error("outbox.markSent: still down");
+      return true;
+    });
+    const { deps: d, log } = deps(db, spySender());
+    const report = await runNotificationWorker({ dryRun: false }, d);
+    expect(report.ids.healed).toEqual([]);
+    expect(db.markSent.mock.calls.map((c) => c[0])).not.toContain(73); // DB 가 아직 죽어 있으면 나머지를 두드리지 않는다
+    const entries = log.mock.calls.map((c) => c[0]).filter((e) => e.event === "notify.heal");
+    expect(entries).toMatchObject([
+      { level: "warn", id: 71, outcome: "not_transitioned" },
+      { level: "error", id: 72, outcome: "error" },
+    ]);
+    expect(report.claimed).toBe(1); // 복구 실패가 발송을 막지 않는다
+  });
+
+  test("supabaseWorkerDb.listQuarantined · rowStatus — 쿼리 모양(개인정보 컬럼 없음)", async () => {
+    const { client, calls } = fakeSupabase({ select: [{ id: 71, last_error: "sent_unmarked:pm-71" }] });
+    const db = supabaseWorkerDb(client);
+    expect(await db.listQuarantined(20)).toEqual([{ id: 71, last_error: "sent_unmarked:pm-71" }]);
+    const from = calls.filter((c): c is Extract<SbCall, { kind: "from" }> => c.kind === "from");
+    expect(from[0].table).toBe("notifications_log");
+    expect(from[0].chain.map((o) => [o.op, ...o.args])).toEqual([
+      ["select", "id,last_error"],
+      ["eq", "status", "pending"],
+      ["like", "last_error", "sent_unmarked:%"],
+      ["order", "id", { ascending: true }],
+      ["limit", 20],
+    ]);
+    const s = fakeSupabase({ select: [{ status: "sent" }] });
+    expect(await supabaseWorkerDb(s.client).rowStatus(71)).toBe("sent");
+    const f = s.calls.filter((c): c is Extract<SbCall, { kind: "from" }> => c.kind === "from");
+    expect(f[0].chain.map((o) => [o.op, ...o.args])).toEqual([
+      ["select", "status"],
+      ["eq", "id", 71],
+      ["limit", 1],
+    ]);
+    expect(await supabaseWorkerDb(fakeSupabase({ select: [] }).client).rowStatus(71)).toBeNull();
+  });
+
+  test("supabaseWorkerDb.pendingStats — 격리 행은 적체가 아니다: pending·가장 오래된 나이·회수 대상에서 뺀다 (리뷰 P2-1)", async () => {
+    const past = new Date(NOW.getTime() - 1000).toISOString();
+    const rows = [
+      { id: 1, created_at: new Date(NOW.getTime() - 400 * 24 * 60 * MINUTE).toISOString(), attempts: 5, next_attempt_at: past, last_error: "sent_unmarked:pm-1" },
+      { id: 2, created_at: new Date(NOW.getTime() - 10 * MINUTE).toISOString(), attempts: 1, next_attempt_at: past, last_error: null },
+    ];
+    const stats = await supabaseWorkerDb(fakeSupabase({ select: rows }).client).pendingStats(NOW);
+    expect(stats).toEqual<PendingStats>({ pending: 1, truncated: false, oldestCreatedAt: rows[1].created_at, wouldReap: 0 });
+    expect(PENDING_STATS_COLUMNS).toContain("last_error");
+  });
+
+  test("supabaseWorkerDb.quarantineSentUnmarked — mark_notification_failed(give_up:false, 아주 먼 재시도, sent_unmarked 표식) 로 pending 을 claim 밖에 둔다", async () => {
+    const { client, calls } = fakeSupabase({ rpc: {} });
+    await supabaseWorkerDb(client).quarantineSentUnmarked(61, "sent_unmarked:pm-61");
+    const rpcs = calls.filter((c): c is Extract<SbCall, { kind: "rpc" }> => c.kind === "rpc");
+    expect(rpcs).toEqual([
+      { kind: "rpc", fn: "mark_notification_failed", args: { p_id: 61, p_error: "sent_unmarked:pm-61", p_give_up: false, p_retry_after_ms: QUARANTINE_RETRY_AFTER_MS } },
+    ]);
+    expect(QUARANTINE_RETRY_AFTER_MS).toBeGreaterThanOrEqual(365 * 24 * 60 * MINUTE);
+  });
+
+  // ── P4-7 수정 라운드 2 · 리뷰 P2-5: Retry-After ──────────────────────────
+  test("제공자가 Retry-After 를 주면 다음 시도는 max(백오프, Retry-After) — markFailed 에 minRetryAfterMs 로 넘긴다", async () => {
+    const db = fakeDb({ claim: [row({ id: 81 }), row({ id: 82 })] });
+    const sender = spySender((req) =>
+      req.id === 81 ? { ok: false, error: "provider_429:rate", retryable: true, retryAfterMs: 90_000 } : { ok: false, error: "provider_500", retryable: true },
+    );
+    const { deps: d } = deps(db, sender);
+    await runNotificationWorker({ dryRun: false }, d);
+    expect(db.markFailed.mock.calls[0]).toEqual([{ id: 81, attempts: 1 }, "provider_429:rate", { minRetryAfterMs: 90_000 }]);
+    // Retry-After 가 없으면 세 번째 인자 자체가 없다(기존 호출 모양 그대로)
+    expect(db.markFailed.mock.calls[1]).toEqual([{ id: 82, attempts: 1 }, "provider_500"]);
+  });
+
+  // ── P4-7 수정 라운드 2 · 리뷰 P2-4: 마감 시각 ────────────────────────────
+  test("deadlineMs 가 있으면 한 행씩 claim 하고, 새 행을 시작하기 전에 '지금 + rowBudget ≤ 마감' 을 확인한다 — 넘으면 멈추고 stoppedAtDeadline", async () => {
+    const clock = { ms: NOW.getTime() };
+    const claims: number[][] = [];
+    const queue = [row({ id: 91 }), row({ id: 92 }), row({ id: 93 })];
+    const db = fakeDb();
+    db.claimPending.mockImplementation(async (limit) => {
+      const got = queue.splice(0, limit);
+      claims.push(got.map((r) => r.id));
+      return got.map((r) => ({ ...r, next_attempt_at: new Date(clock.ms + CLAIM_LEASE_MS).toISOString() }));
+    });
+    // 한 행 보내는 데 10초가 걸리는 제공자
+    const sender = spySender(async (req) => {
+      clock.ms += 10_000;
+      return { ok: true, providerMessageId: `pm-${req.id}` };
+    });
+    const log = vi.fn<(entry: WorkerLogEntry) => void>();
+    const report = await runNotificationWorker(
+      { dryRun: false, limit: 5, deadlineMs: NOW.getTime() + 25_000, rowBudgetMs: 12_000 },
+      { db, sender, now: () => new Date(clock.ms), log, sleep: async () => {} },
+    );
+    // 0s: 0+12≤25 → 91 · 10s: 10+12≤25 → 92 · 20s: 20+12>25 → 멈춤 (93 은 claim 조차 하지 않는다 — attempts 를 태우지 않는다)
+    expect(claims).toEqual([[91], [92]]);
+    expect(report).toMatchObject({ claimed: 2, sent: 2, stoppedAtDeadline: true });
+    expect(queue.map((r) => r.id)).toEqual([93]);
+  });
+
+  test("deadlineMs 가 없으면 예전처럼 limit 만큼 한 번에 claim 한다 — stoppedAtDeadline 키 없음", async () => {
+    const db = fakeDb({ claim: [row({ id: 1 }), row({ id: 2 })] });
+    const { deps: d } = deps(db, spySender());
+    const report = await runNotificationWorker({ dryRun: false, limit: 7 }, d);
+    expect(db.claimPending).toHaveBeenCalledTimes(1);
+    expect(db.claimPending.mock.calls[0][0]).toBe(7);
+    expect(report).not.toHaveProperty("stoppedAtDeadline");
   });
 
   test("실패 경로에서 markFailed 자체가 throw 하면 그 행은 markErrors +1 · error 로그(op:markFailed) · failed/gaveUp 미증가 · sentUnmarked 아님, 다음 행은 계속 (리뷰 M1-a)", async () => {
@@ -684,6 +910,10 @@ describe("runNotificationWorker — 보고서·로그에 개인정보 0", () => 
     const markLogs = log.mock.calls.map((c) => c[0]).filter((e) => e.event === "notify.mark_failed");
     expect(markLogs.map((e) => (e.event === "notify.mark_failed" ? e.op : ""))).toEqual(["markSent", "markFailed"]);
     expect(JSON.stringify(markLogs)).toContain("[to]");
+    // 격리 표식(last_error 로 DB 에 간다)도 수신처를 지운다 — providerMessageId 에 수신처가 섞인 제공자 버그를 가정한다
+    expect(db.quarantineSentUnmarked).toHaveBeenCalledTimes(1);
+    expect(db.quarantineSentUnmarked.mock.calls[0][1]).not.toContain(PHONE);
+    expect(db.quarantineSentUnmarked.mock.calls[0][1]).toContain("[to]");
   });
 
   test("scrubError — 수신처(원문·숫자만·하이픈 제거)를 지우고 길이를 200자로 자른다", () => {
@@ -717,6 +947,10 @@ describe("runNotificationWorker — 보고서·로그에 개인정보 0", () => 
         "oldestPendingAgeMs",
         "pending",
         "pendingTruncated",
+        // P4-7 수정 라운드 3 — 격리 행을 자가 복구(markSent)한 수
+        "healed",
+        // P4-7 수정 라운드 2 — 보냈는데 못 적어 다시 claim 되지 않게 격리한 행 수(개인정보 아님)
+        "quarantined",
         "reaped",
         "sender",
         "sent",
@@ -724,7 +958,7 @@ describe("runNotificationWorker — 보고서·로그에 개인정보 0", () => 
         "wouldReap",
       ].sort(),
     );
-    expect(Object.keys(report.ids).sort()).toEqual(["duplicate", "failed", "leaseExpired", "reaped", "sent", "sentUnmarked"]);
+    expect(Object.keys(report.ids).sort()).toEqual(["duplicate", "failed", "healed", "leaseExpired", "quarantined", "reaped", "sent", "sentUnmarked"]);
   });
 });
 
@@ -765,7 +999,7 @@ function fakeSupabase(opts: { rpc?: Record<string, unknown>; select?: unknown[];
       const chain: { op: string; args: unknown[] }[] = [];
       calls.push({ kind: "from", table, chain });
       const builder: Record<string, unknown> = {};
-      for (const op of ["select", "eq", "order", "limit"]) {
+      for (const op of ["select", "eq", "like", "order", "limit"]) {
         builder[op] = (...args: unknown[]) => {
           chain.push({ op, args });
           return builder;
@@ -807,7 +1041,8 @@ describe("supabaseWorkerDb — 0005·0007 어댑터 연결 + pendingStats 쿼리
     expect(rpcs.map((c) => c.fn)).toEqual(["reap_stale_notifications", "claim_pending_notifications", "mark_notification_sent", "mark_notification_failed"]);
     expect(rpcs[1].args).toEqual({ p_limit: 7, p_channels: ["sms"] });
     expect(rpcs[2].args).toEqual({ p_id: 5, p_provider_message_id: "pm" });
-    expect(rpcs[3].args).toEqual({ p_id: 5, p_error: "timeout", p_give_up: false, p_retry_after_ms: 1 * MINUTE });
+    // 첫 백오프는 P4-7 에서 1분 → 10초(즉시 발송의 짧은 재시도가 그 뒤에 다시 집는다 — lib/notify/inline.ts)
+    expect(rpcs[3].args).toEqual({ p_id: 5, p_error: "timeout", p_give_up: false, p_retry_after_ms: 10_000 });
   });
 
   test("pendingStats: notifications_log 에서 개인정보 아닌 컬럼만 · status=pending · created_at asc · limit — 개수·최고령·회수 대상을 계산한다", async () => {
@@ -846,10 +1081,12 @@ describe("supabaseWorkerDb — 0005·0007 어댑터 연결 + pendingStats 쿼리
 // =============================================================================
 // 8. 정적 — env·지시어·제공자 심볼
 // =============================================================================
-describe("정적 — lib/notify/worker.ts · sender.ts 는 순수, route.ts 만 env 를 본다", () => {
+describe("정적 — lib/notify/worker.ts · sender.ts 는 순수, env 는 route.ts(CRON_SECRET)와 deps.ts(sender 선택)만 본다", () => {
   const worker = readFileSync(path.join(ROOT, "lib", "notify", "worker.ts"), "utf-8");
   const sender = readFileSync(path.join(ROOT, "lib", "notify", "sender.ts"), "utf-8");
   const route = readFileSync(path.join(ROOT, "app", "api", "cron", "notify", "route.ts"), "utf-8");
+  // P4-7: sender 선택·서비스 롤 클라이언트 조립이 route.ts 에서 lib/notify/deps.ts 로 옮겨졌다(즉시 발송과 한 벌을 쓰려고).
+  const deps = readFileSync(path.join(ROOT, "lib", "notify", "deps.ts"), "utf-8");
 
   test("worker.ts · sender.ts — process.env 0 · 'use server' 0 · server-only 0 · 제공자(SDK) 심볼 0", () => {
     for (const [name, src] of [
@@ -864,18 +1101,24 @@ describe("정적 — lib/notify/worker.ts · sender.ts 는 순수, route.ts 만 
     }
   });
 
-  test("route.ts — timingSafeEqual · dry 쿼리 · no-store · createServiceClient · NOTIFY_SENDER 분기 · 'use server' 없음", () => {
+  test("route.ts — timingSafeEqual · dry 쿼리 · no-store · notifyWorkerDeps() · 'use server' 없음", () => {
     expect(route).toContain("timingSafeEqual");
     expect(route).toMatch(/searchParams\.get\("dry"\)\s*!==\s*"0"/);
     expect(route).toContain("no-store");
-    expect(route).toContain("createServiceClient");
-    expect(route).toContain("NOTIFY_SENDER");
+    expect(route).toMatch(/notifyWorkerDeps\(\)/);
     expect(route).toContain('runtime = "nodejs"');
     expect(route).toContain('dynamic = "force-dynamic"');
     expect(route).not.toMatch(/["']use server["']/);
     expect(route).not.toContain("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-    // sender 선택은 이 파일에서만 env 를 본다 — P4-2 가 여기 한 분기를 추가한다
-    expect(route).toMatch(/P4-2/);
+  });
+
+  test("deps.ts — server-only · createServiceClient · NOTIFY_SENDER 분기(P4-2 이후 sender 선택은 여기서만 env 를 본다)", () => {
+    expect(deps).toMatch(/^import "server-only";$/m);
+    expect(deps).toContain("createServiceClient");
+    expect(deps).toContain("NOTIFY_SENDER");
+    expect(deps).not.toMatch(/["']use server["']/);
+    expect(deps).not.toContain("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+    expect(deps).toMatch(/P4-2/);
   });
 });
 
@@ -908,7 +1151,8 @@ function routeSupabase() {
     },
     from() {
       const b: Record<string, unknown> = {};
-      for (const op of ["select", "eq", "order", "limit"]) b[op] = () => b;
+      // like — 워커의 격리 행 자가 복구 조회(P4-7 수정 라운드 3)
+      for (const op of ["select", "eq", "like", "order", "limit"]) b[op] = () => b;
       b.then = (onOk: (v: unknown) => unknown, onErr?: (e: unknown) => unknown) => Promise.resolve({ data: routeState.pending, error: null }).then(onOk, onErr);
       return b;
     },
@@ -1067,17 +1311,19 @@ describe("GET /api/cron/notify", () => {
 });
 
 // =============================================================================
-// vercel.json — 5분 주기 (lease 5분과 맞춤), purge 항목 유지
+// vercel.json — 하루 1회 (P4-7: Vercel Hobby 는 더 잦은 크론을 배포 전에 거부한다), purge 항목 유지
+// 전 크론의 "하루 1회 이하" 일반 규칙은 tests/notify-inline.test.ts §6 이 잠근다.
 // =============================================================================
 describe("vercel.json crons", () => {
   const p = path.join(ROOT, "vercel.json");
   const json = JSON.parse(readFileSync(p, "utf-8")) as { crons?: { path: string; schedule: string }[] };
 
-  test("/api/cron/notify 가 '*/5 * * * *' 로 있다 — CLAIM_LEASE_MS(5분)와 같은 간격", () => {
+  test("/api/cron/notify 가 '0 23 * * *'(하루 1회, 08시대 KST) 로 있다 — 5분 크론은 Vercel Hobby 가 배포를 거부한다(2026-09-13~26)", () => {
     expect(existsSync(p)).toBe(true);
     const entry = json.crons?.find((c) => c.path.split("?")[0] === "/api/cron/notify");
     expect(entry).toBeDefined();
-    expect(entry?.schedule).toBe("*/5 * * * *");
+    expect(entry?.schedule).toBe("0 23 * * *");
+    // lease 는 그대로 5분 — 크론 간격이 아니라 "한 발송기가 행을 붙드는 시간" 이다
     expect(CLAIM_LEASE_MS).toBe(5 * MINUTE);
   });
 

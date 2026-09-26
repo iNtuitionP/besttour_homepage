@@ -16,6 +16,8 @@
  *     빈 폼으로 봐서 validation 으로 나간다(P3-3-FIX M3 — useActionState 의 (prevState, formData) 호출 규약 참고).
  *   - 허니팟(silent)은 저장·로그 없이 가짜 성공. 봇에게 아무것도 알려주지 않는다.
  *   - 성공하면 응답 뒤 runAfter 로 접수 현황 태그(QUERY_TAGS.recent, P3-5)를 무효화한다. 통지 enqueue 실패(notifyQueued:false)도 접수 성공이다.
+ *   - 성공하면 응답 뒤 즉시 발송(P4-7, lib/notify/deps.ts notifyAfterResponse)도 맡긴다 — 스위치 NOTIFY_INLINE 은 그 모듈이 읽는다
+ *     (이 파일의 env 는 여전히 OWNER_* 둘뿐). 실패·허니팟 경로는 부르지 않는다.
  */
 import { randomBytes } from "node:crypto";
 import { headers } from "next/headers";
@@ -23,6 +25,7 @@ import { headers } from "next/headers";
 import { runGuards, type GuardOutcome } from "@/lib/guard";
 import { defaultGuardDeps } from "@/lib/guard/deps";
 import { structuredLog } from "@/lib/log";
+import { notifyAfterResponse } from "@/lib/notify/deps";
 import { runAfter } from "@/lib/ports/after";
 import { revalidate } from "@/lib/ports/revalidate";
 import { QUERY_TAGS } from "@/lib/queries/tags";
@@ -71,5 +74,8 @@ export async function submitReservation(formData: FormData): Promise<SubmitResul
 
   for (const entry of createdToLogs(created)) structuredLog(entry);
   runAfter(() => revalidate(QUERY_TAGS.recent));
+  // 즉시 발송(P4-7) — 방금 쌓인 통지를 응답 뒤에 발송기로 한 번 흘린다. NOTIFY_INLINE="1" 이 아니면 아무것도 맡기지 않는다.
+  // 결과를 기다리지 않는다: 발송이 던지거나 느려도 이 접수는 이미 성공이다(예외는 lib/notify/inline.ts 가 로그로 끝낸다).
+  notifyAfterResponse("created", runAfter);
   return createdToResult(created);
 }

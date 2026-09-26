@@ -35,7 +35,7 @@ import "server-only";
 import { cookies } from "next/headers";
 
 import { maskEmailAddress, maskStoredPhone } from "../mask";
-import { MAX_ATTEMPTS } from "../notify/outbox";
+import { DUPLICATE_SENT_ERROR, MAX_ATTEMPTS, SENT_UNMARKED_PREFIX, notificationRecordState, type NotificationRecordState } from "../notify/outbox";
 import { createSsrClient } from "../supabase/ssr";
 import type { NotifyChannel, NotifyEvent, OutboxStatus } from "../types";
 
@@ -142,6 +142,11 @@ export interface NotificationListRow {
   status: OutboxStatus;
   attempts: number;
   lastError: string | null;
+  /**
+   * 기록 상태 표식(P4-7 수정 라운드 3) — `sentUnconfirmed`(발송됨 · 기록 확인 필요) · `duplicateSuppressed`(중복 억제) · null.
+   * 화면은 표식이 있으면 status 배지 대신 이것을 그린다("대기"·"실패" 로 오해하지 않게).
+   */
+  recordState: NotificationRecordState;
   /** 다음 시도 시각(ISO UTC). claim 중이면 lease 만료 시각이다. */
   nextAttemptAt: string;
   createdAt: string;
@@ -194,6 +199,7 @@ function toRow(r: DbRow, codes: Map<string, string>): NotificationListRow {
     status: r.status,
     attempts: r.attempts,
     lastError: r.last_error,
+    recordState: notificationRecordState(r.status, r.last_error),
     nextAttemptAt: r.next_attempt_at,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -321,14 +327,28 @@ async function publicCodes(rows: readonly DbRow[], db: AdminNotificationsClient)
 export const SUMMARY_WINDOW_HOURS = 24;
 
 export interface NotificationSummary {
-  /** status = 'failed' 전체 건수(기간 제한 없음). 종착한 실패 — 손님이 못 받은 문자다. */
+  /**
+   * status = 'failed' 전체 건수(기간 제한 없음). 종착한 실패 — 손님이 못 받은 문자다.
+   * **중복 억제 행(`failed/duplicate_sent`)은 빼고 센다**(P4-7 수정 라운드 3 · 리뷰 P2-8) — 같은 통지가 이미 sent 로 기록된 행이다.
+   */
   failed: number;
-  /** status = 'pending' 이면서 attempts >= MAX_ATTEMPTS 이고 최근 24시간 안에 생긴 건수 — 더 시도되지 않는 행. */
+  /**
+   * status = 'pending' 이면서 attempts >= MAX_ATTEMPTS 이고 최근 24시간 안에 생긴 건수 — 더 시도되지 않는 행.
+   * 격리 행(보냈지만 기록 못 함)은 빼고 센다 — 아래 sentUnconfirmed 가 따로 센다.
+   */
   stuck: number;
+  /**
+   * **발송됨 · 기록 확인 필요**(P4-7 수정 라운드 3 · 리뷰 P1-B) — pending + `sent_unmarked:` 표식(기간 제한 없음).
+   * 제공자는 받았는데 DB 기록을 못 해 격리된 행이다. 손님은 받았다 — "실패" 가 아니다. 워커가 실행마다 기록을 다시 시도한다(자가 복구).
+   */
+  sentUnconfirmed: number;
   windowHours: number;
-  /** 둘 다 0. 화면은 이때만 "이상 없음" 을 그린다. */
+  /** 셋 다 0. 화면은 이때만 "이상 없음" 을 그린다. */
   ok: boolean;
 }
+
+/** 목록 행의 기록 상태 표식 — lib/notify/outbox.ts 의 판정을 그대로 쓴다(판정을 두 벌 두지 않는다). */
+export { notificationRecordState, type NotificationRecordState } from "../notify/outbox";
 
 export interface NotificationSummaryParams {
   now?: Date;
@@ -358,7 +378,12 @@ export async function getNotificationSummary(
   const now = params.now ?? new Date();
   const db = client ?? (await sessionClient());
 
-  const failedRes = await db.from(NOTIFICATIONS_TABLE).select(COUNT_COLUMN, { count: "exact", head: true }).eq("status", "failed");
+  // last_error 가 null 인 행도 세야 한다 — `neq`·`not.like` 만 쓰면 SQL 의 NULL 비교가 그 행들을 떨어뜨린다. 그래서 `is.null` 과 or 로 묶는다.
+  const failedRes = await db
+    .from(NOTIFICATIONS_TABLE)
+    .select(COUNT_COLUMN, { count: "exact", head: true })
+    .eq("status", "failed")
+    .or(`last_error.is.null,last_error.neq.${DUPLICATE_SENT_ERROR}`);
   const failed = readCount("summary.failed", failedRes as CountResponse);
 
   const stuckSince = new Date(now.getTime() - SUMMARY_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
@@ -367,8 +392,16 @@ export async function getNotificationSummary(
     .select(COUNT_COLUMN, { count: "exact", head: true })
     .eq("status", "pending")
     .gte("attempts", MAX_ATTEMPTS)
-    .gte("created_at", stuckSince);
+    .gte("created_at", stuckSince)
+    .or(`last_error.is.null,last_error.not.like.${SENT_UNMARKED_PREFIX}*`);
   const stuck = readCount("summary.stuck", stuckRes as CountResponse);
 
-  return { failed, stuck, windowHours: SUMMARY_WINDOW_HOURS, ok: failed === 0 && stuck === 0 };
+  const unconfirmedRes = await db
+    .from(NOTIFICATIONS_TABLE)
+    .select(COUNT_COLUMN, { count: "exact", head: true })
+    .eq("status", "pending")
+    .like("last_error", `${SENT_UNMARKED_PREFIX}%`);
+  const sentUnconfirmed = readCount("summary.sentUnconfirmed", unconfirmedRes as CountResponse);
+
+  return { failed, stuck, sentUnconfirmed, windowHours: SUMMARY_WINDOW_HOURS, ok: failed === 0 && stuck === 0 && sentUnconfirmed === 0 };
 }

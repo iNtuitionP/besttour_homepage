@@ -6,7 +6,7 @@
  *   2. configured = channels.length > 0
  *   3. send 는 req.channel 로 담당을 고르고, 담당이 없으면 no_sender_for_channel:… · **retryable:true**
  *   4. name 이 구성원을 드러낸다 — 보고서만 보고 무엇이 켜졌는지 알 수 있어야 한다
- *   5. 정적 — env 0 · 네트워크 0 (env 를 보는 곳은 app/api/cron/notify/route.ts 뿐이다)
+ *   5. 정적 — env 0 · 네트워크 0 (env 를 보는 곳은 lib/notify/deps.ts 뿐이다 — P4-7 에서 route.ts 에서 옮김)
  *
  * 왜 "미구성 구성원의 채널을 넣지 않는다" 가 핵심인가: worker 는 sender.channels 를 그대로 claim 에 넘긴다(0014).
  * 미구성 구성원의 채널을 넣으면 그 채널의 행이 claim 되고, claim 은 attempts 를 +1 하고 lease 를 건다 — 되돌릴 수 없다.

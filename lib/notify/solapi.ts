@@ -3,7 +3,7 @@
  *
  * `lib/notify/sender.ts` 의 `NotificationSender` 구현 하나다. worker 는 이 파일을 모르고, 이 파일은 worker 를 모른다.
  * **키가 아직 없다** — 그래서 이 파일은 키가 오든 안 오든 구조가 같도록 짰다: 키·발신번호·시계·난수·fetch·로그·문안 변수까지
- * 전부 주입받고, 환경변수는 `app/api/cron/notify/route.ts` 의 `selectSender()` 에서만 읽는다(P4-1 이 세운 경계).
+ * 전부 주입받고, 환경변수는 `lib/notify/deps.ts` 의 `selectSender()` 에서만 읽는다(P4-1 이 세운 경계 — P4-7 에서 route.ts 에서 옮김).
  *
  * 가장 중요한 규칙 — **하나라도 비면 `configured = false`.** worker 는 그때 claim 조차 하지 않는다(worker.ts 헤더).
  * claim 은 attempts 를 +1 하고 lease 를 건다. "보낼 준비가 된 척" 하는 sender 는 큐에 쌓인 모든 행의 5회를 조용히 태워
@@ -42,7 +42,7 @@
 import { createHmac } from "node:crypto";
 
 import type { TemplateKey } from "./outbox";
-import type { NotificationSender, SendOutcome, SendRequest } from "./sender";
+import { parseRetryAfterMs, type NotificationSender, type SendOutcome, type SendRequest } from "./sender";
 import { renderTemplate, type CustomerVars, type OwnerVars, type RenderedMessage } from "./templates";
 
 // =============================================================================
@@ -120,6 +120,8 @@ export interface SolapiLogEntry {
   code: string;
   retryable: boolean;
   httpStatus?: number;
+  /** 제공자 Retry-After(ms) — 있을 때만(P4-7 수정 라운드 2). */
+  retryAfterMs?: number;
 }
 
 /**
@@ -274,7 +276,7 @@ export function solapiSender(deps: SolapiDeps): SolapiSender {
         );
       }
 
-      const fail = (code: string, retryable: boolean, httpStatus?: number): SendOutcome => {
+      const fail = (code: string, retryable: boolean, httpStatus?: number, retryAfterMs?: number): SendOutcome => {
         deps.log({
           level: "warn",
           event: "notify.solapi_failed",
@@ -283,8 +285,9 @@ export function solapiSender(deps: SolapiDeps): SolapiSender {
           code,
           retryable,
           ...(httpStatus === undefined ? {} : { httpStatus }),
+          ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
         });
-        return { ok: false, error: code, retryable };
+        return { ok: false, error: code, retryable, ...(retryAfterMs === undefined ? {} : { retryAfterMs }) };
       };
 
       // ── 채널 ────────────────────────────────────────────────────────────
@@ -377,7 +380,11 @@ export function solapiSender(deps: SolapiDeps): SolapiSender {
       if (!res.ok) {
         const code = safeCode(asRecord(body).errorCode);
         const shown = code === "unknown" ? `http_${res.status}` : code;
-        return fail(`provider_${res.status}:${shown}`, classifyHttpStatus(res.status), res.status);
+        // Retry-After 를 버리지 않는다(P4-7 수정 라운드 2 · 리뷰 P2-5) — 워커가 다음 시도를 max(백오프, Retry-After) 로 미룬다.
+        // 재시도 가능한 응답(408·429·5xx)에서만 싣는다. 재시도 불가 응답의 Retry-After 는 의미가 없다.
+        const retryable = classifyHttpStatus(res.status);
+        const retryAfterMs = retryable ? parseRetryAfterMs(res.headers.get("retry-after"), deps.now().getTime()) : undefined;
+        return fail(`provider_${res.status}:${shown}`, retryable, res.status, retryAfterMs);
       }
       if (body === null) return fail("provider_bad_json", true);
 

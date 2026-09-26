@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/notify",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 23 * * *"
     }
   ]
 }

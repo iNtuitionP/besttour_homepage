@@ -3,7 +3,7 @@
  *
  * `lib/notify/sender.ts` 의 `NotificationSender` 구현 하나다. 구조는 `lib/notify/solapi.ts` 를 그대로 따랐다 —
  * 이 저장소의 어댑터 규범이 그 파일이다: 키·발신주소·fetch·로그·문안 변수까지 전부 주입받고, 환경변수는
- * `app/api/cron/notify/route.ts` 의 `selectSender()` 에서만 읽는다(P4-1 이 세운 경계). 새 패키지는 쓰지 않는다(raw fetch).
+ * `lib/notify/deps.ts` 의 `selectSender()` 에서만 읽는다(P4-1 이 세운 경계 — P4-7 에서 route.ts 에서 그리로 옮겼다). 새 패키지는 쓰지 않는다(raw fetch).
  *
  * ## 무엇을 보내는가 — 사장님 접수 알림 한 종류다
  * 아웃박스에서 `channel = 'email'` 인 행은 지금 하나뿐이다: 사장님 번호(OWNER_PHONE)가 없을 때 만들어지는
@@ -34,7 +34,8 @@
  */
 import type { NotifyChannel } from "../types";
 import type { TemplateKey } from "./outbox";
-import type { NotificationSender, SendOutcome, SendRequest } from "./sender";
+import { isFailureTemplate } from "./fallback";
+import { parseRetryAfterMs, type NotificationSender, type SendOutcome, type SendRequest } from "./sender";
 import { TEMPLATE_AUDIENCE, classifyHttpStatus, type TemplateVarsPort } from "./solapi";
 import { renderTemplate, type CustomerVars, type OwnerVars, type RenderedMessage } from "./templates";
 
@@ -88,9 +89,13 @@ export interface ResendLogEntry {
   code: string;
   retryable: boolean;
   httpStatus?: number;
+  /** 제공자 Retry-After(ms) — 있을 때만(P4-7 수정 라운드 2). */
+  retryAfterMs?: number;
 }
 
 export interface ResendDeps {
+  /** 시계 — Retry-After 가 HTTP-date 일 때만 쓴다(P4-7 수정 라운드 2). 없으면 초 단위 Retry-After 만 읽는다. */
+  now?: () => Date;
   /** RESEND_API_KEY. 헤더에만 쓰고 반환값·로그에 싣지 않는다. */
   apiKey: string;
   /** MAIL_FROM — 인증된 발신 도메인의 주소. 발신 도메인은 `send.` 서브도메인으로 분리한다(플랜 §P4-5 · .env.example 주석). */
@@ -174,14 +179,26 @@ const NIL_UUID = "00000000-0000-0000-0000-000000000000";
  * - **행 id 가 안전 정수가 아니면 throw** 한다. 뭉개면(예: "0") 서로 다른 행이 같은 키가 되어 뒤의 행이 조용히 억제된다.
  *   이 층에 오는 id 는 이미 JS number 라 2^53 을 넘으면 원문 자릿수를 되찾을 수 없다 — 그러니 보내지 않는 것이 정직하다.
  * - 형태는 문서 권장 `<event-type>/<entity-id>` 를 따르고 길이는 최대 ~100자(한도 256자).
- * - **한계**: 문서상 키는 24시간 뒤 잊힌다. 정상 처리량에서의 재시도 간격 합은 24시간보다 짧지만, 적체(FIFO·배치 상한·
- *   순차 처리)나 장애로 다음 시도가 24시간 뒤가 되면 **보장하지 않는다**(보고서 P4-6 §③).
+ * - **실패 알림은 예외 — 행이 아니라 (예약 · 사건 · 문안키) 를 막는다** (P4-7 수정 라운드 2 · 리뷰 P1-3).
+ *   두 발송기가 같은 예약의 두 통지를 동시에 종착시키면 enqueue 의 사전 확인(SELECT)과 INSERT 사이 경합으로 **알림 행이 둘** 생길 수
+ *   있다(부분 유니크 sent_once 는 sent 에만 걸려 pending 둘을 막지 못한다). 마이그레이션 없이 막으려고 실패 알림의 키에서 행 id 를 뺐다 —
+ *   두 행이 같은 키·같은 본문이라 Resend 가 두 번째를 새로 보내지 않고 원래 응답을 돌려준다. 그 두 번째 행은 markSent 에서
+ *   sent_once 에 걸려 `failed/duplicate_sent` 로 남는다(무해 — 행만 둘, 메일은 한 통). 실패 알림은 **메일 전용**이다(fallback.ts
+ *   FAILURE_NOTICE_CHANNEL). 사건이 다르면 문안키가 달라(`created.…` / `confirmed.…`) 두 번째 사고는 따로 간다.
+ *   한계: 같은 (예약·사건)의 실패 알림이 24시간 안에 **정당하게** 두 번 필요한 경우(첫 알림이 failed 로 끝나 enqueue 가 새 행을 넣은 경우)
+ *   두 번째는 Resend 가 억제한다 — 첫 알림이 이미 도착했다면 같은 내용이다. 예약 id 가 uuid 모양이 아니면 행 id 를 다시 붙인다
+ *   (여러 예약이 고정값 하나로 묶여 서로를 억제하지 않게).
+ * - **한계**: 문서상 키는 24시간 뒤 잊힌다. 적체나 장애로 다음 시도가 24시간 뒤가 되면 **보장하지 않는다**(보고서 P4-6 §③).
+ *   P4-7 부터 크론이 하루 1회라 그 창이 더 잘 열린다 — 그래서 "보냈는데 못 적은 행" 은 키에 기대지 않고 워커가 **기록을 다시 시도하고,
+ *   끝내 못 하면 그 행을 격리한다**(worker.ts · outbox.ts quarantineSentUnmarked). 키에 기대는 곳은 DB 가 기록도 격리도 못 받는 경우뿐이다.
  */
 export function idempotencyKey(req: Pick<SendRequest, "id" | "template" | "reservationId">): string {
   if (!Number.isSafeInteger(req.id) || req.id < 0) {
     throw new RangeError("idempotencyKey: 행 id 가 안전 정수가 아니다");
   }
-  const reservation = typeof req.reservationId === "string" && UUID_SHAPE.test(req.reservationId) ? req.reservationId : NIL_UUID;
+  const hasReservation = typeof req.reservationId === "string" && UUID_SHAPE.test(req.reservationId);
+  const reservation = hasReservation ? req.reservationId : NIL_UUID;
+  if (isFailureTemplate(req.template) && hasReservation) return `notify/${safeCode(req.template)}/${reservation}`;
   return `notify/${safeCode(req.template)}/${reservation}/${String(req.id)}`;
 }
 
@@ -221,7 +238,7 @@ export function resendSender(deps: ResendDeps): ResendSender {
         );
       }
 
-      const fail = (code: string, retryable: boolean, httpStatus?: number): SendOutcome => {
+      const fail = (code: string, retryable: boolean, httpStatus?: number, retryAfterMs?: number): SendOutcome => {
         deps.log({
           level: "warn",
           event: "notify.resend_failed",
@@ -230,8 +247,9 @@ export function resendSender(deps: ResendDeps): ResendSender {
           code,
           retryable,
           ...(httpStatus === undefined ? {} : { httpStatus }),
+          ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
         });
-        return { ok: false, error: code, retryable };
+        return { ok: false, error: code, retryable, ...(retryAfterMs === undefined ? {} : { retryAfterMs }) };
       };
 
       // ── 채널 ────────────────────────────────────────────────────────────
@@ -313,7 +331,10 @@ export function resendSender(deps: ResendDeps): ResendSender {
       }
 
       if (!res.ok) {
-        return fail(`provider_${res.status}:${errorCode(body, res.status)}`, classifyHttpStatus(res.status), res.status);
+        // Retry-After 를 버리지 않는다(P4-7 수정 라운드 2 · 리뷰 P2-5) — 재시도 가능한 응답에서만 싣는다.
+        const retryable = classifyHttpStatus(res.status);
+        const retryAfterMs = retryable ? parseRetryAfterMs(res.headers.get("retry-after"), deps.now?.().getTime()) : undefined;
+        return fail(`provider_${res.status}:${errorCode(body, res.status)}`, retryable, res.status, retryAfterMs);
       }
 
       // 2xx 는 접수된 것으로 본다. 식별자를 못 읽어도 실패로 되돌리지 않는다 — 다시 보내면 사장님이 두 통을 받는다.

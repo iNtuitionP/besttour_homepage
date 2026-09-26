@@ -56,6 +56,14 @@ async function vehicleLabel(slug: string): Promise<string> {
   }
 }
 
+/**
+ * 함수 시간 한도(P4-7 수정 라운드 3 · 리뷰 P2-3). 이 화면의 확정 버튼(서버액션)이 응답 뒤에 즉시 발송(lib/notify/inline.ts)을 돌린다 —
+ * 한도가 즉시 발송 마감(40초)보다 짧으면 send 와 markSent 사이에서 잘려 행이 다시 집히고 **손님이 두 번 받는다.**
+ * 60초 = Vercel 문서(2026-08-24 판)상 Hobby 가 Fluid compute 에서 받는 값(기본·최대 300초)이자 Fluid 가 아닌 Hobby 의 최대치(60초) —
+ * 어느 설정이든 받아들여지는 가장 큰 공통값이다. tests/notify-inline.test.ts §7 이 잠근다.
+ */
+export const maxDuration = 60;
+
 export default async function AdminReservationDetailPage({ params }: { params: Params }) {
   await requireAdmin();
 

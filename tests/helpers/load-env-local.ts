@@ -1,27 +1,45 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
+import { isLocalStackUrl } from "./local-url";
+import { SCRUBBED_NOTIFY_ENV, scrubRemoteServiceRole } from "./notify-env";
+
+export { isLocalStackUrl };
+
+/** `.env.local` 에서 **절대 읽어 오지 않는** 키 — 실제 발송으로 이어질 수 있다(P4-7 수정 라운드 2 · 리뷰 P1-1, ./notify-env.ts). */
+const NEVER_LOAD = new Set<string>(SCRUBBED_NOTIFY_ENV);
+
 /**
  * vitest(node 환경)는 .env.local을 자동으로 process.env에 로드하지 않는다.
  * dotenv 등 새 의존성을 추가하지 않고 최소한의 파서로 필요한 값을 읽어들인다
  * (이미 설정된 process.env 값은 덮어쓰지 않음). schema.test.ts / places.test.ts 공용.
+ *
+ * `.env.local` 은 개발자의 **운영** 접속 정보다. 발송 관련 키(NEVER_LOAD)는 그 파일에 있어도 읽지 않는다 —
+ * 테스트가 `runAfter` 를 즉시 실행하는 순간 운영 대기 행을 실제로 보낼 수 있기 때문이다.
+ * `envPath` 는 이 규칙 자체를 테스트하려고 연 인자다(기본은 저장소 루트의 .env.local).
+ *
+ * 🔴 **service role 키는 로컬 스택 URL 과 짝일 때만 남는다** (P4-7 수정 라운드 3 · 리뷰 P1-A). 읽기가 끝난 뒤
+ * `NEXT_PUBLIC_SUPABASE_URL` 이 로컬(127.0.0.1·localhost·kong)이 아니면 `SUPABASE_SERVICE_ROLE_KEY` 를 채우지 않고,
+ * 이미 들고 있었어도 빈 문자열로 만든다 — 테스트 프로세스가 **운영 service role 키를 아예 들고 있지 못하게.**
+ * 원격 URL 에 대한 DB 테스트는 원래 `dbWriteGate()`·`hasServiceRole` 로 skip 이므로 잃는 것이 없다.
  */
-export function loadDotEnvLocal(): void {
-  const envPath = path.resolve(import.meta.dirname, "..", "..", ".env.local");
-  if (!existsSync(envPath)) return;
-
-  const contents = readFileSync(envPath, "utf-8");
-  for (const rawLine of contents.split("\n")) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith("#")) continue;
-    const eq = line.indexOf("=");
-    if (eq === -1) continue;
-    const key = line.slice(0, eq).trim();
-    const value = line.slice(eq + 1).trim();
-    if (key && process.env[key] === undefined) {
-      process.env[key] = value;
+export function loadDotEnvLocal(envPath: string = path.resolve(import.meta.dirname, "..", "..", ".env.local")): void {
+  if (existsSync(envPath)) {
+    const contents = readFileSync(envPath, "utf-8");
+    for (const rawLine of contents.split("\n")) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith("#")) continue;
+      const eq = line.indexOf("=");
+      if (eq === -1) continue;
+      const key = line.slice(0, eq).trim();
+      const value = line.slice(eq + 1).trim();
+      if (NEVER_LOAD.has(key)) continue;
+      if (key && process.env[key] === undefined) {
+        process.env[key] = value;
+      }
     }
   }
+  scrubRemoteServiceRole(process.env);
 }
 
 /**
@@ -49,9 +67,6 @@ export function dbSmokeEnv(): {
 // DB 쓰기 가드 (P1-3) — 원격은 라이브 DB 이고 reservations 는 고객 개인정보 테이블이다.
 // =============================================================================
 
-/** 로컬 Supabase 스택의 호스트명 — `supabase status` 가 내는 127.0.0.1, 개발자가 적는 localhost, 컨테이너 네트워크 안의 kong. */
-const LOCAL_STACK_HOSTS = new Set(["127.0.0.1", "localhost", "kong"]);
-
 function describeHost(url: string | undefined): string {
   if (!url) return "미설정";
   try {
@@ -61,21 +76,7 @@ function describeHost(url: string | undefined): string {
   }
 }
 
-/**
- * URL 의 호스트명이 로컬 스택인가. 부분 문자열이 아니라 URL 파서의 hostname 으로 판정한다 —
- * `https://localhost.example.com`, `https://x.supabase.co/?u=localhost` 같은 위장을 로컬로 보지 않는다.
- * 파싱 불가·빈 값은 false (모르면 원격으로 취급한다).
- */
-export function isLocalStackUrl(url: string | undefined): boolean {
-  if (!url) return false;
-  let hostname: string;
-  try {
-    hostname = new URL(url).hostname;
-  } catch {
-    return false;
-  }
-  return LOCAL_STACK_HOSTS.has(hostname.toLowerCase());
-}
+// isLocalStackUrl 은 ./local-url.ts 에 있다(위에서 다시 내보낸다) — setup(notify-env.ts)과 이 로더가 같은 판정을 쓴다.
 
 /** .env.local 을 읽은 뒤 NEXT_PUBLIC_SUPABASE_URL 이 로컬 스택인가. */
 export function isLocalStack(): boolean {

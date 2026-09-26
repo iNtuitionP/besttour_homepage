@@ -32,6 +32,14 @@ import s from "@/components/quote/quote.module.css";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * 함수 시간 한도(P4-7 수정 라운드 3 · 리뷰 P2-3). 이 화면의 견적 제출(서버액션 submitReservation)이 응답 뒤에 즉시 발송을 돌린다 —
+ * 한도가 즉시 발송 마감(40초)보다 짧으면 send 와 markSent 사이에서 잘려 행이 다시 집히고 **손님이 두 번 받는다.**
+ * 60초 = Vercel 문서(2026-08-24 판)상 Hobby 가 Fluid compute 에서 받는 값(기본·최대 300초)이자 Fluid 가 아닌 Hobby 의 최대치(60초).
+ * tests/notify-inline.test.ts §7 이 잠근다.
+ */
+export const maxDuration = 60;
+
 type Params = Promise<{ locale: string }>;
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 

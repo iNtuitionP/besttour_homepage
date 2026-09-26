@@ -40,8 +40,24 @@ vi.mock("@/lib/auth/requireAdmin", () => ({
 vi.mock("@/lib/ports/after", () => ({ runAfter: vi.fn((task: () => unknown) => void task()) }));
 vi.mock("@/lib/ports/revalidate", () => ({ revalidate: vi.fn() }));
 vi.mock("@/lib/log", () => ({ structuredLog: vi.fn() }));
+// 🔴 서비스 롤 클라이언트는 이 파일에서 **만들 수 없다**(P4-7 수정 라운드 3 · 리뷰 P1-A). 이 파일의 runAfter 모의는 작업을 곧바로 돌리고
+// dbWriteGate() 가 .env.local 을 읽는다 — 어떤 가드가 풀려 발송기가 불려도 운영 DB 에 닿지 못하게 여기서 끊는다.
+// (이 파일의 DB 블록은 REST 로 직접 부르고 createServiceClient 를 쓰지 않는다 — 정적 검사가 관리자 경로 소스만 읽는 것과도 무관하다.)
+vi.mock("@/lib/supabase/server", () => ({
+  createServiceClient: vi.fn(() => {
+    throw new Error("tests/admin-reservations: 서비스 롤 클라이언트 생성 금지 — 운영 DB 에 닿을 수 있다");
+  }),
+}));
+// 발송기는 진짜 그대로 두고 호출만 센다 — "확정이 발송기를 부르지 않는다" 를 단언하려고(P4-7 수정 라운드 2).
+vi.mock("@/lib/notify/worker", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@/lib/notify/worker")>();
+  return { ...mod, runNotificationWorker: vi.fn(mod.runNotificationWorker) };
+});
 
 import { revalidatePath } from "next/cache";
+
+import { runNotificationWorker } from "@/lib/notify/worker";
+import { createServiceClient } from "@/lib/supabase/server";
 
 import {
   cancelReservation,
@@ -611,6 +627,36 @@ describe("4. actions/admin/reservation.ts", () => {
     vi.mocked(requireAdmin).mockRejectedValue(new Error("NEXT_REDIRECT"));
     await expect(confirmReservation(RES_ID)).rejects.toThrow();
     expect(client.rpc).not.toHaveBeenCalled();
+  });
+
+  /**
+   * P4-7 수정 라운드 2 · 리뷰 P1-1 의 **이빨**. 이 파일의 runAfter 모의는 맡겨진 작업을 곧바로 돌리고, 서비스 롤 클라이언트와
+   * 통지 배선은 진짜다. `.env.local` 에 즉시 발송 스위치와 제공자 키가 들어 있는 개발자 머신을 흉내 내도(아래 네 줄),
+   * 확정 테스트가 발송기를 부르지 않아야 한다 — NODE_ENV=test 에서는 명시적 opt-in 없이 즉시 발송이 켜지지 않는다(lib/notify/deps.ts).
+   */
+  test("확정 — .env.local 에 NOTIFY_INLINE=1 · 제공자 키가 있는 머신을 흉내 내도 발송기가 불리지 않는다", async () => {
+    const keys = ["NOTIFY_INLINE", "SOLAPI_API_KEY", "SOLAPI_API_SECRET", "SMS_SENDER", "NODE_ENV"] as const;
+    const env = process.env as Record<string, string | undefined>;
+    const before = Object.fromEntries(keys.map((k) => [k, env[k]]));
+    // 수정 라운드 3 · 리뷰 P1-A: 셸이 NODE_ENV=development 를 넘긴 개발자 머신도 흉내 낸다(vitest 는 그 값을 그대로 쓴다).
+    env.NODE_ENV = "development";
+    process.env.NOTIFY_INLINE = "1";
+    process.env.SOLAPI_API_KEY = "FAKE-NOT-A-REAL-KEY";
+    process.env.SOLAPI_API_SECRET = "FAKE-NOT-A-REAL-SECRET";
+    process.env.SMS_SENDER = "15660000";
+    try {
+      const client = rpcClient({ data: [{ outcome: "confirmed", public_code: "BT123456", enqueued: 1 }], error: null });
+      vi.mocked(createSsrClient).mockReturnValue(client as never);
+      const result = await confirmReservation(RES_ID);
+      expect(result).toEqual<AdminActionResult>({ ok: true, changed: true, code: "confirmed" });
+      expect(vi.mocked(runNotificationWorker)).not.toHaveBeenCalled();
+      expect(vi.mocked(createServiceClient)).not.toHaveBeenCalled();
+    } finally {
+      for (const k of keys) {
+        if (before[k] === undefined) delete env[k];
+        else env[k] = before[k];
+      }
+    }
   });
 });
 

@@ -530,7 +530,7 @@ describe("7. 정적 경계", () => {
     expect(VARS_SRC).not.toMatch(/(^|[^.\w])fetch\s*\(/m);
   });
 
-  test("vars.ts — createServiceClient 를 **호출**하지 않는다 (클라이언트는 route.ts 가 주입한다)", () => {
+  test("vars.ts — createServiceClient 를 **호출**하지 않는다 (클라이언트는 lib/notify/deps.ts 가 주입한다 — P4-7 에서 route.ts 에서 옮김)", () => {
     expect(VARS_SRC).not.toMatch(/createServiceClient\s*\(/);
   });
 
@@ -549,22 +549,21 @@ describe("7. 정적 경계", () => {
    * 「문안 변수 포트가 배선됐으므로 키 3종이 있으면 claim 까지 간다」가 route.ts 의 GET 을 실제로 태워
    * `skipped:undefined` 와 `claim_pending_notifications` RPC 를 확인한다. 정적 검사는 그것의 보조다.
    */
-  test("route.ts — templateVars 를 만들어 solapiSender 의 vars 로 넘긴다 (배선; 진짜 방어는 notify-solapi.test.ts §8)", () => {
-    const routeRel = "app/api/cron/notify/route.ts";
+  // P4-7: 이 배선(클라이언트·원점·sender 조립)은 route.ts 에서 lib/notify/deps.ts 로 옮겨졌다 — 크론과 즉시 발송이 한 벌을 쓴다.
+  // route 의 GET 은 여전히 이 배선을 탄다(notify-solapi.test.ts §8 이 GET 을 실제로 태워 확인한다).
+  test("deps.ts — templateVars 를 만들어 solapiSender 의 vars 로 넘긴다 (배선; 진짜 방어는 notify-solapi.test.ts §8)", () => {
+    const routeRel = "lib/notify/deps.ts";
     // 주석 제거기는 저장소에 하나뿐이다(`tests/helpers/strip-comments.ts` · P6-7/P6-8 · D7).
     // 그 헬퍼는 주석 자리를 **같은 길이의 공백으로** 바꾸므로 문자 오프셋이 원문과 같다 —
     // 그래서 잘라낸 구간을 따로 파싱할 필요 없이(조각은 유효한 TS 가 아니다) 제거 **후** 문자열을 그대로 자른다.
-    const routeCode = stripComments(
-      readFileSync(path.join(ROOT, "app", "api", "cron", "notify", "route.ts"), "utf-8"),
-      routeRel,
-    );
+    const routeCode = stripComments(readFileSync(path.join(ROOT, "lib", "notify", "deps.ts"), "utf-8"), routeRel);
 
     // ① 로더를 만든다 — 클라이언트 주입 + 원점은 siteOrigin()
     expect(routeCode).toMatch(/templateVars\(\{[^}]*client[^}]*origin:\s*siteOrigin\(\)[^}]*\}\)/);
 
     // ② 그 포트가 solapiSender 호출 인자로 들어간다 — 호출 범위를 잘라 그 안에서만 찾는다
     const callStart = routeCode.indexOf("solapiSender({");
-    expect(callStart, "route.ts 에 solapiSender({ 호출이 없다").toBeGreaterThan(-1);
+    expect(callStart, "deps.ts 에 solapiSender({ 호출이 없다").toBeGreaterThan(-1);
     const callArgs = routeCode.slice(callStart, routeCode.indexOf("});", callStart));
     expect(callArgs, "solapiSender 인자에 vars 프로퍼티가 없다 — 배선이 끊겼다").toMatch(/(^|[\s{,])vars\s*[,:]/);
   });

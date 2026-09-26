@@ -9,15 +9,21 @@ import {
   STATS_PERIODS,
   barWidthPercent,
   getAdminStats,
+  getNotifyCorrections,
   isNearPurgeBoundary,
   medianDuration,
+  notifyAttention,
   parseStatsPeriod,
   statsRange,
   statsViewState,
   visibleMax,
   type AdminStats,
+  type NotifyAttention,
   type StatsPeriod,
 } from "@/lib/admin/stats";
+
+/** 보정치가 없을 때(도달하지 않는 방어 경로) — 0022 값 그대로. */
+const NO_CORRECTIONS = { sentUnconfirmed: 0, sentUnconfirmedStuck: 0, suppressedDuplicates: 0 };
 import { toKstDateString } from "@/lib/kst";
 import { getVehicles } from "@/lib/queries/vehicles";
 import { routing } from "@/i18n/routing";
@@ -31,7 +37,8 @@ import q from "@/components/quote/quote.module.css";
  * 사장님은 비전문가다. 그래서 숫자마다 **무엇을 센 것인지** 한 줄이 붙고, 화면은 다섯 덩어리로만 나뉜다:
  *   ① 한눈에 보기 ② 지금 확인할 것 ③ 추이 ④ 어떤 문의가 들어오나 ⑤ 얼마나 미리 문의하나 (+ 방문 통계 카드)
  *
- * **숫자는 전부 0022 의 definer 함수 하나에서 온다.** 이 파일은 계산하지 않는다 — 나눗셈은 막대 폭 하나뿐이고
+ * **숫자는 0022 의 definer 함수 하나에서 온다** — 예외 하나: ② 의 발송 문제 칸은 격리 행·중복 억제 행을 lib/admin/stats.ts
+ * `getNotifyCorrections`·`notifyAttention` 이 보정한다(P4-7 수정 라운드 3 — 뺄셈은 그 순수 함수 안에 있다). 이 파일은 계산하지 않는다 — 나눗셈은 막대 폭 하나뿐이고
  * 그 분모는 `Math.max(1, …)` 로 바닥을 친다. 확정률(%)도 DB 가 계산해서 준다(총건수 0 이면 null 이다).
  * **추정 매출을 만들지 않는다** — 가격을 곱하거나 더하는 코드는 이 화면에 없다(CLAUDE.md §3).
  *
@@ -68,6 +75,9 @@ export default async function AdminStatsPage({ searchParams }: { searchParams: S
   // 상태 분기와 막대 폭은 lib/admin/stats.ts 의 검증된 순수 함수가 정한다 — 이 파일에는 나눗셈이 한 건도 없다.
   const view = statsViewState(stats);
   const purgeWarning = isNearPurgeBoundary(range, toKstDateString(new Date()));
+  // ⑤ 발송 문제 보정(P4-7 수정 라운드 3) — 0022 가 격리 행을 "보내지 못한 건" 으로, 중복 억제 행을 "실패" 로 세는 것을 앱에서 바로잡는다.
+  // 관리자 세션일 때만(stats 가 null 이면 부르지 않는다). 창은 0022 가 준 값 그대로다.
+  const attention = stats === null ? null : notifyAttention(stats.notifications, await getNotifyCorrections(stats.notifications));
 
   return (
     <main className={q.main} data-testid="admin-stats">
@@ -95,7 +105,7 @@ export default async function AdminStatsPage({ searchParams }: { searchParams: S
         ) : (
           <>
             <Overview stats={stats} t={t} count={count} purgeWarning={purgeWarning} />
-            <Attention stats={stats} t={t} count={count} />
+            <Attention stats={stats} notify={attention ?? notifyAttention(stats.notifications, NO_CORRECTIONS)} t={t} count={count} />
 
             {view === "empty" ? (
               <p className={a.empty} data-testid="admin-stats-empty">
@@ -298,9 +308,10 @@ function Overview({
   );
 }
 
-function Attention({ stats, t, count }: { stats: AdminStats; t: T; count: (n: number) => string }) {
+function Attention({ stats, notify, t, count }: { stats: AdminStats; notify: NotifyAttention; t: T; count: (n: number) => string }) {
   const { backlog, notifications } = stats;
-  const notifyOk = notifications.failed === 0 && notifications.stuck === 0;
+  // 보정된 값(notify)으로 그린다 — 격리 행은 "보내지 못한 건" 이 아니라 "발송됨 · 기록 확인 필요" 다(P4-7 수정 라운드 3).
+  const notifyOk = notify.ok;
   return (
     <section className={a.section} aria-labelledby="stats-attention">
       <h2 className={a.sectionTitle} id="stats-attention">
@@ -330,8 +341,24 @@ function Attention({ stats, t, count }: { stats: AdminStats; t: T; count: (n: nu
             </p>
           ) : (
             <>
-              <p className={a.statValue}>{t("attention.notifyFailed", { n: notifications.failed })}</p>
-              <p className={a.statDelta}>{t("attention.notifyStuck", { hours: notifications.stuck_hours, n: notifications.stuck })}</p>
+              {notify.failed > 0 ? (
+                <p className={a.statValue} data-testid="admin-stats-notify-failed">
+                  {t("attention.notifyFailed", { n: notify.failed })}
+                </p>
+              ) : null}
+              {notify.stuck > 0 ? (
+                <p className={a.statDelta} data-testid="admin-stats-notify-stuck">
+                  {t("attention.notifyStuck", { hours: notifications.stuck_hours, n: notify.stuck })}
+                </p>
+              ) : null}
+              {notify.sentUnconfirmed > 0 ? (
+                <>
+                  <p className={a.statDelta} data-testid="admin-stats-notify-sent-unconfirmed">
+                    {t("attention.notifySentUnconfirmed", { n: notify.sentUnconfirmed })}
+                  </p>
+                  <p className={a.statNote}>{t("attention.notifySentUnconfirmedNote")}</p>
+                </>
+              ) : null}
             </>
           )}
           <p className={a.statNote}>{t("attention.notifyNote", { days: notifications.window_days })}</p>

@@ -93,8 +93,14 @@ export default async function AdminNotificationsPage({ searchParams }: { searchP
               <ul className={a.summaryList}>
                 {summary.failed > 0 ? <li className={a.summaryAlert}>{t("summary.failed", { n: summary.failed })}</li> : null}
                 {summary.stuck > 0 ? <li className={a.summaryAlert}>{t("summary.stuck", { n: summary.stuck })}</li> : null}
+                {summary.sentUnconfirmed > 0 ? (
+                  <li className={a.summaryAlert} data-testid="admin-notifications-sent-unconfirmed">
+                    {t("summary.sentUnconfirmed", { n: summary.sentUnconfirmed })}
+                  </li>
+                ) : null}
               </ul>
-              <p className={a.summaryNote}>{t("summary.note")}</p>
+              {summary.failed > 0 || summary.stuck > 0 ? <p className={a.summaryNote}>{t("summary.note")}</p> : null}
+              {summary.sentUnconfirmed > 0 ? <p className={a.summaryNote}>{t("summary.sentUnconfirmedNote")}</p> : null}
             </>
           )}
         </section>
@@ -152,9 +158,16 @@ export default async function AdminNotificationsPage({ searchParams }: { searchP
                 {items.map((row) => (
                   <tr key={row.id}>
                     <td className={a.td}>
-                      <span className={a.badge} data-status={row.status}>
-                        {t(`status.${row.status}`)}
-                      </span>
+                      {row.recordState === null ? (
+                        <span className={a.badge} data-status={row.status}>
+                          {t(`status.${row.status}`)}
+                        </span>
+                      ) : (
+                        // 격리 행(보냈지만 기록 못 함)·중복 억제 행은 "대기"·"실패" 배지가 아니다(P4-7 수정 라운드 3)
+                        <span className={a.badge} data-status="sent" data-record={row.recordState}>
+                          {t(`recordState.${row.recordState}`)}
+                        </span>
+                      )}
                     </td>
                     <td className={`${a.td} ${a.tdNowrap}`}>{t(`channel.${row.channel}`)}</td>
                     <td className={`${a.td} ${a.tdNowrap}`}>{isTemplateKey(row.template) ? t(`template.${row.template}`) : row.template}</td>

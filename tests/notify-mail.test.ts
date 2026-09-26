@@ -9,7 +9,7 @@
  *   5. 개인정보 0: 수신처·이름·문안·응답 본문은 로그·반환값에 0
  *   6. channel !== 'email' 거부 (claim 이 가려주지만 방어로 남긴다)
  *   7. 광고 0: (광고)·수신거부 문구를 만들지 않는다
- *   8. 정적: env 는 route.ts 에만 · 새 패키지 0 · 전역 fetch 0
+ *   8. 정적: env 는 lib/notify/deps.ts 에만(P4-7 에서 route.ts 에서 옮김) · 새 패키지 0 · 전역 fetch 0
  *
  * **실제 네트워크·실제 발송 0** — fetch 는 전부 주입된 가짜다. 이 파일 어디에도 globalThis.fetch 를 쓰지 않는다.
  * 주의: tests/ 아래라 세 게이트의 검사 대상이다 — 임시값 마커·금지어 리터럴을 두지 않는다.
@@ -30,9 +30,9 @@ import {
   type ResendFetch,
   type ResendLogEntry,
 } from "@/lib/notify/mail";
-import { BACKOFF_MS, CLAIM_LEASE_MS, MAX_ATTEMPTS, retryPlanAfterFailure } from "@/lib/notify/outbox";
-import type { SendRequest } from "@/lib/notify/sender";
-import { runNotificationWorker, type PendingStats, type WorkerDb, type WorkerLogEntry } from "@/lib/notify/worker";
+import { CLAIM_LEASE_MS, MAX_ATTEMPTS, QUARANTINE_RETRY_AFTER_MS, retryPlanAfterFailure } from "@/lib/notify/outbox";
+import { memorySender, type SendRequest } from "@/lib/notify/sender";
+import { MARK_SENT_RETRY_DELAYS_MS, runNotificationWorker, type PendingStats, type WorkerDb, type WorkerLogEntry } from "@/lib/notify/worker";
 import type { NewOutboxRow, OutboxRow } from "@/lib/types";
 import type { TemplateVarsPort } from "@/lib/notify/solapi";
 import { renderTemplate, type CustomerVars, type OwnerVars } from "@/lib/notify/templates";
@@ -529,7 +529,8 @@ describe("9. 멱등성 키", () => {
     ];
     for (const call of fetch.calls) {
       const key = keyOf(call) ?? "";
-      expect(key).toMatch(/^notify\/[a-z.]+\/[0-9a-f-]+\/[0-9]+$/);
+      // 실패 알림 키는 행 번호 마디가 없다(P4-7 수정 라운드 2 — (예약·사건·문안키) 기준). 나머지는 행 번호로 끝난다.
+      expect(key).toMatch(/^notify\/[a-z.]+\/[0-9a-f-]+(\/[0-9]+)?$/);
       // 한글·공백이 한 글자도 없다 — 이름·문안은 형태만으로 들어올 수 없다.
       expect(key).toMatch(/^[\x21-\x7e]+$/);
       for (const b of banned) expect(key, b).not.toContain(b);
@@ -548,33 +549,93 @@ describe("9. 멱등성 키", () => {
     expect(Object.keys(headers).sort()).toEqual(["authorization", "content-type", "idempotency-key"]);
   });
 
-  /**
-   * 명제: **정상 처리량에서의 재시도 간격 합이 키 보존 기간(문서: 24시간)보다 짧다.** 그 이상은 주장하지 않는다.
-   * 시도 k 와 k+1 사이의 모델 간격 = max(백오프[k], lease) (markFailed 가 성공하면 백오프, 못 적거나 markSent 가 실패하면 lease)
-   *   + 크론 주기(vercel.json) + 제공자 타임아웃.
-   * **이 모델은 운영상의 상한이 아니다.** claim 은 FIFO·배치 상한(20)·순차 처리라 적체 시 적격 행이 여러 크론 동안 집히지 않을 수
-   * 있고, DB 호출·문안 조회 시간은 제공자 타임아웃 밖이다. 적체나 장애로 다음 시도가 24시간 뒤가 되면 **중복을 보장하지 않는다.**
-   * 이 테스트는 계단 자체가 24시간을 넘게 바뀌는 회귀(MAX_ATTEMPTS 를 7 로 올리는 등)만 잡는다.
-   */
-  test("정상 처리량에서 재시도 간격 합이 키 보존 기간(24시간)보다 짧다 — 적체 시에는 보장하지 않음", () => {
-    const RESEND_KEY_RETENTION_MS = 24 * 60 * 60_000;
-    const vercel = JSON.parse(readFileSync(path.join(ROOT, "vercel.json"), "utf-8")) as { crons: { path: string; schedule: string }[] };
-    const notifyCron = vercel.crons.find((c) => c.path === "/api/cron/notify");
-    expect(notifyCron?.schedule).toBe("*/5 * * * *");
-    const CRON_MS = 5 * 60_000;
+  // (P4-7 수정 라운드 2) 여기 있던 "재시도 간격 합 < 24시간" 명제는 크론이 하루 1회가 되며 거짓이 됐다. 그 위험을 숫자로 고정하는
+  // 대신 **위험 자체를 줄였다**: 보냈는데 못 적은 행은 발송이 아니라 **기록을** 다시 시도하고(§10 첫 테스트), 끝내 못 적으면
+  // 그 행을 claim 밖으로 격리한다(tests/outbox-worker.test.ts). 키 보존 기간에 기대는 곳은 "DB 가 기록도 격리도 못 받는" 경우뿐이다.
 
-    let worst = 0;
-    for (let attempts = 1; attempts < MAX_ATTEMPTS; attempts += 1) {
-      const plan = retryPlanAfterFailure(attempts);
-      expect(plan.giveUp).toBe(false);
-      if (plan.giveUp) return;
-      worst += Math.max(plan.retryAfterMs, CLAIM_LEASE_MS) + CRON_MS + RESEND_TIMEOUT_MS;
+  // ── 실패 알림의 키 (P4-7 수정 라운드 2 · 리뷰 P1-3) ─────────────────────
+  test("실패 알림 키는 행 id 가 아니라 (예약 · 사건 · 문안키) 기준 — 서로 다른 행 id 두 개가 같은 키를 낸다", async () => {
+    const fetch = recordingFetch(() => jsonResponse(acceptedBody()));
+    const s = resendSender(deps({ fetch }));
+    await s.send(req({ id: 7001, template: "created.owner.failure.email" }));
+    await s.send(req({ id: 7002, template: "created.owner.failure.email" }));
+    await s.send(req({ id: 7003, template: "confirmed.owner.failure.email" }));
+    const keys = fetch.calls.map(keyOf);
+    expect(keys[0]).toBe(`notify/created.owner.failure.email/${RID}`);
+    expect(keys[1]).toBe(keys[0]);
+    // 사건이 다르면(접수 실패 vs 확정 실패) 문안키가 달라 키도 다르다 — 두 번째 사고를 놓치지 않는다
+    expect(keys[2]).toBe(`notify/confirmed.owner.failure.email/${RID}`);
+    // 예약 통지 키는 그대로 행 id 를 싣는다
+    expect(idempotencyKey({ id: 51, template: "created.owner.email", reservationId: RID })).toBe(`notify/created.owner.email/${RID}/51`);
+  });
+
+  test("🔴 동시 give-up — 두 워커가 같은 예약의 두 통지를 동시에 종착시켜 알림 행이 둘 생겨도, 발송 호출의 중복 방지 키는 같다", async () => {
+    // enqueue 의 사전 확인(SELECT)과 INSERT 사이 경합(outbox.ts enqueue — 부분 유니크는 sent 에만 걸린다)을 재현한다:
+    // 두 워커 모두 "아직 없다" 를 보고 넣는다. 마이그레이션 없이는 이 두 행을 막을 수 없다 — 대신 **두 행이 한 통으로 합쳐진다.**
+    const inserted: { id: number; row: NewOutboxRow }[] = [];
+    let nextId = 7000;
+    const lease = new Date(Date.now() + CLAIM_LEASE_MS).toISOString();
+    const dying = (id: number, template: OutboxRow["template"], channel: OutboxRow["channel"]): OutboxRow => ({
+      id,
+      reservation_id: RID,
+      event: "created",
+      channel,
+      to: channel === "email" ? TO : "01012345678",
+      template,
+      status: "pending",
+      attempts: MAX_ATTEMPTS,
+      last_error: null,
+      next_attempt_at: lease,
+      updated_at: lease,
+    });
+    const racingDb = (row: OutboxRow): WorkerDb => {
+      let claimed = false;
+      return {
+        reapStale: async () => [],
+        claimPending: async () => (claimed ? [] : ((claimed = true), [row])),
+        markSent: async () => true,
+        markFailed: async () => {},
+        quarantineSentUnmarked: async () => {},
+        listQuarantined: async () => [],
+        rowStatus: async () => "pending",
+        async enqueueFailureNotice(r) {
+          await new Promise((res) => setTimeout(res, 5)); // 두 워커가 겹치게
+          nextId += 1;
+          inserted.push({ id: nextId, row: r });
+          return [nextId];
+        },
+        pendingStats: async () => ({ pending: 0, truncated: false, oldestCreatedAt: null, wouldReap: 0 }),
+      };
+    };
+    const failing = memorySender(() => ({ ok: false, error: "provider_403", retryable: false }));
+    const run = (row: OutboxRow) =>
+      runNotificationWorker({ dryRun: false }, { db: racingDb(row), sender: failing, ownerEmail: "boss@example.test", now: () => new Date(), log: () => {}, sleep: async () => {} });
+
+    await Promise.all([run(dying(51, "created.owner.email", "email")), run(dying(52, "created.customer.sms", "sms"))]);
+    expect(inserted).toHaveLength(2);
+    expect(inserted.map((i) => i.row.template)).toEqual(["created.owner.failure.email", "created.owner.failure.email"]);
+
+    // 두 알림 행을 실제 메일 어댑터로 보낸다 — 키가 같다
+    const fetch = recordingFetch(() => jsonResponse(acceptedBody()));
+    const s = resendSender(deps({ fetch }));
+    for (const { id, row } of inserted) {
+      await s.send({ id, channel: row.channel, to: row.to, template: row.template as SendRequest["template"], reservationId: row.reservation_id });
     }
-    expect(retryPlanAfterFailure(MAX_ATTEMPTS).giveUp).toBe(true);
-    // 오늘 값: (5+5+30+120)분 + 4×5분 + 4×10초 = 3시간 0분 40초.
-    expect(worst).toBe(3 * 60 * 60_000 + 40_000);
-    expect(worst).toBeLessThan(RESEND_KEY_RETENTION_MS);
-    expect(BACKOFF_MS[MAX_ATTEMPTS - 1]).toBe(43_200_000); // 12h 칸은 give_up 뒤라 쓰이지 않는다
+    const keys = fetch.calls.map(keyOf);
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).toBe(keys[1]);
+    // 본문도 같다 — 같은 키·같은 본문이라 Resend 가 두 번째를 새로 보내지 않는다(문서화된 멱등성 의미)
+    expect(String(fetch.calls[0].init.body)).toBe(String(fetch.calls[1].init.body));
+  });
+
+  // ── Retry-After (P4-7 수정 라운드 2 · 리뷰 P2-5) ─────────────────────────
+  test("429 + Retry-After(초) → retryAfterMs 로 싣는다 · 없으면 키 자체가 없다", async () => {
+    const limited = recordingFetch(() => new Response(JSON.stringify({ name: "rate_limit_exceeded" }), { status: 429, headers: { "content-type": "application/json", "retry-after": "30" } }));
+    const out = await resendSender(deps({ fetch: limited })).send(req());
+    expect(out).toMatchObject({ ok: false, retryable: true, retryAfterMs: 30_000 });
+    const plain = recordingFetch(() => jsonResponse({ name: "internal_server_error" }, 500));
+    const out2 = await resendSender(deps({ fetch: plain })).send(req());
+    expect(out2).toEqual({ ok: false, error: "provider_500:internal_server_error", retryable: true });
   });
 
   test("보내지 않는 경로에서는 키도 만들지 않는다 — 네트워크 0", async () => {
@@ -617,11 +678,14 @@ describe("10. 워커 시퀀스 — 수락 → markSent 실패 → 재claim", () 
     return { fetch, delivered };
   }
 
-  /** 0005/0014 의 claim·mark 규칙을 메모리로 옮긴 것 — 판정은 outbox.ts 의 함수·상수를 그대로 쓴다. */
-  function memoryDb(initial: OutboxRow, clock: { now: Date }, markSentFailures: number) {
+  /**
+   * 0005/0014 의 claim·mark 규칙을 메모리로 옮긴 것 — 판정은 outbox.ts 의 함수·상수를 그대로 쓴다.
+   * `dbDownCalls` = 앞으로 그만큼의 **기록 호출**(markSent · 격리)이 DB 오류로 throw 한다(P4-7 수정 라운드 2 — 기록 재시도·격리를 흉내).
+   */
+  function memoryDb(initial: OutboxRow, clock: { now: Date }, dbDownCalls: number) {
     const rows: OutboxRow[] = [{ ...initial }];
     const notices: NewOutboxRow[] = [];
-    let sentFailuresLeft = markSentFailures;
+    let sentFailuresLeft = dbDownCalls;
     const find = (id: number) => {
       const r = rows.find((x) => x.id === id);
       if (r === undefined) throw new Error(`row ${id} 없음`);
@@ -656,6 +720,21 @@ describe("10. 워커 시퀀스 — 수락 → markSent 실패 → 재claim", () 
         r.last_error = error;
         if (plan.giveUp) r.status = "failed";
         else r.next_attempt_at = new Date(clock.now.getTime() + plan.retryAfterMs).toISOString();
+      },
+      async quarantineSentUnmarked(id, note) {
+        if (sentFailuresLeft > 0) {
+          sentFailuresLeft -= 1;
+          throw new Error("db down");
+        }
+        const r = find(id);
+        r.last_error = note;
+        r.next_attempt_at = new Date(clock.now.getTime() + QUARANTINE_RETRY_AFTER_MS).toISOString();
+      },
+      async listQuarantined() {
+        return rows.filter((r) => r.status === "pending" && (r.last_error ?? "").startsWith("sent_unmarked:")).map((r) => ({ id: r.id, last_error: r.last_error }));
+      },
+      async rowStatus(id) {
+        return find(id).status;
       },
       async enqueueFailureNotice(row) {
         notices.push(row);
@@ -703,7 +782,7 @@ describe("10. 워커 시퀀스 — 수락 → markSent 실패 → 재claim", () 
     for (let i = 0; i < 10 && rows[0].status === "pending"; i += 1) {
       const report = await runNotificationWorker(
         { dryRun: false },
-        { db, sender, ownerEmail: OWNER_EMAIL, now: () => clock.now, log: (e) => logs.push(e) },
+        { db, sender, ownerEmail: OWNER_EMAIL, now: () => clock.now, log: (e) => logs.push(e), sleep: async () => {} },
       );
       reports.push(report);
       // 다음 크론: 이 행의 next_attempt_at 바로 뒤(정상 처리량 — 적체 없음)
@@ -712,9 +791,52 @@ describe("10. 워커 시퀀스 — 수락 → markSent 실패 → 재claim", () 
     return { logs, reports };
   }
 
-  test("본문이 그대로면: 재claim 이 캐시된 2xx 를 받아 markSent 로 닫힌다 — 도착 1통", async () => {
+  /** 기록 재시도(3회)와 격리(1회)가 **전부** 실패하는 DB — 행이 pending 으로 남아 다시 claim 되는 마지막 잔여 경로. */
+  const DB_FULLY_DOWN = MARK_SENT_RETRY_DELAYS_MS.length + 2;
+
+  // ── P4-7 수정 라운드 2 · 리뷰 P1-2: 발송이 아니라 기록을 다시 한다 ───────
+  test("markSent 가 한 번 실패해도 같은 호출 안에서 기록을 다시 해 sent — 제공자 호출 1회 · 도착 1통 · 다음 날 재발송 없음", async () => {
     const clock = { now: T0 };
-    const { db, rows, notices } = memoryDb(ownerRow(), clock, 1);
+    const { db, rows } = memoryDb(ownerRow(), clock, 1);
+    const resend = fakeResend();
+    const sender = resendSender(deps({ fetch: resend.fetch, vars: editableVars().port }));
+
+    const report = await runNotificationWorker({ dryRun: false }, { db, sender, ownerEmail: OWNER_EMAIL, now: () => clock.now, log: () => {}, sleep: async () => {} });
+    expect(report).toMatchObject({ sent: 1, sentUnmarked: 0, quarantined: 0 });
+    expect(rows[0]).toMatchObject({ status: "sent", attempts: 1 });
+
+    // 이틀 뒤(키 보존 기간 24시간을 넘긴 뒤) 크론이 돌아도 보낼 것이 없다
+    clock.now = new Date(T0.getTime() + 2 * 24 * 60 * 60_000);
+    await runNotificationWorker({ dryRun: false }, { db, sender, ownerEmail: OWNER_EMAIL, now: () => clock.now, log: () => {}, sleep: async () => {} });
+    expect(resend.fetch.calls).toHaveLength(1);
+    expect(resend.delivered).toHaveLength(1);
+  });
+
+  test("기록이 끝내 실패하면 그 행을 격리한다 — 이틀 뒤 크론이 돌아도 다시 claim 되지 않아 재발송 0 (키 보존 기간에 기대지 않는다)", async () => {
+    const clock = { now: T0 };
+    // markSent 3회 전부 실패 → 격리는 성공
+    const { db, rows } = memoryDb(ownerRow(), clock, MARK_SENT_RETRY_DELAYS_MS.length + 1);
+    const resend = fakeResend();
+    const sender = resendSender(deps({ fetch: resend.fetch, vars: editableVars().port }));
+
+    const first = await runNotificationWorker({ dryRun: false }, { db, sender, ownerEmail: OWNER_EMAIL, now: () => clock.now, log: () => {}, sleep: async () => {} });
+    expect(first).toMatchObject({ sentUnmarked: 1, quarantined: 1 });
+    expect(rows[0].status).toBe("pending");
+    expect(rows[0].last_error).toMatch(/^sent_unmarked:/);
+
+    clock.now = new Date(T0.getTime() + 2 * 24 * 60 * 60_000);
+    const later = await runNotificationWorker({ dryRun: false }, { db, sender, ownerEmail: OWNER_EMAIL, now: () => clock.now, log: () => {}, sleep: async () => {} });
+    expect(later.claimed).toBe(0);
+    // 수정 라운드 3 — DB 가 회복된 뒤의 실행이 저장된 제공자 id 로 기록을 마친다(자가 복구). 발송은 다시 하지 않는다.
+    expect(later.healed).toBe(1);
+    expect(rows[0].status).toBe("sent");
+    expect(resend.fetch.calls).toHaveLength(1);
+    expect(resend.delivered).toHaveLength(1);
+  });
+
+  test("[잔여 경로 — DB 가 기록도 격리도 못 받을 때] 본문이 그대로면: 재claim 이 캐시된 2xx 를 받아 markSent 로 닫힌다 — 도착 1통", async () => {
+    const clock = { now: T0 };
+    const { db, rows, notices } = memoryDb(ownerRow(), clock, DB_FULLY_DOWN);
     const resend = fakeResend();
     const sender = resendSender(deps({ fetch: resend.fetch, vars: editableVars().port }));
 
@@ -734,17 +856,17 @@ describe("10. 워커 시퀀스 — 수락 → markSent 실패 → 재claim", () 
    * attempts 로만 판정하므로 409 인데도 5회까지 다시 시도한다. 409 는 markSent 에 닿지 않으므로
    * 전달되지 않은 메일을 "전달됨"으로 만드는 경로는 아니다. 실제 도착은 1통인데 사장님은 "실패" 알림을 받는다 — 그 거동을 잠근다.
    */
-  test("본문이 바뀌면: 409 invalid_idempotent_request(retryable:false 로 분류돼도 워커는 attempts 로만 재시도) → 소진 → failed → 실패 알림 — 도착은 1통", async () => {
+  test("[잔여 경로] 본문이 바뀌면: 409 invalid_idempotent_request(retryable:false 로 분류돼도 워커는 attempts 로만 재시도) → 소진 → failed → 실패 알림 — 도착은 1통", async () => {
     const clock = { now: T0 };
-    const { db, rows, notices } = memoryDb(ownerRow(), clock, 1);
+    const { db, rows, notices } = memoryDb(ownerRow(), clock, DB_FULLY_DOWN);
     const resend = fakeResend();
     const vars = editableVars();
     const sender = resendSender(deps({ fetch: resend.fetch, vars: vars.port }));
 
-    // 1회차: 수락됐지만 markSent 가 throw
+    // 1회차: 수락됐지만 markSent 가 (재시도까지) throw 하고 격리도 못 했다
     const first = await runNotificationWorker(
       { dryRun: false },
-      { db, sender, ownerEmail: OWNER_EMAIL, now: () => clock.now, log: () => {} },
+      { db, sender, ownerEmail: OWNER_EMAIL, now: () => clock.now, log: () => {}, sleep: async () => {} },
     );
     expect(first.sentUnmarked).toBe(1);
     expect(resend.delivered).toHaveLength(1);
@@ -791,7 +913,9 @@ describe("10. 워커 시퀀스 — 수락 → markSent 실패 → 재claim", () 
 // =============================================================================
 describe("8. 정적", () => {
   const src = readFileSync(path.join(ROOT, "lib", "notify", "mail.ts"), "utf-8");
-  const route = readFileSync(path.join(ROOT, "app", "api", "cron", "notify", "route.ts"), "utf-8");
+  // P4-7: env 를 읽어 sender·수신처를 고르는 곳이 route.ts 에서 lib/notify/deps.ts 로 옮겨졌다(크론·즉시 발송이 한 벌을 쓴다).
+  // 변수 이름은 route 로 두고 가리키는 파일만 바꿨다 — 아래 단언의 뜻("env 를 읽는 단 한 곳")은 그대로다.
+  const route = readFileSync(path.join(ROOT, "lib", "notify", "deps.ts"), "utf-8");
   const envExample = readFileSync(path.join(ROOT, ".env.example"), "utf-8");
 
   test("mail.ts — process.env 0 · 'use server' 0 · server-only 0 · 전역 fetch 0", () => {
@@ -818,7 +942,7 @@ describe("8. 정적", () => {
     }
   });
 
-  test("route.ts — RESEND_API_KEY·MAIL_FROM 을 여기서만 읽고 resendSender·routingSender 로 넘긴다", () => {
+  test("deps.ts — RESEND_API_KEY·MAIL_FROM 을 여기서만 읽고 resendSender·routingSender 로 넘긴다", () => {
     expect(route).toContain("RESEND_API_KEY");
     expect(route).toContain("MAIL_FROM");
     expect(route).toContain("resendSender");
@@ -836,7 +960,7 @@ describe("8. 정적", () => {
    * 그래서 단언을 "읽지 않는다" 에서 "**수신처로만** 읽는다" 로 옮긴다 — 어댑터는 여전히 이 값을 모르고,
    * 발신(`from`)은 언제나 MAIL_FROM 이다(수신 전용 주소를 From 으로 쓰지 않는다).
    */
-  test("OWNER_EMAIL 은 라우트가 **수신처로만** 읽는다 — 어댑터는 모르고, 발신 주소로도 쓰지 않는다", () => {
+  test("OWNER_EMAIL 은 deps.ts 가 **수신처로만** 읽는다 — 어댑터는 모르고, 발신 주소로도 쓰지 않는다", () => {
     expect(route).toMatch(/ownerEmail:\s*process\.env\.OWNER_EMAIL/);
     expect(route).not.toMatch(/from:\s*\w*OWNER_EMAIL/);
     expect(src).not.toContain("OWNER_EMAIL");

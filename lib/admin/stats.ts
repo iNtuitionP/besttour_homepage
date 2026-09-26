@@ -33,6 +33,7 @@ import "server-only";
 import { cookies } from "next/headers";
 
 import { PRIVACY_NOTICE } from "../legal/disclosures";
+import { DUPLICATE_SENT_ERROR, SENT_UNMARKED_PREFIX } from "../notify/outbox";
 import { createSsrClient } from "../supabase/ssr";
 import { isAdminGuardDenial } from "./adminRpc";
 
@@ -369,6 +370,90 @@ export function assertStatsShape(data: unknown): AdminStats {
 
 async function sessionClient(): Promise<AdminStatsClient> {
   return createSsrClient(await cookies());
+}
+
+// =============================================================================
+// ⑤ 발송 문제 보정 (P4-7 수정 라운드 3 · 리뷰 P1-B·P2-8) — 마이그레이션 없이
+// =============================================================================
+
+/**
+ * 0022 의 ⑤ 는 status 만 본다. 그래서 두 종류의 행을 틀리게 센다:
+ *   - **격리 행**(pending + `sent_unmarked:` 표식 — 제공자는 받았는데 기록을 못 함)을 "1시간 넘게 보내지 못하고 있는 건" 으로.
+ *     손님은 이미 받았다. 사장님이 다시 연락하게 만드는 틀린 숫자다.
+ *   - **중복 억제 행**(`failed/duplicate_sent` — 같은 통지가 이미 sent 로 기록됨. 실패 알림의 두 번째 행 등)을 "발송 실패" 로.
+ * 0022 를 고치려면 600줄짜리 함수를 통째로 다시 정의하는 0023 과 원격 적용 두 번이 필요하다. 대신 **같은 창**으로 세 가지를 따로 세어
+ * 앱에서 빼고, 격리 행은 "발송됨 · 기록 확인 필요" 로 따로 보여 준다. 창(window_days·stuck_hours)은 0022 가 돌려준 값을 그대로 받는다 —
+ * 상수를 두 벌 두지 않는다. 한계: 0022 의 집계와 이 집계는 몇 ms 차이로 다른 순간에 돈다 — 그 사이 행이 바뀌면 한두 건 어긋날 수 있고,
+ * 뺀 값이 음수가 되면 0 으로 자른다. 격리 행은 자가 복구(워커)가 곧 sent 로 바꾸므로 대개 오래 남지 않는다.
+ * 읽기는 세션 클라이언트 + 0009 의 is_admin() select 정책이다(서비스 롤 금지 — ADR-2). head 집계라 행이 오지 않는다(개인정보 0).
+ */
+export interface NotifyCorrections {
+  /** 창 안(최근 window_days)의 격리 행 전부 — "발송됨 · 기록 확인 필요". */
+  sentUnconfirmed: number;
+  /** 그중 stuck_hours 보다 오래된 것 — 0022 의 stuck 에 잘못 들어간 몫. */
+  sentUnconfirmedStuck: number;
+  /** 창 안의 중복 억제 행 — 0022 의 failed 에 잘못 들어간 몫. */
+  suppressedDuplicates: number;
+}
+
+export interface NotifyAttention {
+  failed: number;
+  stuck: number;
+  sentUnconfirmed: number;
+  /** 셋 다 0. 격리 행만 있어도 ok 가 아니다 — "문제 없음" 으로 덮지 않는다. */
+  ok: boolean;
+}
+
+/** 0022 의 ⑤ 에서 잘못 센 몫을 빼고 격리 행을 따로 둔다. 순수. 뺀 값이 음수면 0. */
+export function notifyAttention(n: StatsNotifications, c: NotifyCorrections): NotifyAttention {
+  const minus = (a: number, b: number) => (a > b ? a - b : 0);
+  const failed = minus(n.failed, c.suppressedDuplicates);
+  const stuck = minus(n.stuck, c.sentUnconfirmedStuck);
+  const sentUnconfirmed = c.sentUnconfirmed > 0 ? c.sentUnconfirmed : 0;
+  return { failed, stuck, sentUnconfirmed, ok: failed === 0 && stuck === 0 && sentUnconfirmed === 0 };
+}
+
+interface HeadCount {
+  count: number | null;
+  error: { code?: string | null; message: string } | null;
+}
+
+function headCount(op: string, res: HeadCount): number {
+  if (res.error) throw new Error(`adminStats.${op}: [${res.error.code ?? "?"}] ${res.error.message}`);
+  if (typeof res.count !== "number") throw new Error(`adminStats.${op}: count 를 받지 못했다 — 0 으로 갈음하지 않는다`);
+  return res.count;
+}
+
+/**
+ * 보정치 세 가지를 센다(head 집계 3회). `window` 는 0022 가 돌려준 notifications 칸 그대로.
+ * `now`·`client` 는 테스트 주입용 — 운영은 생략한다.
+ */
+export async function getNotifyCorrections(
+  window: Pick<StatsNotifications, "window_days" | "stuck_hours">,
+  now: Date = new Date(),
+  client?: AdminStatsClient,
+): Promise<NotifyCorrections> {
+  const db = client ?? (await sessionClient());
+  const since = new Date(now.getTime() - window.window_days * 24 * 60 * 60 * 1000).toISOString();
+  const stuckBefore = new Date(now.getTime() - window.stuck_hours * 60 * 60 * 1000).toISOString();
+  const table = "notifications_log";
+  const head = { count: "exact" as const, head: true };
+
+  const all = await db.from(table).select("id", head).eq("status", "pending").like("last_error", `${SENT_UNMARKED_PREFIX}%`).gte("created_at", since);
+  const stuck = await db
+    .from(table)
+    .select("id", head)
+    .eq("status", "pending")
+    .like("last_error", `${SENT_UNMARKED_PREFIX}%`)
+    .gte("created_at", since)
+    .lt("created_at", stuckBefore);
+  const dup = await db.from(table).select("id", head).eq("status", "failed").eq("last_error", DUPLICATE_SENT_ERROR).gte("created_at", since);
+
+  return {
+    sentUnconfirmed: headCount("corrections.sentUnconfirmed", all as unknown as HeadCount),
+    sentUnconfirmedStuck: headCount("corrections.sentUnconfirmedStuck", stuck as unknown as HeadCount),
+    suppressedDuplicates: headCount("corrections.suppressedDuplicates", dup as unknown as HeadCount),
+  };
 }
 
 /**
