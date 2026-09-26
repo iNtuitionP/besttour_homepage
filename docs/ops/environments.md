@@ -76,3 +76,10 @@ Supabase 조직의 요금제에 따라 프로젝트 하나를 더하면 월 컴�
 - 방법: 시험용 DB 에**만** 표식 공지(`[시험] 프리뷰 DB 연결 확인`)를 넣고(운영 0건 확인), 최신 코드의 프리뷰(`aa40cdb` 이후) `/notices` 에 그 공지가 보이는지 사용자가 확인했다 → **보였다.** 운영 DB 에는 공지가 0건이므로 프리뷰가 운영을 봤다면 보일 수 없다.
 - 확인 뒤 표식 공지 삭제(시험용 0건 · 운영 0건).
 - 9월 13일 이후 처음으로 최신 코드가 Vercel 에서 빌드·배포됐다(`aa40cdb`·`c312822` 모두 배포 성공 · CI 8잡 통과).
+
+## 시험용 DB 에 넣은 것 (2026-09-27 · 컨트롤러 · 사용자 요청 "예시 콘텐츠 채워 줘 · 프리뷰에서 직접 로그인")
+- **관리자 1명**: Supabase Auth 사용자 + `admin_users` 행 — 사용자가 지정한 주소(운영 DB 에는 없음). 운영의 관리자 명단과 무관하다.
+- **예시 공지 3건**(제목 `[예시] …`) · **예시 접수 4건**(이름 `예시고객가~라` · 전화 `+8210000000 01~04` · 접수번호 `EXAMP2AA`·`EXAMP3BB`·`EXAMP4CC`·`EXAMP5DD`). 전부 서비스 롤 REST 로 넣었고 통지는 쌓이지 않았다(발송 0).
+  지우기: `delete from notices where title like '[예시]%'` · `delete from reservations where name like '예시고객%'`.
+- **프리뷰 관리자 로그인에 필요한 사람 몫**: Vercel **Preview 전용** 환경변수(`docs/private/preview-vercel-env.txt` — 커밋 안 됨: `ADMIN_EMAILS`·`NEXT_PUBLIC_SITE_URL`(매직링크가 프리뷰로 돌아오게)·`GUARD_SECRET`·`GUARD_ALLOWED_HOSTS`·Upstash 2개) +
+  시험 프로젝트 Supabase 대시보드 Authentication → URL Configuration(Site URL·Redirect URLs 에 프리뷰 주소). 견적 제출까지 보려면 Turnstile 위젯에 프리뷰 호스트 추가 — **Cloudflare 더미 키는 action 검사에서 거부된다**(`lib/guard/turnstile.ts`).

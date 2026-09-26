@@ -1115,7 +1115,7 @@ select
 ③ 데이터가 사라지지 않는다. 근거는 그 파일 헤더에 적혀 있다. ⚠️ **앱을 0022 이전 코드로 먼저 되돌린 뒤** 돌린다.
 되돌린 뒤 `supabase migration repair --status reverted 0022`.
 
-## 0023 — 홈 간편 견적 접수(`intake='quick'`) (**원격 미적용** · P3-8 · 구현자 초안 — 컨트롤러 검토 전)
+## 0023 — 홈 간편 견적 접수(`intake='quick'`) (**시험 적용 2026-09-27 · 운영 미적용** · P3-8 · 독립 리뷰 조건부 승인 → 재검토 반영)
 
 **무엇을 하나**: `reservations` 에 `intake text not null`(`wizard|quick`)을 더하고(적용 순간의 기존 행은 전부 `wizard` — 빠른 기본값 → **같은 트랜잭션에서 기본값 제거**),
 `vehicle_slug`·`purpose_code`·`bus_count` 의 NOT NULL 을 푼다(**`bus_count` 기본값 1 도 제거** — 남기면 간편 insert 가 "1대" 를 지어낸다).
@@ -1277,3 +1277,22 @@ Vercel 은 GitHub 앱으로 연결돼 있다. GitHub 배포 기록(`GET /repos/�
 자기검증(가드가 첫 실행문 · 결과 키 집합 · 개인정보 칸 미참조 · EXECUTE 보유자 · `search_path` 의 `pg_temp` · `lock_timeout`)이 양쪽 적용 시점에 통과했다 — 실패했으면 파일째 멈췄다.
 
 **다음**: 코드 배포. 화면(`/admin/stats`)은 이 함수가 있어야 돈다 — 배포가 먼저면 PGRST202 로 통계 탭만 실패한다(다른 화면은 영향 없음).
+
+---
+
+# 원격 적용 기록 — 0023 (2026-09-27 · 컨트롤러) — **시험만. 운영은 사용자 승인 대기**
+
+**🔴 순서가 반대로 되면 접수가 깨진다**: 새 코드는 `intake` 를 읽고 쓴다 — 0023 없는 DB 에 새 코드가 붙으면 접수·예약확인·관리자 목록·사장님 통지가 실패한다.
+반대로 0023 뒤 옛 코드는 위저드 접수에서 23502(`intake` 누락)로 실패한다. 그래서 **CI 는 별도 가지(`ci/p3-8-quick-quote`, 적용 후 삭제)에서 먼저 돌리고 → 시험 DB 적용 → 작업 가지 푸시**로 했다.
+운영: 운영 배포는 `main` 에서만 나간다 — **0023 운영 적용은 `main` 병합 직전**에 한다(적용과 배포 사이 창을 최소로).
+
+| | 시험 `gjnieoojgmhulkohdcnl` | 운영 `expexkhcuogkavpacrem` |
+|---|---|---|
+| 적용 전 이력 | `0022` (활성 질의 0 · 이벤트 트리거는 Supabase 기본 6개뿐 · 예약 4행 전부 차종·목적·구분 채워짐) | 미적용 |
+| 적용 후 이력 | **`0023`** (`db push --db-url`, 자기검증 통과) | — |
+| 기존 행 `intake` | 4행 전부 `wizard` | — |
+| `intake` 기본값 | 없음 · NOT NULL | — |
+| `admin_stats` ACL · definer | `{postgres=X/postgres,authenticated=X/postgres}` · true (불변) | — |
+| `anon`·`authenticated` 의 `reservations` INSERT | false · false | — |
+
+CI: `c07ef5a` 8잡 통과(가지 `ci/p3-8-quick-quote`). 프리뷰 배포(`feature/implementation` → `c07ef5a`) 성공.
