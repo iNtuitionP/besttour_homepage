@@ -6,6 +6,8 @@
  * 가격·정렬은 그대로 남아, 다시 올리면 원래 값으로 돌아온다.
  *
  * props 는 id·현재 상태·문구뿐이다. 마지막 판정은 언제나 DB 다.
+ *
+ * 결과 알림(P5-20): 성공은 레이아웃의 토스트, 실패는 이 버튼 옆 배너(role=alert — 다음 누름 때 걷힌다). 판정은 feedback.ts.
  */
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -14,6 +16,9 @@ import { toggleRouteActive } from "@/actions/admin/route";
 import type { RouteActionCode } from "@/lib/admin/routeInput";
 
 import s from "./admin.module.css";
+import { AdminBanner } from "./AdminBanner";
+import { useAdminToast } from "./AdminToast";
+import { feedbackKind } from "./feedback";
 
 export interface RouteToggleLabels {
   turnOn: string;
@@ -24,14 +29,17 @@ export interface RouteToggleLabels {
 
 export function RouteToggle({ id, active, labels }: { id: number; active: boolean; labels: RouteToggleLabels }) {
   const router = useRouter();
+  const toast = useAdminToast();
   const [pending, startTransition] = useTransition();
-  const [notice, setNotice] = useState("");
+  const [banner, setBanner] = useState("");
 
   const onClick = () => {
-    setNotice("");
+    setBanner("");
     startTransition(async () => {
       const result = await toggleRouteActive(id, !active);
-      setNotice(labels.results[result.code]);
+      const kind = feedbackKind(result);
+      if (kind === "toast") toast.show({ text: labels.results[result.code] });
+      else if (kind === "banner") setBanner(labels.results[result.code]);
       router.refresh();
     });
   };
@@ -41,9 +49,7 @@ export function RouteToggle({ id, active, labels }: { id: number; active: boolea
       <button type="button" className={s.btnSecondary} disabled={pending} onClick={onClick} data-testid="admin-route-toggle">
         {pending ? labels.processing : active ? labels.turnOff : labels.turnOn}
       </button>
-      <p className={s.notice} role="status">
-        {notice}
-      </p>
+      <AdminBanner text={banner} variant="inline" />
     </>
   );
 }

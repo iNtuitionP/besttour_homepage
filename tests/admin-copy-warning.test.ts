@@ -731,8 +731,9 @@ describe("8. 화면 배선 · 문구 · 공개 화면", { timeout: 60_000 }, () 
     for (const k of ["title", "lead", "confirm"] as const) expect(cw[k].trim().length, k).toBeGreaterThan(0);
     for (const slot of ["{field}", "{text}", "{reason}"]) expect(cw.item).toContain(slot);
     // 막지 않는다는 것을 화면이 말한다 — 버튼 이름이 곧 그 약속이다
-    expect(cw.lead).toContain("아직 저장하지 않았습니다");
-    expect(cw.lead).toContain("그대로 올리셔도");
+    // P5-20 — 관리자 문구 해요체(사용자 결정). 뜻은 그대로: 저장하지 않았다 · 그대로 올려도 된다(막지 않는다)
+    expect(cw.lead).toContain("아직 저장하지 않았어요");
+    expect(cw.lead).toContain("그대로 올려도");
   });
 
   test("세 탭의 결과 문구에 copyWarning 이 있다", () => {

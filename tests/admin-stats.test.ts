@@ -471,13 +471,15 @@ describe("3. lib/admin/stats.ts — 기간 계산과 계약", () => {
 // 4. 화면 · 탭 · 문구
 // =============================================================================
 describe("4. /admin/stats 화면 · 탭 · messages/ko.json", () => {
-  test("탭에 통계가 **맨 뒤에** 붙었고 기존 순서·경로는 그대로다", async () => {
+  // P5-20 — 사이드바·탭 바 개편: 홈이 첫 항목이 되고 순서가 묶음(매일 · 홈페이지 · 기록)을 따른다. 통계는 여전히 **맨 뒤**다(tests/admin-nav.test.ts).
+  test("탭에 통계가 **맨 뒤에** 있고 경로는 그대로다", async () => {
     const { ADMIN_TABS, ADMIN_TAB_KEYS } = await import("@/components/admin/tabs");
-    expect([...ADMIN_TAB_KEYS]).toEqual(["reservations", "popups", "notices", "gallery", "routes", "notifications", "stats"]);
+    expect([...ADMIN_TAB_KEYS]).toEqual(["home", "reservations", "notices", "popups", "gallery", "routes", "notifications", "stats"]);
     expect(ADMIN_TABS.filter((t) => t.ready).map((t) => t.href)).toEqual([
+      "/admin",
       "/admin/reservations",
-      "/admin/popups",
       "/admin/notices",
+      "/admin/popups",
       "/admin/gallery",
       "/admin/routes",
       "/admin/notifications",
@@ -571,9 +573,12 @@ describe("4. /admin/stats 화면 · 탭 · messages/ko.json", () => {
     for (const k of ["title", "intake", "intakeNote", "confirmed", "confirmedNote", "response", "responseNote", "responseFew"]) {
       expect(group("overview")[k], `admin.stats.overview.${k}`).toBeTruthy();
     }
-    for (const k of ["title", "backlog", "backlogNote", "backlogLink", "notify", "notifyNote", "notifyLink", "ok"]) {
+    // P5-20 — 처리 대기 카드의 이름은 상태 배지("새 접수" — 메뉴 배지와 같은 정의 · admin.reservations.status.new)가 말한다.
+    // 따로 적던 이름(attention.backlog "처리 대기")은 같은 수를 다른 말로 부르던 것이라 지웠다(제안서 ④ 원칙 2 · Shopify 두 숫자 혼란).
+    for (const k of ["title", "backlogNote", "backlogLink", "notify", "notifyNote", "notifyLink", "ok"]) {
       expect(group("attention")[k], `admin.stats.attention.${k}`).toBeTruthy();
     }
+    expect(group("attention").backlog, "같은 수의 두 번째 이름").toBeUndefined();
     for (const k of ["title", "note", "waiting", "confirmed", "cancelled", "unsplit", "unsplitNote"]) {
       expect(group("trend")[k], `admin.stats.trend.${k}`).toBeTruthy();
     }
@@ -620,7 +625,8 @@ describe("4. /admin/stats 화면 · 탭 · messages/ko.json", () => {
     expect(ko.admin.stats.suppressed).toBe("3건 미만");
     // R2-D — 숨김을 "개인이 특정되지 않는다" 는 보장처럼 말하지 않는다. 캡처 공유용이고 한계를 함께 적는다.
     const all = JSON.stringify(ko.admin.stats);
-    expect(all, "보장처럼 읽히는 문구").not.toMatch(/특정되지 않습니다|익명(으로)? 처리됩니다|알 수 없습니다/);
+    // P5-20 — 해요체로 바뀌어도 같은 뜻을 잡는다(합쇼체·해요체 두 어미 모두)
+    expect(all, "보장처럼 읽히는 문구").not.toMatch(/특정되지 않(습니다|아요)|익명(으로)? 처리(됩니다|돼요)|알 수 없(습니다|어요)/);
     expect(ko.admin.stats.suppressedLimit).toMatch(/기간/);
     expect(ko.admin.stats.axisTotalNote, "축 합계가 총건수와 다를 수 있다는 안내").toBeTruthy();
   });
@@ -805,7 +811,8 @@ const correctionCalls: unknown[] = [];
 async function renderStatsPage(stats: unknown, corrections: typeof NO_CORRECTIONS = NO_CORRECTIONS): Promise<RenderWalk> {
   vi.resetModules();
   vi.doMock("@/lib/auth/requireAdmin", () => ({ requireAdmin: async () => ({ userId: "u", email: "a@example.test" }) }));
-  vi.doMock("next-intl/server", () => ({ getTranslations: async () => (k: string) => k }));
+  // raw — 상태 배지 라벨 도우미(P5-20 components/admin/statusBadgeLabels.ts)가 `{days}` 틀을 원문으로 꺼낸다. 이 파일은 분기만 보므로 키를 그대로 돌려준다.
+  vi.doMock("next-intl/server", () => ({ getTranslations: async () => Object.assign((k: string) => k, { raw: (k: string) => k }) }));
   vi.doMock("@/lib/queries/vehicles", () => ({ getVehicles: async () => [] }));
   vi.doMock("@/lib/analytics/dashboard", () => ({ vercelAnalyticsUrl: () => null }));
   vi.doMock("@/lib/admin/stats", async () => {

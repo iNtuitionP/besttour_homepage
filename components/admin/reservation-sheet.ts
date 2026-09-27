@@ -207,6 +207,12 @@ export interface PanelState {
   /** 마지막으로 본 props(initialMemo) — props 가 바뀐 순간만 가려내려고 둔다. */
   propMemo: string;
   memoBanner: Banner | null;
+  /**
+   * 배너가 새로 선 횟수(메모 · 시트 따로) — 배너의 key 에 붙는다(AdminBanner `attempt`). 이 상태 기계는 저장을 시작할 때 배너를 비우지 않아서,
+   * 같은 실패가 다시 오면 문구가 같아 React 가 같은 요소로 보고 다시 스크롤하지 않았다(재리뷰 P2-R1). 실패·막힘마다 하나씩 는다.
+   */
+  memoBannerSeq: number;
+  sheetBannerSeq: number;
   toast: { id: number; code: SuccessCode } | null;
   toastSeq: number;
   /** 시트가 어떻게 닫혔나 — 포커스를 연 버튼(그냥 닫힘)으로 돌릴지 처리 영역(바뀜)으로 돌릴지. */
@@ -236,6 +242,8 @@ export function initialPanelState(memo: string): PanelState {
     serverMemo: memo,
     propMemo: memo,
     memoBanner: null,
+    memoBannerSeq: 0,
+    sheetBannerSeq: 0,
     toast: null,
     toastSeq: 0,
     lastClose: null,
@@ -273,8 +281,10 @@ export function panelReducer(state: PanelState, event: PanelEvent): PanelState {
       return { ...state, propMemo: event.memo, serverMemo: event.memo, memoText: memoEdited(state) ? state.memoText : event.memo };
     case "blocked": {
       const banner: Banner = { kind: "memoTooLong", count: event.count, max: event.max, withReason: event.withReason };
-      if (event.source === "sheet" && state.sheet !== null) return state.sheetLocked ? state : { ...state, sheetBanner: banner };
-      return { ...state, memoBanner: banner };
+      if (event.source === "sheet" && state.sheet !== null) {
+        return state.sheetLocked ? state : { ...state, sheetBanner: banner, sheetBannerSeq: state.sheetBannerSeq + 1 };
+      }
+      return { ...state, memoBanner: banner, memoBannerSeq: state.memoBannerSeq + 1 };
     }
     case "settled": {
       const { result } = event;
@@ -295,8 +305,8 @@ export function panelReducer(state: PanelState, event: PanelEvent): PanelState {
         return current ? { ...next, sheet: null, sheetLocked: false, reason: null, sheetBanner: null, lastClose: "changed" } : next;
       }
       const banner: Banner = result.code === "alreadyHandled" ? { kind: "alreadyHandled" } : { kind: "failed" };
-      if (!current) return { ...state, memoBanner: banner };
-      return { ...state, sheetBanner: banner, sheetLocked: result.code === "alreadyHandled" };
+      if (!current) return { ...state, memoBanner: banner, memoBannerSeq: state.memoBannerSeq + 1 };
+      return { ...state, sheetBanner: banner, sheetLocked: result.code === "alreadyHandled", sheetBannerSeq: state.sheetBannerSeq + 1 };
     }
     case "toastDone":
       return state.toast !== null && state.toast.id === event.id ? { ...state, toast: null } : state;

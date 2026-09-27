@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 
+import { StatusBadge } from "@/components/admin/StatusBadge";
+import { reservationBadge } from "@/components/admin/status-badge";
+import { getStatusBadgeLabels } from "@/components/admin/statusBadgeLabels";
 import { routing } from "@/i18n/routing";
 import {
   DEFAULT_ADMIN_PAGE_SIZE,
@@ -35,8 +38,15 @@ import q from "@/components/quote/quote.module.css";
  * 개발용 우회 경로는 없다. 이 화면을 보려면 실제 관리자 세션이 있어야 한다 — 세션 없이 더미 행을 그리던 개발 분기는
  * P5-3 독립 리뷰에서 제거됐다(production 번들에 남아 환경변수 두 개로 열렸다).
  *
- * 간편 접수(P3-8 · 0023 intake='quick'): 접수번호 옆에 "간편 접수" 배지, 출발일은 **날짜만**(저장된 00:00 은 자리값),
+ * 간편 접수(P3-8 · 0023 intake='quick'): 접수번호 옆에 "간편 접수" 칩, 출발일은 **날짜만**(저장된 00:00 은 자리값),
  * 차량은 "미정(전화 확인)", 대수·인원 칸은 인원만. 손님이 고르지 않은 값을 지어내 보이지 않는다.
+ *
+ * 상태 칸은 P5-20 의 상태 배지(components/admin/StatusBadge.tsx)다 — 새 접수(골드 ●) · 72시간이 넘은 새 접수는 "N일째 대기"(가장 짙은 보라 !) ·
+ * 확정(✓) · 운행 완료(실선) · 취소(점선 ×). 경과는 이 요청의 시각 하나(now)로 잰다. 목록의 전체 재설계(카드·탭 건수·정렬)는 P5-21 이다.
+ * 상태 칸은 접수번호 바로 뒤다 — 사이드바(248px)가 본문 폭을 줄여 표(약 1212px)가 1280~1599px 에서 가로로 밀리는데,
+ * 맨 끝에 두면 배지가 첫 화면에서 사라진다(P5-20 브라우저 실측). 배지 칸은 줄바꿈하지 않는다(tdNowrap).
+ * 빈 상태: 걸러 본 상태가 비었으면 "이 상태의 접수가 없어요" + [전체 보기](필터 지우기), 아무 접수도 없으면 그 말을 한다.
+ * 쪽(cursor)이 끝을 넘어 비었으면 둘 다 거짓이다 — "이 쪽에는 더 없어요" + [첫 쪽 보기](같은 상태의 첫 쪽 · 리뷰 P2-3).
  */
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -65,6 +75,8 @@ export default async function AdminReservationsPage({ searchParams }: { searchPa
   // 차량 라벨은 공개 표(vehicles — anon + RLS)에서. 없으면 slug 로 떨어진다(라벨이 없다고 행을 숨기지 않는다).
   // 두 조회는 서로 기다릴 이유가 없어 동시에 보낸다(P5-18 — 게이트를 통과한 **뒤에만** 시작한다).
   const [{ items, hasMore, nextCursor }, vehicles] = await Promise.all([listReservations({ status, cursor }), vehicleLabels()]);
+  const badgeLabels = await getStatusBadgeLabels();
+  const now = new Date();
 
   const href = (nextStatus: string, nextCursorValue: number): string => {
     const qs = new URLSearchParams();
@@ -92,22 +104,39 @@ export default async function AdminReservationsPage({ searchParams }: { searchPa
         </nav>
 
         {items.length === 0 ? (
-          <p className={a.empty}>{t("empty")}</p>
+          cursor > 0 ? (
+            // 끝을 넘은 쪽(예: 2쪽의 새 접수를 확정하고 돌아옴) — "접수가 없다" 가 아니라 "이 쪽에 더 없다"(리뷰 P2-3)
+            <div className={a.empty}>
+              <p>{t("emptyPage")}</p>
+              <Link className={a.emptyAction} href={href(status, 0)}>
+                {t("firstPage")}
+              </Link>
+            </div>
+          ) : status === "all" ? (
+            <p className={a.empty}>{t("emptyAll")}</p>
+          ) : (
+            <div className={a.empty}>
+              <p>{t("empty")}</p>
+              <Link className={a.emptyAction} href={href("all", 0)}>
+                {t("clearFilter")}
+              </Link>
+            </div>
+          )
         ) : (
           <div className={a.tableWrap}>
             <table className={a.table}>
-              <caption>{t("listLabel")}</caption>
+              <caption className={a.srOnly}>{t("listLabel")}</caption>
               <thead>
                 <tr>
                   <th className={a.th} scope="col">{t("col.createdAt")}</th>
                   <th className={a.th} scope="col">{t("col.code")}</th>
+                  <th className={a.th} scope="col">{t("col.status")}</th>
                   <th className={a.th} scope="col">{t("col.name")}</th>
                   <th className={a.th} scope="col">{t("col.phone")}</th>
                   <th className={a.th} scope="col">{t("col.route")}</th>
                   <th className={a.th} scope="col">{t("col.departAt")}</th>
                   <th className={a.th} scope="col">{t("col.vehicle")}</th>
                   <th className={a.th} scope="col">{t("col.count")}</th>
-                  <th className={a.th} scope="col">{t("col.status")}</th>
                   <th className={a.th} scope="col">{t("col.detail")}</th>
                 </tr>
               </thead>
@@ -122,11 +151,12 @@ export default async function AdminReservationsPage({ searchParams }: { searchPa
                       {r.intake === "quick" ? (
                         <>
                           {" "}
-                          <span className={a.badge} data-intake="quick" data-testid="admin-quick-badge">
-                            {tLabels("quickBadge")}
-                          </span>
+                          <StatusBadge badge={{ kind: "quick" }} labels={badgeLabels} />
                         </>
                       ) : null}
+                    </td>
+                    <td className={`${a.td} ${a.tdNowrap}`}>
+                      <StatusBadge badge={reservationBadge(r.status, r.created_at, now)} labels={badgeLabels} />
                     </td>
                     <td className={`${a.td} ${a.tdStrong} ${a.tdNowrap}`}>{r.name}</td>
                     <td className={`${a.td} ${a.tdNowrap}`}>
@@ -149,11 +179,6 @@ export default async function AdminReservationsPage({ searchParams }: { searchPa
                         : r.passengers === null
                           ? t("countBusesOnly", { buses: r.bus_count })
                           : t("countValue", { buses: r.bus_count, passengers: r.passengers })}
-                    </td>
-                    <td className={a.td}>
-                      <span className={a.badge} data-status={r.status}>
-                        {t(`status.${r.status}`)}
-                      </span>
                     </td>
                     <td className={`${a.td} ${a.tdNowrap}`}>
                       <Link className={a.rowLink} href={`/admin/reservations/${r.id}`}>

@@ -1,78 +1,245 @@
 "use client";
 /**
- * 관리자 탭 네비게이션 (P5-3). 클라이언트인 이유는 하나뿐이다 — 현재 경로를 알아야 `aria-current="page"` 를 붙일 수 있다.
- * 개인정보는 props 에 없다(라벨·경로뿐): 서버 컴포넌트 props 는 dev 에서 HTML 로 직렬화된다(P3-5 리뷰 N-2).
+ * 관리자 셸 — 메뉴 (P5-3 탭 줄 → P5-20 사이드바·탭 바 · 시안 docs/handoff/2026-09-27-admin-ux 셸 · 제안서 ⑥ 내비 결정).
  *
- * 아직 만들지 않은 탭은 링크가 아니라 `aria-disabled` 인 span 이다 — 링크하면 404 이고, 지우면 자리가 사라진다
+ * 한 벌의 마크업을 폭에 따라 보여 준다(CSS · components/admin/admin.module.css 「셸」):
+ *   - ≥1024px **왼쪽 사이드바 248px** — 브랜드 · 홈 · 접수(새 접수 배지) / 묶음 "홈페이지": 공지 · 팝업 · 갤러리 · 대표 노선 /
+ *     묶음 "기록": 문자 기록 · 통계 / 아래: "관리자 계정으로 로그인 중" · 홈페이지 보기(새 탭) · 로그아웃. 항목 높이 44px.
+ *     묶음 이름은 스크린리더에 한 번만 읽힌다(보이는 이름 aria-hidden · 목록 aria-label — 리뷰 P2-9).
+ *     현재 표시는 **옅은 면 + 왼쪽 4px 띠 + 굵은 글자**다 — 채운 보라(--action-primary-bg)는 버튼 전용이라 쓰지 않는다(시안 ⑤-0).
+ *   - <1024px **위 제목줄 56px**(브랜드 · 홈페이지 보기 · 로그아웃) + **아래 탭 바 4개**(홈 · 접수 · 홈페이지 · 기록, 56px + safe area).
+ *     "더보기" 탭은 없다 — 홈페이지·기록은 허브 화면(/admin/site · /admin/records)으로 간다. 현재 표시는 보라 글자 + 위 3px 띠.
+ * 항목·묶음·순서·현재 판정은 순수 모듈(components/admin/tabs.ts)이 정한다. 이 파일은 그리기만 한다.
+ *
+ * 클라이언트인 이유는 하나뿐이다 — 현재 경로를 알아야 `aria-current` 를 붙일 수 있다(자기 경로는 "page", 그 아래 화면은 "true").
+ * 개인정보는 props 에 없다(라벨·경로·배지 숫자뿐): 서버 컴포넌트 props 는 dev 에서 HTML 로 직렬화된다(P3-5 리뷰 N-2).
+ * 새 접수 배지는 레이아웃이 게이트 **뒤**에 한 번 센 값이다(`badge` — null 이면 그리지 않는다). 숫자는 aria-hidden, 스크린리더에는
+ * "새 접수 N건" 문장 하나(WordPress 메뉴 버블과 같은 방식).
+ *
+ * 아직 만들지 않은 항목은 링크가 아니라 `aria-disabled` 인 span 이다 — 링크하면 404 이고, 지우면 자리가 사라진다
  * (components/admin/tabs.ts 헤더). 스크린리더에는 `준비 중`이 함께 읽힌다.
  *
- * **로그아웃이 여기 있다** (P5-11 · D5). 보호 구역의 모든 화면이 이 줄을 공유하므로, 사장님이 어느 탭에 계시든
- * 나갈 수 있는 자리는 여기 하나면 된다. 형태는 반드시 **form 제출(POST)** 이다 — `<a href>` 로 만들면
- * 브라우저·크롤러의 프리페치가 사장님을 로그아웃시킨다. 서버액션(actions/admin/session.ts)이 첫 문장에서
- * 게이트를 타므로 이 버튼은 인가를 스스로 판단하지 않는다.
+ * **로그아웃이 여기 있다** (P5-11 · D5) — 사이드바 아래와 휴대폰 위 제목줄, 두 자리. 보호 구역의 모든 화면이 이 셸을 공유하므로
+ * 사장님이 어느 화면에 계시든 나갈 수 있다. 형태는 반드시 **form 제출(POST)** 이다 — `<a href>` 로 만들면 브라우저·크롤러의
+ * 프리페치가 사장님을 로그아웃시킨다. 서버액션(actions/admin/session.ts)이 첫 문장에서 게이트를 타므로 이 버튼은 인가를 스스로
+ * 판단하지 않는다.
+ *
+ * 본문 자리(`#admin-content`)는 건너뛰기 링크의 목적지다. 탭 바는 본문 **뒤**에 둔다 — 화면 아래에 붙어 있어도 읽는 순서는 본문이 먼저다.
  */
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { ReactNode } from "react";
 
 import { signOutAdmin } from "@/actions/admin/session";
 
-import type { AdminTabKey } from "./tabs";
+import {
+  ADMIN_BADGE_TAB,
+  ADMIN_NAV_GROUPS,
+  currentMobileKey,
+  mobileTabs,
+  navMatch,
+  type AdminHub,
+  type AdminHubKey,
+  type AdminTab,
+  type AdminTabKey,
+  type NavBadge,
+} from "./tabs";
 
 import s from "./admin.module.css";
 
-export interface AdminTabItem {
-  key: AdminTabKey;
-  href: string;
-  ready: boolean;
+export interface AdminNavItem extends AdminTab {
   label: string;
+}
+
+export interface AdminNavHub extends AdminHub {
+  label: string;
+}
+
+export interface AdminNavLabels {
+  navLabel: string;
+  comingSoon: string;
+  brand: string;
+  account: string;
+  siteLink: string;
+  newWindow: string;
+  skip: string;
+  groups: Record<AdminHubKey, string>;
+}
+
+type IconKey = AdminTabKey | AdminHubKey | "external";
+
+/** 선 아이콘(24 격자) — 시안의 아이콘과 같은 모양. 라벨이 늘 함께 붙는 장식이다(aria-hidden). */
+const ICON_PATHS: Readonly<Record<IconKey, string>> = {
+  home: "M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
+  reservations: "M4 4h16v16H4z M4 14h4l2 3h4l2-3h4",
+  notices: "M4 9v6h3l7 4V5L7 9z M17.5 9.5a3.5 3.5 0 0 1 0 5",
+  popups: "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z M8 8h8a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z",
+  gallery: "M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z M11 10a2 2 0 1 1-4 0 2 2 0 0 1 4 0z M21 17l-5-5-9 8",
+  routes: "M8.5 18a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z M20.5 6a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z M8.5 18H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.5",
+  notifications: "M4 5h16v11H9l-5 4z M8 10h8",
+  stats: "M4 20V10 M10 20V4 M16 20v-7 M22 20H2",
+  site: "M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z M3 9h18 M7 6.5h.01 M10 6.5h.01",
+  records: "M4 20V10 M10 20V4 M16 20v-7 M22 20H2",
+  external: "M14 4h6v6 M20 4l-9 9 M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5",
+};
+
+function Icon({ name, className }: { name: IconKey; className: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d={ICON_PATHS[name]} />
+    </svg>
+  );
+}
+
+/** 새 접수 배지 — 숫자는 aria-hidden, 스크린리더에는 문장 하나. */
+function Count({ badge, className }: { badge: NavBadge; className: string }) {
+  return (
+    <>
+      <span className={className} aria-hidden="true" data-testid="admin-nav-count">
+        {badge.visible}
+      </span>
+      <span className={s.srOnly}>{badge.label}</span>
+    </>
+  );
+}
+
+/** aria-current 값 — 자기 경로는 page, 그 아래 화면(상세 등)은 true. */
+function currentAttr(match: "page" | "section" | null): "page" | "true" | undefined {
+  return match === "page" ? "page" : match === "section" ? "true" : undefined;
 }
 
 export function AdminTabs({
   items,
-  navLabel,
-  comingSoonLabel,
+  hubs,
+  labels,
   signOutLabel,
+  badge,
+  publicHref,
+  children,
 }: {
-  items: readonly AdminTabItem[];
-  navLabel: string;
-  comingSoonLabel: string;
+  items: readonly AdminNavItem[];
+  hubs: readonly AdminNavHub[];
+  labels: AdminNavLabels;
   signOutLabel: string;
+  badge: NavBadge | null;
+  publicHref: string;
+  children?: ReactNode;
 }) {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
+
+  const sideItem = (item: AdminNavItem) => {
+    if (!item.ready) {
+      return (
+        <li key={item.key}>
+          <span className={s.sideItem} aria-disabled="true" data-ready="false">
+            <Icon name={item.key} className={s.navIcon} />
+            <span className={s.sideLabel}>{item.label}</span>
+            <span className={s.sideNote}>{labels.comingSoon}</span>
+          </span>
+        </li>
+      );
+    }
+    return (
+      <li key={item.key}>
+        <Link className={s.sideItem} href={item.href} aria-current={currentAttr(navMatch(pathname, item.href))}>
+          <Icon name={item.key} className={s.navIcon} />
+          <span className={s.sideLabel}>{item.label}</span>
+          {item.key === ADMIN_BADGE_TAB && badge !== null ? <Count badge={badge} className={s.navCount} /> : null}
+        </Link>
+      </li>
+    );
+  };
+
+  const mobileCurrent = currentMobileKey(pathname, items, hubs);
+  const labelOf = (key: AdminTabKey | AdminHubKey): string =>
+    items.find((it) => it.key === key)?.label ?? hubs.find((h) => h.key === key)?.label ?? key;
 
   return (
-    <nav className={s.tabs} aria-label={navLabel} data-testid="admin-tabs">
-      <ul className={s.tabList}>
-        {items.map((item) => {
-          const current = item.ready && (pathname === item.href || pathname.startsWith(`${item.href}/`));
-          return (
-            <li key={item.key}>
-              {item.ready ? (
-                <Link
-                  className={s.tab}
-                  href={item.href}
-                  aria-current={current ? "page" : undefined}
-                  data-current={current ? "true" : undefined}
-                >
-                  {item.label}
-                </Link>
-              ) : (
-                <span className={s.tab} aria-disabled="true" data-ready="false">
-                  {item.label}
-                  <span className={s.tabNote}>{comingSoonLabel}</span>
-                </span>
-              )}
-            </li>
-          );
-        })}
-        <li className={s.tabTail}>
+    <div className={s.shell}>
+      <a className={s.skip} href="#admin-content">
+        {labels.skip}
+      </a>
+
+      <aside className={s.sidebar} data-testid="admin-sidebar">
+        <div className={s.brand}>
+          <Image className={s.brandMark} src="/brand/symbol-mark.png" alt="" width={32} height={29} />
+          <span className={s.brandName}>{labels.brand}</span>
+        </div>
+        <nav className={s.sideNav} aria-label={labels.navLabel} data-testid="admin-sidebar-nav">
+          <ul className={s.sideList}>{items.filter((it) => it.group === "daily").map(sideItem)}</ul>
+          {ADMIN_NAV_GROUPS.filter((g): g is AdminHubKey => g !== "daily").map((group) => (
+            <div key={group} className={s.sideGroup}>
+              {/* 묶음 이름은 한 번만 읽힌다 — 보이는 이름은 스크린리더에서 숨기고 목록이 이름을 갖는다(리뷰 P2-9).
+                  h2 로 바꾸지 않은 이유: 사이드바가 본문 h1 보다 앞이라 제목 순서가 h2 → h1 로 뒤집힌다. */}
+              <p className={s.sideGroupLabel} aria-hidden="true">
+                {labels.groups[group]}
+              </p>
+              <ul className={s.sideList} aria-label={labels.groups[group]}>
+                {items.filter((it) => it.group === group).map(sideItem)}
+              </ul>
+            </div>
+          ))}
+        </nav>
+        <div className={s.sideFoot}>
+          <p className={s.sideWho}>{labels.account}</p>
+          <a className={s.sideLink} href={publicHref} target="_blank" rel="noopener noreferrer">
+            <Icon name="external" className={s.navIcon} />
+            {labels.siteLink}
+            <span className={s.srOnly}> ({labels.newWindow})</span>
+          </a>
           <form action={signOutAdmin} data-testid="admin-signout-form">
             <button type="submit" className={s.signOut} data-testid="admin-signout">
               {signOutLabel}
             </button>
           </form>
-        </li>
-      </ul>
-    </nav>
+        </div>
+      </aside>
+
+      <header className={s.topbar} data-testid="admin-topbar">
+        <span className={s.topBrand}>
+          <Image className={s.brandMark} src="/brand/symbol-mark.png" alt="" width={28} height={25} />
+          {labels.brand}
+        </span>
+        <a className={s.iconBtn} href={publicHref} target="_blank" rel="noopener noreferrer" aria-label={`${labels.siteLink} (${labels.newWindow})`}>
+          <Icon name="external" className={s.navIcon} />
+        </a>
+        <form action={signOutAdmin} data-testid="admin-signout-form-mobile">
+          <button type="submit" className={s.topSignOut} data-testid="admin-signout-mobile">
+            {signOutLabel}
+          </button>
+        </form>
+      </header>
+
+      <div className={s.content} id="admin-content" tabIndex={-1} data-testid="admin-content">
+        {children}
+        <div className={s.tabbarSpacer} aria-hidden="true" />
+      </div>
+
+      <nav className={s.tabbar} aria-label={labels.navLabel} data-testid="admin-tabbar">
+        <ul className={s.tabbarList}>
+          {mobileTabs(items, hubs).map((tab) => {
+            const current = mobileCurrent === tab.key ? currentAttr(navMatch(pathname, tab.href) ?? "section") : undefined;
+            return (
+              <li key={tab.key}>
+                {tab.ready ? (
+                  <Link className={s.tabItem} href={tab.href} aria-current={current}>
+                    <Icon name={tab.key} className={s.tabIcon} />
+                    <span>{labelOf(tab.key)}</span>
+                    {tab.key === ADMIN_BADGE_TAB && badge !== null ? <Count badge={badge} className={s.tabCount} /> : null}
+                  </Link>
+                ) : (
+                  <span className={s.tabItem} aria-disabled="true" data-ready="false">
+                    <Icon name={tab.key} className={s.tabIcon} />
+                    <span>{labelOf(tab.key)}</span>
+                    <span className={s.srOnly}>{labels.comingSoon}</span>
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+    </div>
   );
 }

@@ -57,14 +57,16 @@ export default async function AdminRoutesPage() {
           <p className={a.hint}>{t("fixedNote")}</p>
         </section>
 
-        <section className={a.section}>
-          <h2 className={a.sectionTitle}>{t("listLabel")}</h2>
+        <section className={a.section} aria-labelledby="route-list-title">
+          <h2 className={a.sectionTitle} id="route-list-title">
+            {t("listLabel")}
+          </h2>
           {rows.length === 0 ? (
             <p className={a.empty}>{t("empty")}</p>
           ) : (
             <div className={a.tableWrap}>
-              <table className={a.tablePopups}>
-                <caption>{t("listLabel")}</caption>
+              {/* 표 이름은 섹션 제목이 말한다 — 같은 말의 캡션을 또 적지 않는다(P5-20) */}
+              <table className={a.tablePopups} aria-labelledby="route-list-title">
                 <thead>
                   <tr>
                     <th className={a.th} scope="col">

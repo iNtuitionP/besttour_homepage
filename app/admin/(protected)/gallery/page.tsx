@@ -101,8 +101,10 @@ export default async function AdminGalleryPage({ searchParams }: { searchParams:
           <p className={q.sub}>{t("sub")}</p>
         </header>
 
-        <section className={a.section}>
-          <h2 className={a.sectionTitle}>{t("upload")}</h2>
+        <section className={a.section} aria-labelledby="gallery-upload-title">
+          <h2 className={a.sectionTitle} id="gallery-upload-title">
+            {t("uploadTitle")}
+          </h2>
           <GalleryUploader
             albums={albumOptions}
             defaultAlbumId={typeof albumFilter === "number" ? albumFilter : null}
@@ -114,6 +116,9 @@ export default async function AdminGalleryPage({ searchParams }: { searchParams:
               processing: t("processing"),
               heicHelp: t("heicHelp"),
               running: t.raw("uploadRunning") as string,
+              done: t.raw("uploadDone") as string,
+              failedAll: t("uploadFailedAll"),
+              failedSome: t.raw("uploadFailedSome") as string,
               status: { waiting: t("status.waiting"), working: t("status.working"), done: t("status.done"), failed: t("status.failed") },
               reject,
               result: results,
@@ -124,8 +129,10 @@ export default async function AdminGalleryPage({ searchParams }: { searchParams:
           </p>
         </section>
 
-        <section className={a.section}>
-          <h2 className={a.sectionTitle}>{t("albumNew")}</h2>
+        <section className={a.section} aria-labelledby="gallery-album-title">
+          <h2 className={a.sectionTitle} id="gallery-album-title">
+            {t("albumSection")}
+          </h2>
           <GalleryAlbums
             albums={albums.map((album) => ({ id: album.id, slug: album.slug, title: album.title, sort: album.sort, active: album.active }))}
             labels={{
@@ -153,8 +160,10 @@ export default async function AdminGalleryPage({ searchParams }: { searchParams:
           />
         </section>
 
-        <section className={a.section}>
-          <h2 className={a.sectionTitle}>{t("listLabel")}</h2>
+        <section className={a.section} aria-labelledby="gallery-list-title">
+          <h2 className={a.sectionTitle} id="gallery-list-title">
+            {t("listLabel")}
+          </h2>
           <nav className={a.filters} aria-label={t("albumLabel")}>
             <span className={a.filterLabel}>{t("albumLabel")}</span>
             {filters.map((f) => (
@@ -165,7 +174,27 @@ export default async function AdminGalleryPage({ searchParams }: { searchParams:
           </nav>
 
           {photos.length === 0 ? (
-            <p className={a.empty}>{t("empty")}</p>
+            albumFilter !== undefined && usage.photos > 0 ? (
+              // 거른 앨범만 비었다 — 다른 앨범에는 사진이 있으니 "아직 올린 사진이 없어요" 는 거짓이다(리뷰 P2-3).
+              // 다음 행동: 거른 것을 풀거나, 이 앨범에 올리기(업로더가 거른 앨범을 기본으로 고른다)
+              <div className={a.empty}>
+                <p>{t("emptyFiltered")}</p>
+                <Link className={a.emptyAction} href={ADMIN_GALLERY_PATH}>
+                  {t("clearFilter")}
+                </Link>{" "}
+                <a className={a.emptyAction} href="#gallery-upload-input">
+                  {t("emptyAction")}
+                </a>
+              </div>
+            ) : (
+              // 빈 상태 — 방향("위에서")이 아니라 다음 행동(사진 올리기 → 같은 화면의 파일 고르기 칸)과 짝짓는다(P5-20)
+              <div className={a.empty}>
+                <p>{t("empty")}</p>
+                <a className={a.emptyAction} href="#gallery-upload-input">
+                  {t("emptyAction")}
+                </a>
+              </div>
+            )
           ) : (
             <ul className={a.photoGrid} aria-label={t("listLabel")}>
               {photos.map((photo) => (

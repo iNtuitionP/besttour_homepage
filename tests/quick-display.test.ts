@@ -105,7 +105,8 @@ describe("2. 관리자 상세 — 간편 접수 배지 · 날짜만 · 미정(�
     const body = text(out);
     expect(out).toContain('data-testid="admin-intake"');
     expect(body).toContain(QUICK_BADGE);
-    expect(body).toContain("전화로 확인");
+    // 접수 방법 줄이 "전화로 확인해야 하는 접수" 임을 말한다(P5-20 문구 사전: "간편 접수 · 전화 확인 필요")
+    expect(body).toContain(t("admin.detail.value.intakeQuick" as never));
     expect(out).toMatch(/data-testid="admin-depart">2026-10-01</);
     expect(body).toContain("2026-10-03");
     // 시각 없음 — 운행일 자리에 00:00 이 나오지 않는다(접수·동의 시각 줄은 일시가 맞다)

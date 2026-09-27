@@ -138,11 +138,18 @@ export default async function AdminNotificationsPage({ searchParams }: { searchP
         <p className={a.hint}>{t("maskNote")}</p>
 
         {items.length === 0 ? (
-          <p className={a.empty}>{t("empty")}</p>
+          <div className={a.empty}>
+            <p>{t("empty")}</p>
+            {status !== "all" || channel !== "all" || period !== "all" ? (
+              <Link className={a.emptyAction} href="/admin/notifications">
+                {t("clearFilter")}
+              </Link>
+            ) : null}
+          </div>
         ) : (
           <div className={a.tableWrap}>
             <table className={a.table}>
-              <caption>{t("listLabel")}</caption>
+              <caption className={a.srOnly}>{t("listLabel")}</caption>
               <thead>
                 <tr>
                   <th className={a.th} scope="col">{t("col.status")}</th>

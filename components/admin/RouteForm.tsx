@@ -10,6 +10,8 @@
  * 저장되는 것은 언제나 **코드**다(CLAUDE.md §3). 선택지의 한글 라벨은 서버가 lib/codes.ts 카탈로그에서 풀어 내려 준다.
  * 문구는 전부 props(messages/ko.json `admin.routes.*`), 필드 이름은 lib/admin/routeInput.ts 의 단일 상수에서 온다.
  * 검증은 서버가 한다 — 이 컴포넌트를 거치지 않고 액션을 직접 부를 수 있기 때문이다(ADR-3).
+ *
+ * 결과 알림(P5-20): 성공은 레이아웃의 토스트, 실패(중복·입력 확인·찾을 수 없음)는 저장 버튼 아래 배너(role=alert). 판정은 feedback.ts.
  */
 import { useRouter } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
@@ -18,6 +20,9 @@ import { updateRoute } from "@/actions/admin/route";
 import { ROUTE_FIELDS, ROUTE_PRICE_MAX, ROUTE_SORT_MAX, type RouteActionCode, type RouteField } from "@/lib/admin/routeInput";
 
 import s from "./admin.module.css";
+import { AdminBanner } from "./AdminBanner";
+import { useAdminToast } from "./AdminToast";
+import { feedbackKind } from "./feedback";
 
 export interface RouteFormValues {
   originCode: string;
@@ -53,8 +58,9 @@ export function RouteForm({
   labels: RouteFormLabels;
 }) {
   const router = useRouter();
+  const toast = useAdminToast();
   const [pending, startTransition] = useTransition();
-  const [notice, setNotice] = useState("");
+  const [banner, setBanner] = useState("");
   const [invalid, setInvalid] = useState<Partial<Record<RouteField, true>>>({});
 
   const mark = (field: RouteField): "true" | undefined => (invalid[field] ? "true" : undefined);
@@ -62,11 +68,13 @@ export function RouteForm({
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    setNotice("");
+    setBanner("");
     setInvalid({});
     startTransition(async () => {
       const result = await updateRoute(formData);
-      setNotice(labels.results[result.code]);
+      const kind = feedbackKind(result);
+      if (kind === "toast") toast.show({ text: labels.results[result.code] });
+      else if (kind === "banner") setBanner(labels.results[result.code]);
       setInvalid(result.fieldErrors ?? {});
       if (!result.changed) return;
       router.refresh();
@@ -195,9 +203,7 @@ export function RouteForm({
         </button>
       </div>
 
-      <p className={s.notice} role="status" data-testid="admin-route-notice">
-        {notice}
-      </p>
+      <AdminBanner text={banner} testId="admin-route-banner" />
     </form>
   );
 }

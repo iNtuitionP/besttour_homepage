@@ -796,13 +796,15 @@ describe("6. 정적 규약", () => {
   // (tests/admin-popups.test.ts · admin-notices.test.ts · admin-routes.test.ts · admin-gallery.test.ts ·
   //  admin-notifications.test.ts 가 각 탭의 화면·액션을 단언한다).
   // 이제 자리만 지키는 탭은 없다 — aria-disabled 분기는 그대로 두되(다음 탭이 생길 자리) 켜진 목록이 전부여야 한다.
-  test("탭 — 여섯 탭이 전부 켜져 있다", async () => {
+  // P5-20 — 메뉴가 사이드바·탭 바가 되면서 홈이 첫 항목이 되고 순서가 묶음(매일 · 홈페이지 · 기록)을 따른다(tests/admin-nav.test.ts).
+  test("탭 — 여덟 항목(홈 포함)이 전부 켜져 있다", async () => {
     const { ADMIN_TABS } = await import("@/components/admin/tabs");
-    expect(ADMIN_TABS.map((t) => t.key)).toEqual(["reservations", "popups", "notices", "gallery", "routes", "notifications", "stats"]);
+    expect(ADMIN_TABS.map((t) => t.key)).toEqual(["home", "reservations", "notices", "popups", "gallery", "routes", "notifications", "stats"]);
     expect(ADMIN_TABS.filter((t) => t.ready).map((t) => t.href)).toEqual([
+      "/admin",
       "/admin/reservations",
-      "/admin/popups",
       "/admin/notices",
+      "/admin/popups",
       "/admin/gallery",
       "/admin/routes",
       "/admin/notifications",
@@ -823,7 +825,9 @@ describe("6. 정적 규약", () => {
     expect(src.split("\n")[0].trim()).toMatch(/^["']use client["'];?$/);
     expect(src).toMatch(/status === "new"/);
     expect(src, "완료 버튼은 confirmed 에서만 보인다 (M1)").toMatch(/status === "confirmed"/);
-    expect(src).toMatch(/role="status"/);
+    // 결과 알림 자리(role=status) — P5-20 부터 관리자 공용 토스트 부품(AdminToast.tsx)이 그린다
+    expect(src).toMatch(/<AdminToastRegion\b/);
+    expect(codeOf("components/admin/AdminToast.tsx")).toMatch(/role="status"/);
     expect(src).toMatch(/disabled=\{/);
   });
 

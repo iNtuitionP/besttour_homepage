@@ -25,6 +25,7 @@ import { useEffect, useId, useRef, type MouseEvent, type ReactNode } from "react
 
 import { inertBackground } from "@/components/quote/quick-quote";
 
+import { AdminBanner } from "./AdminBanner";
 import { sheetClosable, wrapFocus } from "./reservation-sheet";
 
 import s from "./admin.module.css";
@@ -44,6 +45,8 @@ export interface AdminSheetProps {
   after?: ReactNode;
   /** 시트 안 배너(role=alert). null 이면 없다. */
   banner: string | null;
+  /** 배너의 시도 번호(AdminBanner `attempt`) — 같은 실패가 다시 와도 배너가 다시 보이는 자리로 온다(재리뷰 P2-R1). */
+  bannerAttempt?: number;
   closeLabel: string;
   submitLabel: string;
   processingLabel: string;
@@ -64,6 +67,7 @@ export function AdminSheet({
   description,
   after,
   banner,
+  bannerAttempt,
   closeLabel,
   submitLabel,
   processingLabel,
@@ -161,11 +165,7 @@ export function AdminSheet({
           {description}
         </p>
         {after}
-        {banner === null ? null : (
-          <p className={s.banner} role="alert" data-testid="admin-sheet-banner">
-            {banner}
-          </p>
-        )}
+        <AdminBanner text={banner} attempt={bannerAttempt} testId="admin-sheet-banner" />
         <p className={s.sheetSlow} role="status" data-testid="admin-sheet-slow">
           {pending && slow ? slowNote : null}
         </p>

@@ -665,18 +665,21 @@ describe("7. 정적 규약", () => {
 // 8. 탭 · 문구 카탈로그
 // =============================================================================
 describe("8. 탭 · 문구", () => {
-  test("탭 — 발송 내역이 여섯 번째로 붙고 여섯 탭 전부 ready 다", async () => {
+  // P5-20 — 사이드바·탭 바 개편: 홈이 첫 항목, 발송 내역은 '기록' 묶음의 첫 항목(메뉴 이름 '문자 기록')이다(tests/admin-nav.test.ts).
+  test("탭 — 발송 내역이 '기록' 묶음에 있고 여덟 항목 전부 ready 다", async () => {
     const { ADMIN_TABS, ADMIN_TAB_KEYS } = await import("@/components/admin/tabs");
-    expect([...ADMIN_TAB_KEYS]).toEqual(["reservations", "popups", "notices", "gallery", "routes", "notifications", "stats"]);
+    expect([...ADMIN_TAB_KEYS]).toEqual(["home", "reservations", "notices", "popups", "gallery", "routes", "notifications", "stats"]);
     expect(ADMIN_TABS.filter((t) => t.ready).map((t) => t.href)).toEqual([
+      "/admin",
       "/admin/reservations",
-      "/admin/popups",
       "/admin/notices",
+      "/admin/popups",
       "/admin/gallery",
       "/admin/routes",
       ADMIN_NOTIFICATIONS_PATH,
       "/admin/stats",
     ]);
+    expect(ADMIN_TABS.find((t) => t.key === "notifications")?.group).toBe("records");
     expect(ADMIN_TABS.find((t) => t.key === "notifications")?.href).toBe(ADMIN_NOTIFICATIONS_PATH);
     expect(read(TABS_DEF)).toContain(ADMIN_NOTIFICATIONS_PATH);
   });

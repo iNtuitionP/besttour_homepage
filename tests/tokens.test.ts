@@ -193,6 +193,51 @@ describe("WCAG AA 대비 게이트", () => {
     expect(round2(contrast(resolved("--action-primary-bg"), resolved("--action-destructive-bg"))), "두 면이 너무 비슷하다").toBeGreaterThanOrEqual(1.5);
   });
 
+  /**
+   * P5-20 — 관리자 상태 배지(시안 ⑤-0). 새 색 없이 **브랜드 원시색만** 참조한다: 새 접수 = 골드 면 + 가장 짙은 보라 글자 + gold-deep 테두리,
+   * 급함 = 가장 짙은 보라 면 + 흰 글자, 확정 = 옅은 보라 면 + 보라 글자, 끝남(완료·취소) = 흰 면 + 회색 글자·회색 선.
+   */
+  it("--status-* — 열 개가 전부 있고 브랜드 원시색만 참조한다(새 색 금지)", () => {
+    const status = [...semantic.keys()].filter((k) => k.startsWith("--status-")).sort();
+    expect(status).toEqual(
+      [
+        "--status-attention-bg",
+        "--status-attention-fg",
+        "--status-attention-border",
+        "--status-urgent-bg",
+        "--status-urgent-fg",
+        "--status-confirmed-bg",
+        "--status-confirmed-fg",
+        "--status-confirmed-border",
+        "--status-closed-fg",
+        "--status-closed-border",
+      ].sort(),
+    );
+    for (const name of status) {
+      expect(/^var\(--(brand-\d+|gold|gold-deep|gray|gray-text|white)\)$/.test(semantic.get(name) ?? ""), `${name} = ${semantic.get(name)}`).toBe(true);
+    }
+    // 시안 ⑤-0 의 값 그대로
+    expect(resolved("--status-attention-bg").toUpperCase()).toBe(SUB);
+    expect(resolved("--status-urgent-bg").toUpperCase()).toBe(resolved("--brand-950").toUpperCase());
+  });
+
+  /**
+   * UI 요소(배지의 경계) ≥ 3:1 (WCAG 1.4.11). 흰 면(--bg-surface) 위에 놓이는 배지의 가장자리를 잰다.
+   * 확정 배지의 테두리(--status-confirmed-border = brand-200)는 **장식**이다 — 배지는 누를 수 없고, 무엇인지는 글자(8.41:1)와 ✓ 표식이 말한다.
+   * 골드 면(2.38:1)만으로는 흰 바탕에서 경계가 흐려서 gold-deep 테두리(4.97:1)를 두른다(시안 ⑤-0 주석).
+   */
+  it("상태 배지의 경계 — 흰 면 위에서 UI 3:1 이상(새 접수 테두리 · 급함 면 · 끝남 선)", () => {
+    const UI_PAIRS: Array<[edge: string, bg: string]> = [
+      ["--status-attention-border", "--bg-surface"],
+      ["--status-urgent-bg", "--bg-surface"],
+      ["--status-closed-border", "--bg-surface"],
+    ];
+    for (const [edge, bg] of UI_PAIRS) {
+      const r = round2(contrast(resolved(edge), resolved(bg)));
+      expect(r, `${edge} on ${bg} = ${r}:1`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
   it("어두운 면 위 텍스트 2종이 --bg-inverse 위에서 ≥ 4.5:1", () => {
     const bg = resolved("--bg-inverse");
     expect(round2(contrast(resolved("--text-on-inverse"), bg))).toBeGreaterThanOrEqual(4.5);
@@ -246,6 +291,11 @@ describe("텍스트 역할 토큰에 AA 미달색이 쓰이지 않는다", () =>
     // P5-19 — 되돌릴 수 없는 최종 버튼(확인 시트의 [접수 취소하기]). 새 색 없이 브랜드 원시색만 참조한다.
     ["--action-destructive-fg", "--action-destructive-bg"],
     ["--action-destructive-fg", "--action-destructive-bg-hover"],
+    // P5-20 — 관리자 상태 배지 글자(시안 ⑤-0): 새 접수 7.66 · 급함 18.20 · 확정 8.41 · 끝남(흰 면) 5.31
+    ["--status-attention-fg", "--status-attention-bg"],
+    ["--status-urgent-fg", "--status-urgent-bg"],
+    ["--status-confirmed-fg", "--status-confirmed-bg"],
+    ["--status-closed-fg", "--bg-surface"],
     ["--channel-kakao-fg", "--channel-kakao-bg"],
   ];
 

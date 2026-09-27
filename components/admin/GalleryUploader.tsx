@@ -45,6 +45,9 @@ import { commitUpload, type GalleryStoragePort } from "@/lib/admin/galleryUpload
 import { createBrowserSupabase } from "@/lib/supabase/client";
 
 import s from "./admin.module.css";
+import { AdminBanner } from "./AdminBanner";
+import { useAdminToast } from "./AdminToast";
+import { uploadSummary } from "./feedback";
 
 /** 공개본 WebP 품질. 0.82 는 1600px 사진에서 눈에 띄는 손실 없이 원본의 5~8% 크기가 되는 지점이다. */
 const WEBP_QUALITY = 0.82;
@@ -60,6 +63,12 @@ export interface GalleryUploaderLabels {
   heicHelp: string;
   /** "{done} / {total}" 자리표시자가 든 원문 — 관리자 영역에는 next-intl 프로바이더가 없어 여기서 채운다. */
   running: string;
+  /** "{ok}" 자리표시자가 든 원문 — 다 올린 뒤 토스트(P5-20). 한 장씩의 결과는 아래 진행 목록이 그대로 보여 준다. */
+  done: string;
+  /** 전부 실패했을 때의 요약 배너(리뷰 P2-6). */
+  failedAll: string;
+  /** "{n}" 자리표시자가 든 원문 — 일부만 실패했을 때의 요약 배너. */
+  failedSome: string;
   status: Record<"waiting" | "working" | "done" | "failed", string>;
   reject: Record<GalleryRejectReason, string>;
   result: Record<GalleryActionCode, string>;
@@ -106,17 +115,32 @@ export function GalleryUploader({
   labels: GalleryUploaderLabels;
 }) {
   const router = useRouter();
+  const toast = useAdminToast();
   const inputRef = useRef<HTMLInputElement>(null);
   const [albumId, setAlbumId] = useState<number | null>(defaultAlbumId);
   const [items, setItems] = useState<Item[]>([]);
   const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState("");
+  /**
+   * 요약 배너가 선 횟수(AdminBanner attempt) — 고른 것이 전부 걸러지면 같은 틱에 비우고 다시 써서, 같은 문구가 두 번이면
+   * 배너가 다시 붙지 않았다(재리뷰 P2-R1). 실패 요약마다 하나씩 는다.
+   */
+  const [failureRound, setFailureRound] = useState(0);
 
   const mark = (key: string, state: ItemState, message: string): void => {
     setItems((prev) => prev.map((it) => (it.key === key ? { ...it, state, message } : it)));
   };
 
+  /** 한 번의 올리기가 끝났을 때 실패 요약(없으면 비운다) — 전부 실패도, 일부 실패도 배너로 남는다(리뷰 P2-6). */
+  const summarize = (ok: number, failed: number): void => {
+    const summary = uploadSummary(ok, failed);
+    setFailure(summary === null ? "" : summary.kind === "allFailed" ? labels.failedAll : labels.failedSome.replace("{n}", String(summary.failed)));
+    if (summary !== null) setFailureRound((n) => n + 1);
+  };
+
   const onPick = async (fileList: FileList | null): Promise<void> => {
     if (!fileList || fileList.length === 0 || busy) return;
+    setFailure("");
     const picked = Array.from(fileList);
     const { accepted, rejected } = selectGalleryFiles(picked);
 
@@ -128,7 +152,11 @@ export function GalleryUploader({
     }));
     const acceptedItems: Item[] = accepted.map((f, i) => ({ key: `a${i}-${f.name}`, name: f.name, state: "waiting", message: "" }));
     setItems([...acceptedItems, ...rejectedItems]);
-    if (accepted.length === 0) return;
+    if (accepted.length === 0) {
+      // 고른 것이 전부 걸러졌다(형식·크기·장수) — 올릴 것이 없으니 곧바로 요약
+      summarize(0, rejected.length);
+      return;
+    }
 
     setBusy(true);
     let ok = 0;
@@ -216,7 +244,13 @@ export function GalleryUploader({
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
-      if (ok > 0) router.refresh();
+      if (ok > 0) {
+        // 다 올린 뒤 한 번 — 성공 장수만(실패한 장은 진행 목록에 그 자리 이유와 함께 남아 있다)
+        toast.show({ text: labels.done.replace("{ok}", String(ok)) });
+        router.refresh();
+      }
+      // 실패한 장이 있으면 요약 배너 — 전부 실패면 토스트가 없어서 이것이 유일한 알림이다. 올라가지 못한 장 = 고른 장 − 올라간 장
+      summarize(ok, accepted.length + rejected.length - ok);
     }
   };
 
@@ -267,8 +301,11 @@ export function GalleryUploader({
         </p>
       ) : null}
 
+      <AdminBanner text={failure} attempt={failureRound} testId="admin-gallery-upload-banner" />
+
       {items.length > 0 ? (
-        <ul className={s.uploadList} data-testid="admin-gallery-upload-list">
+        // 한 장씩의 결과(올리는 중 → 올림/실패)가 스크린리더에 차례로 읽힌다(polite — 리뷰 P2-6)
+        <ul className={s.uploadList} aria-live="polite" data-testid="admin-gallery-upload-list">
           {items.map((it) => (
             <li key={it.key} className={s.uploadItem} data-state={it.state}>
               <span className={s.uploadName}>{it.name}</span>

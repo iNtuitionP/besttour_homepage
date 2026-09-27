@@ -72,8 +72,8 @@ export default async function AdminNoticeEditPage({ params }: { params: Params }
           <p className={q.sub}>{t("publishedValue", { date: row.published_at })}</p>
         </header>
 
-        <section className={a.section}>
-          <h2 className={a.sectionTitle}>{t("edit")}</h2>
+        {/* 폼 구역의 이름은 화면 제목(h1)과 같은 말이라 따로 적지 않는다(P5-20 — 제목 중복 정리) */}
+        <section className={a.section} aria-label={t("edit")}>
           <NoticeForm
             mode="edit"
             id={row.id}

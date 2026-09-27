@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 
+import { StatusBadge } from "@/components/admin/StatusBadge";
+import type { StatusBadgeLabels } from "@/components/admin/status-badge";
+import { getStatusBadgeLabels } from "@/components/admin/statusBadgeLabels";
 import { PURPOSES, isLocationCode, locationLabelKo } from "@/lib/codes";
 import { vercelAnalyticsUrl } from "@/lib/analytics/dashboard";
 import { requireAdmin } from "@/lib/auth/requireAdmin";
@@ -94,6 +97,8 @@ export default async function AdminStatsPage({ searchParams }: { searchParams: S
     getNotifyCorrections(NOTIFY_WINDOW).catch((err: unknown) => (err instanceof Error ? err : new Error(String(err)))),
     getVehicles(),
   ]);
+  // P5-20 — ② 의 처리 대기 카드는 상태 배지로 이름을 단다(메뉴 배지·목록과 같은 "새 접수" · 72시간 넘은 것은 "답이 늦은 접수").
+  const badgeLabels = await getStatusBadgeLabels();
   const analyticsHref = vercelAnalyticsUrl();
   const vehicleNames = new Map(vehicles.map((v) => [v.slug, v.nameKo]));
 
@@ -132,7 +137,13 @@ export default async function AdminStatsPage({ searchParams }: { searchParams: S
         ) : (
           <>
             <Overview stats={stats} t={t} count={count} purgeWarning={purgeWarning} />
-            <Attention stats={stats} notify={attention ?? notifyAttention(stats.notifications, NO_CORRECTIONS)} t={t} count={count} />
+            <Attention
+              stats={stats}
+              notify={attention ?? notifyAttention(stats.notifications, NO_CORRECTIONS)}
+              t={t}
+              count={count}
+              badgeLabels={badgeLabels}
+            />
 
             {view === "empty" ? (
               <p className={a.empty} data-testid="admin-stats-empty">
@@ -190,11 +201,13 @@ export default async function AdminStatsPage({ searchParams }: { searchParams: S
                   </div>
 
                   <div className={a.subBlock}>
-                    <h3 className={a.subTitle}>{t("inquiry.segments")}</h3>
+                    <h3 className={a.subTitle} id="stats-segments">
+                      {t("inquiry.segments")}
+                    </h3>
                     <p className={a.statNote}>{t("inquiry.segmentsNote")}</p>
                     <div className={a.tableWrap}>
-                      <table className={`${a.table} ${a.tableNarrow}`}>
-                        <caption>{t("inquiry.segments")}</caption>
+                      {/* 표 이름은 바로 위 소제목(stats-segments)이 말한다 — 같은 말의 캡션을 또 적지 않는다(P5-20) */}
+                      <table className={`${a.table} ${a.tableNarrow}`} aria-labelledby="stats-segments">
                         <thead>
                           <tr>
                             <th className={a.th} scope="col">
@@ -331,7 +344,23 @@ function Overview({
   );
 }
 
-function Attention({ stats, notify, t, count }: { stats: AdminStats; notify: NotifyAttention; t: T; count: (n: number) => string }) {
+/**
+ * ② 지금 확인할 것 — 처리 대기 카드의 이름은 상태 배지다(P5-20): 같은 수(status='new')를 메뉴 배지·목록은 "새 접수" 라고 부르므로 여기서도 같은 말·같은 모양.
+ * 72시간이 지난 건이 있으면 그 줄에 "답이 늦은 접수" 배지(급함 톤 ! — 목록의 N일째 대기와 같은 기준, 0022 backlog.hours)를 붙인다.
+ */
+function Attention({
+  stats,
+  notify,
+  t,
+  count,
+  badgeLabels,
+}: {
+  stats: AdminStats;
+  notify: NotifyAttention;
+  t: T;
+  count: (n: number) => string;
+  badgeLabels: StatusBadgeLabels;
+}) {
   const { backlog, notifications } = stats;
   // 보정된 값(notify)으로 그린다 — 격리 행은 "보내지 못한 건" 이 아니라 "발송됨 · 기록 확인 필요" 다(P4-7 수정 라운드 3).
   const notifyOk = notify.ok;
@@ -343,12 +372,19 @@ function Attention({ stats, notify, t, count }: { stats: AdminStats; notify: Not
       <p className={a.hint}>{t("attention.periodFree")}</p>
       <div className={a.statGrid} data-cols="2">
         <article className={a.statCard}>
-          <p className={a.statLabel}>{t("attention.backlog")}</p>
+          <p className={a.statLabel}>
+            <StatusBadge badge={{ kind: "new" }} labels={badgeLabels} />
+          </p>
           <p className={a.statValue}>{count(backlog.new_total)}</p>
           <p className={a.statDelta}>
-            {backlog.over_72h > 0
-              ? t("attention.backlogOver", { hours: backlog.hours, n: backlog.over_72h })
-              : t("attention.backlogClear", { hours: backlog.hours })}
+            {backlog.over_72h > 0 ? (
+              <>
+                <StatusBadge badge={{ kind: "overdue" }} labels={badgeLabels} />{" "}
+                {t("attention.backlogOver", { hours: backlog.hours, n: backlog.over_72h })}
+              </>
+            ) : (
+              t("attention.backlogClear", { hours: backlog.hours })
+            )}
           </p>
           <p className={a.statNote}>{t("attention.backlogNote")}</p>
           <Link className={a.statLink} href="/admin/reservations?status=new">

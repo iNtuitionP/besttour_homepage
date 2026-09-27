@@ -221,6 +221,23 @@ export async function listReservations(params: ReservationListParams, client?: A
   return { items: rows.slice(0, limit), hasMore, nextCursor: hasMore ? cursor + limit : null };
 }
 
+/**
+ * 새 접수 건수 — `status='new'` 인 접수 전부(P5-20). **배지 정의는 이것 하나다**: 메뉴(사이드바·탭 바)가 이 값을 쓰고,
+ * P5-21 의 홈 카드·목록 탭도 같은 함수를 부른다(같은 수를 화면마다 다르게 세지 않는다 — 제안서 ④ 원칙 2).
+ * 0022 의 backlog.new_total 과 같은 정의다(기간 무관 · status='new').
+ *
+ * head 집계라 행은 오지 않는다(개인정보 0 — 숫자 하나). 위의 "count 쿼리 금지" 는 페이지 넘김 판정 얘기다(limit + 1 로 충분하다).
+ * 세션 클라이언트 + 0009 RLS 로 센다(서비스 롤 금지 — ADR-2). 오류나 빈 count 를 0 으로 갈음하지 않고 throw 한다 —
+ * "새 접수 없음" 과 "모름" 은 다르다. 부르는 쪽(레이아웃)이 모름을 배지 숨김으로 다룬다.
+ */
+export async function countNewReservations(client?: AdminDbClient): Promise<number> {
+  const db = client ?? (await sessionClient());
+  const { count, error } = await db.from(TABLE).select("id", { count: "exact", head: true }).eq("status", "new");
+  if (error) fail("countNewReservations", error);
+  if (typeof count !== "number") throw new Error("admin.countNewReservations: count 를 받지 못했다 — 0 으로 갈음하지 않는다");
+  return count;
+}
+
 /** 상세 한 건. 없으면 null. uuid 가 아니면 DB 를 부르지 않고 throw 한다(경로에 들어온 쓰레기값). */
 export async function getReservation(id: string, client?: AdminDbClient): Promise<ReservationDetailRow | null> {
   if (!isUuid(id)) throw new Error("getReservation: id 가 uuid 가 아니다");

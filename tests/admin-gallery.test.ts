@@ -989,13 +989,15 @@ describe("7. 정적 규약", () => {
   });
 
   // P5-8 이 여섯 번째 탭(발송 내역)을 덧붙였다 — tests/admin-notifications.test.ts 가 그 탭의 화면을 단언한다.
-  test("탭 — 갤러리가 켜졌다. 여섯 탭 전부 ready 다", async () => {
+  // P5-20 — 사이드바·탭 바 개편: 홈이 첫 항목이 되고 순서가 묶음(매일 · 홈페이지 · 기록)을 따른다(tests/admin-nav.test.ts).
+  test("탭 — 갤러리가 켜졌다. 여덟 항목 전부 ready 다", async () => {
     const { ADMIN_TABS } = await import("@/components/admin/tabs");
-    expect(ADMIN_TABS.map((t) => t.key)).toEqual(["reservations", "popups", "notices", "gallery", "routes", "notifications", "stats"]);
+    expect(ADMIN_TABS.map((t) => t.key)).toEqual(["home", "reservations", "notices", "popups", "gallery", "routes", "notifications", "stats"]);
     expect(ADMIN_TABS.filter((t) => t.ready).map((t) => t.href)).toEqual([
+      "/admin",
       "/admin/reservations",
-      "/admin/popups",
       "/admin/notices",
+      "/admin/popups",
       "/admin/gallery",
       "/admin/routes",
       "/admin/notifications",

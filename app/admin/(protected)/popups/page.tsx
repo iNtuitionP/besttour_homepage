@@ -56,8 +56,10 @@ export default async function AdminPopupsPage() {
         </header>
 
         <div className={a.popupGrid}>
-          <section className={a.section}>
-            <h2 className={a.sectionTitle}>{t("new")}</h2>
+          <section className={a.section} aria-labelledby="popup-new-title">
+            <h2 className={a.sectionTitle} id="popup-new-title">
+              {t("new")}
+            </h2>
             <PopupForm
               mode="create"
               listHref={ADMIN_POPUPS_PATH}
@@ -90,14 +92,22 @@ export default async function AdminPopupsPage() {
             />
           </section>
 
-          <section className={a.section}>
-            <h2 className={a.sectionTitle}>{t("listLabel")}</h2>
+          <section className={a.section} aria-labelledby="popup-list-title">
+            <h2 className={a.sectionTitle} id="popup-list-title">
+              {t("listLabel")}
+            </h2>
             {rows.length === 0 ? (
-              <p className={a.empty}>{t("empty")}</p>
+              // 빈 상태 — 방향("왼쪽에서")이 아니라 다음 행동(팝업 만들기 → 같은 화면의 제목 칸)과 짝짓는다(P5-20)
+              <div className={a.empty}>
+                <p>{t("empty")}</p>
+                <a className={a.emptyAction} href="#popup-title">
+                  {t("emptyAction")}
+                </a>
+              </div>
             ) : (
               <div className={a.tableWrap}>
-                <table className={a.tablePopups}>
-                  <caption>{t("listLabel")}</caption>
+                {/* 표 이름은 섹션 제목이 말한다 — 같은 말의 캡션을 또 적지 않는다(P5-20) */}
+                <table className={a.tablePopups} aria-labelledby="popup-list-title">
                   <thead>
                     <tr>
                       <th className={a.th} scope="col">

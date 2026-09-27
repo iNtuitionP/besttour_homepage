@@ -1108,7 +1108,9 @@ describe("7. 정적 — 진입 버튼은 시트를 열 뿐이다 · 서버액션
     expect(ui).toMatch(/status === "new"/);
     expect(ui).toMatch(/status === "confirmed"/);
     expect(ui).toMatch(/disabled=\{pending\}/);
-    expect(ui).toMatch(/role="status"/);
+    // 결과 알림 자리(role=status) — P5-20 에서 토스트 부품을 관리자 전체로 넓혀(AdminToast.tsx) 그 부품이 자리를 그린다.
+    expect(ui).toMatch(/<AdminToastRegion\b/);
+    expect(codeOf("components/admin/AdminToast.tsx")).toMatch(/role="status"/);
   });
 
   test("시트 — 열면 닫기에 포커스 · 배경 inert(간편 견적 모달과 같은 함수) · 스크롤 잠금 · ESC · Tab 가둠 · 바깥 누르기", () => {

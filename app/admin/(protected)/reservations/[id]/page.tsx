@@ -2,8 +2,11 @@ import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 
 import { ReservationActions } from "@/components/admin/ReservationActions";
+import { StatusBadge } from "@/components/admin/StatusBadge";
 import { CUSTOMER_NAME_ELEMENT_ID, type ReservationSummary } from "@/components/admin/reservation-sheet";
 import { getReservationActionLabels } from "@/components/admin/reservationActionLabels";
+import { reservationBadge } from "@/components/admin/status-badge";
+import { getStatusBadgeLabels } from "@/components/admin/statusBadgeLabels";
 import { routing } from "@/i18n/routing";
 import { LEGACY_CONTACT_METHODS, LEGACY_PAYMENT_METHODS, getReservation, isUuid, type ReservationDetailRow } from "@/lib/admin/reservations";
 import { requireAdmin } from "@/lib/auth/requireAdmin";
@@ -36,8 +39,11 @@ import q from "@/components/quote/quote.module.css";
  * 값 라벨(여행 구분·연락/결제 방법)은 옛 위저드가 쓰던 문구를 그대로 admin.labels.* 로 옮겼다(P3-8 — 위저드 폐지. 옛 접수분의 코드를
  * 사장님이 같은 말로 읽게). 운행 구분은 예약확인과 같은 reservationCheck.tripType.* 이다.
  *
- * 간편 접수(P3-8 · 0023 intake='quick'): "접수 경로" 줄에 간편 접수임과 전화로 확인할 항목을 적고, 출발일·도착일은 **날짜만**
- * (저장된 00:00 은 자리값), 여행 구분·차량·운행 구분·대수는 "미정(전화 확인)". 손님이 고르지 않은 값을 지어내 보이지 않는다.
+ * 간편 접수(P3-8 · 0023 intake='quick'): "접수 방법" 줄에 "간편 접수 · 전화 확인 필요"(P5-20 문구 사전)를 적고, 출발일·도착일은 **날짜만**
+ * (저장된 00:00 은 자리값), 여행 구분·차량·운행 구분·대수는 "미정(전화 확인)"(전화로 확인할 칸이 그 줄들이다). 손님이 고르지 않은 값을 지어내 보이지 않는다.
+ *
+ * 머리의 상태는 P5-20 의 상태 배지다(components/admin/StatusBadge.tsx) — 72시간이 넘은 새 접수는 "N일째 대기". 간편 접수면 옆에 간편 칩을 함께 둔다
+ * (시안 #detail 머리 배지 줄). 상세 재배치(제목 = 고객 이름 · 연락 카드 · 오른쪽 처리 카드)는 P5-21 이다.
  *
  * 개발용 우회 경로는 없다(목록 화면 헤더 참조 — P5-3 독립 리뷰에서 제거).
  */
@@ -103,7 +109,7 @@ export default async function AdminReservationDetailPage({ params }: { params: P
   const none = t("value.none");
   const quick = row.intake === "quick";
   const undecided = tRoot("admin.labels.undecided");
-  const actionLabels = await getReservationActionLabels();
+  const [actionLabels, badgeLabels] = await Promise.all([getReservationActionLabels(), getStatusBadgeLabels()]);
   const routeText = tRoot("admin.reservations.routeValue", {
     origin: placeLabel(row.origin_code),
     destination: placeLabel(row.destination_code),
@@ -133,10 +139,9 @@ export default async function AdminReservationDetailPage({ params }: { params: P
           <h1 className={q.title}>
             {t("title")} · {row.public_code}
           </h1>
-          <p className={q.sub}>
-            <span className={a.badge} data-status={row.status}>
-              {tRoot(`admin.reservations.status.${row.status}`)}
-            </span>
+          <p className={`${q.sub} ${a.badgeRow}`}>
+            <StatusBadge badge={reservationBadge(row.status, row.created_at, new Date())} labels={badgeLabels} />
+            {quick ? <StatusBadge badge={{ kind: "quick" }} labels={badgeLabels} /> : null}
           </p>
         </header>
 
@@ -176,16 +181,7 @@ export default async function AdminReservationDetailPage({ params }: { params: P
             <div className={a.row}>
               <dt className={a.dt}>{t("field.intake")}</dt>
               <dd className={a.dd} data-testid="admin-intake">
-                {quick ? (
-                  <>
-                    <span className={a.badge} data-intake="quick">
-                      {tRoot("admin.labels.quickBadge")}
-                    </span>{" "}
-                    {t("value.intakeQuick")}
-                  </>
-                ) : (
-                  t("value.intakeWizard")
-                )}
+                {quick ? t("value.intakeQuick") : t("value.intakeWizard")}
               </dd>
             </div>
             <div className={a.row}>

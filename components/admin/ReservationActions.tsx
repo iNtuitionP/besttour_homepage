@@ -28,9 +28,8 @@
  * 개발용 우회 분기는 없다(P5-3 독립 리뷰). 이 컴포넌트가 화면에 있다는 것은 서버가 이미 관리자 세션을 확인했다는 뜻이고,
  * 버튼은 언제나 진짜 서버액션을 부른다 — 그 액션도 자기 자리에서 requireAdmin() 을 다시 통과해야 한다.
  */
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useId, useReducer, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState, useTransition } from "react";
 
 import {
   cancelReservation,
@@ -41,7 +40,9 @@ import {
 import { ADMIN_MEMO_MAX_CHARS } from "@/lib/admin/memo";
 import type { ReservationStatus } from "@/lib/admin/reservations";
 
+import { AdminBanner } from "./AdminBanner";
 import { AdminSheet } from "./AdminSheet";
+import { AdminToastRegion, type ShownToast } from "./AdminToast";
 import {
   CUSTOMER_NAME_ELEMENT_ID,
   SHEET_STUCK_MS,
@@ -52,7 +53,6 @@ import {
   panelController,
   panelReducer,
   sheetTitle,
-  toastDurationMs,
   toastHasLink,
   type CancelReason,
   type PanelActions,
@@ -199,11 +199,11 @@ export function ReservationActions({ id, status, initialMemo, summary, labels }:
         <button type="button" className={s.btnSecondary} disabled={pending} onClick={saveMemo} data-testid="admin-memo-save">
           {labels.memoSave}
         </button>
-        {state.memoBanner === null ? null : (
-          <p className={s.banner} role="alert" data-testid="admin-memo-banner">
-            {bannerMessage(state.memoBanner, labels)}
-          </p>
-        )}
+        <AdminBanner
+          text={state.memoBanner === null ? null : bannerMessage(state.memoBanner, labels)}
+          attempt={state.memoBannerSeq}
+          testId="admin-memo-banner"
+        />
       </div>
 
       {canCancel ? (
@@ -323,6 +323,7 @@ export function ReservationSheet({
       description={copy.body}
       after={after}
       banner={banner}
+      bannerAttempt={state.sheetBannerSeq}
       closeLabel={labels.sheet.close}
       submitLabel={copy.submit}
       processingLabel={labels.processing}
@@ -338,53 +339,18 @@ export function ReservationSheet({
 }
 
 /**
- * 결과 토스트 — role=status 자리는 처음부터 있고(비어 있음), 문구는 **한 번 늦게** 넣는다.
- * 시트가 닫히는 순간에는 배경(이 자리 포함)이 아직 inert 다 — 같은 순간에 문구를 넣으면 스크린리더가 놓칠 수 있다.
- * 시트의 inert 해제(effect 정리)가 먼저 돌고 이 effect 가 뒤에 돌아, 문구는 읽히는 자리에 들어간다.
- * 마우스를 올리거나 포커스가 들어가 있는 동안은 사라지지 않는다(링크를 누르러 가는 사이 없어지지 않게).
+ * 결과 토스트 — P5-20 에서 부품을 관리자 전체로 넓혔다(components/admin/AdminToast.tsx AdminToastRegion). 동작은 그대로다:
+ * role=status 자리는 처음부터 있고(비어 있음), 문구는 **한 번 늦게** 넣는다 — 시트가 닫히는 순간에는 배경(이 자리 포함)이 아직 inert 라
+ * 같은 순간에 문구를 넣으면 스크린리더가 놓칠 수 있다(시트의 inert 해제가 먼저, 문구가 뒤에). 3초 · 링크가 있으면 5초 ·
+ * 마우스·포커스가 있는 동안은 멈춘다. 시간은 토스트 번호로 잰다 — 새로고침으로 라벨이 다시 내려와도 시계가 처음부터 돌지 않는다.
  */
 function ActionToast({ toast, labels, onDone }: { toast: PanelState["toast"]; labels: ReservationActionLabels; onDone: (id: number) => void }) {
-  const [shown, setShown] = useState<PanelState["toast"]>(null);
-  const [paused, setPaused] = useState(false);
-
-  useEffect(() => {
-    setShown(toast);
-  }, [toast]);
-
-  const link = shown !== null && toastHasLink(shown.code) ? labels.toastLink : null;
-  const hasLink = link !== null;
-
-  useEffect(() => {
-    if (shown === null || paused) return;
-    const timer = window.setTimeout(() => onDone(shown.id), toastDurationMs(hasLink));
-    return () => window.clearTimeout(timer);
-  }, [shown, paused, hasLink, onDone]);
-
-  return (
-    <div className={s.toastRegion} role="status" aria-live="polite" aria-atomic="true" data-testid="admin-toast-region">
-      {shown === null ? null : (
-        <div
-          className={s.toast}
-          data-testid="admin-toast"
-          data-code={shown.code}
-          onMouseEnter={() => setPaused(true)}
-          onMouseLeave={() => setPaused(false)}
-          onFocus={() => setPaused(true)}
-          onBlur={(e) => {
-            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setPaused(false);
-          }}
-        >
-          <svg className={s.toastIcon} viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M5 12.5l4.5 4.5L19 7.5" />
-          </svg>
-          <span className={s.toastText}>{labels.results[shown.code]}</span>
-          {link === null ? null : (
-            <Link className={s.toastLink} href={link.href}>
-              {link.label}
-            </Link>
-          )}
-        </div>
-      )}
-    </div>
+  const shown = useMemo<ShownToast | null>(
+    () =>
+      toast === null
+        ? null
+        : { id: toast.id, code: toast.code, text: labels.results[toast.code], link: toastHasLink(toast.code) ? labels.toastLink : null },
+    [toast, labels],
   );
+  return <AdminToastRegion toast={shown} onDone={onDone} />;
 }

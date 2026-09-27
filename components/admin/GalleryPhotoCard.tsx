@@ -14,6 +14,8 @@
  *
  * **설명은 저장 전에 확인한다(P6-12 · known-defects D4).** 서버가 확인이 필요한 표현을 찾으면 저장하지 않고
  * 카드 안에 CopyWarningPanel 을 띄운다. **그대로 저장하기**를 누르면 같은 값에 확인 키(copyAck)를 붙여 다시 보낸다 — 막지 않는다.
+ *
+ * 결과 알림(P5-20): 성공은 레이아웃의 토스트, 실패는 이 카드 안 배너(role=alert — 다음 동작 때 걷힌다). 판정은 feedback.ts.
  */
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -24,7 +26,10 @@ import { COPY_ACK_FIELD, type CopyWarning } from "@/lib/admin/copyWarning";
 import { GALLERY_CAPTION_MAX, GALLERY_SORT_MAX, type GalleryActionCode, type GalleryActionResult } from "@/lib/admin/galleryInput";
 
 import s from "./admin.module.css";
+import { AdminBanner } from "./AdminBanner";
+import { useAdminToast } from "./AdminToast";
 import { CopyWarningPanel, mergeAck, type CopyWarningLabels } from "./CopyWarningPanel";
+import { feedbackKind } from "./feedback";
 
 const THUMB_WIDTH = 320;
 const THUMB_HEIGHT = 240;
@@ -70,25 +75,31 @@ export function GalleryPhotoCard({
   labels: GalleryPhotoCardLabels;
 }) {
   const router = useRouter();
+  const toast = useAdminToast();
   const [pending, startTransition] = useTransition();
-  const [notice, setNotice] = useState("");
+  const [banner, setBanner] = useState("");
   const [missing, setMissing] = useState(false);
   const [armed, setArmed] = useState(false);
   const [caption, setCaption] = useState(photo.caption);
   const [albumId, setAlbumId] = useState<number | null>(photo.albumId);
   const [sort, setSort] = useState(String(photo.sort));
   const [warnings, setWarnings] = useState<CopyWarning[]>([]);
+  /** 저장이 경고로 멈춘 횟수 — 같은 경고가 다시 와도 패널이 다시 보이는 자리로 온다(재리뷰 P2-R1 · CopyWarningPanel attempt). */
+  const [warningRound, setWarningRound] = useState(0);
   const [ack, setAck] = useState<string[]>([]);
 
   /** save=true 인 동작(설명 저장)만 경고 패널을 열고 닫는다 — 노출 토글이 떠 있는 경고를 지우지 않게. */
   const run = (action: () => Promise<GalleryActionResult>, save = false): void => {
-    setNotice("");
+    setBanner("");
     startTransition(async () => {
       const result = await action();
-      setNotice(labels.results[result.code]);
+      const kind = feedbackKind(result);
+      if (kind === "toast") toast.show({ text: labels.results[result.code] });
+      else if (kind === "banner") setBanner(labels.results[result.code]);
       if (result.code === "copyWarning") {
         const held = result.copyWarnings ?? [];
         setWarnings(held);
+        setWarningRound((n) => n + 1);
         setAck((prev) => mergeAck(prev, held));
         return;
       }
@@ -213,6 +224,7 @@ export function GalleryPhotoCard({
         pending={pending}
         onConfirm={() => onSave(true)}
         idPrefix={`photo-${photo.id}`}
+        attempt={warningRound}
       />
 
       <div className={s.dangerZone}>
@@ -234,9 +246,7 @@ export function GalleryPhotoCard({
         </button>
       </div>
 
-      <p className={s.notice} role="status">
-        {notice}
-      </p>
+      <AdminBanner text={banner} />
     </li>
   );
 }

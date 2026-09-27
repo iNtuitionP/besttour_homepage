@@ -17,6 +17,7 @@
 import { fillCopyWarningItem, mergeCopyAck, type CopyWarning, type CopyWarningLabels } from "@/lib/admin/copyWarning";
 
 import s from "./admin.module.css";
+import { revealBanner } from "./AdminBanner";
 
 export type { CopyWarningLabels };
 export const mergeAck = mergeCopyAck;
@@ -34,6 +35,7 @@ export function CopyWarningPanel({
   pending,
   onConfirm,
   idPrefix,
+  attempt = 0,
 }: {
   warnings: readonly CopyWarning[];
   labels: CopyWarningLabels;
@@ -41,11 +43,25 @@ export function CopyWarningPanel({
   /** 없으면 submit 버튼으로 그린다(폼 안에서 쓸 때). */
   onConfirm?: () => void;
   idPrefix: string;
+  /**
+   * 시도 번호 — 저장이 경고로 멈출 때마다 부르는 쪽이 늘려 넘긴다. 폼은 제출 사이에 경고를 들고 있어서, 같은 경고가 다시 오면
+   * 걸린 표현(key)이 같아 패널이 다시 붙지 않았다(재리뷰 P2-R1). 번호가 바뀌면 다시 붙고 다시 보이는 자리로 온다.
+   */
+  attempt?: number;
 }) {
   if (warnings.length === 0) return null;
   const titleId = `${idPrefix}-copy-warning-title`;
+  // 나타날 때 · 걸린 표현이 바뀔 때 · 같은 경고가 다시 올 때(attempt) 한 번 보이는 자리로 온다: 저장 버튼 아래에 뜨므로 휴대폰에서는
+  // 아래 탭 바에 깔릴 수 있었다(P5-20 수정 라운드 · 리뷰 P1-1). 실패 배너(AdminBanner)와 같은 revealBanner 다.
   return (
-    <div className={s.copyWarning} role="alert" aria-labelledby={titleId} data-testid="admin-copy-warning">
+    <div
+      key={`${attempt}|${warnings.map((w) => w.key).join("|")}`}
+      ref={revealBanner}
+      className={s.copyWarning}
+      role="alert"
+      aria-labelledby={titleId}
+      data-testid="admin-copy-warning"
+    >
       <p className={s.copyWarningTitle} id={titleId}>
         {labels.title}
       </p>

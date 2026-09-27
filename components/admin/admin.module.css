@@ -4,64 +4,212 @@
  *
  * 색은 styles/semantic.css 의 역할 토큰만(HEX·rgba·원시 토큰 금지 — CLAUDE.md §4). 간격·라운드도 역할 토큰만
  * (tests/layout.test.ts §4 가 components/ 아래 모든 CSS Module 을 검사한다). px 는 치수·타이포·선 두께에만.
- * 팔레트에 상태색(빨강·초록)이 없다 — 상태 배지는 색이 아니라 **테두리 굵기와 글자 굵기**로 구분한다(색 단독 의존 금지).
+ * 팔레트에 상태색(빨강·초록)이 없다 — P5-20 부터 상태 배지는 브랜드 원시색만 참조하는 --status-* 역할 토큰(골드·가장 짙은 보라·옅은 보라·회색)
+ * 이고, 색만으로 구분하지 않는다: 글자 + 표식(점·!·✓·×·전화) + 선(실선·점선) — 아래 .statusBadge.
+ * **채운 보라(주 버튼 색 — --action-primary-bg 와 그 호버·누름)는 버튼 전용**이다(시안 ⑤-0). 현재 표시·선택된 필터·노출 중 배지는
+ * 옅은 면 + 띠/테두리로 그린다. 검사는 토큰 이름이 아니라 **원시색으로 풀어서** 한다(다른 이름으로 같은 색을 칠해도 잡힌다 — 리뷰 P2-1).
+ * 예외는 현재 표시의 띠(4px 이하 선)와 누를 수 없는 통계 막대(.barFill · 추이의 확정 조각 · 그 범례)뿐 —
+ * tests/admin-status-badge.test.ts 가 사유와 함께 잠근다.
  * 공통 골격(.main .wrap .pageHead .title .sub .card)은 components/quote/quote.module.css 를 그대로 재사용한다.
  */
 
-/* ── 탭 ─────────────────────────────────────────────────────────────────── */
-.tabs {
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border-decorative);
+/* ── 셸 — 메뉴 (P5-20 · 시안 docs/handoff/2026-09-27-admin-ux 셸 · components/admin/AdminTabs.tsx) ───────────
+ * 한 벌의 마크업을 폭에 따라 보여 준다: ≥1024px 왼쪽 사이드바 248px · <1024px 위 제목줄 56px + 아래 탭 바 4개(56px + safe area).
+ * 사이드바는 position:fixed 다 — html·body 의 overflow-x:hidden(app/globals.css) 때문에 sticky 는 달라붙지 않는다(body 가 스크롤하지 않는
+ * 스크롤 상자가 된다). 그래서 격자의 첫 칸을 비워 자리를 잡고, 사이드바를 그 자리에 고정해 둔다(간격 px 없이 — 격자 칸이 곧 자리다).
+ * 위 제목줄은 제자리(흐름 안)에 둔다 — 같은 이유로 sticky 가 듣지 않고, fixed 로 띄우면 본문 첫 줄·앵커 이동이 그 아래로 숨는다.
+ * 이동은 늘 화면 아래 탭 바가 맡는다(fixed). 탭 바가 본문 끝을 가리지 않게 본문 끝에 탭 바 높이만큼 빈 자리(.tabbarSpacer)를 두고,
+ * 스크롤 도중에도 가리지 않게 문서의 아래 scroll-padding 을 같은 높이로 둔다(포커스·실패 배너 — 리뷰 P1-1 · 아래 :global(html)).
+ * 현재 표시는 **옅은 면 + 띠 + 굵은 글자**다 — 채운 보라(--action-primary-bg)는 버튼 전용이다(시안 ⑤-0 · 제안서 ②-9).
+ */
+.shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  /* 줄은 내용 높이 — 늘리면 짧은 화면에서 남는 높이가 위 제목줄에 나눠 붙는다(375px 실측 56px → 272px) */
+  align-content: start;
+  min-height: 100vh;
+  background: var(--bg-page);
 }
-.tabList {
+.skip {
+  position: absolute;
+  left: var(--space-inline-xs);
+  top: calc(-1 * var(--space-section));
+  z-index: 100;
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  background: var(--bg-surface);
+  border: 2px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.skip:focus {
+  top: var(--space-stack-xs);
+}
+/* 화면에서만 숨긴다(스크린리더는 읽는다) — AdminSkeleton.module.css 와 같은 방식 */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* 사이드바(≥1024px) */
+.sidebar {
+  display: none;
+}
+.brand {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-inline-xs);
-  max-width: 1080px;
-  margin: 0 auto;
-  padding: var(--space-stack-xs) var(--space-page-x);
+  padding: 0 var(--space-inline-xs) var(--space-stack-sm);
+}
+.brandMark {
+  width: 32px;
+  height: auto;
+  flex: none;
+}
+.brandName {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+.sideNav {
+  display: flex;
+  flex-direction: column;
+}
+.sideList {
+  display: flex;
+  flex-direction: column;
   list-style: none;
 }
-.tab {
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--space-inline-xs);
-  padding: var(--space-stack-xs) var(--space-inline-sm);
-  border-radius: var(--radius-control);
-  font-size: 14px;
+.sideGroup {
+  margin: var(--space-stack-sm) 0 0;
+}
+.sideGroupLabel {
+  padding: 0 var(--space-inline-xs) var(--space-stack-xs);
+  font-size: 13px;
   font-weight: 700;
-  text-decoration: none;
   color: var(--text-secondary);
 }
-.tab:hover {
-  background: var(--bg-subtle);
-  color: var(--text-brand);
+.sideItem {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  min-height: 44px;
+  padding: 0 var(--space-inline-xs);
+  border-radius: var(--radius-control);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-decoration: none;
 }
-.tab:focus-visible {
+.sideItem:hover {
+  background: var(--bg-subtle);
+}
+.sideItem:focus-visible,
+.sideLink:focus-visible,
+.tabItem:focus-visible,
+.iconBtn:focus-visible,
+.hubItem:focus-visible,
+.skip:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
-.tab[data-current="true"] {
-  background: var(--action-primary-bg);
-  color: var(--action-primary-fg);
+.sideItem[aria-current] {
+  background: var(--bg-subtle);
+  color: var(--text-brand);
+  font-weight: 800;
 }
-.tab[aria-disabled="true"] {
+.sideItem[aria-current]::before {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--space-inline-xs));
+  top: var(--space-stack-xs);
+  bottom: var(--space-stack-xs);
+  width: 4px;
+  border-radius: 0 var(--radius-chip) var(--radius-chip) 0;
+  background: var(--border-strong);
+}
+.sideItem[aria-disabled="true"] {
   color: var(--action-disabled-fg);
-  background: var(--action-disabled-bg);
   cursor: not-allowed;
 }
-.tabNote {
-  font-size: 11.5px;
+.sideLabel {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.sideNote {
+  font-size: 12px;
   font-weight: 600;
 }
-/* 로그아웃(P5-11) — 탭 줄의 오른쪽 끝. 좁은 화면에서는 탭과 함께 줄바꿈된다. */
-.tabTail {
-  margin-inline-start: auto;
+/* 선 아이콘 — 라벨이 늘 함께 붙는 장식(--icon-default 는 보더·아이콘 전용 회색). 현재 항목은 브랜드색 */
+.navIcon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--icon-default);
 }
+.sideItem[aria-current] .navIcon {
+  color: var(--icon-brand);
+}
+/* 새 접수 배지 — 골드(새 접수와 같은 톤 · 시안). 숫자는 aria-hidden, 스크린리더 문장은 .srOnly */
+.navCount {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 var(--space-inline-xs);
+  border: 1px solid var(--status-attention-border);
+  border-radius: 999em;
+  background: var(--status-attention-bg);
+  color: var(--status-attention-fg);
+  font-size: 12.5px;
+  font-weight: 800;
+  line-height: 1;
+}
+.sideFoot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-stack-xs);
+  margin: auto 0 0;
+  padding: var(--space-stack-sm) var(--space-inline-xs) 0;
+  border-top: 1px solid var(--border-decorative);
+}
+.sideWho {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+}
+.sideLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  min-height: 44px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-link);
+  text-decoration: none;
+  border-radius: var(--radius-control);
+}
+.sideLink .navIcon {
+  color: var(--icon-brand);
+}
+/* 로그아웃(P5-11) — form 제출 버튼. 보조 버튼 모양 */
 .signOut {
   display: inline-flex;
   align-items: center;
-  padding: var(--space-stack-xs) var(--space-inline-sm);
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--space-inline-sm);
   border: 1px solid var(--action-secondary-border);
   border-radius: var(--radius-control);
   background: var(--action-secondary-bg);
@@ -71,12 +219,259 @@
   color: var(--action-secondary-fg);
   cursor: pointer;
 }
-.signOut:hover {
+.signOut:hover,
+.topSignOut:hover {
   background: var(--action-secondary-bg-hover);
 }
-.signOut:focus-visible {
+.signOut:focus-visible,
+.topSignOut:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+}
+
+/* 위 제목줄(<1024px) — 브랜드 · 홈페이지 보기 · 로그아웃 */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  min-height: 56px;
+  padding: 0 var(--space-inline-xs) 0 var(--space-page-x);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-decorative);
+}
+.topBrand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+.topBrand .brandMark {
+  width: 28px;
+}
+.iconBtn {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: var(--radius-control);
+  color: var(--icon-brand);
+}
+.iconBtn .navIcon {
+  color: var(--icon-brand);
+}
+.iconBtn:hover {
+  background: var(--bg-subtle);
+}
+.topSignOut {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--space-inline-xs);
+  border: 1px solid var(--action-secondary-border);
+  border-radius: var(--radius-control);
+  background: var(--action-secondary-bg);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--action-secondary-fg);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* 본문 자리 — 건너뛰기 링크의 목적지. 포커스 링은 키보드일 때만 */
+.content {
+  min-width: 0;
+}
+.content:focus {
+  outline: none;
+}
+/* 본문 끝 여백 = 탭 바 높이(항목 56px + 위 테두리 1px) + 틈 + safe area — 아래 scroll-padding 과 같은 값이라 마지막 줄도 탭 바 위로 온다 */
+.tabbarSpacer {
+  height: calc(56px + 1px + var(--space-stack-xs) + env(safe-area-inset-bottom));
+}
+/* 스크롤 여백(리뷰 P1-1 · WCAG 2.2 SC 2.4.11) — 문서가 스크롤할 때 아래 탭 바 자리만큼을 "보이는 곳" 에서 뺀다.
+ * 브라우저의 포커스 스크롤(Tab)과 scrollIntoView(실패 배너 — AdminBanner)가 이 여백을 따라 탭 바 **위**에 멈춘다.
+ * 문서의 스크롤은 뷰포트(<html>)가 맡으므로 <html> 에 걸고, 셸이 있는 화면에만 건다(:has(.shell) — 로그인 화면·공개 사이트는 그대로).
+ * 탭 바 높이는 px 로 적는다(항목이 px) — rem 이면 글자 크기 설정에 따라 여백과 바가 어긋난다. 틈(간격 토큰)은 포커스 링 몫이다.
+ * 1024px 이상(탭 바 없음)은 아래 미디어 쿼리에서 되돌린다. */
+:global(html):has(.shell) {
+  scroll-padding-bottom: calc(56px + 1px + var(--space-stack-xs) + env(safe-area-inset-bottom));
+}
+
+/* 아래 탭 바(<1024px) — 4개 · 56px + safe area. 현재 = 보라 글자·아이콘 + 위 3px 띠 */
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border-decorative);
+}
+.tabbarList {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  list-style: none;
+}
+.tabItem {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 56px;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+.tabItem[aria-current] {
+  color: var(--text-brand);
+}
+.tabItem[aria-current]::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 28%;
+  right: 28%;
+  height: 3px;
+  border-radius: 0 0 var(--radius-chip) var(--radius-chip);
+  background: var(--border-strong);
+}
+.tabItem[aria-disabled="true"] {
+  color: var(--action-disabled-fg);
+}
+.tabIcon {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tabCount {
+  position: absolute;
+  top: var(--space-stack-xs);
+  left: calc(50% + var(--space-inline-xs));
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 var(--space-inline-xs);
+  border: 1px solid var(--status-attention-border);
+  border-radius: 999em;
+  background: var(--status-attention-bg);
+  color: var(--status-attention-fg);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+@media (min-width: 1024px) {
+  .shell {
+    grid-template-columns: 248px minmax(0, 1fr);
+  }
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    width: 248px;
+    overflow-y: auto;
+    padding: var(--space-stack-md) var(--space-inline-sm) var(--space-stack-sm);
+    background: var(--bg-surface);
+    border-right: 1px solid var(--border-decorative);
+  }
+  .content {
+    grid-column: 2;
+  }
+  .topbar,
+  .tabbar,
+  .tabbarSpacer {
+    display: none;
+  }
+  :global(html):has(.shell) {
+    scroll-padding-bottom: auto;
+  }
+}
+
+/* ── 허브 화면(/admin/site · /admin/records — P5-20) ─────────────────────────
+ * 휴대폰 탭 바의 '홈페이지' · '기록' 이 오는 곳. 항목마다 한 줄이 전부 링크(44px 넘는 누를 자리)이고, 제목 아래에 지금 상태 한 줄.
+ */
+.hubList {
+  display: flex;
+  flex-direction: column;
+  margin: var(--space-stack-sm) 0 0;
+  list-style: none;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--elevation-raised);
+}
+.hubList > li + li {
+  border-top: 1px solid var(--border-decorative);
+}
+.hubItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-sm);
+  min-height: 64px;
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  border-radius: var(--radius-surface);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+a.hubItem:hover {
+  background: var(--bg-subtle);
+}
+.hubText {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.hubTitle {
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+.hubStatus {
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.hubChevron {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--icon-default);
+}
+
+/* ── 관리 홈(/admin — 대시보드는 P5-21) ─────────────────────────────────────── */
+.homeActions {
+  margin: var(--space-stack-sm) 0 0;
+}
+/* 버튼 모양의 링크 — .btnPrimary 와 함께 쓴다(면·글자는 그 규칙이) */
+.btnLink {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
 }
 
 /* ── 필터 ───────────────────────────────────────────────────────────────── */
@@ -110,10 +505,15 @@
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
-.filter[aria-current="true"] {
-  background: var(--action-primary-bg);
-  border-color: var(--action-primary-bg);
-  color: var(--action-primary-fg);
+/* 선택된 필터 — 옅은 면 + 보라 테두리 + 보라 굵은 글자(P5-20). 채운 보라는 버튼 전용이다(시안 ⑤-0).
+ * 갤러리 앨범 필터는 aria-current="page", 나머지 필터는 "true" 를 쓴다 — 둘 다 같은 모양. */
+.filter[aria-current="true"],
+.filter[aria-current="page"] {
+  background: var(--bg-subtle);
+  border-color: var(--border-strong);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+  color: var(--text-brand);
+  font-weight: 800;
 }
 
 /* ── 페이지 폭 ───────────────────────────────────────────────────────────
@@ -196,7 +596,8 @@
   color: var(--text-brand);
 }
 
-/* ── 상태 배지 — 색이 아니라 굵기·테두리로 구분 ─────────────────────────── */
+/* ── 작은 딱지(.badge) — 콘텐츠 상태(노출 중·중지 등) · 발송 상태 · "대표 노선" 표시 ─────────────
+ * 예약 상태는 이것이 아니라 아래 .statusBadge(StatusBadge 컴포넌트)다(P5-20). 글자가 무엇인지 말하고, 테두리 모양이 거든다. */
 .badge {
   display: inline-block;
   padding: 0 0.5rem;
@@ -209,22 +610,76 @@
   color: var(--text-secondary);
   background: var(--bg-surface);
 }
-.badge[data-status="new"] {
-  border-width: 2px;
-  border-color: var(--border-strong);
-  color: var(--text-brand);
+
+/* ── 상태 배지 (P5-20 · 시안 ⑤-0 · components/admin/StatusBadge.tsx) ─────────────────────────────
+ * "상태는 해야 할 일로 읽힌다" — 새 접수(골드)와 N일째 대기(가장 짙은 보라 면)가 가장 강하고, 운행 완료(회색 실선)·취소(회색 점선)가 가장 약하다.
+ * 색만으로 구분하지 않는다: 글자 + 표식(점·!·✓·×·전화) + 선(실선·점선). 톤은 --status-* 역할 토큰뿐(브랜드 원시색 — 새 색 없음).
+ */
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  height: 26px;
+  padding: 0 var(--space-inline-xs);
+  border: 1px solid transparent;
+  border-radius: var(--radius-chip);
+  font-size: 13px;
   font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  vertical-align: middle;
 }
-.badge[data-status="confirmed"] {
-  background: var(--action-primary-bg);
-  border-color: var(--action-primary-bg);
-  color: var(--action-primary-fg);
+.statusBadge[data-tone="attention"] {
+  background: var(--status-attention-bg);
+  color: var(--status-attention-fg);
+  border-color: var(--status-attention-border);
 }
-.badge[data-status="done"] {
-  background: var(--bg-subtle);
+.statusBadge[data-tone="urgent"] {
+  background: var(--status-urgent-bg);
+  color: var(--status-urgent-fg);
 }
-.badge[data-status="cancelled"] {
-  text-decoration: line-through;
+.statusBadge[data-tone="confirmed"] {
+  background: var(--status-confirmed-bg);
+  color: var(--status-confirmed-fg);
+  border-color: var(--status-confirmed-border);
+}
+.statusBadge[data-tone="closed"] {
+  background: var(--bg-surface);
+  color: var(--status-closed-fg);
+  border-color: var(--status-closed-border);
+}
+.statusBadge[data-line="dashed"] {
+  border-style: dashed;
+}
+.statusBadge[data-tone="quick"] {
+  background: var(--bg-surface);
+  color: var(--text-brand);
+  border-color: var(--border-strong);
+  font-weight: 700;
+}
+.badgeDot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: currentColor;
+}
+.badgeIcon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* 배지 둘이 한 줄에 설 때(상세 머리의 상태 + 간편 칩) */
+.badgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-inline-xs);
 }
 
 /* ── 빈 상태 · 페이지 넘김 ───────────────────────────────────────────────── */
@@ -236,6 +691,27 @@
   background: var(--bg-surface);
   border: 1px solid var(--border-decorative);
   border-radius: var(--radius-surface);
+}
+/* 빈 상태의 다음 행동(P5-20) — "아직 공지가 없어요" + [공지 쓰기]. 기존 폼(같은 화면의 입력칸)으로 가는 링크다 */
+.emptyAction {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin: var(--space-stack-xs) 0 0;
+  padding: 0 var(--space-inline-sm);
+  border: 1px solid var(--action-secondary-border);
+  border-radius: var(--radius-control);
+  background: var(--action-secondary-bg);
+  color: var(--action-secondary-fg);
+  font-weight: 700;
+  text-decoration: none;
+}
+.emptyAction:hover {
+  background: var(--action-secondary-bg-hover);
+}
+.emptyAction:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 .pager {
   display: flex;
@@ -284,12 +760,13 @@
   border-radius: var(--radius-surface);
   box-shadow: var(--elevation-raised);
 }
+/* 섹션 제목 — 본문(15px)보다 작지 않게(P5-20 · 제안서 ②-21: 13px 이던 제목이 본문보다 작았다). */
 .sectionTitle {
   margin: 0 0 var(--space-stack-sm);
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 800;
-  letter-spacing: 0.04em;
-  color: var(--text-brand);
+  line-height: 1.4;
+  color: var(--text-primary);
 }
 .dl {
   display: grid;
@@ -436,7 +913,8 @@
   flex-direction: column;
   align-items: flex-start;
 }
-/* 실패·이미 처리됨·상한 초과 안내(role=alert) — 시트 안과 메모 칸 옆. 팔레트에 상태색이 없어 굵은 테두리로 구분한다(.copyWarning 과 같은 규약). */
+/* 실패·이미 처리됨·상한 초과 안내(role=alert) — 시트 안과 메모 칸 옆. 팔레트에 상태색이 없어 굵은 테두리로 구분한다(.copyWarning 과 같은 규약).
+ * P5-20 — 공지·팝업·갤러리·노선의 실패도 같은 배너다(성공은 토스트 · components/admin/feedback.ts). 저절로 닫히지 않고 다음 동작 때 걷힌다. */
 .banner {
   margin: var(--space-stack-sm) 0 0;
   padding: var(--space-stack-xs) var(--space-inline-sm);
@@ -447,6 +925,20 @@
   font-weight: 700;
   line-height: 1.6;
   color: var(--text-brand);
+}
+/* 표 칸 안의 좁은 배너(목록의 노출 버튼 옆) */
+.bannerInline {
+  flex: 1 1 100%;
+  margin: 0;
+  padding: var(--space-stack-xs);
+  border: 2px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--text-brand);
+  white-space: normal;
 }
 .hint {
   margin: var(--space-stack-xs) 0 0;
@@ -629,11 +1121,12 @@
   cursor: not-allowed;
 }
 
+/* 토스트 자리 — 휴대폰에서는 아래 탭 바(3.5rem = 56px) 위에 뜬다(P5-20). 1024px 이상은 화면 아래(아래 미디어 쿼리). */
 .toastRegion {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: calc(var(--space-stack-md) + env(safe-area-inset-bottom));
+  bottom: calc(3.5rem + var(--space-stack-sm) + env(safe-area-inset-bottom));
   z-index: 60;
   display: flex;
   justify-content: center;
@@ -692,6 +1185,9 @@
   .sheet {
     padding: var(--space-stack-md) var(--space-inline-md);
     border-radius: var(--radius-surface);
+  }
+  .toastRegion {
+    bottom: calc(var(--space-stack-md) + env(safe-area-inset-bottom));
   }
 }
 
@@ -794,10 +1290,13 @@
   font-size: 13px;
   color: var(--text-secondary);
 }
+/* 콘텐츠 노출 상태(팝업·공지·노선·사진·앨범) — P5-20: 채운 보라를 걷었다(버튼 전용). 켜져 있음 = 확정과 같은 옅은 보라 면,
+ * 노출 예정 = 보라 테두리, 끝남 = 회색 실선, 중지 = 회색 점선. 글자가 무엇인지 말하고 모양이 거든다. */
 .badge[data-state="live"] {
-  background: var(--action-primary-bg);
-  border-color: var(--action-primary-bg);
-  color: var(--action-primary-fg);
+  background: var(--status-confirmed-bg);
+  border-color: var(--status-confirmed-border);
+  color: var(--status-confirmed-fg);
+  font-weight: 800;
 }
 .badge[data-state="scheduled"] {
   border-width: 2px;
@@ -806,10 +1305,13 @@
   font-weight: 800;
 }
 .badge[data-state="ended"] {
-  background: var(--bg-subtle);
+  color: var(--status-closed-fg);
+  border-color: var(--status-closed-border);
 }
 .badge[data-state="off"] {
-  text-decoration: line-through;
+  color: var(--status-closed-fg);
+  border-color: var(--status-closed-border);
+  border-style: dashed;
 }
 
 /* ── 공지 관리 (P5-5) ────────────────────────────────────────────────────
@@ -928,7 +1430,7 @@
 
 /* ── 발송 내역 (P5-8) ────────────────────────────────────────────────────
  * 상태 배지 3종과 맨 위 요약. 실패를 눈에 띄게 해야 하는데 팔레트에 경고색이 없다(styles/semantic.css 에 danger 역할 토큰 없음).
- * 그래서 색을 새로 만들지 않고 **두께와 굵기**로 대비를 준다 — 예약 목록의 `data-status="new"` 가 쓰는 것과 같은 수법이다.
+ * 그래서 새 색을 만들지 않는다 — P5-20 부터 실패는 상태 배지 체계의 '급함' 톤(--status-urgent-*: 가장 짙은 브랜드 보라 면)이다.
  */
 .badge[data-status="pending"] {
   background: var(--bg-subtle);
@@ -936,10 +1438,11 @@
 .badge[data-status="sent"] {
   border-color: var(--border-subtle);
 }
+/* 발송 실패 = '급함' 톤(P5-20 · 시안 ⑤-0 — 조치가 필수인 것: 사장님이 전화로 알려야 한다). 가장 짙은 보라 면 + 흰 글자 18.20:1 */
 .badge[data-status="failed"] {
-  border-width: 2px;
-  border-color: var(--border-strong);
-  color: var(--text-brand);
+  background: var(--status-urgent-bg);
+  border-color: var(--status-urgent-bg);
+  color: var(--status-urgent-fg);
   font-weight: 800;
 }
 
@@ -993,7 +1496,8 @@
   }
 }
 
-@media (min-width: 1024px) {
+/* 두 칸은 1280px 부터 — 1024px 이상은 사이드바(248px)가 본문을 줄여, 1024 에서 켜면 목록 칸이 236px 로 좁아졌다(P5-20 실측) */
+@media (min-width: 1280px) {
   .popupGrid {
     grid-template-columns: minmax(20rem, 26rem) minmax(0, 1fr);
     gap: var(--space-inline-md);
@@ -1172,9 +1676,11 @@
 .trendSeg[data-kind="cancelled"] {
   background: var(--icon-default);
 }
-/* 3건 미만이라 상태를 나누지 않은 버킷 — 한 색으로 채우고 범례가 그 뜻을 적는다(수정 라운드 2). */
-.trendSeg[data-kind="unsplit"] {
-  background: var(--border-strong);
+/* 3건 미만이라 상태를 나누지 않은 버킷 — **회색 빗금**. 예전에는 확정 조각과 같은 보라라 색으로 둘을 가를 수 없었다(리뷰 P2-1).
+ * 색이 다르고(회색) 무늬(빗금)라는 색 밖의 단서가 있다 — 취소(회색 면)와도 무늬로 갈린다. 범례 견본도 **같은 규칙**이다(어긋날 수 없게). */
+.trendSeg[data-kind="unsplit"],
+.legendSwatch[data-kind="unsplit"] {
+  background: repeating-linear-gradient(135deg, var(--icon-default) 0 2px, var(--bg-surface) 2px 5px);
 }
 .trendAxis {
   display: flex;
@@ -1211,9 +1717,6 @@
 }
 .legendSwatch[data-kind="cancelled"] {
   background: var(--icon-default);
-}
-.legendSwatch[data-kind="unsplit"] {
-  background: var(--border-strong);
 }
 
 /* 칸이 적은 표 — `.table` 의 `min-width: 68rem` 은 열 열 개짜리 예약 목록을 위한 값이다(그 표는 좁은 화면에서

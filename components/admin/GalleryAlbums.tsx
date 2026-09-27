@@ -17,6 +17,9 @@
  * **앨범 이름은 저장 전에 확인한다(P6-12 · known-defects D4).** 앨범 이름은 공개 갤러리에 그대로 보인다.
  * 서버가 확인이 필요한 표현을 찾으면 저장하지 않고 그 줄(또는 새 앨범 칸) 아래에 CopyWarningPanel 을 띄운다.
  * **그대로 저장하기**를 누르면 같은 값에 확인 키(copyAck)를 붙여 다시 보낸다 — 막지 않는다.
+ *
+ * 결과 알림(P5-20): 성공은 레이아웃의 토스트, 실패는 **그 자리**(새 앨범 칸 아래 · 그 앨범 줄 안) 배너(role=alert — 다음 동작 때 걷힌다).
+ * 판정은 feedback.ts. 앨범을 지우면 그 줄이 사라져도 토스트는 레이아웃에 남는다.
  */
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -26,7 +29,10 @@ import { COPY_ACK_FIELD, type CopyWarning } from "@/lib/admin/copyWarning";
 import { ALBUM_SLUG_MAX, ALBUM_TITLE_MAX, GALLERY_SORT_MAX, type GalleryActionCode, type GalleryActionResult } from "@/lib/admin/galleryInput";
 
 import s from "./admin.module.css";
+import { AdminBanner } from "./AdminBanner";
+import { useAdminToast } from "./AdminToast";
 import { CopyWarningPanel, mergeAck, type CopyWarningLabels } from "./CopyWarningPanel";
+import { feedbackKind } from "./feedback";
 
 export interface GalleryAlbumsLabels {
   albumNew: string;
@@ -64,28 +70,42 @@ const num = (raw: string): number => {
   return Number.isInteger(n) && n >= 0 ? n : 0;
 };
 
-function AlbumRow({ album, labels, onDone }: { album: AdminAlbumView; labels: GalleryAlbumsLabels; onDone: (code: GalleryActionCode) => void }) {
+function AlbumRow({
+  album,
+  labels,
+  onDone,
+}: {
+  album: AdminAlbumView;
+  labels: GalleryAlbumsLabels;
+  /** 결과를 알리고(성공 = 토스트) 화면을 다시 읽는다. 실패 문구를 돌려주면 이 줄 안에 배너로 남긴다. */
+  onDone: (result: GalleryActionResult) => string;
+}) {
   const [pending, startTransition] = useTransition();
   const [title, setTitle] = useState(album.title);
   const [slug, setSlug] = useState(album.slug);
   const [sort, setSort] = useState(String(album.sort));
   const [armed, setArmed] = useState(false);
   const [warnings, setWarnings] = useState<CopyWarning[]>([]);
+  /** 저장이 경고로 멈춘 횟수 — 같은 경고가 다시 와도 패널이 다시 보이는 자리로 온다(재리뷰 P2-R1 · CopyWarningPanel attempt). */
+  const [warningRound, setWarningRound] = useState(0);
   const [ack, setAck] = useState<string[]>([]);
+  const [banner, setBanner] = useState("");
 
   /** save=true 인 동작(이름 저장)만 경고 패널을 열고 닫는다. */
   const run = (action: () => Promise<GalleryActionResult>, save = false): void => {
+    setBanner("");
     startTransition(async () => {
       const result = await action();
       if (result.code === "copyWarning") {
         const held = result.copyWarnings ?? [];
         setWarnings(held);
+        setWarningRound((n) => n + 1);
         setAck((prev) => mergeAck(prev, held));
       } else if (save) {
         setWarnings([]);
         setAck([]);
       }
-      onDone(result.code);
+      setBanner(onDone(result));
     });
   };
 
@@ -178,6 +198,7 @@ function AlbumRow({ album, labels, onDone }: { album: AdminAlbumView; labels: Ga
         pending={pending}
         onConfirm={() => onSave(true)}
         idPrefix={`album-${album.id}`}
+        attempt={warningRound}
       />
 
       <div className={s.dangerZone} data-testid="admin-gallery-album-danger">
@@ -205,27 +226,35 @@ function AlbumRow({ album, labels, onDone }: { album: AdminAlbumView; labels: Ga
           {labels.albumDelete}
         </button>
       </div>
+
+      <AdminBanner text={banner} />
     </li>
   );
 }
 
 export function GalleryAlbums({ albums, labels }: { albums: readonly AdminAlbumView[]; labels: GalleryAlbumsLabels }) {
   const router = useRouter();
+  const toast = useAdminToast();
   const [pending, startTransition] = useTransition();
-  const [notice, setNotice] = useState("");
+  const [banner, setBanner] = useState("");
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
   const [warnings, setWarnings] = useState<CopyWarning[]>([]);
+  /** 새 앨범 칸의 경고 횟수 — 같은 경고가 다시 와도 패널이 다시 보이는 자리로 온다(재리뷰 P2-R1). */
+  const [warningRound, setWarningRound] = useState(0);
   const [ack, setAck] = useState<string[]>([]);
 
-  const done = (code: GalleryActionCode): void => {
-    setNotice(labels.results[code]);
-    router.refresh();
+  /** 성공은 토스트로 알리고 화면을 다시 읽는다. 실패 문구를 돌려준다 — 부른 자리(새 앨범 칸 · 앨범 줄)가 배너로 남긴다. */
+  const done = (result: GalleryActionResult): string => {
+    const kind = feedbackKind(result);
+    if (kind === "toast") toast.show({ text: labels.results[result.code] });
+    if (result.code !== "copyWarning") router.refresh();
+    return kind === "banner" ? labels.results[result.code] : "";
   };
 
   /** confirmed=true 는 경고 패널의 "그대로 저장하기" — 이미 본 표현의 확인 키를 함께 보낸다. */
   const onCreate = (confirmed: boolean): void => {
-    setNotice("");
+    setBanner("");
     startTransition(async () => {
       const result = await createGalleryAlbum({
         title: title.trim(),
@@ -237,8 +266,8 @@ export function GalleryAlbums({ albums, labels }: { albums: readonly AdminAlbumV
       if (result.code === "copyWarning") {
         const held = result.copyWarnings ?? [];
         setWarnings(held);
+        setWarningRound((n) => n + 1);
         setAck((prev) => mergeAck(prev, held));
-        setNotice(labels.results[result.code]);
         return;
       }
       setWarnings([]);
@@ -247,7 +276,7 @@ export function GalleryAlbums({ albums, labels }: { albums: readonly AdminAlbumV
         setTitle("");
         setSlug("");
       }
-      done(result.code);
+      setBanner(done(result));
     });
   };
 
@@ -288,7 +317,16 @@ export function GalleryAlbums({ albums, labels }: { albums: readonly AdminAlbumV
         </button>
       </div>
 
-      <CopyWarningPanel warnings={warnings} labels={labels.copyWarning} pending={pending} onConfirm={() => onCreate(true)} idPrefix="album-new" />
+      <AdminBanner text={banner} testId="admin-gallery-album-banner" />
+
+      <CopyWarningPanel
+        warnings={warnings}
+        labels={labels.copyWarning}
+        pending={pending}
+        onConfirm={() => onCreate(true)}
+        idPrefix="album-new"
+        attempt={warningRound}
+      />
 
       <p className={s.hint}>{labels.albumDeleteNote}</p>
 
@@ -301,10 +339,6 @@ export function GalleryAlbums({ albums, labels }: { albums: readonly AdminAlbumV
           ))}
         </ul>
       )}
-
-      <p className={s.notice} role="status">
-        {notice}
-      </p>
     </div>
   );
 }
