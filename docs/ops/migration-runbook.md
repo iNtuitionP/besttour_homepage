@@ -1115,7 +1115,7 @@ select
 ③ 데이터가 사라지지 않는다. 근거는 그 파일 헤더에 적혀 있다. ⚠️ **앱을 0022 이전 코드로 먼저 되돌린 뒤** 돌린다.
 되돌린 뒤 `supabase migration repair --status reverted 0022`.
 
-## 0023 — 홈 간편 견적 접수(`intake='quick'`) (**시험 적용 2026-09-27 · 운영 미적용** · P3-8 · 독립 리뷰 조건부 승인 → 재검토 반영)
+## 0023 — 홈 간편 견적 접수(`intake='quick'`) (**시험·운영 적용 2026-09-27** · P3-8 · 독립 리뷰 조건부 승인 → 재검토 반영)
 
 **무엇을 하나**: `reservations` 에 `intake text not null`(`wizard|quick`)을 더하고(적용 순간의 기존 행은 전부 `wizard` — 빠른 기본값 → **같은 트랜잭션에서 기본값 제거**),
 `vehicle_slug`·`purpose_code`·`bus_count` 의 NOT NULL 을 푼다(**`bus_count` 기본값 1 도 제거** — 남기면 간편 insert 가 "1대" 를 지어낸다).
@@ -1280,19 +1280,24 @@ Vercel 은 GitHub 앱으로 연결돼 있다. GitHub 배포 기록(`GET /repos/�
 
 ---
 
-# 원격 적용 기록 — 0023 (2026-09-27 · 컨트롤러) — **시험만. 운영은 사용자 승인 대기**
+# 원격 적용 기록 — 0023 (2026-09-27 · 컨트롤러) — 시험 먼저, **운영 22:39 KST(사용자 승인 "DB 적용해")**
 
 **🔴 순서가 반대로 되면 접수가 깨진다**: 새 코드는 `intake` 를 읽고 쓴다 — 0023 없는 DB 에 새 코드가 붙으면 접수·예약확인·관리자 목록·사장님 통지가 실패한다.
 반대로 0023 뒤 옛 코드는 위저드 접수에서 23502(`intake` 누락)로 실패한다. 그래서 **CI 는 별도 가지(`ci/p3-8-quick-quote`, 적용 후 삭제)에서 먼저 돌리고 → 시험 DB 적용 → 작업 가지 푸시**로 했다.
-운영: 운영 배포는 `main` 에서만 나간다 — **0023 운영 적용은 `main` 병합 직전**에 한다(적용과 배포 사이 창을 최소로).
+운영: 운영 배포는 `main` 에서만 나가는데 **`main` 에는 접수 코드가 없다**(`git ls-tree main` 에 `actions/reservation.ts` 0 · 운영 URL 의 `/admin/login`·`/privacy` 는 404). 즉 옛 위저드 코드로 운영 DB 에 쓰는 배포본이 없어 **지금 적용해도 깨지는 경로가 없다** — 사용자 승인으로 병합을 기다리지 않고 적용했다.
+오히려 운영 DB 를 보는 로컬 서버(작업 가지 코드 = `intake` 를 쓴다)는 0023 이 없으면 견적 제출이 실패했다 — 적용으로 해소.
 
 | | 시험 `gjnieoojgmhulkohdcnl` | 운영 `expexkhcuogkavpacrem` |
 |---|---|---|
-| 적용 전 이력 | `0022` (활성 질의 0 · 이벤트 트리거는 Supabase 기본 6개뿐 · 예약 4행 전부 차종·목적·구분 채워짐) | 미적용 |
-| 적용 후 이력 | **`0023`** (`db push --db-url`, 자기검증 통과) | — |
-| 기존 행 `intake` | 4행 전부 `wizard` | — |
-| `intake` 기본값 | 없음 · NOT NULL | — |
-| `admin_stats` ACL · definer | `{postgres=X/postgres,authenticated=X/postgres}` · true (불변) | — |
-| `anon`·`authenticated` 의 `reservations` INSERT | false · false | — |
+| 적용 전 이력 | `0022` (활성 질의 0 · 이벤트 트리거는 Supabase 기본 6개뿐 · 예약 4행 전부 차종·목적·구분 채워짐) | `0022` · PostgreSQL 17.6 · 활성 질의 0 · 잠금 대기 0 · **예약 0행** |
+| 이벤트 트리거 | 기본 6개 | 기본 6개(`evtenabled=O`). 이번 DDL 에 발동하는 `pgrst_ddl_watch`·`pgrst_drop_watch` 본문을 읽었다 — `NOTIFY pgrst, 'reload schema'` 뿐 |
+| 적용 직전 스냅샷 | — | `public` 표·시퀀스 `relacl` 17 · `reservations` 칸 32 · 제약 18 · 트리거 1 · `admin_stats` 정의·ACL(md5 `d3268e61…`) — 스크래치패드(저장소 밖) |
+| 적용 후 이력 | **`0023`** (`db push --db-url`, 자기검증 통과) | **`0023`** (`db push --linked`, 22:39 KST, 자기검증 통과 · 남은 것 0) |
+| 기존 행 `intake` | 4행 전부 `wizard` | 0행이라 해당 없음 |
+| `intake` 기본값 | 없음 · NOT NULL | 없음 · NOT NULL |
+| 새 제약 | `reservations_quick_passengers_ck` 등 | `reservations_intake_ck` · `reservations_intake_fields_ck` · `reservations_quick_passengers_ck` |
+| `admin_stats` ACL · definer · search_path | `{postgres=X/postgres,authenticated=X/postgres}` · true (불변) | 적용 전과 같음 · `anon`·`service_role` EXECUTE false |
+| `reservations` ACL | — | 적용 전과 같음 `{postgres=arwdDxtm, authenticated=r, service_role=arwdDxm}` |
+| `anon`·`authenticated` 의 `reservations` INSERT | false · false | (ACL 불변 — 없음) |
 
 CI: `c07ef5a` 8잡 통과(가지 `ci/p3-8-quick-quote`). 프리뷰 배포(`feature/implementation` → `c07ef5a`) 성공.
