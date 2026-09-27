@@ -50,6 +50,14 @@
   --action-secondary-border: var(--brand-700);
   --action-secondary-bg-hover: var(--brand-100);
 
+  /* ── 액션 (되돌릴 수 없는 최종 버튼 — 확인 시트 안에서만, P5-19) ─────
+   * 관리자 확인 시트의 [접수 취소하기]. 긍정 동작(보라 --action-primary-bg)과 한눈에 구분되는 가장 짙은 면이다.
+   * 팔레트에 빨강이 없다(브랜드 3색) — 새 색을 들이지 않고 브랜드 원시색만 참조한다.
+   * 흰 글자 18.20:1 · 호버 16.17:1 · 보라 면과의 밝기 차 1.85:1 (tests/tokens.test.ts 가 잠근다). */
+  --action-destructive-bg: var(--brand-950);
+  --action-destructive-fg: var(--white);
+  --action-destructive-bg-hover: var(--brand-900);
+
   /* ── 비활성 ──────────────────────────────────────────────────────── */
   --action-disabled-bg: var(--brand-100);
   --action-disabled-fg: var(--gray-text); /* 비활성이라도 읽혀야 한다 — --gray 를 쓰지 않는다 */

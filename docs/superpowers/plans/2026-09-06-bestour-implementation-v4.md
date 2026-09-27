@@ -372,6 +372,8 @@ components/**           props 경계. 법정 한글 리터럴 금지
       `claimPending` 은 **항상** `p_channels` 를 보낸다. 순서를 뒤집으면 배포된 코드가 없는 시그니처를 불러 **PostgREST 가 PGRST202/404 를 내고 통지 크론이 500** 이 된다(실측). 발송이 잘못 나가는 것이 아니라 아예 안 도는 안전한 실패이지만, 순서를 지키면 겪지 않는다.
       마이그레이션은 **`supabase db push` 또는 SQL Editor 로만** 적용한다 — `psql -f` 는 파일이 원자적이지 않아 자기검증이 멈춰도 앞 문장이 남는다(리뷰 K1, 실측). 절차는 `docs/ops/migration-runbook.md`
 - [ ] **통지 크론 실운영 전환** — `vercel.json` 의 `/api/cron/notify` 를 `?dry=0` 으로(P4-1, 2026-09-13). 이것이 "발송 + M3 회수 시작"이다. 선행: P4-2 Solapi 어댑터 + 발신번호 등록 + `NOTIFY_SENDER` 가 운영·프리뷰에서 비어 있음 확인. 그 전엔 dry 로 두는 것이 정답(미구성 sender 는 claim 을 하지 않아 attempts 를 태우지 않는다)
+- [ ] **즉시 발송 켜기 — 운영 `NOTIFY_INLINE=1` + Solapi 키** (P4-7 · P5-19 리뷰 P2-2, 2026-09-28). 관리자 확정 시트·토스트가 "확정 안내 문자를 보내고 있어요" 라고 말한다 — 둘 중 하나라도 없으면 첫 문자는 **하루 1회 크론(08:00 KST)을 기다리거나 아예 나가지 않는다**. 프리뷰·로컬은 발송 0 이 정상이니 **사장님 리허설 전에 이 차이를 설명**한다.
+- [ ] **Vercel Pro(또는 다른 호스팅)로 전환** — Hobby 약관은 상업용 금지(`docs/ops/environments.md`). Pro 로 가면 크론 주기도 다시 판단한다
 - [ ] 법정 3페이지 사람 리뷰 서명
 - [ ] Lighthouse 모바일 90+ (프로토콜 고정 측정)
 - [ ] **기존 메뉴 10개 전부 매핑됨** (`lib/legacy-menu-map.ts` 테스트 green)

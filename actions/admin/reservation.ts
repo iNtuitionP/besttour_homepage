@@ -25,6 +25,7 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 
+import { normalizeAdminMemo } from "@/lib/admin/memo";
 import { isUuid } from "@/lib/admin/reservations";
 import {
   ADMIN_REVALIDATE_PATH,
@@ -57,15 +58,10 @@ const EVENT: Record<AdminAction, string> = {
   memo: "admin.reservation.memo",
 };
 
-/** 메모 상한 — 제공자 응답 덤프·붙여넣기 사고가 통째로 들어오지 않게(lib/notify/outbox.ts 와 같은 발상). */
-const MEMO_MAX_CHARS = 2000;
-
-/** 공백뿐이면 null — 0010 의 confirm·cancel 은 null 을 "메모를 바꾸지 않는다", memo 는 "메모를 지운다" 로 읽는다. */
-function normalizeMemo(memo: string | null | undefined): string | null {
-  if (typeof memo !== "string") return null;
-  const trimmed = memo.trim();
-  return trimmed.length === 0 ? null : trimmed.slice(0, MEMO_MAX_CHARS);
-}
+/*
+ * 메모 정규화·상한은 lib/admin/memo.ts 한 곳에 있다(P5-19) — 화면(확인 시트)이 같은 상한으로 먼저 막고 안내한다.
+ * 공백뿐이면 null(확정·취소·완료는 "메모를 바꾸지 않는다", 메모 저장은 "지운다"), 상한을 넘으면 자른다(마지막 방어선).
+ */
 
 function report(action: AdminAction, id: string, result: AdminActionResult): AdminActionResult {
   const entry: AdminReservationLogEntry = {
@@ -110,23 +106,23 @@ async function run(action: AdminAction, id: string, memo: string | null): Promis
 /** new → confirmed. 성공하면 0010 이 확정 통지 1건을 큐에 넣고, 응답 뒤 즉시 발송(P4-7)이 발송기를 한 번 부른다. */
 export async function confirmReservation(id: string, memo?: string | null): Promise<AdminActionResult> {
   await requireAdmin();
-  return run("confirm", id, normalizeMemo(memo));
+  return run("confirm", id, normalizeAdminMemo(memo));
 }
 
 /** new·confirmed → cancelled. 취소 통지는 넣지 않는다(문안 미승인 — 0010 헤더). */
 export async function cancelReservation(id: string, memo?: string | null): Promise<AdminActionResult> {
   await requireAdmin();
-  return run("cancel", id, normalizeMemo(memo));
+  return run("cancel", id, normalizeAdminMemo(memo));
 }
 
 /** confirmed → done (운행이 끝났다). 통지 없음 — 고객에게 알릴 일이 아니다(리뷰 M1: 목록의 '완료' 필터에 도달할 길이 없었다). */
 export async function completeReservation(id: string, memo?: string | null): Promise<AdminActionResult> {
   await requireAdmin();
-  return run("complete", id, normalizeMemo(memo));
+  return run("complete", id, normalizeAdminMemo(memo));
 }
 
 /** admin_memo 만 바꾼다. 빈 값이면 메모를 지운다. */
 export async function saveReservationMemo(id: string, memo: string): Promise<AdminActionResult> {
   await requireAdmin();
-  return run("memo", id, normalizeMemo(memo));
+  return run("memo", id, normalizeAdminMemo(memo));
 }

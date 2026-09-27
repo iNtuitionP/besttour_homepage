@@ -2,6 +2,8 @@ import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 
 import { ReservationActions } from "@/components/admin/ReservationActions";
+import { CUSTOMER_NAME_ELEMENT_ID, type ReservationSummary } from "@/components/admin/reservation-sheet";
+import { getReservationActionLabels } from "@/components/admin/reservationActionLabels";
 import { routing } from "@/i18n/routing";
 import { LEGACY_CONTACT_METHODS, LEGACY_PAYMENT_METHODS, getReservation, isUuid, type ReservationDetailRow } from "@/lib/admin/reservations";
 import { requireAdmin } from "@/lib/auth/requireAdmin";
@@ -19,7 +21,10 @@ import q from "@/components/quote/quote.module.css";
  * (리뷰 F1 — 조건부 게이트는 게이트가 아니다), 읽기는 세션 클라이언트 + 0009 RLS 다(서비스 롤 금지 — ADR-2). 캐시하지 않는다.
  *
  * 원문을 보여 준다(마스킹 없음) — 사장님이 전화를 걸고 문자를 확인해야 한다. 다만 **서버 컴포넌트 props 로 내리지 않는다**:
- * 값은 이 파일 안에서 그리고, 클라이언트(ReservationActions)로는 uuid·상태·라벨·메모만 내린다(P3-5 리뷰 N-2).
+ * 값은 이 파일 안에서 그리고, 클라이언트(ReservationActions)로는 uuid·상태·라벨·메모·운행 요약만 내린다(P3-5 리뷰 N-2).
+ * 운행 요약(구간·날짜·인원)은 확인 시트의 요약 상자다 — 운행 정보이지 고객 식별 정보가 아니다.
+ * 확인 시트 제목의 **고객 이름**(P5-19)은 props 로 내리지 않는다: 이름 칸에 `CUSTOMER_NAME_ELEMENT_ID` 를 달아 두면 시트가 열릴 때
+ * 그 글자를 읽는다 — 이미 화면에 그린 값을 다시 쓸 뿐 새 경로가 생기지 않는다(tests/admin-confirm-sheet-page.test.ts 가 잠근다).
  *
  * 화면에 함께 보이는 것: `privacy_consent_at`(언제 동의했는지)과 `retention_until`(언제 파기되는지). 파기 배치(P1-5)가
  * 그 시각을 보고 지우므로, 사장님이 "이 예약 기록이 언제 사라지는지" 를 화면에서 알 수 있어야 한다.
@@ -98,6 +103,20 @@ export default async function AdminReservationDetailPage({ params }: { params: P
   const none = t("value.none");
   const quick = row.intake === "quick";
   const undecided = tRoot("admin.labels.undecided");
+  const actionLabels = await getReservationActionLabels();
+  const routeText = tRoot("admin.reservations.routeValue", {
+    origin: placeLabel(row.origin_code),
+    destination: placeLabel(row.destination_code),
+  });
+  // 확인 시트의 요약 상자 — 구간 · 날짜(간편 접수는 날짜만) · 인원. 이름·전화·메일은 넣지 않는다.
+  const summary: ReservationSummary = {
+    parts: [
+      routeText,
+      tripDateText(row.depart_at, row.intake),
+      ...(row.passengers === null ? [] : [tRoot("reservationCheck.card.passengersValue", { n: row.passengers })]),
+    ],
+    quick,
+  };
   // 차량 라벨은 공개 표(vehicles)에서 — 없으면 slug 폴백(목록 화면 주석 참조). 간편 접수는 차종이 없다(미정).
   const vehicle = row.vehicle_slug === null ? undecided : (vehicles.get(row.vehicle_slug) ?? row.vehicle_slug);
   const waypoints = waypointLabels(row.waypoint_codes);
@@ -126,7 +145,7 @@ export default async function AdminReservationDetailPage({ params }: { params: P
           <dl className={a.dl}>
             <div className={a.row}>
               <dt className={a.dt}>{t("field.name")}</dt>
-              <dd className={a.dd}>{row.name}</dd>
+              <dd className={a.dd} id={CUSTOMER_NAME_ELEMENT_ID}>{row.name}</dd>
             </div>
             <div className={a.row}>
               <dt className={a.dt}>{t("field.phone")}</dt>
@@ -185,12 +204,7 @@ export default async function AdminReservationDetailPage({ params }: { params: P
             </div>
             <div className={a.row}>
               <dt className={a.dt}>{t("field.route")}</dt>
-              <dd className={a.dd}>
-                {tRoot("admin.reservations.routeValue", {
-                  origin: placeLabel(row.origin_code),
-                  destination: placeLabel(row.destination_code),
-                })}
-              </dd>
+              <dd className={a.dd}>{routeText}</dd>
             </div>
             <div className={a.row}>
               <dt className={a.dt}>{t("field.waypoints")}</dt>
@@ -301,29 +315,7 @@ export default async function AdminReservationDetailPage({ params }: { params: P
 
         <section className={a.section}>
           <h2 className={a.sectionTitle}>{t("sectionAdmin")}</h2>
-          <ReservationActions
-            id={row.id}
-            status={row.status}
-            initialMemo={row.admin_memo ?? ""}
-            labels={{
-              confirm: t("confirm"),
-              cancel: t("cancel"),
-              complete: t("complete"),
-              confirmHint: t("confirmHint"),
-              memoLabel: t("memoLabel"),
-              memoHint: t("memoHint"),
-              memoSave: t("memoSave"),
-              processing: t("processing"),
-              results: {
-                confirmed: t("result.confirmed"),
-                cancelled: t("result.cancelled"),
-                completed: t("result.completed"),
-                memoUpdated: t("result.memoUpdated"),
-                alreadyHandled: t("result.alreadyHandled"),
-                failed: t("result.failed"),
-              },
-            }}
-          />
+          <ReservationActions id={row.id} status={row.status} initialMemo={row.admin_memo ?? ""} summary={summary} labels={actionLabels} />
         </section>
       </div>
     </main>

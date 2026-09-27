@@ -176,6 +176,23 @@ describe("WCAG AA 대비 게이트", () => {
     expect(round2(r)).toBeGreaterThanOrEqual(4.5);
   });
 
+  /**
+   * P5-19 — 되돌릴 수 없는 동작의 최종 버튼은 긍정 동작(보라 --action-primary-bg)과 **한눈에** 달라야 한다(시안 ⑤-0).
+   * 팔레트에 빨강이 없으므로(브랜드 3색) 새 색을 들이지 않고 가장 짙은 브랜드 면을 쓴다 — 밝기 차이로 구분한다.
+   */
+  it("--action-destructive-* — 브랜드 원시색만 참조 · 흰 글자 ≥ 4.5:1 · 긍정 버튼보다 뚜렷이 어둡다", () => {
+    for (const name of ["--action-destructive-bg", "--action-destructive-fg", "--action-destructive-bg-hover"]) {
+      expect(/^var\(--(brand-\d+|white)\)$/.test(semantic.get(name) ?? ""), `${name} = ${semantic.get(name)}`).toBe(true);
+    }
+    expect(round2(contrast(resolved("--action-destructive-fg"), resolved("--action-destructive-bg")))).toBeGreaterThanOrEqual(4.5);
+    // 면 자체가 흰 시트 위에서 UI 요소 3:1 이상
+    expect(round2(contrast(resolved("--action-destructive-bg"), resolved("--bg-surface")))).toBeGreaterThanOrEqual(3);
+    const primary = relativeLuminance(resolved("--action-primary-bg"));
+    const destructive = relativeLuminance(resolved("--action-destructive-bg"));
+    expect(destructive, "주 버튼과 같은 면이다").toBeLessThan(primary);
+    expect(round2(contrast(resolved("--action-primary-bg"), resolved("--action-destructive-bg"))), "두 면이 너무 비슷하다").toBeGreaterThanOrEqual(1.5);
+  });
+
   it("어두운 면 위 텍스트 2종이 --bg-inverse 위에서 ≥ 4.5:1", () => {
     const bg = resolved("--bg-inverse");
     expect(round2(contrast(resolved("--text-on-inverse"), bg))).toBeGreaterThanOrEqual(4.5);
@@ -213,6 +230,8 @@ describe("텍스트 역할 토큰에 AA 미달색이 쓰이지 않는다", () =>
     ["--text-primary", "--bg-subtle"],
     ["--text-secondary", "--bg-page"],
     ["--text-secondary", "--bg-surface"],
+    // P5-19 리뷰 P2-4 — 확인 시트 요약 상자(--bg-subtle) 위 회색 한 줄(.sheetSummaryNote). 4.54:1 로 AA 경계선이라 잠근다.
+    ["--text-secondary", "--bg-subtle"],
     ["--text-muted", "--bg-page"],
     ["--text-link", "--bg-page"],
     ["--text-brand", "--bg-page"],
@@ -224,6 +243,9 @@ describe("텍스트 역할 토큰에 AA 미달색이 쓰이지 않는다", () =>
     ["--action-secondary-fg", "--action-secondary-bg"],
     ["--action-secondary-fg", "--action-secondary-bg-hover"],
     ["--action-disabled-fg", "--action-disabled-bg"],
+    // P5-19 — 되돌릴 수 없는 최종 버튼(확인 시트의 [접수 취소하기]). 새 색 없이 브랜드 원시색만 참조한다.
+    ["--action-destructive-fg", "--action-destructive-bg"],
+    ["--action-destructive-fg", "--action-destructive-bg-hover"],
     ["--channel-kakao-fg", "--channel-kakao-bg"],
   ];
 

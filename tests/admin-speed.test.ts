@@ -577,7 +577,8 @@ function barrierClient(bar: ReturnType<typeof gateAndBarrier>, response: (idx: n
   };
 }
 
-const translate = Object.assign((k: string) => k, { raw: () => ({}) });
+// rich — 예약 상세의 처리 영역 라벨(취소 시트 본문의 굵은 글씨 · P5-19)이 t.rich 를 부른다. 이 파일은 순서만 보므로 키를 그대로 돌려준다.
+const translate = Object.assign((k: string) => k, { raw: () => ({}), rich: (k: string) => k });
 
 /** 화면 렌더에서 갈아 끼우는 모듈 — 테스트가 끝나면 전부 되돌린다. */
 const RENDER_MOCKS = [
