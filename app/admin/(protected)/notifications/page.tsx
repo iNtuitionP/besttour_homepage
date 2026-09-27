@@ -62,8 +62,11 @@ export default async function AdminNotificationsPage({ searchParams }: { searchP
   const period = parsePeriodFilter(params.period);
   const cursor = parseCursor(params.cursor);
 
-  const summary = await getNotificationSummary();
-  const { items, hasMore, nextCursor } = await listNotifications({ status, channel, period, cursor });
+  // 요약과 목록은 서로 기다릴 이유가 없어 동시에 읽는다(P5-18 — 게이트를 통과한 뒤에만 시작한다).
+  const [summary, { items, hasMore, nextCursor }] = await Promise.all([
+    getNotificationSummary(),
+    listNotifications({ status, channel, period, cursor }),
+  ]);
 
   const href = (over: { status?: string; channel?: string; period?: string; cursor?: number }): string => {
     const next = { status, channel, period, cursor: 0, ...over };

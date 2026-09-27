@@ -370,6 +370,10 @@ function readCount(op: string, res: CountResponse): number {
 /**
  * 화면 맨 위 요약. **집계값이므로 실증불가 수치가 아니다**(CLAUDE.md §3) — DB 가 지금 세어 준 숫자다.
  * 개인정보는 하나도 오지 않는다(head 집계라 행 자체가 오지 않는다).
+ *
+ * 세 집계는 서로 기다릴 이유가 없어 **동시에** 보낸다(P5-18 — 직렬이면 왕복 세 번, 동시면 한 번 분량).
+ * 오류 판정은 예전 순서 그대로다: 셋을 다 받은 뒤 failed → stuck → sentUnconfirmed 순으로 읽어 첫 오류를 던진다.
+ * 집계 셋이 같은 순간을 세지 않는 것은 예전과 같다(원래도 원자적이지 않았다 — 오히려 창이 좁아진다).
  */
 export async function getNotificationSummary(
   params: NotificationSummaryParams = {},
@@ -379,28 +383,30 @@ export async function getNotificationSummary(
   const db = client ?? (await sessionClient());
 
   // last_error 가 null 인 행도 세야 한다 — `neq`·`not.like` 만 쓰면 SQL 의 NULL 비교가 그 행들을 떨어뜨린다. 그래서 `is.null` 과 or 로 묶는다.
-  const failedRes = await db
+  const failedQuery = db
     .from(NOTIFICATIONS_TABLE)
     .select(COUNT_COLUMN, { count: "exact", head: true })
     .eq("status", "failed")
     .or(`last_error.is.null,last_error.neq.${DUPLICATE_SENT_ERROR}`);
-  const failed = readCount("summary.failed", failedRes as CountResponse);
 
   const stuckSince = new Date(now.getTime() - SUMMARY_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
-  const stuckRes = await db
+  const stuckQuery = db
     .from(NOTIFICATIONS_TABLE)
     .select(COUNT_COLUMN, { count: "exact", head: true })
     .eq("status", "pending")
     .gte("attempts", MAX_ATTEMPTS)
     .gte("created_at", stuckSince)
     .or(`last_error.is.null,last_error.not.like.${SENT_UNMARKED_PREFIX}*`);
-  const stuck = readCount("summary.stuck", stuckRes as CountResponse);
 
-  const unconfirmedRes = await db
+  const unconfirmedQuery = db
     .from(NOTIFICATIONS_TABLE)
     .select(COUNT_COLUMN, { count: "exact", head: true })
     .eq("status", "pending")
     .like("last_error", `${SENT_UNMARKED_PREFIX}%`);
+
+  const [failedRes, stuckRes, unconfirmedRes] = await Promise.all([failedQuery, stuckQuery, unconfirmedQuery]);
+  const failed = readCount("summary.failed", failedRes as CountResponse);
+  const stuck = readCount("summary.stuck", stuckRes as CountResponse);
   const sentUnconfirmed = readCount("summary.sentUnconfirmed", unconfirmedRes as CountResponse);
 
   return { failed, stuck, sentUnconfirmed, windowHours: SUMMARY_WINDOW_HOURS, ok: failed === 0 && stuck === 0 && sentUnconfirmed === 0 };

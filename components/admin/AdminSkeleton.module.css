@@ -1,0 +1,106 @@
+/*
+ * 관리자 로딩 스켈레톤 (P5-18) — components/admin/AdminSkeleton.tsx 전용.
+ *
+ * 색은 역할 토큰만(tests/layout.test.ts §4). 글꼴 선언 없음 — 글꼴은 전역 body 한 곳이 정한다.
+ * 틀(최대 폭 1320px · 좌우 --space-page-x · 아래 --space-section)은 목록 화면의 .pageWrap · .main 과 같게 맞췄다 —
+ * 본문이 도착했을 때 자리가 튀지 않게. admin.module.css 는 건드리지 않는다(글꼴 작업과 겹치지 않게 새 파일로 둔다).
+ * 움직임은 옅게 숨 쉬는 불투명도 하나뿐이고, prefers-reduced-motion 이면 멈춘다.
+ */
+.main {
+  background: var(--bg-page);
+  color: var(--text-primary);
+  padding: 0 0 var(--space-section);
+  min-height: 60vh;
+}
+
+.wrap {
+  position: relative;
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 0 var(--space-page-x);
+}
+
+/* 화면에는 보이지 않고 스크린리더만 읽는다 — "불러오는 중" 한 번 */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.frame {
+  display: grid;
+  gap: var(--space-stack-md);
+  padding: var(--space-stack-lg) 0 0;
+}
+
+.head {
+  display: grid;
+  gap: var(--space-stack-xs);
+}
+
+.bar {
+  display: block;
+  height: 1rem;
+  border-radius: var(--radius-chip);
+  background: var(--bg-subtle);
+  animation: breathe 1.4s var(--motion-ease) infinite;
+}
+
+.title {
+  width: min(18rem, 70%);
+  height: 2rem;
+}
+
+.sub {
+  width: min(30rem, 90%);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-inline-xs);
+}
+
+.chip {
+  width: 5rem;
+  height: 2rem;
+  border-radius: var(--radius-control);
+}
+
+.panel {
+  display: grid;
+  gap: var(--space-stack-sm);
+  padding: var(--space-stack-md) var(--space-inline-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--elevation-raised);
+}
+
+.row {
+  height: 1.25rem;
+}
+
+.row:nth-child(even) {
+  width: 82%;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar {
+    animation: none;
+  }
+}

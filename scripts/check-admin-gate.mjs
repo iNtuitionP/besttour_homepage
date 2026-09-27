@@ -35,6 +35,20 @@
  * 5. **인라인 서버액션 금지.** 함수 본문 안의 `use server` 지시어는 컴포넌트 속에 엔드포인트를 숨긴다.
  *    엔드포인트는 모듈 단위로 **열거 가능**해야 한다.
  * 6. 삭제된 개발용 우회 심볼 5종 금지 · 관리자 경로 코드의 NODE_ENV/process.env 분기 0.
+ * 7. **게이트 밖에서 렌더되는 경계는 데이터 0** (P5-18 독립 리뷰 P1-1). `loading.*` 는 레이아웃 게이트의 자식이 아니다 —
+ *    Next 는 세그먼트를 `[segment, 레이아웃 노드, 자식 seed, loadingData, …]` 로 직렬화하고 loading 은 **형제 칸**이라
+ *    (next/dist/server/app-render/create-component-tree.js) 레이아웃의 `await requireAdmin()` 이 막지 않는다(P5-18 실측: 비로그인
+ *    307 응답의 RSC 페이로드에 스켈레톤이 실렸다). 클라이언트 이동에서는 서버가 요청의 라우터 상태 헤더를 보고 공유 레이아웃을 건너뛰므로
+ *    (walk-tree-with-flight-router-state.js) 구역 loading 은 게이트가 한 번도 돌지 않은 채 렌더될 수 있다(실측: 쿠키 없는 프리페치 요청이
+ *    리다이렉트 0 으로 구역 스켈레톤을 받아 갔다 — P5-18 보고서 「수정 라운드」 R-1). 그래서 게이트를 요구하는 대신
+ *    **구조로 데이터 0 을 강제한다**: 관리자 세그먼트의 loading 은 async·await 0 · import 는 정본 스켈레톤
+ *    (components/admin/AdminSkeleton.tsx) 하나 또는 없음 · 동적 import·require·fetch·cookies·headers 0 · export 는 기본 하나.
+ *    정본 스켈레톤은 허용 목록(문구·로케일·자기 CSS) 밖을 import 하지 않고, 값을 받지 않는다(매개변수 0).
+ *    not-found·forbidden·unauthorized 는 레이아웃 라우터의 props 로 **매번** 렌더되는 서버 컴포넌트인데 아직 규칙이 없다 —
+ *    관리자 세그먼트에 생기면 위반이다(먼저 이 스크립트에 규칙을 더하라). error 는 클라이언트 경계라 대상이 아니다.
+ * 8. **로딩 경계는 게이트 레이아웃 안쪽에만** (리뷰 P2-12). 게이트 화면을 감싸는 loading 이 어느 게이트 레이아웃보다도 바깥에 있으면
+ *    셸이 게이트보다 먼저 흘러나가 비로그인 전체 로드가 307 이 아니라 200 + 스트리밍 리다이렉트가 된다. 조상 폴더는 손으로 적지 않고
+ *    게이트 화면에서 거슬러 올라가며 유도한다(app/loading.* 처럼 관리자 세그먼트 밖의 조상도 포함).
  *
  * 저장소 규약: **게이트는 별칭 없이 import 한다** — `import { requireAdmin } from "@/lib/auth/requireAdmin";`.
  * `import { requireAdmin as gate }` 도 이 검사는 통과한다(바인딩이 정본이면 게이트다 — 이름으로 판정하면 M2 가 되살아난다).
@@ -126,6 +140,21 @@ const ROUTE_CONFIG_EXPORTS = new Set([
 ]);
 /** 렌더 전에 서버에서 도는 export — 기본 export 와 같은 잣대로 게이트를 요구한다. */
 const GATED_HELPERS = new Set(["generateMetadata", "generateViewport"]);
+
+/**
+ * 규칙 7·8 — 게이트 밖에서 렌더되는 경계 (P5-18 독립 리뷰 P1-1 · P2-12). 헤더 「규칙」 7·8 참조.
+ * 정본 스켈레톤은 게이트의 정본(CANONICAL_RELATIVE)처럼 **해석된 파일 경로**로 비교한다 — 같은 이름의 다른 모듈은 통과하지 못한다.
+ */
+const BOUNDARY_STEM = "loading";
+const CANONICAL_SKELETON_RELATIVE = "components/admin/AdminSkeleton.tsx";
+/** 정본 스켈레톤이 import 해도 되는 것 — 문구(카탈로그)·로케일·자기 CSS. 이 밖은 데이터로 가는 길이 될 수 있다. */
+const SKELETON_IMPORT_ALLOW = Object.freeze(["next-intl/server", "@/i18n/routing", "./AdminSkeleton.module.css"]);
+/** 레이아웃 라우터의 props 로 매번 렌더되는 서버 경계 관례 중 이 스크립트가 아직 규칙을 갖지 않은 것. */
+const UNRULED_BOUNDARY_STEMS = Object.freeze(["not-found", "forbidden", "unauthorized"]);
+/** 경계에서 부르면 안 되는 이름 — 네트워크·쿠키·요청 상태·CommonJS 로딩. */
+const DATA_CALL_NAMES = new Set(["fetch", "require", "cookies", "headers", "draftMode"]);
+/** 로딩 경계가 감쌀 수 있는 게이트 화면의 종류. route 는 로딩 경계를 타지 않는다. */
+const WRAPPABLE_STEMS = new Set(["page", "layout", "template", "default"]);
 
 // =============================================================================
 // 유틸
@@ -572,6 +601,125 @@ function checkInlineDirectives(ctx) {
   visit(sourceFile);
 }
 
+// =============================================================================
+// 규칙 7 — 게이트 밖에서 렌더되는 경계는 데이터 0
+// =============================================================================
+/**
+ * 비동기·동적 로딩·네트워크·쿠키 흔적. `allowAsync` 면 async·await 는 세지 않는다(정본 스켈레톤은 문구를 불러오느라 async 다).
+ * process.env 는 checkEnvBranches 가 관리자 경로 전체에서 따로 막는다.
+ */
+function dataAccessFindings(sourceFile, { allowAsync }) {
+  const found = [];
+  const visit = (node) => {
+    if (!allowAsync && ts.isFunctionLike(node) && isAsync(node)) found.push({ node, what: "async 함수" });
+    if (!allowAsync && ts.isAwaitExpression(node)) found.push({ node, what: "await" });
+    if (!allowAsync && ts.isForOfStatement(node) && node.awaitModifier) found.push({ node, what: "for await" });
+    if (ts.isCallExpression(node)) {
+      if (node.expression.kind === ts.SyntaxKind.ImportKeyword) found.push({ node, what: "동적 import()" });
+      else if (ts.isIdentifier(node.expression) && DATA_CALL_NAMES.has(node.expression.text)) found.push({ node, what: `${node.expression.text}()` });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return found;
+}
+
+/** 런타임 import·재수출(타입 전용 제외)의 지정자와 노드. `import x = require()` 는 따로 표시한다. */
+function runtimeImports(sourceFile) {
+  const out = [];
+  for (const st of sourceFile.statements) {
+    if (ts.isImportDeclaration(st) && ts.isStringLiteral(st.moduleSpecifier) && !st.importClause?.isTypeOnly) {
+      out.push({ spec: st.moduleSpecifier.text, node: st });
+    } else if (ts.isExportDeclaration(st) && !st.isTypeOnly && st.moduleSpecifier && ts.isStringLiteral(st.moduleSpecifier)) {
+      out.push({ spec: st.moduleSpecifier.text, node: st });
+    } else if (ts.isImportEqualsDeclaration(st)) {
+      out.push({ spec: st.moduleReference.getText(sourceFile), node: st });
+    }
+  }
+  return out;
+}
+
+/** 관리자 세그먼트의 loading.* — 정적 스켈레톤 하나만 그린다. */
+function checkBoundaryFile(ctx, abs, skeletonAbs) {
+  const { rel, sourceFile } = ctx;
+  const why = "loading 은 게이트와 무관하게 렌더된다(레이아웃의 형제 칸 · 공유 레이아웃을 건너뛴 부분 렌더)";
+  for (const { spec, node } of runtimeImports(sourceFile)) {
+    const resolved = resolveSpecifier(spec, abs);
+    if (resolved === null || resolved !== skeletonAbs) {
+      add(rel, node, sourceFile, `로딩 경계가 ${spec} 를 import 한다 — ${why}. import 는 정본 스켈레톤(${CANONICAL_SKELETON_RELATIVE}) 하나만 허용`);
+    }
+  }
+  for (const { node, what } of dataAccessFindings(sourceFile, { allowAsync: false })) {
+    add(rel, node, sourceFile, `로딩 경계에 ${what} — ${why}. 기다릴 것도 읽을 것도 없어야 한다`);
+  }
+  let sawDefault = false;
+  for (const st of sourceFile.statements) {
+    if (ts.isExportAssignment(st)) {
+      sawDefault = true;
+      continue;
+    }
+    if (ts.isExportDeclaration(st)) {
+      if (!st.isTypeOnly) add(rel, st, sourceFile, "로딩 경계의 export 는 기본 하나뿐이다");
+      continue;
+    }
+    if (!isExported(st) || ts.isTypeAliasDeclaration(st) || ts.isInterfaceDeclaration(st)) continue;
+    if (ts.isFunctionDeclaration(st) && hasModifier(st, ts.SyntaxKind.DefaultKeyword)) sawDefault = true;
+    else add(rel, st, sourceFile, "로딩 경계의 export 는 기본 하나뿐이다");
+  }
+  if (!sawDefault) add(rel, sourceFile.statements[0] ?? null, sourceFile, "로딩 경계에 기본 export 가 없다");
+}
+
+/** 정본 스켈레톤 — 로딩 경계가 부르는 유일한 컴포넌트. 값을 받지 않고, 문구 말고는 아무것도 읽지 않는다. */
+function checkSkeletonFile(ctx) {
+  const { rel, sourceFile } = ctx;
+  for (const { spec, node } of runtimeImports(sourceFile)) {
+    if (!SKELETON_IMPORT_ALLOW.includes(spec)) {
+      add(rel, node, sourceFile, `정본 스켈레톤이 ${spec} 를 import 한다 — 허용 목록(${SKELETON_IMPORT_ALLOW.join(" · ")}) 밖은 데이터로 가는 길이 될 수 있다`);
+    }
+  }
+  for (const { node, what } of dataAccessFindings(sourceFile, { allowAsync: true })) {
+    add(rel, node, sourceFile, `정본 스켈레톤에 ${what} — 게이트 밖에서 렌더되는 컴포넌트다`);
+  }
+  for (const st of sourceFile.statements) {
+    if (!isExported(st)) continue;
+    const fns = ts.isFunctionDeclaration(st)
+      ? [st]
+      : ts.isVariableStatement(st)
+        ? st.declarationList.declarations.map((d) => d.initializer).filter((e) => e && (ts.isArrowFunction(e) || ts.isFunctionExpression(e)))
+        : [];
+    for (const fn of fns) {
+      if (fn.parameters.length > 0) add(rel, fn, sourceFile, "정본 스켈레톤이 값을 받는다(매개변수) — 게이트 밖으로 데이터를 실어 나를 통로가 된다");
+    }
+  }
+}
+
+/**
+ * 규칙 8 — 로딩 경계 L 이 게이트 화면 F 를 감싸면서 어느 게이트 레이아웃 안쪽에도 있지 않으면 위반.
+ *   감싼다: page·default 는 같은 폴더와 그 아래의 loading 이, layout·template 은 **위 폴더**의 loading 이 감싼다(같은 폴더의 loading 은 레이아웃 안쪽).
+ *   안쪽이다: L 이 게이트 레이아웃 G 의 폴더이거나 그 아래다(G 의 게이트가 L 의 Suspense 보다 먼저 돈다).
+ * 목록은 파일에서 유도한다 — 관리자 세그먼트 밖의 조상(app/loading.*)도 잡힌다.
+ */
+function ancestorBoundaryViolations(fileRels, gatedScreens) {
+  const gatedLayoutDirs = gatedScreens.filter((s) => s.stem === "layout").map((s) => path.posix.dirname(s.rel));
+  const covered = (dir) => gatedLayoutDirs.some((g) => dir === g || dir.startsWith(`${g}/`));
+  const out = [];
+  for (const rel of fileRels) {
+    if (!rel.startsWith("app/") || path.basename(rel, path.extname(rel)) !== BOUNDARY_STEM) continue;
+    const dir = path.posix.dirname(rel);
+    if (covered(dir)) continue;
+    const wrapped = gatedScreens.filter(({ rel: screen, stem }) => {
+      const d = path.posix.dirname(screen);
+      return stem === "page" || stem === "default" ? d === dir || d.startsWith(`${dir}/`) : d.startsWith(`${dir}/`);
+    });
+    if (wrapped.length > 0) {
+      out.push(
+        `${rel}:1  게이트 화면(${wrapped[0].rel}${wrapped.length > 1 ? ` 외 ${wrapped.length - 1}개` : ""})을 감싸는 로딩 경계가 어느 게이트 레이아웃보다도 바깥이다 — 셸이 게이트보다 먼저 흘러나가 비로그인 전체 로드가 307 이 아니게 된다`,
+      );
+    }
+  }
+  return out;
+}
+
 /** 관리자 경로 코드의 환경변수 분기 — 주석은 트리에 없으므로 자연히 제외된다. */
 function checkEnvBranches(ctx) {
   const { rel, sourceFile } = ctx;
@@ -629,6 +777,12 @@ function main() {
     }
   }
 
+  const skeletonAbs = path.join(ROOT, ...CANONICAL_SKELETON_RELATIVE.split("/"));
+  /** 규칙 8 의 재료 — 게이트를 요구받는 화면(공개 예외·공개 셸 제외)과 저장소의 파일 목록. */
+  const gatedScreens = [];
+  const fileRels = targets.map((abs) => toPosix(path.relative(ROOT, abs)));
+  let boundaryCount = 0;
+
   for (const abs of targets) {
     const rel = toPosix(path.relative(ROOT, abs));
     const text = readFileSync(abs, "utf8");
@@ -636,6 +790,7 @@ function main() {
     const maybeServerAction = text.includes("use server");
     const stem = path.basename(rel, path.extname(rel));
     const isScreenFile = rel.startsWith("app/") && inAdminDir && ["page", "layout", "default", "template", "route"].includes(stem);
+    const inAdminApp = rel.startsWith("app/") && inAdminDir;
 
     if (!maybeServerAction && !inAdminDir && !isScreenFile) continue;
 
@@ -661,13 +816,34 @@ function main() {
       const wrapsPublic = ["layout", "template", "default"].includes(stem) && PUBLIC_ROUTES.some((pub) => pub.startsWith(`${dir}/`));
       if (wrapsPublic) checkShellFile(ctx);
       else checkScreenFile(ctx, stem === "route" ? "route" : "screen", exempt);
+      if (!exempt && !wrapsPublic && WRAPPABLE_STEMS.has(stem)) gatedScreens.push({ rel, stem });
     }
+
+    // 규칙 7 — 게이트 밖에서 렌더되는 경계
+    if (inAdminApp && stem === BOUNDARY_STEM) {
+      boundaryCount += 1;
+      checkBoundaryFile(ctx, abs, skeletonAbs);
+    }
+    if (inAdminApp && UNRULED_BOUNDARY_STEMS.includes(stem)) {
+      add(
+        rel,
+        sourceFile.statements[0] ?? null,
+        sourceFile,
+        `관리자 세그먼트의 ${stem} — 레이아웃 라우터의 props 로 매번 렌더되는 서버 경계인데(공유 레이아웃을 건너뛴 부분 렌더에서도) 이 게이트에 규칙이 없다. 먼저 규칙(데이터 0 또는 게이트)을 이 스크립트에 더하라`,
+      );
+    }
+    if (rel === CANONICAL_SKELETON_RELATIVE) checkSkeletonFile(ctx);
   }
+
+  // 규칙 8 — 게이트 레이아웃 바깥의 로딩 경계(조상은 유도한다)
+  violations.push(...ancestorBoundaryViolations(fileRels, gatedScreens));
+  console.log(`${TAG}: 게이트 밖 경계(loading) ${boundaryCount}개 — 데이터 0 규칙 · 정본 스켈레톤 ${CANONICAL_SKELETON_RELATIVE} · 게이트 레이아웃 바깥 조상 금지`);
 
   if (violations.length > 0) {
     for (const v of violations) console.log(`${TAG}: ${v}`);
     console.log(`${TAG}: 위반 ${violations.length}건 — 관리자 인가가 구조적으로 보장되지 않는다.`);
     console.log(`${TAG}: 규칙: export 된 async 함수의 **첫 문장**이 정본 ${GATE_NAME}() 의 await 여야 한다(조건·try·앞선 return·이름 가리기 금지).`);
+    console.log(`${TAG}: 규칙: 게이트 밖에서 렌더되는 로딩 경계는 데이터 0(async 0 · import 는 정본 스켈레톤 하나) 이고, 어느 게이트 레이아웃보다 바깥에 두지 않는다.`);
     process.exit(1);
   }
 

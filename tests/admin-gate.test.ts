@@ -15,7 +15,7 @@
  * 픽스처 소스 안의 `use server` 문자열은 **문자열일 뿐** 이라 게이트가 이 파일을 서버액션으로 보지 않는다(그것이 AST 의 요점이다).
  */
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -210,6 +210,22 @@ describe("1. 실제 저장소", { timeout: GATE_TIMEOUT_MS }, () => {
     const r = await runGate(ROOT);
     expect(r.out).toContain("use server");
     for (const dir of ["app/admin", "actions/admin", "lib/admin", "components/admin"]) expect(r.out, dir).toContain(dir);
+  });
+
+  /** P5-18 리뷰 P1-1 — 게이트 밖에서 렌더되는 로딩 경계를 실제 저장소에서 **전부** 본다. 수는 파일시스템에서 유도한다. */
+  test("관리자 세그먼트의 loading.* 를 전부 검사 대상으로 잡는다 (수는 파일시스템에서 유도)", async () => {
+    const walkRel = (rel: string): string[] => {
+      const abs = path.join(ROOT, ...rel.split("/"));
+      return readdirSync(abs, { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory() ? walkRel(`${rel}/${e.name}`) : [`${rel}/${e.name}`],
+      );
+    };
+    const adminSegment = (rel: string) => rel.split("/").slice(0, -1).some((s) => s === "admin" || s === "(admin)");
+    const loadings = walkRel("app").filter((rel) => adminSegment(rel) && /\/loading\.(tsx|ts|jsx|js|mjs|cjs|mts|cts)$/.test(rel));
+    expect(loadings.length, "관리자 로딩 경계가 하나도 없으면 이 테스트는 아무것도 지키지 않는다").toBeGreaterThan(0);
+    const r = await runGate(ROOT);
+    expect(r.status, r.out).toBe(0);
+    expect(r.out).toContain(`게이트 밖 경계(loading) ${loadings.length}개`);
   });
 });
 
@@ -808,6 +824,231 @@ describe.concurrent("5. 우회 심볼 · 환경변수 분기", { timeout: GATE_T
       "app/admin/(protected)/popups/[id]/page.tsx",
       [IMPORT_GATE, 'import { HomePopup } from "@/components/home/HomePopup";', "", "export default async function Page() {", "  await requireAdmin();", "  return HomePopup;", "}", ""].join("\n"),
     );
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(0);
+  });
+});
+
+// =============================================================================
+// 6. 게이트 밖에서 렌더되는 경계 파일 (P5-18 독립 리뷰 P1-1 · P2-12)
+// =============================================================================
+/**
+ * `loading.*` 는 레이아웃 게이트의 자식이 아니다. Next 는 세그먼트를 `[segment, 레이아웃 노드, 자식 seed, loadingData, …]` 로 직렬화하고
+ * loading 은 **형제 칸**이다(next/dist/server/app-render/create-component-tree.js) — 레이아웃의 `await requireAdmin()` 이 막지 않는다
+ * (P5-18 실측: 비로그인 307 응답의 RSC 페이로드에 스켈레톤이 실렸다). 클라이언트 이동에서는 서버가 요청의 라우터 상태 헤더를 보고
+ * 공유 레이아웃을 아예 건너뛰므로(walk-tree-with-flight-router-state.js) 구역 loading 은 게이트가 한 번도 돌지 않은 채 렌더될 수 있다.
+ * 그래서 게이트를 요구하는 대신 **데이터 0** 을 구조로 강제한다. 리뷰 프로브 ②(데이터를 읽는 loading.tsx)가 예전 게이트를 통과했다.
+ * 또 로딩 경계가 게이트 레이아웃보다 **바깥**(조상)에 있으면 셸이 게이트보다 먼저 흘러나가 비로그인 전체 로드가 307 이 아니게 된다(P2-12).
+ */
+const SKELETON_REL = "components/admin/AdminSkeleton.tsx";
+const SKELETON_SRC = [
+  'import { getTranslations } from "next-intl/server";',
+  "",
+  'import { routing } from "@/i18n/routing";',
+  "",
+  'import s from "./AdminSkeleton.module.css";',
+  "",
+  "export async function AdminSkeleton() {",
+  '  const t = await getTranslations({ locale: routing.defaultLocale, namespace: "admin.loading" });',
+  '  return <main className={s.main} aria-busy="true"><p role="status">{t("label")}</p></main>;',
+  "}",
+  "",
+].join("\n");
+const IMPORT_SKELETON = 'import { AdminSkeleton } from "@/components/admin/AdminSkeleton";';
+const STATIC_LOADING = [IMPORT_SKELETON, "", "export default function Loading() {", "  return <AdminSkeleton />;", "}", ""].join("\n");
+const BARE_LOADING = ["export default function Loading() {", "  return null;", "}", ""].join("\n");
+const SECTION_LOADING = "app/admin/(protected)/reservations/loading.tsx";
+
+describe.concurrent("6. 게이트 밖 경계 — 로딩은 데이터 0", { timeout: GATE_TIMEOUT_MS }, () => {
+  it("green — 정본 스켈레톤 하나만 그리는 로딩 경계 (게이트 레이아웃 안쪽 · 구역)", async ({ fx }) => {
+    fx.put(SKELETON_REL, SKELETON_SRC);
+    fx.put("app/admin/(protected)/loading.tsx", STATIC_LOADING);
+    fx.put(SECTION_LOADING, STATIC_LOADING);
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(0);
+    expect(r.out).toContain("게이트 밖 경계(loading) 2개");
+  });
+
+  it("green — import 가 없는 정적 로딩 경계", async ({ fx }) => {
+    fx.put("app/admin/(protected)/loading.tsx", BARE_LOADING);
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(0);
+  });
+
+  it("red — 로딩 경계가 데이터를 읽는다 (리뷰 프로브 ② — 예전 게이트는 위반 0 으로 통과시켰다)", async ({ fx }) => {
+    fx.put(
+      SECTION_LOADING,
+      [
+        'import { listReservations } from "@/lib/admin/reservations";',
+        "",
+        "export default async function Loading() {",
+        "  const { items } = await listReservations({});",
+        "  return <ul>{items.map((r) => <li key={r.id}>{r.name}</li>)}</ul>;",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(1);
+    expect(r.out).toContain("reservations/loading.tsx");
+    expect(r.out).toContain("@/lib/admin/reservations");
+  });
+
+  it("red — async 가 아니어도 데이터 모듈을 import 하면 막는다 (스켈레톤 옆에 약속을 그려도 RSC 는 풀어서 보낸다)", async ({ fx }) => {
+    fx.put(SKELETON_REL, SKELETON_SRC);
+    fx.put(
+      SECTION_LOADING,
+      [
+        IMPORT_SKELETON,
+        'import { getVehicles } from "@/lib/queries";',
+        "",
+        "export default function Loading() {",
+        "  return (",
+        "    <>",
+        "      <AdminSkeleton />",
+        "      {getVehicles().then((v) => v.length)}",
+        "    </>",
+        "  );",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(1);
+    expect(r.out).toContain("@/lib/queries");
+  });
+
+  it("red — 스켈레톤 옆에 다른 컴포넌트를 함께 그린다 (리뷰: <AdminSkeleton /> 이 있기만 하면 통과하던 규칙)", async ({ fx }) => {
+    fx.put(SKELETON_REL, SKELETON_SRC);
+    fx.put("components/admin/ReservationPeek.tsx", ["export async function ReservationPeek() {", "  return null;", "}", ""].join("\n"));
+    fx.put(
+      SECTION_LOADING,
+      [IMPORT_SKELETON, 'import { ReservationPeek } from "@/components/admin/ReservationPeek";', "", "export default function Loading() {", "  return <><AdminSkeleton /><ReservationPeek /></>;", "}", ""].join("\n"),
+    );
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(1);
+    expect(r.out).toContain("ReservationPeek");
+  });
+
+  it("red — import 가 없어도 fetch 로 데이터를 그린다", async ({ fx }) => {
+    fx.put(SECTION_LOADING, ["export default function Loading() {", '  return <p>{fetch("http://127.0.0.1:54321/rest/v1/reservations").then((r) => r.text())}</p>;', "}", ""].join("\n"));
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(1);
+    expect(r.out).toContain("fetch");
+  });
+
+  it("red — 동적 import() 로 데이터 모듈을 끌어온다", async ({ fx }) => {
+    fx.put(SECTION_LOADING, ["export default function Loading() {", '  const m = import("@/lib/admin/reservations");', "  return <p>{String(m)}</p>;", "}", ""].join("\n"));
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(1);
+    expect(r.out).toContain("import()");
+  });
+
+  it("red — async 함수는 데이터가 없어도 막는다 (기다릴 것이 없어야 한다)", async ({ fx }) => {
+    fx.put(SECTION_LOADING, ["export default async function Loading() {", "  return null;", "}", ""].join("\n"));
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(1);
+    expect(r.out).toContain("async");
+  });
+
+  it("red — 기본 export 말고 다른 export 가 있다", async ({ fx }) => {
+    fx.put(SECTION_LOADING, ['export const label = "x";', "", BARE_LOADING].join("\n"));
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(1);
+  });
+
+  it("red — 정본 스켈레톤이 데이터 모듈을 import 한다", async ({ fx }) => {
+    fx.put(SKELETON_REL, ['import { listReservations } from "@/lib/admin/reservations";', "", SKELETON_SRC].join("\n"));
+    fx.put("app/admin/(protected)/loading.tsx", STATIC_LOADING);
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(1);
+    expect(r.out).toContain(SKELETON_REL);
+  });
+
+  it("red — 정본 스켈레톤이 값을 받는다(매개변수) — 데이터를 실어 나를 통로", async ({ fx }) => {
+    fx.put(SKELETON_REL, SKELETON_SRC.replace("export async function AdminSkeleton()", "export async function AdminSkeleton({ rows }: { rows: string[] })"));
+    fx.put("app/admin/(protected)/loading.tsx", STATIC_LOADING);
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(1);
+    expect(r.out).toContain(SKELETON_REL);
+  });
+
+  it("red — 정본 스켈레톤이 쿠키를 읽는다", async ({ fx }) => {
+    fx.put(
+      SKELETON_REL,
+      ['import { cookies } from "next/headers";', "", SKELETON_SRC.replace("  const t = await", "  await cookies();\n  const t = await")].join("\n"),
+    );
+    fx.put("app/admin/(protected)/loading.tsx", STATIC_LOADING);
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(1);
+    expect(r.out).toContain("next/headers");
+  });
+});
+
+describe.concurrent("6-b. 게이트 레이아웃 바깥의 로딩 경계 (P2-12 — 조상은 유도한다)", { timeout: GATE_TIMEOUT_MS }, () => {
+  it("red — app/admin/loading.tsx 는 게이트 레이아웃(app/admin/(protected)/layout.tsx)의 바깥 조상이다", async ({ fx }) => {
+    fx.put(SKELETON_REL, SKELETON_SRC);
+    fx.put("app/admin/loading.tsx", STATIC_LOADING);
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(1);
+    expect(r.out).toContain("app/admin/loading.tsx");
+  });
+
+  it("red — 루트 app/loading.tsx 도 조상이다 (관리자 세그먼트가 아니어도 게이트보다 먼저 흘러나간다)", async ({ fx }) => {
+    fx.put("app/loading.tsx", BARE_LOADING);
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(1);
+    expect(r.out).toContain("app/loading.tsx");
+  });
+
+  it("red — 게이트 레이아웃이 없는 게이트 화면은 같은 폴더의 loading 도 게이트보다 먼저 흘러나간다", async ({ fx }) => {
+    fx.put("app/(admin)/dashboard/page.tsx", GATED_PAGE);
+    fx.put("app/(admin)/dashboard/loading.tsx", BARE_LOADING);
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(1);
+    expect(r.out).toContain("app/(admin)/dashboard/loading.tsx");
+  });
+
+  it("green — 게이트 레이아웃과 같은 폴더·그 아래의 loading 은 게이트 안쪽이다", async ({ fx }) => {
+    fx.put("app/admin/(protected)/loading.tsx", BARE_LOADING);
+    fx.put("app/admin/(protected)/popups/loading.tsx", BARE_LOADING);
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(0);
+  });
+
+  it("green — 안쪽에 게이트 레이아웃이 하나 더 있어도 바깥 게이트 안의 loading 은 조상 위반이 아니다 (헛경보 방지)", async ({ fx }) => {
+    fx.put("app/admin/(protected)/loading.tsx", BARE_LOADING);
+    fx.put("app/admin/(protected)/inner/layout.tsx", GATED_LAYOUT);
+    fx.put("app/admin/(protected)/inner/page.tsx", GATED_PAGE);
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(0);
+  });
+
+  it("green — 공개 화면(로그인)만 감싸는 loading 은 조상 위반이 아니다 (데이터 0 규칙은 그대로 받는다)", async ({ fx }) => {
+    fx.put("app/admin/login/loading.tsx", BARE_LOADING);
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(0);
+  });
+});
+
+describe.concurrent("6-c. 게이트에 규칙이 없는 서버 경계 관례", { timeout: GATE_TIMEOUT_MS }, () => {
+  for (const stem of ["not-found", "forbidden", "unauthorized"]) {
+    it(`red — 관리자 세그먼트의 ${stem}.tsx — 레이아웃 라우터의 props 로 매번 렌더되는데 규칙이 없다(먼저 규칙을 더하라)`, async ({ fx }) => {
+      fx.put(`app/admin/(protected)/reservations/${stem}.tsx`, ["export default function Boundary() {", "  return null;", "}", ""].join("\n"));
+      const r = await fx.run();
+      expect(r.status, r.out).toBe(1);
+      expect(r.out).toContain(`reservations/${stem}.tsx`);
+    });
+  }
+
+  it("green — error.tsx 는 클라이언트 경계라 이 규칙 밖이다(서버 렌더에서 실행되지 않는다)", async ({ fx }) => {
+    fx.put("app/admin/(protected)/error.tsx", ['"use client";', "", "export default function AdminError() {", "  return null;", "}", ""].join("\n"));
+    const r = await fx.run();
+    expect(r.status, r.out).toBe(0);
+  });
+
+  it("green — 공개 경로의 not-found 는 관리자 규칙 대상이 아니다", async ({ fx }) => {
+    fx.put("app/[locale]/not-found.tsx", ["export default function NotFound() {", "  return null;", "}", ""].join("\n"));
     const r = await fx.run();
     expect(r.status, r.out).toBe(0);
   });

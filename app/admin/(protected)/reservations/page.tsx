@@ -62,9 +62,9 @@ export default async function AdminReservationsPage({ searchParams }: { searchPa
   const status = parseStatusFilter(params.status);
   const cursor = parseCursor(params.cursor);
 
-  const { items, hasMore, nextCursor } = await listReservations({ status, cursor });
   // 차량 라벨은 공개 표(vehicles — anon + RLS)에서. 없으면 slug 로 떨어진다(라벨이 없다고 행을 숨기지 않는다).
-  const vehicles = await vehicleLabels();
+  // 두 조회는 서로 기다릴 이유가 없어 동시에 보낸다(P5-18 — 게이트를 통과한 **뒤에만** 시작한다).
+  const [{ items, hasMore, nextCursor }, vehicles] = await Promise.all([listReservations({ status, cursor }), vehicleLabels()]);
 
   const href = (nextStatus: string, nextCursorValue: number): string => {
     const qs = new URLSearchParams();

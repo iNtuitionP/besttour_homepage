@@ -3,7 +3,7 @@ import { getTranslations } from "next-intl/server";
 
 import { ReservationActions } from "@/components/admin/ReservationActions";
 import { routing } from "@/i18n/routing";
-import { LEGACY_CONTACT_METHODS, LEGACY_PAYMENT_METHODS, getReservation, isUuid } from "@/lib/admin/reservations";
+import { LEGACY_CONTACT_METHODS, LEGACY_PAYMENT_METHODS, getReservation, isUuid, type ReservationDetailRow } from "@/lib/admin/reservations";
 import { requireAdmin } from "@/lib/auth/requireAdmin";
 import { PURPOSES, isLocationCode, locationLabelKo } from "@/lib/codes";
 import { getVehicles } from "@/lib/queries";
@@ -49,12 +49,13 @@ function waypointLabels(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string").map(placeLabel) : [];
 }
 
-async function vehicleLabel(slug: string): Promise<string> {
+/** 차량 slug → 표시 이름. 읽지 못하면 빈 표 — 화면은 slug 로 떨어진다(목록 화면과 같은 규약). */
+async function vehicleNames(): Promise<Map<string, string>> {
   try {
     const vehicles = await getVehicles();
-    return vehicles.find((v) => v.slug === slug)?.nameKo ?? slug;
+    return new Map(vehicles.map((v): [string, string] => [v.slug, v.nameKo]));
   } catch {
-    return slug;
+    return new Map();
   }
 }
 
@@ -74,7 +75,11 @@ export default async function AdminReservationDetailPage({ params }: { params: P
   const { id } = await params;
 
   // uuid 가 아닌 경로 값은 DB 를 부르지 않고 "찾을 수 없음" 으로 (getReservation 은 그런 값에 throw 한다).
-  const row = isUuid(id) ? await getReservation(id) : null;
+  // 예약 한 건과 차량 이름표는 서로 기다릴 이유가 없어 동시에 읽는다(P5-18 — 게이트를 통과한 뒤에만). 간편 접수(차종 미정)면
+  // 이름표를 쓰지 않지만, 그것을 알려면 예약을 먼저 받아야 해서 기다리는 쪽이 더 비싸다(작은 공개 표 한 번 · anon + RLS).
+  const [row, vehicles]: [ReservationDetailRow | null, Map<string, string>] = isUuid(id)
+    ? await Promise.all([getReservation(id), vehicleNames()])
+    : [null, new Map()];
   const backHref = "/admin/reservations";
 
   if (row === null) {
@@ -94,7 +99,7 @@ export default async function AdminReservationDetailPage({ params }: { params: P
   const quick = row.intake === "quick";
   const undecided = tRoot("admin.labels.undecided");
   // 차량 라벨은 공개 표(vehicles)에서 — 없으면 slug 폴백(목록 화면 주석 참조). 간편 접수는 차종이 없다(미정).
-  const vehicle = row.vehicle_slug === null ? undecided : await vehicleLabel(row.vehicle_slug);
+  const vehicle = row.vehicle_slug === null ? undecided : (vehicles.get(row.vehicle_slug) ?? row.vehicle_slug);
   const waypoints = waypointLabels(row.waypoint_codes);
   const boolLabel = (v: boolean | null): string => (v === null ? none : v ? t("value.included") : t("value.excluded"));
 

@@ -449,6 +449,8 @@ function headCount(op: string, res: HeadCount): number {
 /**
  * 보정치 세 가지를 센다(head 집계 3회). `window` 는 0022 가 돌려준 notifications 칸 그대로.
  * `now`·`client` 는 테스트 주입용 — 운영은 생략한다.
+ * 셋은 서로 기다릴 이유가 없어 **동시에** 보낸다(P5-18) — 0022 와 동시에 보내려던 P4-7b 의 취지(두 집계 사이의 창을 좁힌다)와도 같은 방향이다.
+ * 오류 판정 순서는 그대로다(셋을 받은 뒤 sentUnconfirmed → sentUnconfirmedStuck → suppressedDuplicates 순으로 읽는다).
  */
 export async function getNotifyCorrections(
   window: Pick<StatsNotifications, "window_days" | "stuck_hours">,
@@ -461,15 +463,17 @@ export async function getNotifyCorrections(
   const table = "notifications_log";
   const head = { count: "exact" as const, head: true };
 
-  const all = await db.from(table).select("id", head).eq("status", "pending").like("last_error", `${SENT_UNMARKED_PREFIX}%`).gte("created_at", since);
-  const stuck = await db
-    .from(table)
-    .select("id", head)
-    .eq("status", "pending")
-    .like("last_error", `${SENT_UNMARKED_PREFIX}%`)
-    .gte("created_at", since)
-    .lt("created_at", stuckBefore);
-  const dup = await db.from(table).select("id", head).eq("status", "failed").eq("last_error", DUPLICATE_SENT_ERROR).gte("created_at", since);
+  const [all, stuck, dup] = await Promise.all([
+    db.from(table).select("id", head).eq("status", "pending").like("last_error", `${SENT_UNMARKED_PREFIX}%`).gte("created_at", since),
+    db
+      .from(table)
+      .select("id", head)
+      .eq("status", "pending")
+      .like("last_error", `${SENT_UNMARKED_PREFIX}%`)
+      .gte("created_at", since)
+      .lt("created_at", stuckBefore),
+    db.from(table).select("id", head).eq("status", "failed").eq("last_error", DUPLICATE_SENT_ERROR).gte("created_at", since),
+  ]);
 
   return {
     sentUnconfirmed: headCount("corrections.sentUnconfirmed", all as unknown as HeadCount),
