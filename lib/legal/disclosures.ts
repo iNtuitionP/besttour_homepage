@@ -107,7 +107,22 @@ export const WITHDRAWAL = {
   consentLabel: "위 청약철회 제한 내용을 확인했으며, 취소·환불이 위 규정에 따르는 데 동의합니다. (필수)",
   consentLabelEn: "I have read the restriction on withdrawal above and agree that cancellations and refunds follow the policy above. (required)",
   smsLine: "운행일 2일 전부터는 계약 후 7일 이내라도 청약철회가 제한될 수 있습니다.",
-  source: "사장님 답변 2026-09-21 A-2 · 전자상거래법 §17②·③·⑥ · astra P1-7 리뷰 반영",
+  // 접힌 요약의 영문(P7-3, 2026-09-27 · 컨트롤러). 견적 모달이 전문을 "자세히 보기" 안으로 접으면서 영문 화면의 noticeEn 도 접혔다 —
+  // 제한 사실은 접힌 상태에서도 **영문으로** 보여야 한다(전자상거래법 §17⑥ "쉽게 알 수 있는 곳에 명확히"). 뜻은 noticeEn·CANCELLATION 과 같아야 한다.
+  // tiers 는 CANCELLATION.tiers 와 같은 순서·같은 두 구간, scope 는 CANCELLATION.scope, restriction 은 위 smsLine 의 영문이다.
+  summaryEn: {
+    tiers: [
+      "At least 3 days before the travel date: full deposit refund",
+      "From 2 days before the travel date through the travel day: no deposit refund",
+    ],
+    // CANCELLATION.referenceTime 의 영문 — 두 구간의 경계를 정하는 문장이라 접힌 자리에 둔다(독립 리뷰 P2-7)
+    referenceTime:
+      "Days are counted by calendar date in Korea time. For example, for a trip on the 10th, you get your full deposit back if you cancel by 11:59 pm on the 7th; from the 8th, the deposit is not refunded.",
+    scope:
+      "These rules cover cancellations you request. They do not affect your rights under the law, for example if the service provided differs from what was advertised or agreed.",
+    restriction: "From 2 days before the travel date, your right of withdrawal may be restricted even within 7 days of booking.",
+  },
+  source: "사장님 답변 2026-09-21 A-2 · 전자상거래법 §17②·③·⑥ · astra P1-7 리뷰 반영 · summaryEn: 컨트롤러 2026-09-27(P7-3, 독립 리뷰 서명)",
 } as const;
 
 // ── 개인정보 수집·이용 4대 고지 (PIPA §15②) ─────────────────────────────
@@ -122,13 +137,27 @@ export const PRIVACY_NOTICE = {
   // created_at + CONFIRMED_KEEP_YEARS(5년) 까지 보관하므로, 그 예외가 문구에도 있어야 고지가 참이 된다.
   retention:
     "접수일로부터 1년. 다만 「전자상거래 등에서의 소비자보호에 관한 법률」에 따라 계약 또는 청약철회 등에 관한 기록과 대금결제 및 재화 등의 공급에 관한 기록은 5년간 보관합니다.", // 사장님 확정 2026-09-21 — 값 그대로(P1-7 브리프 1-E). 법정 보존 5년 예외는 전자상거래법 §6③·시행령 §6①2·3호
+  // 접힌 동의 줄에 보이는 보유 기간 요약(P7-3, 2026-09-27 · 컨트롤러). 시행령 §17③·처리 방법 고시 §4 상 "보유 및 이용 기간"은
+  // 중요한 내용이라 접힌 상태에서도 강조해 보여야 한다 — 전문(retention)은 "자세히 보기" 안에. 위 retention 과 뜻이 같아야 한다.
+  retentionSummary: "접수일로부터 1년 (계약·청약철회·대금결제·공급에 관한 기록은 법에 따라 5년)",
+  // 접힌 요약의 영문(P7-3 독립 리뷰 P2-6②, 2026-09-27 · 컨트롤러). 영문 화면의 개인정보 카드도 접힌 상태에서 핵심을 영문으로 보인다 —
+  // 읽지 못하는 문장에 한 동의는 효력이 약하다(components/legal/withdrawal-text.ts 머리말과 같은 논리). 전문은 "View details" 안의 한국어 원문.
+  // purpose = 위 purpose, items = itemsLine, retention = retentionSummary, publicFeed = publicFeedNotice 의 영문이다. 뜻이 같아야 한다.
+  summaryEn: {
+    purpose: "Charter bus quote consultation, and taking and confirming bookings",
+    items: "Name, mobile number, preferred travel dates (departure and return), origin and destination, number of passengers",
+    retention:
+      "1 year from the date of your request (records of contracts, withdrawals, payments and service provision are kept for 5 years as required by law)",
+    publicFeed:
+      "Our home page lists recent bookings with only part of the name (e.g. H**), the vehicle type, the travel date and the status (received or confirmed), masked.",
+  },
   retentionDays: 365, // 위 retention 문안의 숫자값(사장님 확정 2026-09-21) — lib/reservations/consent.ts 가 retention_until 계산에 읽는다. 문안과 함께 바꾼다
   refusal: "동의를 거부하실 수 있으며, 거부 시 견적 상담과 예약 접수가 제한됩니다.",
   consentLabel: "위 내용을 확인했으며 개인정보 수집·이용에 동의합니다. (필수)",
   marketingConsentLabel: "할인·이벤트 안내 문자 수신에 동의합니다. (선택)",
   // 2026-09-13 P3-5 독립 리뷰 M-1: 화면이 접수 상태(접수/확정) 칩도 보여 주므로 한정 열거에 넣었다. tests/feed-notice-parity.test.ts 가 항목 키와 대조한다.
   publicFeedNotice: "접수 현황은 성명 일부(예: 한**)·차종·운행일·접수 상태(접수/확정)만 마스킹하여 홈에 공개됩니다.",
-  source: "스펙 §13.10 / 플랜 ADR-6 / UIUX 브리프 §3-②",
+  source: "스펙 §13.10 / 플랜 ADR-6 / UIUX 브리프 §3-② · items: P3-8 · retentionSummary·summaryEn: 컨트롤러 2026-09-27(P7-3, 독립 리뷰 서명)",
 } as const;
 
 // ── 처리위탁 (PIPA §26② 실명 공개, 별도 동의 불요) ──────────────────────

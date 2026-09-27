@@ -255,6 +255,10 @@
       "retention": "Retention period",
       "full": "View the full Privacy Policy",
       "newTab": "(new tab)"
+    },
+    "more": {
+      "show": "View details",
+      "hide": "Hide details"
     }
   },
   "reservationCheck": {
@@ -420,6 +424,10 @@
   "legal": {
     "officialNotice": {
       "lead": "The Korean text below is the official, legally binding version.",
+      "body": "If you need help understanding it, please contact us before booking."
+    },
+    "officialNoticeCollapsed": {
+      "lead": "The Korean original under “View details” is the official, legally binding version.",
       "body": "If you need help understanding it, please contact us before booking."
     },
     "verbatim": {

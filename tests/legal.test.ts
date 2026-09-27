@@ -282,7 +282,35 @@ describe("5-b. P1-7 원장 변경 — 브리프 문안과 바이트 일치", () 
       consentLabelEn:
         "I have read the restriction on withdrawal above and agree that cancellations and refunds follow the policy above. (required)",
       smsLine: "운행일 2일 전부터는 계약 후 7일 이내라도 청약철회가 제한될 수 있습니다.",
-      source: "사장님 답변 2026-09-21 A-2 · 전자상거래법 §17②·③·⑥ · astra P1-7 리뷰 반영",
+      // P7-3(2026-09-27 · 컨트롤러 작성 · 독립 리뷰 P7-3-P5-18 서명): 견적 모달이 전문을 "자세히 보기" 로 접으면서 영문 화면에도
+      // 접힌 상태의 핵심이 영문으로 보여야 했다. tiers = CANCELLATION.tiers · referenceTime = CANCELLATION.referenceTime ·
+      // scope = CANCELLATION.scope · restriction = smsLine 의 영문. 바꾸면 여기와 리뷰 기록을 같이 고친다.
+      summaryEn: {
+        tiers: [
+          "At least 3 days before the travel date: full deposit refund",
+          "From 2 days before the travel date through the travel day: no deposit refund",
+        ],
+        referenceTime:
+          "Days are counted by calendar date in Korea time. For example, for a trip on the 10th, you get your full deposit back if you cancel by 11:59 pm on the 7th; from the 8th, the deposit is not refunded.",
+        scope:
+          "These rules cover cancellations you request. They do not affect your rights under the law, for example if the service provided differs from what was advertised or agreed.",
+        restriction: "From 2 days before the travel date, your right of withdrawal may be restricted even within 7 days of booking.",
+      },
+      source: "사장님 답변 2026-09-21 A-2 · 전자상거래법 §17②·③·⑥ · astra P1-7 리뷰 반영 · summaryEn: 컨트롤러 2026-09-27(P7-3, 독립 리뷰 서명)",
+    });
+  });
+
+  // P7-3(2026-09-27 · 컨트롤러 작성 · 독립 리뷰 서명): 접힌 개인정보 카드의 요약. 보유 기간은 시행령 §17③3호 "중요한 내용"이라 접힌 상태에서도 강조해 보인다.
+  // retentionSummary 는 retention(전문)·lib/retention/purge.ts(1년 / 확정 이력 created_at + 5년)와 뜻이 같아야 한다 — 리뷰 P2-4 로 "공급" 범주를 넣었다.
+  test("PRIVACY_NOTICE — 접힌 요약(retentionSummary · summaryEn) 바이트 잠금", () => {
+    eq(PRIVACY_NOTICE.retentionSummary, "접수일로부터 1년 (계약·청약철회·대금결제·공급에 관한 기록은 법에 따라 5년)");
+    expect(PRIVACY_NOTICE.summaryEn).toEqual({
+      purpose: "Charter bus quote consultation, and taking and confirming bookings",
+      items: "Name, mobile number, preferred travel dates (departure and return), origin and destination, number of passengers",
+      retention:
+        "1 year from the date of your request (records of contracts, withdrawals, payments and service provision are kept for 5 years as required by law)",
+      publicFeed:
+        "Our home page lists recent bookings with only part of the name (e.g. H**), the vehicle type, the travel date and the status (received or confirmed), masked.",
     });
   });
 

@@ -53,18 +53,27 @@
 .body {
   padding: var(--space-stack-md) var(--space-inline-md) var(--space-stack-lg);
 }
+/* 전체 화면 시트 — 좌우 여백을 페이지와 같은 16px 로(줄이 덜 접혀 스크롤이 짧아진다 · P7-3). 기본 규칙 뒤에 둬야 이긴다. */
+@media (max-width: 640px) {
+  .body {
+    padding: var(--space-stack-md) var(--space-inline-sm) var(--space-stack-lg);
+  }
+}
 
 .close {
   position: sticky;
   top: 0;
   z-index: 2;
   align-self: flex-end;
+  /* 대화상자는 내용이 넘치는 flex 열이라, 줄이기를 막지 않으면 버튼이 40px 에서 18px 로 눌린다(P7-3 실측 — 이전에도 그랬다) */
+  flex-shrink: 0;
   display: grid;
   place-items: center;
   width: 40px;
   height: 40px;
-  /* 스크롤해도 닫기 버튼이 보이게 붙여 둔다(sticky) — 제목 위에 자기 줄을 차지한다 */
-  margin: var(--space-stack-xs) var(--space-inline-xs) 0;
+  /* 스크롤해도 닫기 버튼이 보이게 붙여 둔다(sticky). P7-3: 자기 줄을 차지하지 않고 제목 줄 오른쪽에 겹친다 —
+   * 아래 여백을 (위 여백 8 + 높이 40 = 48px)만큼 음수로 둬 본문이 대화상자 맨 위에서 시작한다. 제목은 오른쪽 여백(40px)으로 비켜 선다. */
+  margin: var(--space-stack-xs) var(--space-inline-xs) calc(-1 * (var(--space-stack-lg) + var(--space-stack-sm)));
   padding: 0;
   border: 1px solid var(--border-decorative);
   border-radius: var(--radius-control);

@@ -310,6 +310,9 @@
 }
 .field {
   display: grid;
+  /* P7-3: 칸 안의 열이 내용(날짜 입력의 고유 폭)만큼 늘지 않게 묶는다. 묶기 전에는 날짜 칸이 카드 밖으로 넘쳤다
+   * (실측 — 375px: 옛 글꼴 22px · Pretendard 30px, 1280px: Pretendard 6px). 아래 날짜 칸 여백과 함께 고친다. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-stack-xs);
   min-width: 0;
 }
@@ -368,6 +371,30 @@
 }
 .ctrl input {
   padding-right: var(--space-inline-sm);
+}
+/* 날짜 칸 — 달력 아이콘 앞뒤 여백을 줄여 좁은 열(375px 에서 137px)에서도 날짜가 아이콘에 잘리지 않게 한다(P7-3).
+ * 왼쪽 여백은 다른 칸과 같게 둬 글자 시작선이 맞는다. */
+.ctrl input[type="date"] {
+  padding-right: var(--space-inline-xs);
+}
+.ctrl input[type="date"]::-webkit-calendar-picker-indicator {
+  margin-inline-start: 0;
+}
+/* 아주 좁은 화면(360px 미만): 두 열이면 날짜 칸이 109px 라 "2026-10-15"(14.5px 굵게 ≈82px)가 달력 아이콘 자리와 겹쳐 잘렸다
+ * (320px 실측 — 연도 앞 두 자리가 밀려 "26-10-15" 로 보였다 · P7-3 독립 리뷰 P2-11). 그 폭에서만 날짜 두 칸을 한 줄씩 넓게 쓴다 —
+ * 출발지·도착지는 두 열 그대로. :has() 를 모르는 브라우저는 이전 배치(두 열)로 남는다. */
+@media (max-width: 359px) {
+  .field:has(input[type="date"]) {
+    grid-column: 1 / -1;
+  }
+}
+/* 360–374px: 두 열은 지키고 날짜 칸 안쪽 여백만 줄인다 — 빈 칸의 자리표시("yyyy-mm-dd" 등, 14.5px 굵게 ≈89px)가 129px 칸에서
+ * 달력 아이콘에 잘렸다(360px 실측). 왼쪽 12 · 오른쪽 4 — 간격 토큰에서 계산한 값(px 리터럴 금지 규약). */
+@media (min-width: 360px) and (max-width: 374px) {
+  .ctrl input[type="date"] {
+    padding-left: calc(var(--space-inline-sm) - var(--space-inline-xs) / 2);
+    padding-right: calc(var(--space-inline-xs) / 2);
+  }
 }
 .ctrlSelect::after {
   content: "";

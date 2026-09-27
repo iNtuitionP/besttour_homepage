@@ -8,7 +8,7 @@
  * verbatim 은 localizeVerbatim — ko 는 원장 문자열 그 자체, en 은 컨트롤러 확정 영문.
  *
  * P3-8 — 위젯이 곧 접수 경로다(간편 견적 모달). 모달의 법정 문구를 **여기서** 원장에서 읽어 props 로 내린다
- * (옛 /quote 페이지가 하던 일): 개인정보 수집·이용 4대 고지(PRIVACY_NOTICE — 마케팅 동의 라벨은 내리지 않는다) · 청약철회 고지 노드
+ * (옛 /quote 페이지가 하던 일): 개인정보 수집·이용 4대 고지 + 보유 기간 요약(PRIVACY_NOTICE — 마케팅 동의 라벨은 내리지 않는다) · 청약철회 고지 노드
  * (<WithdrawalNotice/>) · 청약철회 제한 확인 라벨 · verbatim · 예약·상담 전화 · Turnstile 사이트키·action.
  * **폼 토큰은 내리지 않는다** — 홈은 ISR 이라 구운 토큰이 만료된다. 모달이 열릴 때 서버액션(actions/quote-form-token.ts)으로 받는다.
  * 개인정보는 props 로 흐르지 않는다(정적 문구뿐 — P3-5 리뷰 N-2).
@@ -114,17 +114,22 @@ export async function Hero() {
           locale={locale}
           legal={{
             // 제목·체크박스 라벨은 ledgerUi(ko 는 PRIVACY_NOTICE 그대로, en 은 컨트롤러 확정 영문). 4대 고지 본문은 원장 한국어 그대로 —
-            // en 에서는 위에 컨트롤러 확정 안내(officialNotice), 본문에 lang="ko"(bodyLang). P2-6 브리프 §3.
+            // en 에서는 본문에 lang="ko"(bodyLang). P2-6 브리프 §3.
             consent: {
               title: ui.headings.privacyNotice,
               purpose: PRIVACY_NOTICE.purpose,
               itemsLine: PRIVACY_NOTICE.itemsLine,
               retention: PRIVACY_NOTICE.retention,
+              // P7-3: 접힌 줄에 강조해 보이는 보유 기간 요약(중요한 내용 — 시행령 §17③3호). 전문(retention)은 "자세히 보기" 안.
+              retentionSummary: PRIVACY_NOTICE.retentionSummary,
               refusal: PRIVACY_NOTICE.refusal,
               consentLabel: ui.consent.privacy,
               publicFeedNotice: PRIVACY_NOTICE.publicFeedNotice,
               privacyHref: LEGAL_LINKS.privacy,
-              officialNotice: ui.officialNotice,
+              // P7-3 독립 리뷰 P2-6②: en 의 접힌 줄은 원장 영문 요약(컨트롤러 작성 · 서명). ko 는 null — 접힌 줄도 원장 한국어.
+              summaryEn: locale === "en" ? PRIVACY_NOTICE.summaryEn : null,
+              // P2-6①: 접힌 카드 안내 — 한국어 원문이 "View details" 안에 있다고 말하는 문안(en 전용 · ko null). 다른 화면은 officialNotice 그대로.
+              officialNotice: ui.officialNoticeCollapsed,
               bodyLang: koLang(locale),
             },
             withdrawalNotice: <WithdrawalNotice />,

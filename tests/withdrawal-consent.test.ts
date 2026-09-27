@@ -282,10 +282,13 @@ describe("2-c. 청약철회·취소환불 문구 — 절대 표현 0 · 조건�
     expect(CANCELLATION.smsLine).toContain("고객 사정으로 취소하는 경우");
   });
 
-  test("🔴 취소·환불 표가 나오는 화면마다 표 바로 아래 범위 문장이 있다 (위저드 · /guide · 약관 제7조)", () => {
+  test("🔴 취소·환불 표가 나오는 화면마다 표 바로 아래 범위 문장이 있다 (간편 견적 모달 · /guide · 약관 제7조)", () => {
+    // P7-3: 모달은 접힌 상태에 2단계 목록과 **그 바로 아래** 범위 문장만 보인다. 날짜 기준(referenceTime)은 "자세히 보기" 안으로 갔다 —
+    // 그래서 모달에서 범위 문장 바로 위는 기준 시각이 아니라 목록이다(렌더 결과의 인접성은 tests/quote-disclosure.test.ts §3).
     const wizard = stripComments(read("components/quote/WithdrawalNotice.tsx"), "WithdrawalNotice.tsx");
     expect(wizard).toMatch(/CANCELLATION\.scope/);
-    expect(wizard.indexOf("CANCELLATION.referenceTime")).toBeLessThan(wizard.indexOf("CANCELLATION.scope"));
+    expect(wizard.indexOf("CANCELLATION.tiers")).toBeLessThan(wizard.indexOf("CANCELLATION.scope"));
+    expect(wizard).toMatch(/CANCELLATION\.referenceTime/);
     expect(wizard.indexOf("CANCELLATION.scope")).toBeLessThan(wizard.indexOf("<WithdrawalRestrictionText"));
 
     const guide = stripComments(read("app/[locale]/(legal)/guide/page.tsx"), "guide/page.tsx");

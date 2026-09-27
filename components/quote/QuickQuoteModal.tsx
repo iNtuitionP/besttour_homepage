@@ -6,6 +6,9 @@
  * 흐름: 위젯(components/home/QuoteWidget.tsx)이 다섯 칸을 검사한 뒤에만 이 모달을 연다.
  *   요약(출발→도착 · 날짜 · 인원 · [수정]) → 이름 · 연락처 → 개인정보 수집·이용 고지 + 필수 체크 → 청약철회 제한·취소 규정 고지 + 필수 체크
  *   → verbatim → Turnstile → [견적 신청하기] → 완료(접수번호 · verbatim · 예약 확인 · 전화).
+ *   P7-3: 두 고지는 **핵심만 보이고** 전문은 "자세히 보기"(MoreToggle, 기본 접힘) 안에 있다 — 개인정보는 수집 항목 · 보유 기간(강조),
+ *   청약철회는 취소·환불 2단계 → 적용 범위 → 제한 한 줄(강조). 체크박스는 토글 밖이라 펼치지 않아도 체크할 수 있다.
+ *   두 블록은 같은 카드 틀(.agreeCard)이다. verbatim 은 접히지 않는다.
  *
  * 경계
  *   - 법정 문구는 전부 props(legal)로 받는다 — 서버 Hero 가 원장에서 읽어 내린다. 이 파일에는 원장 import 도, 법정 한글 리터럴도 없다.
@@ -475,9 +478,9 @@ export function QuickQuoteForm({
 
         <ConsentBlock text={legal.consent} privacyConsent={privacyConsent} onPrivacyChange={setPrivacyConsent} error={consentErr} idPrefix={idPrefix} />
 
-        {legal.withdrawalNotice}
-
-        <div className={s.withdrawalConsent} data-field="withdrawalConsent" data-testid="withdrawal-consent-block">
+        {/* 청약철회 고지(서버 노드 — 핵심 + 자세히 보기)와 그 확인 체크박스를 개인정보 블록과 같은 카드 한 장에 담는다(P7-3) */}
+        <div className={s.agreeCard} data-field="withdrawalConsent" data-testid="withdrawal-consent-block">
+          {legal.withdrawalNotice}
           <label className={s.consentRow} data-checked={withdrawalConsent}>
             <input
               type="checkbox"

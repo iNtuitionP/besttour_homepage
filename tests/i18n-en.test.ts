@@ -56,6 +56,9 @@ const PUBLIC_NAMESPACES = ["common", "layout", "errors", "home", "reservation", 
 const FIXED = {
   officialNotice:
     "The Korean text below is the official, legally binding version. If you need help understanding it, please contact us before booking.",
+  // P7-3 독립 리뷰 P2-6① — 견적 모달의 접힌 카드 전용(접힌 자리는 영문 요약, 한국어 원문은 "View details" 안). 컨트롤러 작성 문안.
+  officialNoticeCollapsed:
+    "The Korean original under “View details” is the official, legally binding version. If you need help understanding it, please contact us before booking.",
   bookingNotice: "We will contact you once your booking is confirmed. Payment is taken only for confirmed bookings.",
   showcaseNotice:
     "Sample quotes for popular routes · Based on a 45-seat coach, same-day round trip · Final quote confirmed after consultation",
@@ -201,6 +204,7 @@ describe("4. 원장 UI 문구 — ko 는 원장 그대로, en 은 컨트롤러 �
     expect(koUi.brand).toBe(COMPANY.brandName);
     expect(koUi.representative).toBe(COMPANY.representative);
     expect(koUi.officialNotice).toBeNull();
+    expect(koUi.officialNoticeCollapsed).toBeNull();
     expect(koUi.verbatim.bookingNotice).toBe(VERBATIM.bookingNotice);
     expect(koUi.verbatim.showcaseNotice).toBe(VERBATIM.showcaseNotice);
     expect(koUi.pages).toEqual({
@@ -233,17 +237,19 @@ describe("4. 원장 UI 문구 — ko 는 원장 그대로, en 은 컨트롤러 �
     expect(Object.keys(koUi.labels.footer).sort()).toEqual(Object.keys(LEGAL_LABELS.footer).sort());
   });
 
-  test("en.json legal 과 ko 원장 UI 의 키 구조가 같다 (officialNotice 는 en 에만 값이 있다)", () => {
-    // brand·representative 는 en.json 이 아니라 원장의 영문 필드에서 온다(아래 단언). officialNotice 는 ko 에서 null.
+  test("en.json legal 과 ko 원장 UI 의 키 구조가 같다 (officialNotice · officialNoticeCollapsed 는 en 에만 값이 있다)", () => {
+    // brand·representative 는 en.json 이 아니라 원장의 영문 필드에서 온다(아래 단언). 두 안내는 ko 에서 null.
     // consent.withdrawal(P1-7)도 원장의 확정 영문 필드(WITHDRAWAL.consentLabelEn)에서 온다 — en.json 에 다시 적지 않는다.
+    const NOTICES = ["officialNotice", "officialNoticeCollapsed"] as const;
     const koRest: Record<string, unknown> = { ...koUi, consent: { ...koUi.consent } };
-    for (const k of ["brand", "representative", "officialNotice"]) delete koRest[k];
+    for (const k of ["brand", "representative", ...NOTICES]) delete koRest[k];
     delete (koRest.consent as Record<string, unknown>).withdrawal;
     const enRest: Record<string, unknown> = { ...(en.legal as Record<string, unknown>) };
-    const officialNotice = enRest.officialNotice;
-    delete enRest.officialNotice;
+    const notices = NOTICES.map((k) => enRest[k]);
+    for (const k of NOTICES) delete enRest[k];
     expect([...leafMap(enRest).keys()].sort()).toEqual([...leafMap(koRest).keys()].sort());
-    expect(Object.keys(officialNotice as object).sort()).toEqual(["body", "lead"]);
+    for (const n of notices) expect(Object.keys(n as object).sort()).toEqual(["body", "lead"]);
+    for (const k of NOTICES) expect(koUi[k], k).toBeNull();
   });
 
   test("en 의 상호·대표자는 원장의 영문 필드(COMPANY.brandNameEn · representativeEn)다 — 지어내지 않는다", () => {
@@ -261,6 +267,8 @@ describe("4. 원장 UI 문구 — ko 는 원장 그대로, en 은 컨트롤러 �
   test("컨트롤러 확정 문안이 바이트 그대로다", () => {
     expect(`${enUi.officialNotice?.lead} ${enUi.officialNotice?.body}`).toBe(FIXED.officialNotice);
     expect(enUi.officialNotice?.lead).toBe("The Korean text below is the official, legally binding version.");
+    expect(`${enUi.officialNoticeCollapsed?.lead} ${enUi.officialNoticeCollapsed?.body}`).toBe(FIXED.officialNoticeCollapsed);
+    expect(enUi.officialNoticeCollapsed?.lead).toBe("The Korean original under “View details” is the official, legally binding version.");
     expect(enUi.verbatim.bookingNotice).toBe(FIXED.bookingNotice);
     expect(enUi.verbatim.showcaseNotice).toBe(FIXED.showcaseNotice);
     expect(enUi.consent.privacy).toBe(FIXED.consentPrivacy);

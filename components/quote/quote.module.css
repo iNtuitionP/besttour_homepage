@@ -1,6 +1,6 @@
 /*
  * 접수·조회 공용 폼 스타일 — CSS Modules (P3-4 위저드에서 출발 · P3-8 에서 위저드 전용 규칙을 걷어 냈다).
- * 쓰는 곳: 홈 간편 견적 모달(components/quote/QuickQuoteModal.tsx · ConsentBlock · WithdrawalNotice · TurnstileWidget · FieldBits),
+ * 쓰는 곳: 홈 간편 견적 모달(components/quote/QuickQuoteModal.tsx · ConsentBlock · WithdrawalNotice · MoreToggle · TurnstileWidget · FieldBits),
  * 예약확인(app/[locale]/(site)/reservation/check · components/reservation-check), 관리자 화면 일부(app/admin/**).
  * 어떤 파일도 쓰지 않는 클래스는 두지 않는다 — tests/quick-quote.test.ts §8 이 잠근다(P3-8 리뷰 수정 라운드).
  * 색은 styles/semantic.css 역할 토큰만(HEX·rgba·원시 토큰 금지). 간격·라운드는 역할 토큰만 — 간격 속성에 px 리터럴 0건
@@ -229,24 +229,78 @@ textarea.control {
   font-weight: 800;
 }
 
-/* ── 동의 블록 ─────────────────────────────────────────────────────────── */
-.consent {
+/* ── 동의 카드 — 개인정보 · 청약철회 (P7-3: 핵심만 보이고 "자세히 보기"로 전문) ──────────
+ * 두 카드가 같은 틀이다: 제목 → 접혀 있어도 보이는 핵심 줄 → 자세히 보기(MoreToggle) → 필수 체크박스.
+ * 개인정보 카드는 ConsentBlock 의 <section>, 청약철회 카드는 모달이 서버 노드(WithdrawalNotice)와 체크박스를 담는 <div> 다.
+ * 글자 위계: 보유 기간 줄(.consentRetention 17.5px · 800 · 브랜드색 · 별도 줄)이 카드에서 가장 크다 — 보유·이용 기간은 중요한 내용
+ *   (개인정보보호법 시행령 §17③3호)이고, 「개인정보 처리 방법에 관한 고시」(제2023-12호, 2023-10-16 시행) §4 1호는
+ *   "글씨의 크기, 색깔, 굵기 또는 밑줄 등을 통하여 그 내용이 명확히 표시되도록 할 것" 이다. 크기는 우리 **내부 보수 기준**으로
+ *   옛 판(제2020-7호)의 "다른 내용보다 20퍼센트 이상 크게" 를 지킨다: 카드 안 다른 글자는 14.5px 이하
+ *   (제목·체크박스 14.5 · 핵심 줄·토글·전문 13.5 · 보조 13 이하). tests/quote-disclosure.test.ts §6 이 이 파일에서 계산해 잠근다.
+ */
+.agreeCard {
   margin: var(--space-stack-md) 0 0;
   padding: var(--space-stack-sm) var(--space-inline-sm);
-  border: 1.5px solid var(--border-decorative);
+  border: 1px solid var(--border-decorative);
   border-radius: var(--radius-surface);
   background: var(--bg-page);
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-primary);
 }
-.consentTitle {
+.agreeCard + .agreeCard {
+  margin-top: var(--space-stack-sm);
+}
+.agreeTitle {
   margin: 0;
-  font-size: 16.5px;
+  font-size: 14.5px;
   font-weight: 800;
+  line-height: 1.4;
 }
+
+/* 개인정보 — 접혀 있어도 보이는 줄(수집 목적 · 수집 항목 · 보유 기간 — 그 아래 작은 줄로 접수 현황 공개). 라벨과 값을 한 문장처럼 이어 흘린다("라벨 값…").
+ * 격자(라벨 열 + 값 열)로 두면 375px 에서 값 열이 218px 로 좁아져 17.5px 보유 기간의 "(계약·청약철회·대금결제" 한 덩어리가
+ * 들어가지 않고 가운뎃점 앞에서 억지로 끊겼다(실측). 흘려 쓰면 띄어쓰기에서만 줄이 바뀐다. */
+.consentKey {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 13.5px;
+}
+.consentKey > div + div {
+  margin-top: var(--space-stack-xs);
+}
+.consentKey dt,
+.consentKey dd {
+  display: inline;
+}
+.consentKey dt {
+  margin-right: var(--space-inline-xs);
+  font-weight: 800;
+  color: var(--text-secondary);
+}
+.consentKey dd {
+  margin: 0;
+}
+/* 보유 기간 — 중요한 내용(시행령 §17③3호 · 고시 제2023-12호 §4 1호 "크기, 색깔, 굵기 … 명확히"): 굵게 · 값은 브랜드색 · 크게
+ * (내부 보수 기준: 카드의 다른 글자 × 1.2 이상). 라벨도 같은 크기. en 의 영문 요약 줄도 같은 규칙이다. */
+.consentRetention {
+  font-size: 17.5px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+.consentRetention dt {
+  color: var(--text-primary);
+}
+.consentRetention dd {
+  color: var(--text-brand);
+}
+
+/* 개인정보 전문(자세히 보기 안) — 보유 기간 전문 · 거부 안내 · 처리방침 링크(en 은 한국어 원문 한 벌: 목적 · 항목 · 보유 기간 전문 · 거부 · 공개).
+ * .consentNote 는 접힌 자리의 접수 현황 공개 한 줄(작은 줄 — 리뷰 P2-2)과 자세히 보기 안의 거부 안내가 함께 쓴다. */
 .consentList {
-  margin: var(--space-stack-sm) 0 0;
+  margin: var(--space-stack-xs) 0 0;
   display: grid;
   gap: var(--space-stack-xs);
-  font-size: 14px;
+  font-size: 13.5px;
   line-height: 1.6;
 }
 .consentList > div {
@@ -263,27 +317,38 @@ textarea.control {
   color: var(--text-primary);
 }
 .consentNote {
-  margin: var(--space-stack-sm) 0 0;
-  font-size: 13.5px;
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 13px;
   line-height: 1.6;
   color: var(--text-secondary);
 }
+.consentLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--text-link);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* 필수 체크박스 — 카드 맨 아래, 구분선 위. 토글 밖이라 펼치지 않아도 누를 수 있다. 줄 전체가 눌리는 자리다. */
 .consentRow {
   display: flex;
   align-items: flex-start;
-  gap: var(--space-inline-sm);
-  margin: var(--space-stack-sm) 0 0;
-  padding: var(--space-stack-sm) var(--space-inline-sm);
-  border: 1.5px solid var(--border-decorative);
-  border-radius: var(--radius-control);
-  background: var(--bg-surface);
-  font-size: 15px;
+  gap: var(--space-inline-xs);
+  margin: var(--space-stack-xs) 0 0;
+  padding: var(--space-stack-sm) 0 0;
+  border-top: 1px solid var(--border-decorative);
+  font-size: 14.5px;
   font-weight: 700;
   line-height: 1.5;
   cursor: pointer;
 }
 .consentRow[data-checked="true"] {
-  border-color: var(--border-strong);
+  color: var(--text-brand);
 }
 .consentRow input {
   flex: 0 0 auto;
@@ -292,62 +357,116 @@ textarea.control {
   margin: 0;
   accent-color: var(--action-primary-bg);
 }
-.consentLink {
+
+/* "자세히 보기 / 접기" 토글(MoreToggle) — 두 카드가 함께 쓴다. 본문은 hidden 속성으로 숨는다(display 를 주지 않는다). */
+.moreBtn {
   display: inline-flex;
   align-items: center;
   gap: var(--space-inline-xs);
-  margin: var(--space-stack-sm) 0 0;
-  font-size: 14px;
-  font-weight: 800;
+  min-height: 36px;
+  margin: var(--space-stack-xs) 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--text-link);
+  font-size: 13.5px;
+  font-weight: 700;
   text-decoration: underline;
   text-underline-offset: 3px;
+  cursor: pointer;
+}
+.moreBtn svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform var(--motion-base);
+}
+.moreBtn[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+.moreBtn:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}
+.moreBody {
+  margin: 0 0 var(--space-stack-xs);
+  padding: var(--space-stack-xs) 0 0;
+  border-top: 1px solid var(--border-decorative);
+}
+.moreBody[hidden] {
+  display: none;
+}
+.moreBody p {
+  margin: var(--space-stack-xs) 0 0;
 }
 
-/* ── 청약철회 고지 ─────────────────────────────────────────────────────── */
+/* 청약철회 카드 — 서버 노드(WithdrawalNotice)는 틀 없이 내용만 싣고, 틀은 모달의 .agreeCard 가 준다. */
 .withdrawal {
-  margin: var(--space-stack-md) 0 0;
-  padding: var(--space-stack-sm) var(--space-inline-sm);
-  border: 1px solid var(--border-decorative);
-  border-left: 4px solid var(--accent-decorative);
-  border-radius: var(--radius-control);
-  background: var(--bg-subtle);
-  font-size: 14px;
-  line-height: 1.65;
-  color: var(--text-primary);
-}
-.withdrawalTitle {
-  margin: 0 0 var(--space-stack-xs);
-  font-size: 15px;
-  font-weight: 800;
-}
-.withdrawal p {
-  margin: var(--space-stack-xs) 0 0;
+  margin: 0;
 }
 .withdrawalSub {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 12.5px;
   font-weight: 800;
+  color: var(--text-secondary);
 }
+/* 취소·환불 2단계 — 언제(왼쪽) · 환불(오른쪽, 굵게). 좁은 화면에서는 "언제" 칸만 줄바꿈한다. */
 .tiers {
   margin: var(--space-stack-xs) 0 0;
-  padding: 0 0 0 var(--space-inline-md);
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border-decorative);
 }
-.tiers li + li {
-  margin-top: var(--space-stack-xs);
+.tiers li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  gap: var(--space-inline-sm);
+  align-items: baseline;
+  padding: var(--space-stack-xs) 0;
+  border-bottom: 1px solid var(--border-decorative);
 }
-/* 청약철회 제한 고지(원장 WITHDRAWAL.notice) — 취소·환불 규정 바로 아래, 눈에 띄게(P1-7 브리프 1-B).
- * 예전(P3-4)에는 약관 제8조 문장을 보조 글씨(13.5px · 보조색)로 실었다. 이제 체크박스로 동의를 받는 대상이라 본문색·굵게로 올린다. */
-.withdrawal .withdrawalLaw {
+.tiers b {
+  font-weight: 800;
+}
+/* 영문 화면 — 원장 영문 요약은 구간마다 한 줄짜리 문장이라(나누지 않는다) 두 칸 대신 한 칸을 다 쓴다(P7-3 후속) */
+.tiersPlain li {
+  grid-template-columns: minmax(0, 1fr);
+}
+/* 날짜 기준 — 두 구간의 경계를 정하는 문장(CANCELLATION.referenceTime · en summaryEn.referenceTime). 2단계 바로 뒤의 작은 줄(리뷰 P2-7) */
+.cancelReference {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+/* 적용 범위 — 표 묶음(2단계 → 날짜 기준) 바로 아래. 표('계약금 환불 불가')가 무조건으로 읽히지 않게 하는 문장이라
+ * 본문 크기·본문색으로 둔다(리뷰 P2-3 · P1-7 R3 [P2-F]) — 보조 글씨로 낮추지 않는다. */
+.cancelScope {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-primary);
+}
+/* 청약철회 제한 한 줄(WITHDRAWAL.smsLine) — 전자상거래법 §17⑥ "쉽게 알 수 있는 곳에 명확히": 굵게 · 본문색 · 왼쪽 강조선 */
+.withdrawalKey {
+  margin: var(--space-stack-sm) 0 0;
+  padding: 0 0 0 var(--space-inline-xs);
+  border-left: 3px solid var(--accent-decorative);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.5;
+}
+/* 청약철회 제한 고지 전문(원장 WITHDRAWAL.notice · en 은 noticeEn 도) — 자세히 보기 안, 동의 대상이라 본문색·굵게 */
+.moreBody .withdrawalLaw {
   margin-top: var(--space-stack-sm);
   padding-top: var(--space-stack-xs);
   border-top: 1px solid var(--border-decorative);
-  font-size: 14px;
   font-weight: 700;
-  color: var(--text-primary);
-}
-
-/* 청약철회 제한 확인 체크박스 — 고지 바로 아래. 행 모양은 개인정보 동의(.consentRow)와 같다. */
-.withdrawalConsent {
-  margin: 0;
 }
 
 /* ── 보안 확인 / 접수 준비 중 ─────────────────────────────────────────── */
@@ -506,7 +625,8 @@ textarea.control {
 
 @media (prefers-reduced-motion: reduce) {
   .control,
-  .btn {
+  .btn,
+  .moreBtn svg {
     transition: none;
   }
 }

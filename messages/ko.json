@@ -255,6 +255,10 @@
       "retention": "보유 기간",
       "full": "개인정보 처리방침 전문 보기",
       "newTab": "(새 탭)"
+    },
+    "more": {
+      "show": "자세히 보기",
+      "hide": "접기"
     }
   },
   "reservationCheck": {

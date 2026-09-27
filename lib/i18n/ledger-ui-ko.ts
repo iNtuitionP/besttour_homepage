@@ -34,6 +34,13 @@ export interface LedgerUi {
   representative: string;
   /** en 전용. ko 는 null — 한국어 화면에서는 원장 원문이 곧 정본이다. */
   officialNotice: OfficialNotice | null;
+  /**
+   * 견적 모달의 **접힌 카드**(개인정보 · 청약철회) 전용 안내 — en 전용, ko 는 null (P7-3 독립 리뷰 P2-6①).
+   * 접힌 자리에는 원장 영문 요약이 보이고 한국어 원문은 "View details" 안에 있어, "The Korean text below" 대신
+   * "The Korean original under “View details”" 라고 말한다(컨트롤러 작성 문안 · messages/en.json legal.officialNoticeCollapsed).
+   * 다른 화면은 officialNotice 를 그대로 쓴다.
+   */
+  officialNoticeCollapsed: OfficialNotice | null;
   /** CLAUDE.md §3 verbatim — ko 는 VERBATIM 그대로, en 은 컨트롤러 확정 영문 */
   verbatim: { bookingNotice: string; showcaseNotice: string };
   /** 법정 페이지 제목(LEGAL_PAGES.*.title) — 페이지 h1 · 푸터·법정 셸 링크 · 메타 제목 */
@@ -78,6 +85,7 @@ export const LEDGER_UI_KO: LedgerUi = {
   brand: COMPANY.brandName,
   representative: COMPANY.representative,
   officialNotice: null,
+  officialNoticeCollapsed: null,
   verbatim: { bookingNotice: VERBATIM.bookingNotice, showcaseNotice: VERBATIM.showcaseNotice },
   pages: { privacy: LEGAL_PAGES.privacy.title, terms: LEGAL_PAGES.terms.title, guide: LEGAL_PAGES.guide.title },
   headings: { quoteBasis: QUOTE_BASIS.title, insurance: INSURANCE.title, privacyNotice: PRIVACY_NOTICE.title },

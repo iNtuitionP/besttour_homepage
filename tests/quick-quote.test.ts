@@ -276,10 +276,12 @@ const CONSENT: ConsentText = {
   purpose: PRIVACY_NOTICE.purpose,
   itemsLine: PRIVACY_NOTICE.itemsLine,
   retention: PRIVACY_NOTICE.retention,
+  retentionSummary: PRIVACY_NOTICE.retentionSummary, // P7-3 — 접힌 줄의 보유 기간 요약(강조)
   refusal: PRIVACY_NOTICE.refusal,
   consentLabel: LEDGER_UI_KO.consent.privacy,
   publicFeedNotice: PRIVACY_NOTICE.publicFeedNotice,
   privacyHref: LEGAL_LINKS.privacy,
+  summaryEn: null, // P7-3 리뷰 — en 전용 영문 요약(ko 는 null)
   officialNotice: null,
 };
 const LEGAL = {
@@ -531,14 +533,25 @@ describe("5. 정적 검사", () => {
       QUOTE_BASIS.line,
       PAYMENT.line,
       CANCELLATION.referenceTime,
+      // P7-3 — 접힌 줄에 새로 보이는 원장 문구(요약 · 범위 · 제한 한 줄 · 계약금 안내)도 복제하지 않는다
+      CANCELLATION.scope,
+      CANCELLATION.depositNote,
       PRIVACY_NOTICE.purpose,
       PRIVACY_NOTICE.itemsLine,
       PRIVACY_NOTICE.retention,
+      PRIVACY_NOTICE.retentionSummary,
       PRIVACY_NOTICE.refusal,
       PRIVACY_NOTICE.consentLabel,
       PRIVACY_NOTICE.publicFeedNotice,
       WITHDRAWAL.notice,
+      WITHDRAWAL.smsLine,
       WITHDRAWAL.consentLabel,
+      // P7-3 후속 · 리뷰 — en 접힌 카드의 영문 요약(원장 WITHDRAWAL.summaryEn · PRIVACY_NOTICE.summaryEn)도 원장 밖에 다시 적지 않는다
+      ...WITHDRAWAL.summaryEn.tiers,
+      WITHDRAWAL.summaryEn.referenceTime,
+      WITHDRAWAL.summaryEn.scope,
+      WITHDRAWAL.summaryEn.restriction,
+      ...Object.values(PRIVACY_NOTICE.summaryEn),
     ];
     const catalogs = JSON.stringify([ko.quote, (ko.home as Record<string, unknown>).hero, en.quote, (en.home as Record<string, unknown>).hero]);
     for (const { file, code } of intakeSources) for (const p of phrases) expect(code.includes(p), `${file}: ${p.slice(0, 20)}…`).toBe(false);
@@ -588,9 +601,10 @@ describe("5. 정적 검사", () => {
     expect(widget).toMatch(/\.focus\(/);
   });
 
-  test("'use client' 는 QuoteWidget · QuickQuoteModal · TurnstileWidget 뿐 (quote 디렉터리 기준)", () => {
+  // P7-3: MoreToggle("자세히 보기" 토글)이 더해졌다 — 서버 WithdrawalNotice 가 전문을 children 으로 넘기는 작은 경계다(원장 import 0 · tests/quote-disclosure.test.ts §7).
+  test("'use client' 는 QuoteWidget · QuickQuoteModal · TurnstileWidget · MoreToggle 뿐 (quote 디렉터리 기준)", () => {
     const clients = quoteTsx.filter((f) => /^\s*["']use client["']/m.test(read(f)));
-    expect(clients.sort()).toEqual([MODAL, `${QUOTE_DIR}/TurnstileWidget.tsx`].sort());
+    expect(clients.sort()).toEqual([MODAL, `${QUOTE_DIR}/TurnstileWidget.tsx`, `${QUOTE_DIR}/MoreToggle.tsx`].sort());
     expect(/^\s*["']use client["']/m.test(read(WIDGET))).toBe(true);
     expect(/^\s*["']use client["']/m.test(read(HERO))).toBe(false);
   });

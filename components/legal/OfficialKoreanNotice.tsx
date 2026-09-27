@@ -4,6 +4,8 @@
  * 문안은 messages/en.json `legal.officialNotice` 한 곳에만 있다 — 여기에 다시 적지 않는다.
  * 호출부는 `ledgerUi(locale).officialNotice` 를 그대로 넘긴다. ko 에서는 null 이라 **아무것도 렌더하지 않는다**
  * (한국어 화면에서는 원장 원문이 곧 정본이고, ko 마크업은 이 태스크 전과 같아야 한다).
+ * 예외 하나: 견적 모달의 접힌 카드는 `ledgerUi(locale).officialNoticeCollapsed`(en.json `legal.officialNoticeCollapsed`)를 넘긴다 —
+ * 접힌 자리 아래가 영문 요약이고 한국어 원문은 "View details" 안이라 "below" 라고 하지 않는 문안이다(P7-3 독립 리뷰 P2-6①).
  *
  * 훅·원장 import 없음 — 서버 트리와 클라이언트 트리(ConsentBlock) 양쪽에서 같은 마크업을 낸다.
  * 첫 문장은 굵게(브리프 §3 원문의 **…** 강조).
