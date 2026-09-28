@@ -18,9 +18,13 @@ import { ADMIN_TABS } from "./tabs";
 
 const bold = (chunks: ReactNode) => <b>{chunks}</b>;
 
+/** 문자열이 아니면 빈 글자 — 원문 틀(t.raw)이 모양이 다르게 와도 화면이 죽지 않는다(지어내지 않는다). */
+const str = (v: unknown): string => (typeof v === "string" ? v : "");
+
 export async function getReservationActionLabels(): Promise<ReservationActionLabels> {
   const t = await getTranslations({ locale: routing.defaultLocale, namespace: "admin.detail" });
   const notifications = ADMIN_TABS.find((tab) => tab.key === "notifications" && tab.ready);
+  const items = t.raw("checklist.items");
 
   return {
     panel: t("sectionAdmin"),
@@ -30,14 +34,27 @@ export async function getReservationActionLabels(): Promise<ReservationActionLab
     completeHint: t("completeHint"),
     cancel: t("cancel"),
     cancelHint: t("cancelHint"),
+    processDone: t("process.done"),
+    processCancelled: t("process.cancelled"),
+    moreCancel: t("process.moreCancel"),
     memoLabel: t("memoLabel"),
     memoHint: t("memoHint"),
     memoSave: t("memoSave"),
+    memoPlaceholder: t("memoPlaceholder"),
     processing: t("processing"),
+    // "전화로 확인할 것"(P5-22) — 진행 표시는 `{n}`·`{total}` 이 빈 원문 틀(화면이 채운다)
+    checklist: {
+      title: t("checklist.title"),
+      progress: str(t.raw("checklist.progress")),
+      items: Array.isArray(items) ? items.map(str) : [],
+      note: t("checklist.note"),
+      memoHint: t("checklist.memoHint"),
+    },
     sheet: {
       close: t("sheet.close"),
       quickNote: t("sheet.quickNote"),
       slow: t("sheet.slow"),
+      checkWarning: str(t.raw("sheet.checkWarning")),
       confirm: {
         title: t.raw("sheet.confirmTitle") as string,
         titleNoName: t("sheet.confirmTitleNoName"),

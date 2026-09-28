@@ -19,8 +19,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { acquireDbLock, listHeldLocks, GALLERY_LOCK, NOTIFICATIONS_LOCK, SHOWCASE_ROUTES_LOCK, type DbLock } from "./helpers/db-lock";
+import { acquireDbLock, listHeldLocks, runLocked, GALLERY_LOCK, NOTIFICATIONS_LOCK, SHOWCASE_ROUTES_LOCK, type DbLock } from "./helpers/db-lock";
+import { stripComments } from "./helpers/strip-comments";
 
+const ROOT = path.resolve(import.meta.dirname, "..");
 const LOCK_ROOT = path.join(tmpdir(), "besttour-test-db-locks");
 const names: string[] = [];
 
@@ -189,5 +191,63 @@ describe("3. 두 잠금 (P6-3b)", () => {
     held.release();
     const next = await acquireDbLock(name, 5_000);
     next.release();
+  });
+});
+
+/**
+ * §4 — P5-22 수정 라운드(전량 실행이 두 번 흔들림). tests/withdrawal-consent.test.ts §4 의 afterAll 정리(REST DELETE)가
+ * `SocketError: other side closed` 로 던지자 잠금이 **풀리지 않았다**: 옛 withDbLock 은 beforeAll 로 잡고 afterAll 로 풀었는데,
+ * vitest(4.1 · sequence.hooks='stack')는 한 describe 의 afterAll 을 차례로 돌다가 **하나가 던지면 나머지를 건너뛴다**
+ * (@vitest/runner callSuiteHook — for…of 안의 await). 정리가 먼저 돌고(나중 등록) 해제가 나중이라 해제가 건너뛰어졌고,
+ * Windows 는 워커를 강제로 끝내 `process.on("exit")` 도 돌지 않았다 → 다른 10파일이 420초를 기다리다 실패했다.
+ * 고친 모양: withDbLock 은 aroundAll 하나로 스위트 전체(beforeAll · 테스트 · afterAll)를 감싸고, 해제는 runLocked 의 finally 다.
+ */
+describe("4. 정리가 던져도 잠금은 풀린다 (P5-22 수정 라운드 — 잠금 누수 두 번)", () => {
+  test("🔴 runLocked — 스위트(정리 포함)가 던져도 finally 로 푼다 · 도는 동안은 이 프로세스가 쥐고 있다 · 다음 사람은 곧바로 잡는다", async () => {
+    const name = uniqueName("finally-throw");
+    let ownerInside: number | null = null;
+    await expect(
+      runLocked(name, async () => {
+        ownerInside = ownerOf(name);
+        throw new TypeError("fetch failed — other side closed");
+      }),
+    ).rejects.toThrow(/other side closed/);
+    expect(ownerInside).toBe(process.pid);
+    expect(existsSync(dirOf(name))).toBe(false);
+    const next = await acquireDbLock(name, 1_000);
+    next.release();
+  });
+
+  test("정상 끝도 푼다 · 잡지 못하면 스위트를 돌리지 않고 던진다(남의 잠금을 뺏지 않는다)", async () => {
+    const name = uniqueName("finally-ok");
+    let ran = 0;
+    await runLocked(name, async () => {
+      ran++;
+    });
+    expect(ran).toBe(1);
+    expect(existsSync(dirOf(name))).toBe(false);
+    const held = await acquireDbLock(name, 1_000);
+    await expect(
+      runLocked(
+        name,
+        async () => {
+          ran++;
+        },
+        200,
+      ),
+    ).rejects.toThrow(/잠금을 얻지 못했다/);
+    expect(ran).toBe(1);
+    expect(ownerOf(name)).toBe(process.pid);
+    held.release();
+  });
+
+  test("🔴 정적 — withDbLock 은 aroundAll 하나로 스위트 전체를 감싸 runLocked 로 돈다 · beforeAll/afterAll 로 잡고 풀지 않는다", () => {
+    const src = stripComments(readFileSync(path.join(ROOT, "tests/helpers/db-lock.ts"), "utf8"), "db-lock.ts");
+    const body = /function withDbLock\(name: string\): void \{([\s\S]*?)\n\}/.exec(src)?.[1] ?? "";
+    expect(body.length, "withDbLock 을 찾지 못했다").toBeGreaterThan(0);
+    expect(body).toMatch(/aroundAll\(\s*\(runSuite\) => runLocked\(name, runSuite\),\s*LOCK_ACQUIRE_TIMEOUT_MS \+ 10_000,?\s*\)/);
+    expect(body).not.toMatch(/afterAll|beforeAll/);
+    const run = /export async function runLocked\([\s\S]*?\n\}/.exec(src)?.[0] ?? "";
+    expect(run).toMatch(/try \{\s*await runSuite\(\);\s*\} finally \{[\s\S]*?lock\.release\(\);[\s\S]*?\}/);
   });
 });

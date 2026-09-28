@@ -85,13 +85,14 @@ describe("1. 해요체", () => {
     expect(offenders).toEqual([]);
   });
 
-  test("원장 라벨을 쓰는 곳(동의·보유)은 원장·기존 값 그대로다", () => {
+  test("원장 라벨을 쓰는 곳(동의·보관)은 원장·기존 값 그대로다", () => {
     const detail = (ko.admin.detail as Record<string, Record<string, string>>).field;
     expect(detail.privacyConsentAt).toBe("개인정보 동의");
     expect(detail.marketingConsentAt).toBe("광고성 정보 수신 동의");
     expect(detail.withdrawalConsentAt).toBe("청약철회 제한 동의");
     expect(detail.retentionUntil).toBe("파기 예정");
-    expect((ko.admin.detail as Record<string, string>).sectionConsent).toBe("동의 · 보유");
+    // 옛 절 제목 "동의 · 보유"(sectionConsent)는 P5-22 새 배치가 그리지 않아 카탈로그에서 지웠다(수정 라운드 · 컨트롤러 결정) —
+    // 대신 그려지는 것을 tests/admin-detail.test.ts §4 가 잠근다(접수 기록 요약 문구 · 위 원장 라벨이 실제 화면에 있다).
     expect((ko.admin.detail as Record<string, Record<string, string>>).value.noWithdrawalRecord).toBe("기록 없음(동의 기록 도입 전 접수)");
   });
 });
@@ -105,6 +106,12 @@ describe("2. 개발 용어 · 문구 사전", () => {
   test("🔴 admin.* 에 개발 용어가 없다", () => {
     const hits = ADMIN.flatMap((l) => DEV_TERMS.filter((w) => l.value.includes(w)).map((w) => `${l.path} ∋ ${w}`));
     expect(hits).toEqual([]);
+  });
+
+  test("표기 하나 — 관리자 글은 '워크숍'(표준어) · '워크샵' 0 (P5-22 수정 라운드 · 컨트롤러 결정 — 한 화면에 두 표기가 섞였다)", () => {
+    expect(ADMIN.filter((l) => l.value.includes("워크샵")).map((l) => l.path)).toEqual([]);
+    expect((ko.admin as Record<string, Record<string, Record<string, string>>>).labels.purpose.workshop).toBe("워크숍");
+    expect(read("docs/ops/admin-manual.md")).not.toContain("워크샵");
   });
 
   test("문구 사전 그대로 — 상태 이름 · 결과 · 안내", () => {

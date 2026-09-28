@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/headers", () => ({ cookies: vi.fn(async () => ({ getAll: () => [] })) }));
@@ -155,7 +155,8 @@ describe("2. 이름은 서버가 그린 한 곳에만 있다 — 시트는 그 �
 
   test("정적 — 이름 칸에 그 id 를 단 것은 페이지이고, 처리 영역에 row.name 을 넘기지 않는다", () => {
     const src = stripComments(readFileSync(path.join(ROOT, DETAIL_PAGE), "utf-8").replace(/\r\n/g, "\n"), "detail-page.tsx");
-    expect(src).toMatch(/<dd className=\{a\.dd\} id=\{CUSTOMER_NAME_ELEMENT_ID\}>\s*\{row\.name\}\s*<\/dd>/);
+    // P5-22 — 이름 칸은 제목("{이름} 님")의 이름 부분 span 이다(id 는 그대로 — 시트가 그 글자를 읽는다). 옛 고객 칸의 <dd> 에서 옮겼다.
+    expect(src).toMatch(/<span id=\{CUSTOMER_NAME_ELEMENT_ID\}>\s*\{row\.name\}\s*<\/span>/);
     const block = /<ReservationActions[\s\S]*?\/>/.exec(src)?.[0] ?? "";
     expect(block.length).toBeGreaterThan(0);
     for (const field of ["name", "phone", "email", "message", "public_code"]) {
@@ -164,16 +165,30 @@ describe("2. 이름은 서버가 그린 한 곳에만 있다 — 시트는 그 �
   });
 });
 
+/**
+ * P5-22 수정 라운드(컨트롤러 결정) — 요약 상자의 날짜는 **페이지와 같은 표기**다: "10월 1일 (목)"(해가 다르면 연도까지 · admin.dates.day/dayYear).
+ * 뜻은 P5-19 그대로 — 간편 접수는 날짜만(00:00 은 자리값), 상세 접수는 시각까지. 해가 바뀌면 연도가 붙으므로 시계를 고정한다.
+ */
 describe("3. 운행 요약 — 구간 · 날짜 · 인원 (시트의 요약 상자)", () => {
   const route = `${locationLabelKo("ICN")} → ${locationLabelKo("SEL")}`;
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-28T01:00:00.000Z"));
+  });
+  afterEach(() => vi.useRealTimers());
 
-  test("간편 접수 — 날짜만(00:00 자리값을 시각으로 보이지 않는다) · 간편 표시", async () => {
+  test("간편 접수 — 날짜만(00:00 자리값을 시각으로 보이지 않는다 · 페이지와 같은 '10월 1일 (목)') · 간편 표시", async () => {
     const { props } = await render(ROW);
-    expect(props.summary).toEqual<ReservationSummary>({ parts: [route, "2026-10-01", "30명"], quick: true });
+    expect(props.summary).toEqual<ReservationSummary>({ parts: [route, "10월 1일 (목)", "30명"], quick: true });
   });
 
-  test("상세 접수 — 벽시계 일시 · 간편 아님 · 인원이 없으면 뺀다", async () => {
+  test("상세 접수 — 날짜 + 벽시계 시각 · 간편 아님 · 인원이 없으면 뺀다", async () => {
     const { props } = await render({ ...ROW, intake: "wizard", vehicle_slug: "bus45", trip_type: "round", bus_count: 1, depart_at: "2026-09-30T23:30:00.000Z", passengers: null });
-    expect(props.summary).toEqual<ReservationSummary>({ parts: [route, "2026-10-01 08:30"], quick: false });
+    expect(props.summary).toEqual<ReservationSummary>({ parts: [route, "10월 1일 (목) 08:30"], quick: false });
+  });
+
+  test("해가 다르면 연도까지 — 페이지의 가는 날과 같은 규칙", async () => {
+    const { props } = await render({ ...ROW, depart_at: "2027-01-04T15:00:00.000Z", return_at: null });
+    expect((props.summary as ReservationSummary).parts[1]).toBe("2027년 1월 5일 (화)");
   });
 });

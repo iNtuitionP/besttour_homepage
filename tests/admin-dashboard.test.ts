@@ -197,14 +197,28 @@ describe("1-b. 순수 — 한 줄 요약 · 카드 값", () => {
     expect(newSplit(fulfilled(4), rejected())).toBeNull();
   });
 
-  const A = (customerFailed: number, ownerFailed: number) => fulfilled({ customerFailed, ownerFailed, windowDays: 7 });
+  const A = (customerFailed: number, ownerFailed: number, customerWaiting = 0) => fulfilled({ customerFailed, ownerFailed, customerWaiting, windowDays: 7 });
 
   test("🔴 문자 발송 카드(컨트롤러 결정 P1-2) — 모름 · 이상 없음 · 확인 필요는 **최근 7일 고객 문자 실패**로만 정한다 · 사장님 쪽 실패는 작은 줄(수)로만 따라간다", () => {
     expect(sendCard(rejected())).toEqual({ kind: "unknown" });
     expect(sendCard(A(0, 0))).toEqual({ kind: "ok", owner: 0 });
     expect(sendCard(A(0, 3))).toEqual({ kind: "ok", owner: 3 });
-    expect(sendCard(A(2, 0))).toEqual({ kind: "problems", customer: 2, owner: 0 });
-    expect(sendCard(A(2, 1))).toEqual({ kind: "problems", customer: 2, owner: 1 });
+    expect(sendCard(A(2, 0))).toEqual({ kind: "problems", customer: 2, waiting: 0, owner: 0 });
+    expect(sendCard(A(2, 1))).toEqual({ kind: "problems", customer: 2, waiting: 0, owner: 1 });
+  });
+
+  /**
+   * P5-22(P5-21 재검토 신규 P2-1) — 발송기가 아직 꺼져 있으면(운영 문자 설정 전) 고객 문자가 전부 대기로 쌓이는데, 카드는 실패만 세어
+   * "✓ 이상 없음" 이었다 — "고객에게 문자가 가고 있다" 로 읽혔다. 관리자 코드는 env 를 읽지 않고 **데이터로** 판단한다:
+   * 최근 7일 고객 문자 중 한 번도 시도되지 않고 10분 넘게 대기 중인 건수(getHomeSendAlerts customerWaiting). 0 보다 크면 "대기 중 n건".
+   * 실패가 아니라 배너는 띄우지 않는다. 실패가 있으면 실패가 먼저(급함)이고 대기는 작은 줄.
+   */
+  test("🔴 대기 — 실패가 없고 오래 대기 중인 고객 문자가 있으면 '대기 중'(이상 없음이 아니다) · 실패가 있으면 실패가 먼저 · 배너는 실패만", () => {
+    expect(sendCard(A(0, 0, 3))).toEqual({ kind: "waiting", waiting: 3, owner: 0 });
+    expect(sendCard(A(0, 2, 1))).toEqual({ kind: "waiting", waiting: 1, owner: 2 });
+    expect(sendCard(A(1, 0, 4))).toEqual({ kind: "problems", customer: 1, waiting: 4, owner: 0 });
+    expect(sendBanner(A(0, 0, 9))).toBeNull();
+    expect(sendBanner(A(1, 0, 9))).toBe(1);
   });
 
   test("🔴 배너는 최근 7일 고객 문자 실패만 — 사장님 쪽 실패만 있거나 모르면 배너가 아니다", () => {
@@ -212,6 +226,22 @@ describe("1-b. 순수 — 한 줄 요약 · 카드 값", () => {
     expect(sendBanner(A(0, 5))).toBeNull();
     expect(sendBanner(A(0, 0))).toBeNull();
     expect(sendBanner(rejected())).toBeNull();
+  });
+
+  /**
+   * P5-22 수정 라운드(리뷰 P2-2) — 세 집계는 서로를 끌어내리지 않는다. 대기·사장님 집계를 모르면(null) 그 칸만 모름이고,
+   * 고객 문자 실패 수(배너 · 확인 필요)는 그대로 산다. 대기 수를 모르면 '이상 없음' 이라 하지 않는다 — 발송기가 꺼져 문자가 쌓이는 중일 수 있다.
+   */
+  test("🔴 모르는 부가 집계(리뷰 P2-2) — 대기 수를 모르면 이상 없음이 아니라 모름 · 실패가 있으면 실패·배너는 그대로 · 사장님 수를 모르면 null", () => {
+    const P = (customerFailed: number, ownerFailed: number | null, customerWaiting: number | null) =>
+      fulfilled({ customerFailed, ownerFailed, customerWaiting, windowDays: 7 });
+    expect(sendCard(P(0, 0, null))).toEqual({ kind: "unknown" });
+    expect(sendCard(P(0, 3, null))).toEqual({ kind: "unknown" });
+    expect(sendCard(P(2, null, null))).toEqual({ kind: "problems", customer: 2, waiting: null, owner: null });
+    expect(sendCard(P(0, null, 3))).toEqual({ kind: "waiting", waiting: 3, owner: null });
+    expect(sendCard(P(0, null, 0))).toEqual({ kind: "ok", owner: null });
+    expect(sendBanner(P(2, null, null))).toBe(2);
+    expect(sendBanner(P(0, null, null))).toBeNull();
   });
 
   test("다가오는 운행 — KST 날짜별 묶음(날짜 순) · 오늘까지 남은 날 · 카드에는 날짜 셋까지 + 나머지 날 수", () => {
@@ -272,6 +302,26 @@ function recorder(result: { data?: unknown; count?: number | null; error: { code
   };
 }
 const of = (calls: { method: string; args: unknown[] }[], m: string) => calls.filter((c) => c.method === m).map((c) => c.args);
+
+/**
+ * 조회마다 다른 결과 — from() 을 부른 순서대로 하나씩 돌려준다(getHomeSendAlerts 는 고객 실패 · 사장님 실패 · 대기 순으로 만든다).
+ * "throw" 는 네트워크가 끊긴 것처럼 거부한다(supabase-js 는 HTTP 오류를 error 로 돌려주지만 fetch 자체가 죽으면 거부한다).
+ */
+function perQuery(results: ReadonlyArray<{ count?: number | null; error?: { code?: string; message: string } | null } | "throw">) {
+  let next = 0;
+  return {
+    client: {
+      from: () => {
+        const r = results[next++];
+        const chain: Record<string, unknown> = {};
+        for (const m of ["select", "eq", "gte", "lt", "or", "in"]) chain[m] = () => chain;
+        chain.then = (ok: (v: unknown) => unknown, bad?: (e: unknown) => unknown) =>
+          (r === "throw" ? Promise.reject(new TypeError("fetch failed")) : Promise.resolve({ data: null, count: r?.count ?? null, error: r?.error ?? null })).then(ok, bad);
+        return chain;
+      },
+    },
+  };
+}
 
 describe("2. 조회 함수 — head 집계 · 개인정보 0 · 0 으로 갈음하지 않음", () => {
   // 실제 함수(모의가 아닌 것)를 부른다
@@ -359,6 +409,13 @@ describe("2. 조회 함수 — head 집계 · 개인정보 0 · 0 으로 갈음�
     // 상한 + 1 건을 읽어 넘치면 capped — 화면은 그때 날짜 줄을 그리지 않는다(모자란 날 수를 지어내지 않는다)
     const cap = lib.TRIP_DATES_CAP;
     expect(of(r.calls, "limit")).toEqual([[cap + 1]]);
+    // P5-22(P5-21 재검토 신규 P2-2) — 읽는 수(상한 + 1)는 PostgREST 의 한 번 응답 상한(max_rows)보다 **작아야** 넘침을 알아챈다.
+    // 전에는 1001 을 읽었는데 max_rows = 1000 에 잘려 1001번째가 오지 않았다 — capped 가 한 번도 켜질 수 없었다.
+    // 호스팅 기본값도 1000 이다(supabase/config.toml 주석) — 로컬 설정 파일에서 읽어 대조한다.
+    const maxRows = Number(/^max_rows\s*=\s*(\d+)\s*$/m.exec(read("supabase/config.toml"))?.[1]);
+    expect(maxRows).toBe(1000);
+    expect(cap + 1).toBeLessThan(maxRows);
+    expect(cap).toBe(998);
     const full = recorder({ data: Array.from({ length: cap + 1 }, () => ({ depart_at: departs[0] })), error: null });
     const got = await lib.listConfirmedDepartDates(w, full.client as never);
     expect(got.capped).toBe(true);
@@ -386,26 +443,53 @@ describe("2. 조회 함수 — head 집계 · 개인정보 0 · 0 으로 갈음�
     expect(lib.PERIOD_HOURS["7d"]).toBe(lib.HOME_ALERT_WINDOW_DAYS * 24);
 
     const r = recorder({ count: 2, error: null });
-    expect(await lib.getHomeSendAlerts({ now: NOW }, r.client as never)).toEqual({ customerFailed: 2, ownerFailed: 2, windowDays: 7 });
+    expect(await lib.getHomeSendAlerts({ now: NOW }, r.client as never)).toEqual({ customerFailed: 2, ownerFailed: 2, customerWaiting: 2, windowDays: 7 });
     const since = new Date(NOW.getTime() - 7 * 24 * HOUR).toISOString();
-    expect(of(r.calls, "from")).toEqual([["notifications_log"], ["notifications_log"]]);
+    // P5-22 — 셋째 집계: 오래 대기 중인 고객 문자(한 번도 시도되지 않았고 만든 지 HOME_WAITING_MINUTES 넘음)
+    const waitingBefore = new Date(NOW.getTime() - lib.HOME_WAITING_MINUTES * 60_000).toISOString();
+    expect(of(r.calls, "from")).toEqual([["notifications_log"], ["notifications_log"], ["notifications_log"]]);
     for (const s of of(r.calls, "select")) expect(s[1]).toEqual({ count: "exact", head: true });
     expect(of(r.calls, "eq")).toEqual([
       ["status", "failed"],
       ["status", "failed"],
+      ["status", "pending"],
+      ["attempts", 0],
     ]);
     expect(of(r.calls, "or")).toEqual([["last_error.is.null,last_error.neq.duplicate_sent"], ["last_error.is.null,last_error.neq.duplicate_sent"]]);
     expect(of(r.calls, "gte")).toEqual([
       ["created_at", since],
       ["created_at", since],
+      ["created_at", since],
     ]);
+    expect(of(r.calls, "lt")).toEqual([["created_at", waitingBefore]]);
     expect(of(r.calls, "in")).toEqual([
       ["template", [...lib.CUSTOMER_MESSAGE_TEMPLATE_KEYS]],
       ["template", [...lib.OWNER_TEMPLATE_KEYS]],
+      ["template", [...lib.CUSTOMER_MESSAGE_TEMPLATE_KEYS]],
     ]);
+    // 기준 시간 — 즉시 발송이 켜져 있으면 접수·확정 응답 뒤 몇 초 안에 첫 시도가 끝난다(마감 40초). 10분은 그보다 넉넉히 길다.
+    const { INLINE_DEADLINE_MS } = await import("@/lib/notify/inline");
+    expect(lib.HOME_WAITING_MINUTES).toBe(10);
+    expect(lib.HOME_WAITING_MINUTES * 60_000).toBeGreaterThan(INLINE_DEADLINE_MS * 10);
     // 모름은 0 이 아니다
     await expect(lib.getHomeSendAlerts({ now: NOW }, recorder({ count: null, error: null }).client as never)).rejects.toThrow();
     await expect(lib.getHomeSendAlerts({ now: NOW }, recorder({ count: null, error: { code: "42501", message: "d" } }).client as never)).rejects.toThrow(/42501/);
+  });
+
+  test("🔴 셋은 서로를 끌어내리지 않는다(리뷰 P2-2 · allSettled) — 대기·사장님 집계가 실패해도 고객 실패 수(배너)는 남는다(그 칸만 null) · 고객 실패 수를 모르면 던진다", async () => {
+    const lib = await vi.importActual<typeof import("@/lib/admin/notifications")>("@/lib/admin/notifications");
+    const run = (results: Parameters<typeof perQuery>[0]) => lib.getHomeSendAlerts({ now: NOW }, perQuery(results).client as never);
+    // 대기 집계만 오류(응답의 error) · 거부(fetch 가 죽음) · count 없음 — 대기만 모름
+    for (const bad of [{ count: null, error: { code: "57014", message: "canceling statement" } }, "throw" as const, { count: null }]) {
+      expect(await run([{ count: 2 }, { count: 1 }, bad]), JSON.stringify(bad)).toEqual({ customerFailed: 2, ownerFailed: 1, customerWaiting: null, windowDays: 7 });
+    }
+    // 사장님 집계만 실패 — 사장님 수만 모름
+    expect(await run([{ count: 0 }, "throw", { count: 4 }])).toEqual({ customerFailed: 0, ownerFailed: null, customerWaiting: 4, windowDays: 7 });
+    // 고객 실패 수를 모르면 던진다 — 카드는 "불러오지 못했어요" · 배너 없음(예전과 같다: 배너의 근거가 이 수다)
+    await expect(run(["throw", { count: 1 }, { count: 1 }])).rejects.toThrow();
+    await expect(run([{ count: null, error: { code: "42501", message: "denied" } }, { count: 1 }, { count: 1 }])).rejects.toThrow(/42501/);
+    // 코드 — 셋을 allSettled 로 기다린다(하나의 거부가 나머지를 버리지 않는다)
+    expect(codeOf("lib/admin/notifications.ts")).toMatch(/await Promise\.allSettled\(\[customerQuery, ownerQuery, waitingQuery\]\)/);
   });
 
   test("🔴 새 접수 건수는 요청 범위 memo(React cache) — 레이아웃(배지)과 홈·목록이 한 요청 안에서 같은 값을 받는다", () => {
@@ -469,7 +553,7 @@ interface Setup {
   newCount?: number | "fail";
   split?: { quick: number; wizard: number } | "fail";
   overdue?: number | "fail";
-  alerts?: { customerFailed: number; ownerFailed: number } | "fail";
+  alerts?: { customerFailed: number; ownerFailed: number | null; customerWaiting?: number | null } | "fail";
   tripCount?: number | "fail";
   trips?: ReservationListRow[] | "fail";
   tripDates?: { departAts: string[]; capped: boolean } | "fail";
@@ -486,7 +570,7 @@ function arrange(s: Setup) {
   vi.mocked(countNewByIntake).mockImplementation(() => val(s.split, { quick: 1, wizard: 1 }));
   vi.mocked(countOverdueNew).mockImplementation(() => val(s.overdue, 1));
   vi.mocked(getHomeSendAlerts).mockImplementation(() =>
-    s.alerts === "fail" ? Promise.reject(new Error("down")) : Promise.resolve({ ...(s.alerts ?? { customerFailed: 0, ownerFailed: 0 }), windowDays: 7 }),
+    s.alerts === "fail" ? Promise.reject(new Error("down")) : Promise.resolve({ customerWaiting: 0, ...(s.alerts ?? { customerFailed: 0, ownerFailed: 0 }), windowDays: 7 }),
   );
   vi.mocked(countConfirmedDeparting).mockImplementation(() => val(s.tripCount, 2));
   vi.mocked(listConfirmedDeparting).mockImplementation(() => val(s.trips, TRIPS));
@@ -648,6 +732,88 @@ describe("3-b. 화면 — 배너 · 미리보기 · 다가오는 운행 · 점�
     expect(fill(c.notifyOwner, { n: 3 })).toBe("사장님 알림 실패 3건 — 발송 기록에서 확인");
     const none = card((await renderHome({ alerts: { customerFailed: 0, ownerFailed: 0 } })).html, "notify");
     expect(none.text).not.toContain(fill(c.notifyOwner, { n: 0 }).slice(0, 6));
+  });
+
+  test("🔴 대기 중(P5-22 · 재검토 신규 P2-1) — 실패는 없지만 오래 대기 중인 고객 문자가 있으면 '대기 중 n건 · 문자 발송이 아직 켜지지 않았을 수 있어요'(이상 없음이 아니다 · 배너 없음 · 새 접수 톤)", async () => {
+    const c = homeObj("card");
+    const { html } = await renderHome({ alerts: { customerFailed: 0, ownerFailed: 0, customerWaiting: 3 } });
+    expect(html).not.toMatch(/role="alert"/);
+    const s = card(html, "notify");
+    expect(attr(s.tag, "data-tone")).toBe("attention");
+    expect(s.text).toContain(fill(c.notifyWaiting, { n: 3 }));
+    expect(fill(c.notifyWaiting, { n: 3 })).toBe("대기 중 3건");
+    expect(s.text).toContain(c.notifyWaitingSub);
+    expect(c.notifyWaitingSub).toBe("문자 발송이 아직 켜지지 않았을 수 있어요");
+    expect(s.text).not.toContain(c.notifyOk);
+    // 실패가 함께 있으면 실패가 먼저(급함 · 배너) · 대기는 작은 줄
+    const both = await renderHome({ alerts: { customerFailed: 1, ownerFailed: 0, customerWaiting: 2 } });
+    const b = card(both.html, "notify");
+    expect(attr(b.tag, "data-tone")).toBe("urgent");
+    expect(b.text).toContain(c.notifyProblem);
+    expect(b.text).toContain(fill(c.notifyWaitingMinor, { n: 2 }));
+    expect([...both.html.matchAll(/role="alert"/g)]).toHaveLength(1);
+    // 대기도 실패도 없으면 예전처럼 이상 없음(대기 줄 없음)
+    const ok = card((await renderHome({ alerts: { customerFailed: 0, ownerFailed: 0, customerWaiting: 0 } })).html, "notify");
+    expect(ok.text).toContain(c.notifyOk);
+    expect(ok.text).not.toContain("대기 중");
+    expect(fill(c.notifyWaitingMinor, { n: 2 })).toBe("고객 문자 대기 중 2건");
+  });
+
+  test("🔴 카드가 이어지는 목록 = 카드가 말한 것(리뷰 P2-1) — 대기 중은 '대기 · 최근 7일' · 확인 필요·이상 없음·모름은 '실패 · 최근 7일' · 배너는 늘 '실패 · 최근 7일'", async () => {
+    const lib = await vi.importActual<typeof import("@/lib/admin/notifications")>("@/lib/admin/notifications");
+    expect(lib.HOME_WAITING_LIST_HREF).toBe("/admin/notifications?status=pending&period=7d");
+    expect(lib.HOME_ALERT_LIST_HREF).toBe("/admin/notifications?status=failed&period=7d");
+    // 발송 기록 화면이 그 주소를 그대로 받는다(모르는 값이면 '전체' 로 떨어져 카드와 다른 목록이 나온다)
+    expect(lib.parseNotificationStatusFilter("pending")).toBe("pending");
+    const href = (html: string) => (attr(card(html, "notify").tag, "href") ?? "").replace(/&amp;/g, "&");
+    expect(href((await renderHome({ alerts: { customerFailed: 0, ownerFailed: 0, customerWaiting: 3 } })).html)).toBe(lib.HOME_WAITING_LIST_HREF);
+    for (const alerts of [{ customerFailed: 0, ownerFailed: 0, customerWaiting: 0 }, { customerFailed: 0, ownerFailed: 2, customerWaiting: 0 }, "fail" as const]) {
+      expect(href((await renderHome({ alerts })).html), JSON.stringify(alerts)).toBe(lib.HOME_ALERT_LIST_HREF);
+    }
+    // 실패와 대기가 함께면 카드는 실패(급함)를 말하므로 실패 목록 · 배너도 실패 목록
+    const both = await renderHome({ alerts: { customerFailed: 1, ownerFailed: 0, customerWaiting: 2 } });
+    expect(href(both.html)).toBe(lib.HOME_ALERT_LIST_HREF);
+    const banner = [...both.html.matchAll(/<p[^>]*role="alert"[^>]*>[\s\S]*?<\/p>/g)];
+    expect(banner).toHaveLength(1);
+    expect(links(banner[0][0]).map((l) => l.href)).toEqual([lib.HOME_ALERT_LIST_HREF]);
+  });
+
+  test("🔴 부가 집계가 실패해도(리뷰 P2-2) — 고객 문자 실패 배너·확인 필요는 그대로 · 사장님 수를 모르면 그렇다고 작은 줄 · 대기 수를 모르면 '이상 없음' 이라 하지 않는다", async () => {
+    const c = homeObj("card");
+    const bad = await renderHome({ alerts: { customerFailed: 2, ownerFailed: null, customerWaiting: null } });
+    expect([...bad.html.matchAll(/role="alert"/g)]).toHaveLength(1);
+    const s = card(bad.html, "notify");
+    expect(attr(s.tag, "data-tone")).toBe("urgent");
+    expect(s.text).toContain(fill(c.notifyProblemSub, { days: 7, n: 2 }));
+    expect(s.text).toContain(c.notifyOwnerUnknown);
+    expect(c.notifyOwnerUnknown).toBe("사장님 알림 실패 수는 지금 불러오지 못했어요");
+    expect(s.text).not.toContain("대기 중");
+    // 실패 0 · 대기 수 모름 → 모름(이상 없음이 아니다 — 문자가 쌓이는 중일 수 있다) · 배너 없음
+    const unknownWaiting = await renderHome({ alerts: { customerFailed: 0, ownerFailed: 0, customerWaiting: null } });
+    const u = card(unknownWaiting.html, "notify");
+    expect(u.text).toContain(home.unknown);
+    expect(u.text).not.toContain(c.notifyOk);
+    expect(unknownWaiting.html).not.toMatch(/role="alert"/);
+  });
+
+  test("매뉴얼 관리 홈 절이 '대기 중' 을 설명한다(브리프: 매뉴얼 관리 홈 절을 고친다) — 화면 문구 그대로 · 기준 시간 = HOME_WAITING_MINUTES", async () => {
+    const lib = await vi.importActual<typeof import("@/lib/admin/notifications")>("@/lib/admin/notifications");
+    const c = homeObj("card");
+    const manual = read("docs/ops/admin-manual.md");
+    const start = manual.indexOf("### 첫 화면 — 관리 홈");
+    const end = manual.indexOf("### 나오실 때 — 로그아웃");
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    const section = manual.slice(start, end);
+    expect(section).toContain(fill(c.notifyWaiting, { n: "N" }));
+    expect(section).toContain(c.notifyWaitingSub);
+    expect(section).toContain(fill(c.notifyWaitingMinor, { n: "N" }));
+    expect(section).toContain(`${lib.HOME_WAITING_MINUTES}분`);
+    // 수정 라운드 — 대기 중 카드는 '대기 · 최근 7일' 로 이어진다(리뷰 P2-1) · 사장님 수를 모르면 그 문구(리뷰 P2-2)
+    expect(section).toContain("대기 · 최근 7일");
+    expect(section).toContain(c.notifyOwnerUnknown);
+    // 실패가 아니다 — 배너(맨 위 안내 줄)는 뜨지 않는다고 적는다
+    expect(section).toMatch(/실패는 아닙니다/);
   });
 
   test("🔴 '문자' 라는 말은 센 것과 맞는다(리뷰 P2-1) — 홈은 고객 문자(SMS·알림톡 문안)만 세고, 발송 기록 요약은 모든 알림을 기간과 함께 말한다", () => {

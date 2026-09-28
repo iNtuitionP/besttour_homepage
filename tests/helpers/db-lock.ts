@@ -1,7 +1,7 @@
 import { appendFileSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, expect } from "vitest";
+import { aroundAll, expect } from "vitest";
 
 /**
  * 테스트 파일 사이의 DB 상호배제 (P5-10).
@@ -26,8 +26,8 @@ import { afterAll, beforeAll, expect } from "vitest";
  * 세 잠금은 이름만 다르고 구현은 같다. **여럿을 쓰면 notifications → gallery → showcase-routes 순서로 부른다** —
  * 모두가 같은 순서로 잡아야 순환 대기(교착)가 생기지 않는다. 그 순서도 완전성 게이트가 강제한다.
  *
- * 성립 근거(스케줄링과 무관): 잠금은 `beforeAll` 에서 잡혀 `afterAll` 에서 풀리고, describe 본문 맨 위에서
- * 부르므로 vitest 의 기본 훅 순서상 **가장 먼저 잡히고 가장 나중에 풀린다**. 즉 블록이 만든 claimable 행이
+ * 성립 근거(스케줄링과 무관): 잠금은 `aroundAll` 로 그 describe 의 beforeAll · 테스트 · afterAll 전체를 감싸 잡히고 finally 로 풀린다
+ * (P5-22 수정 라운드 — 전에는 beforeAll/afterAll 이었고, 다른 afterAll 이 던지면 해제가 건너뛰어졌다). 즉 블록이 만든 claimable 행이
  * 존재하는 구간 전체(정리까지)가 임계구역 안에 들어간다. 파일 수·실행 순서·워커 수와 무관하다.
  *
  * ## 왜 필요한가
@@ -68,7 +68,8 @@ import { afterAll, beforeAll, expect } from "vitest";
  * **디렉터리 경로와 지우는 법을 적어** 크게 실패한다. 조용히 배타성이 깨져 스위트가 흔들리는 것보다
  * 시끄럽게 멈추는 편이 낫다 — 이 태스크가 존재하는 이유가 바로 그것이다.
  *
- * 새는 것 자체는 세 겹으로 막는다: describe 의 `afterAll` 해제 · `process.on("exit")` · SIGINT/SIGTERM 해제.
+ * 새는 것 자체는 세 겹으로 막는다: describe 를 감싼 `aroundAll` 의 finally 해제(정리 훅이 던져도 — P5-22 수정 라운드) ·
+ * `process.on("exit")` · SIGINT/SIGTERM 해제. (Windows 는 워커를 강제로 끝내 뒤의 둘이 돌지 않을 수 있다 — 그래서 첫째가 finally 다.)
  * CI 러너는 매번 새 tmpdir 로 시작하므로 실행 사이에 잠금이 남지 않는다.
  *
  * 계약은 tests/db-lock.test.ts 가 단언한다(회귀 포함).
@@ -228,27 +229,41 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"] as const) {
 }
 
 /**
+ * 잠금을 잡고 `runSuite` 를 돌린 뒤 **무슨 일이 있어도** 푼다(finally) — withDbLock 의 몸통이자 계약 테스트의 대상.
+ * 잡지 못하면(제한시간) 던지고 runSuite 는 돌리지 않는다(남의 잠금을 뺏지 않는다 — 위 '구현' 주석).
+ */
+export async function runLocked(name: string, runSuite: () => unknown, timeoutMs: number = LOCK_ACQUIRE_TIMEOUT_MS): Promise<void> {
+  const lock = await acquireDbLock(name, timeoutMs);
+  trace("acquire", name);
+  try {
+    await runSuite();
+  } finally {
+    trace("release", name);
+    lock.release();
+  }
+}
+
+/**
  * describe 블록 전체를 이름 하나의 잠금 안에서 돌린다 (`withNotificationsLock`·`withGalleryLock` 의 공통 몸통).
  *
- * **describe 본문 맨 위에서 부른다.** vitest 기본 훅 순서(`sequence.hooks = 'stack'`)는 beforeAll 을 등록 순서대로,
- * afterAll 을 역순으로 실행한다(2026-09-15 probe 로 실측). 맨 위에서 부르면 이 잠금이 가장 먼저 잡히고
- * **가장 나중에** 풀린다 — 그 블록의 정리(afterAll 의 wipe/delete)까지 끝난 뒤에 다음 파일이 들어온다.
- * 두 개를 부르면 등록 순서대로 잡히고 역순으로 풀린다(= 올바른 중첩). 그래서 **순서 규약**이 교착을 막는다.
+ * **aroundAll 하나로 스위트 전체를 감싼다**(P5-22 수정 라운드). vitest 4.1 의 aroundAll 은 그 describe 의 beforeAll · 테스트 · afterAll ·
+ * beforeAll 정리 함수를 **전부 안쪽에서** 돌리고(@vitest/runner runSuite — callAroundAllHooks 가 그 전체를 감싼다), 여럿이면 먼저 등록한 것이
+ * 바깥이다. 그래서 잠금은 그 블록의 어떤 준비보다 먼저 잡히고, 정리(afterAll 의 wipe/delete)까지 끝난 **뒤에** 풀린다 — 옛 beforeAll/afterAll
+ * 모양과 같은 임계구역이다. 다른 점은 해제가 finally 라는 것: 옛 모양에서는 같은 describe 의 다른 afterAll 이 던지면 vitest 가 나머지 afterAll 을
+ * 건너뛰어(callSuiteHook 의 for…of) 해제가 빠졌다 — tests/withdrawal-consent.test.ts 의 정리가 소켓 끊김으로 던질 때마다 잠금이 새서 다른
+ * 10파일이 420초를 기다리다 실패했다(2026-09-28 두 번). tests/db-lock.test.ts §4 가 잠근다.
+ * 두 개를 부르면 먼저 부른 것이 바깥이라 등록 순서대로 잡히고 역순으로 풀린다(= 올바른 중첩). 그래서 **순서 규약**이 교착을 막는다.
+ * 대기 한도는 준비 단계(runSuite 를 부르기 전)에만 걸린다 — 스위트가 도는 시간은 세지 않는다(aroundAll 의 setup/teardown 시계).
+ *
+ * **describe 본문 맨 위에서 부른다**(규약 그대로 — 완전성 게이트가 그 자리를 본다).
  */
 function withDbLock(name: string): void {
-  let lock: DbLock | null = null;
-  // 훅 콜백은 **인자를 받지 않는다.** vitest 4 에서 첫 인자는 fixture 컨텍스트라 구조분해가 아니면
-  // FixtureParseError 로 훅 자체가 죽고, 그 블록의 테스트가 실패가 아니라 **skip** 으로 조용히 사라진다
-  // (2026-09-15 P5-10 에서 실제로 밟았다 — DB 단언 56건이 skip 되고 요약은 "255 passed" 였다).
-  beforeAll(async () => {
-    lock = await acquireDbLock(name);
-    trace("acquire", name);
-  }, LOCK_ACQUIRE_TIMEOUT_MS + 10_000);
-  afterAll(() => {
-    trace("release", name);
-    lock?.release();
-    lock = null;
-  });
+  // 콜백은 runSuite 하나만 받는다 — 둘째 인자(fixture 컨텍스트)를 선언하지 않는다. vitest 4 는 fixture 인자를 구조분해가 아니면
+  // FixtureParseError 로 훅 자체를 죽이고, 그 블록의 테스트가 실패가 아니라 **skip** 으로 조용히 사라진다(2026-09-15 P5-10).
+  aroundAll(
+    (runSuite) => runLocked(name, runSuite),
+    LOCK_ACQUIRE_TIMEOUT_MS + 10_000,
+  );
 }
 
 /** describe 블록 전체를 `notifications_log` 잠금 안에서 돌린다. 두 잠금을 다 쓰면 **이것을 먼저** 부른다. */

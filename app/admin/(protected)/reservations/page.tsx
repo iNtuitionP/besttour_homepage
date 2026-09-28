@@ -50,7 +50,7 @@ import q from "@/components/quote/quote.module.css";
  *     게이트 뒤에 다른 조회와 함께 동시에 나간다. 지난 쪽을 못 읽으면 그 칸만 "불러오지 못했어요"(목록은 그대로 연다).
  *     전에는 한 쿼리라 지난 확정이 쌓이면 쪽 1 을 다 차지해 다가오는 운행이 사라졌고, 안내 "출발이 가까운 순서로" 도 거짓이 됐다.
  *   - 현재 탭은 `aria-current="true"`(리뷰 P2-14 — "page" 는 사이드바 하나) · 휴대폰에서는 탭 줄 안에서 보이는 자리로 민다(TabIntoView · 리뷰 P2-5).
- *   - **행 = 한 벌의 마크업**(components/admin/reservationRow.tsx): 휴대폰 카드 · ≥1024px 표 모양 7칸. 행 전체가 상세 링크(uuid 만),
+ *   - **행 = 한 벌의 마크업**(components/admin/reservationRow.tsx): 휴대폰 카드 · ≥1024px 표 모양 7칸. 행 전체가 상세 링크(uuid + 이 탭·쪽 — P5-22 B-2),
  *     전화 버튼은 별개(tel: 전체 번호). 목록의 번호는 가운데를 가린다(010-****-0004). 옛 68rem 가로 스크롤 표는 없앴다.
  *   - **'20건 더 보기'**(components/admin/LoadMore.tsx): 주소의 쪽만 바꾸고, 이 화면은 첫 줄부터 쪽 × 20 건을 그린다 — 주소에는 상태·쪽만(개인정보 0).
  *   - **빈 상태 두 종류**: 데이터 없음(새 접수 탭 "새 접수가 없어요…" · 전체 탭 "아직 들어온 접수가 없어요.") · 걸러 본 결과 없음(그 밖의 탭 + [전체 보기]).
@@ -113,7 +113,8 @@ export default async function AdminReservationsPage({ searchParams }: { searchPa
 
   const countOf = (k: ListTab): number | null =>
     counts === null ? null : k === "all" ? counts.new + counts.confirmed + counts.done + counts.cancelled : counts[k];
-  const ctx: ReservationRowContext = { now, labels: rowLabels, badgeLabels, vehicles, departRelative: tab === "confirmed" };
+  // 행 링크는 이 탭·쪽을 싣는다(P5-22 B-2) — 상세의 "← 접수 목록" 이 들어온 자리로 돌아간다(주소에는 uuid·상태·쪽만)
+  const ctx: ReservationRowContext = { now, labels: rowLabels, badgeLabels, vehicles, departRelative: tab === "confirmed", from: { tab, page } };
   const groups = groupListRows(tab, items, now);
   const hint = tab === "new" ? t("hint.new") : tab === "confirmed" ? t("hint.confirmed") : t("hint.recent");
   const nextHref = hasMore && page < MAX_LIST_PAGES ? listHref(tab, page + 1) : null;

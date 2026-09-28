@@ -392,8 +392,13 @@ export async function listConfirmedPast(before: string, limit: number, client?: 
   return { items: data ?? [], total: count };
 }
 
-/** 이번 주 운행 카드의 날짜 줄이 읽는 출발 시각의 상한 — 넘치면 날짜 줄을 그리지 않는다(모자란 날 수를 지어내지 않는다). */
-export const TRIP_DATES_CAP = 1000;
+/**
+ * 이번 주 운행 카드의 날짜 줄이 읽는 출발 시각의 상한 — 넘치면 날짜 줄을 그리지 않는다(모자란 날 수를 지어내지 않는다).
+ * 넘침은 **상한 + 1 건**을 읽어 가른다. 그 읽는 수(999)는 PostgREST 의 한 번 응답 상한 `max_rows`(1000 — supabase/config.toml · 호스팅 기본값도 같다)보다
+ * **작아야** 한다(P5-22 · P5-21 재검토 신규 P2-2): 전에는 1000 + 1 = 1001 을 읽었는데 응답이 1000 에서 잘려 1001번째가 오지 않아 넘침을 알아챌 수 없었다.
+ * tests/admin-dashboard.test.ts 가 config.toml 의 max_rows 를 읽어 대조한다.
+ */
+export const TRIP_DATES_CAP = 998;
 
 /**
  * 이번 주 운행 카드의 날짜 줄(리뷰 P2-2) — 확정 중 출발이 [from, to) 인 **모든** 행의 출발 시각만(depart_at 한 칸 · 이름·번호 0).

@@ -22,7 +22,7 @@ import { getStatusBadgeLabels } from "@/components/admin/statusBadgeLabels";
 import { navBadge } from "@/components/admin/tabs";
 import { routing } from "@/i18n/routing";
 import { listAdminNotices } from "@/lib/admin/notices";
-import { HOME_ALERT_LIST_HREF, HOME_ALERT_WINDOW_DAYS, getHomeSendAlerts } from "@/lib/admin/notifications";
+import { HOME_ALERT_LIST_HREF, HOME_ALERT_WINDOW_DAYS, HOME_WAITING_LIST_HREF, getHomeSendAlerts } from "@/lib/admin/notifications";
 import { listAdminPopups, popupState } from "@/lib/admin/popups";
 import {
   countConfirmedDeparting,
@@ -51,7 +51,9 @@ import q from "@/components/quote/quote.module.css";
  *   새 접수 = 메뉴 배지와 **같은 함수**(countNewReservations — 요청 범위 memo 라 레이아웃과 한 요청이면 같은 값) ·
  *   답이 늦은 접수 = 새 접수 중 72시간이 **넘은** 것(배지·0022 와 같은 경계) ·
  *   문자 발송 = **최근 7일 고객 문자 실패**(getHomeSendAlerts — 수정 라운드 · 컨트롤러 결정 P1-2. 사장님 쪽 알림 실패는 카드의 작은 줄로만 ·
- *   배너는 고객 문자 실패로만 뜬다 · 기간을 문장에 적는다 · 누르면 발송 기록의 '실패 · 7일' 목록) ·
+ *   배너는 고객 문자 실패로만 뜬다 · 기간을 문장에 적는다 · 누르면 발송 기록의 '실패 · 7일' 목록) · 실패가 없어도 오래 대기 중인 고객 문자가 있으면
+ *   "대기 중 n건 · 문자 발송이 아직 켜지지 않았을 수 있어요"(P5-22 — 데이터로 판단 · env 를 읽지 않는다 · 배너 없음 · 누르면 '대기 · 7일' 목록 —
+ *   수정 라운드 리뷰 P2-1) · 세 집계는 서로를 끌어내리지 않는다(리뷰 P2-2 — 부가 집계를 모르면 그 칸만 모름, 실패 배너는 산다) ·
  *   이번 주 운행 = 확정 중 출발이 KST 오늘 00:00 ~ 7일 뒤 00:00(날짜 줄은 창 안의 **모든** 출발에서 — 리뷰 P2-2) ·
  *   이번 달 = 통계 화면 '이번 달' 과 같은 기간(무거운 0022 집계를 부르지 않는다).
  * 숫자는 전부 DB 가 지금 센 값이다(실증 문제 없음 — CLAUDE.md §3). 가격은 계산하지 않는다(대표 노선은 금액이 비어 있는지만 센다).
@@ -164,7 +166,10 @@ export default async function AdminHomePage() {
   const dateDays =
     tripDates.status === "fulfilled" && !tripDates.value.capped ? tripDays(tripDates.value.departAts.map((depart_at) => ({ depart_at })), now) : null;
   const dates = dateDays === null ? null : tripDatesLine(dateDays, 3);
-  const notifyTone = notify.kind === "ok" ? "ok" : notify.kind === "problems" ? "urgent" : "plain";
+  // 대기 중(P5-22)은 새 접수와 같은 톤 — 실패(급함)도 이상 없음도 아니다
+  const notifyTone = notify.kind === "ok" ? "ok" : notify.kind === "problems" ? "urgent" : notify.kind === "waiting" ? "attention" : "plain";
+  // 카드가 이어지는 목록 = 카드가 말한 것(수정 라운드 · 리뷰 P2-1) — 대기 중은 '대기 · 7일', 그 밖(확인 필요 · 이상 없음 · 모름)은 '실패 · 7일'
+  const notifyHref = notify.kind === "waiting" ? HOME_WAITING_LIST_HREF : HOME_ALERT_LIST_HREF;
 
   // 홈페이지 점검 — 허브(/admin/site)와 같은 조회 · 같은 말(components/admin/hub.ts)
   const todayKey = today?.dateKey ?? "";
@@ -224,7 +229,7 @@ export default async function AdminHomePage() {
             </Link>
           </li>
           <li>
-            <Link className={a.todo} href={HOME_ALERT_LIST_HREF} data-card="notify" data-tone={notifyTone}>
+            <Link className={a.todo} href={notifyHref} data-card="notify" data-tone={notifyTone}>
               <span className={a.todoLabel}>{t("home.card.notify")}</span>
               {notify.kind === "ok" ? (
                 <>
@@ -241,10 +246,24 @@ export default async function AdminHomePage() {
                   </span>
                   <span className={a.todoSub}>{t("home.card.notifyProblemSub", { days: HOME_ALERT_WINDOW_DAYS, n: notify.customer })}</span>
                 </>
+              ) : notify.kind === "waiting" ? (
+                <>
+                  <span className={a.todoValue} data-kind="waiting">
+                    {t("home.card.notifyWaiting", { n: notify.waiting })}
+                  </span>
+                  <span className={a.todoSub}>{t("home.card.notifyWaitingSub")}</span>
+                </>
               ) : (
                 <span className={a.todoUnknown}>{unknown}</span>
               )}
-              {notify.kind !== "unknown" && notify.owner > 0 ? <span className={a.todoMinor}>{t("home.card.notifyOwner", { n: notify.owner })}</span> : null}
+              {notify.kind === "problems" && notify.waiting !== null && notify.waiting > 0 ? (
+                <span className={a.todoMinor}>{t("home.card.notifyWaitingMinor", { n: notify.waiting })}</span>
+              ) : null}
+              {/* 사장님 쪽 실패 수 — 모르면 0 이라 하지 않고 그렇다고 적는다(수정 라운드 · 리뷰 P2-2) */}
+              {notify.kind !== "unknown" && notify.owner === null ? <span className={a.todoMinor}>{t("home.card.notifyOwnerUnknown")}</span> : null}
+              {notify.kind !== "unknown" && notify.owner !== null && notify.owner > 0 ? (
+                <span className={a.todoMinor}>{t("home.card.notifyOwner", { n: notify.owner })}</span>
+              ) : null}
               <Icon name="chevron" className={a.todoArrow} />
             </Link>
           </li>

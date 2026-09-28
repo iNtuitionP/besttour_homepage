@@ -15,7 +15,8 @@
  *                    쪽 1 맨 앞이 곧 이 카드의 운행이다(P5-21 수정 라운드 · 리뷰 P1-1).
  *       답이 늦은 접수  새 접수 중 created_at < 지금 − 72시간 — 상태 배지(isOverdue)·0022 backlog 와 같은 쪽의 경계(딱 72시간은 아니다)
  *       이번 달      [이달 1일 00:00, 내일 00:00) — 통계 화면 '이번 달'(lib/admin/stats.ts statsRange thisMonth)과 같은 기간
- *       문자 발송    최근 7일(created_at) — 발송 기록 화면의 기간 필터 '7d' 와 같은 창(lib/admin/notifications.ts getHomeSendAlerts)
+ *       문자 발송    최근 7일(created_at) — 발송 기록 화면의 기간 필터 '7d' 와 같은 창(lib/admin/notifications.ts getHomeSendAlerts) ·
+ *                    대기 중 = 그 창의 고객 문자 중 한 번도 시도되지 않고 10분(HOME_WAITING_MINUTES) 넘게 기다린 것(P5-22)
  */
 import { addDaysToKey, kstDayDiff, kstDayStart, kstParts, kstTodayStart } from "./reservation-list";
 import { BACKLOG_HOURS } from "./status-badge";
@@ -77,20 +78,39 @@ export function newSplit(total: Settled<number>, split: Settled<{ quick: number;
   return split.value.quick + split.value.wizard === total.value ? { quick: split.value.quick, wizard: split.value.wizard } : null;
 }
 
-/** 최근 7일 발송 경보 — lib/admin/notifications.ts getHomeSendAlerts 의 모양(이 순수 모듈은 서버 모듈을 가져오지 않는다). */
-type SendAlertsLike = { customerFailed: number; ownerFailed: number };
+/**
+ * 최근 7일 발송 경보 — lib/admin/notifications.ts getHomeSendAlerts 의 모양(이 순수 모듈은 서버 모듈을 가져오지 않는다).
+ * 사장님 실패 · 대기 수는 **모르면 null** 이다(P5-22 수정 라운드 · 리뷰 P2-2 — 부가 집계가 고객 실패 수·배너를 끌어내리지 않는다).
+ */
+type SendAlertsLike = { customerFailed: number; ownerFailed: number | null; customerWaiting?: number | null };
 
-export type SendCard = { kind: "unknown" } | { kind: "ok"; owner: number } | { kind: "problems"; customer: number; owner: number };
+export type SendCard =
+  | { kind: "unknown" }
+  | { kind: "ok"; owner: number | null }
+  | { kind: "waiting"; waiting: number; owner: number | null }
+  | { kind: "problems"; customer: number; waiting: number | null; owner: number | null };
 
 /**
  * 문자 발송 카드(P5-21 수정 라운드 · 컨트롤러 결정 P1-2) — **최근 7일 고객 문자 실패**로만 이상 없음 / 확인 필요를 정한다.
  * 사장님 쪽 알림 실패(접수 알림 문자·메일 · 발송 실패 알림 메일)는 같은 7일의 수를 작은 줄로만 따라 보인다 — 급함이 아니고 배너도 아니다.
  * 전에는 기간 없는 누적(발송 기록 요약)이라 한 번 뜨면 사라지지 않았다(리뷰 P1-2 — 확정 건은 파기까지 5년).
+ *
+ * P5-22(P5-21 재검토 신규 P2-1) — **대기 중**: 실패가 없어도 같은 7일의 고객 문자가 한 번도 시도되지 않은 채 오래(10분 넘게) 기다리면
+ * "이상 없음" 이 아니다 — 발송기가 아직 꺼져 있으면(운영 문자 설정 전) 문자가 전부 대기로 쌓이는데 실패만 세면 "✓ 이상 없음" 이 되어
+ * "고객에게 문자가 가고 있다" 로 읽혔다. 그때는 `waiting`(새 접수 톤 · 배너 없음 — 실패가 아니다). 실패가 있으면 실패가 먼저(problems)이고
+ * 대기 수는 작은 줄로 따라간다. 관리자 코드는 env 를 읽지 않는다 — 판단은 데이터(customerWaiting)로만.
+ *
+ * 수정 라운드(리뷰 P2-2) — 부가 집계를 모를 때: 실패가 있으면 실패(확인 필요 · 배너)는 그대로 말하고 모르는 칸만 비운다(null).
+ * 실패가 없는데 대기 수를 모르면 "이상 없음" 이 아니라 **모름**이다 — 발송기가 꺼져 문자가 쌓이는 중일 수 있다(그것이 이 카드가 생긴 까닭).
+ * (customerWaiting 을 아예 싣지 않은 옛 모양은 0 으로 읽는다 — null 과 다르다.)
  */
 export function sendCard(res: Settled<SendAlertsLike>): SendCard {
   if (res.status !== "fulfilled") return { kind: "unknown" };
   const { customerFailed, ownerFailed } = res.value;
-  return customerFailed > 0 ? { kind: "problems", customer: customerFailed, owner: ownerFailed } : { kind: "ok", owner: ownerFailed };
+  const waiting = res.value.customerWaiting === undefined ? 0 : res.value.customerWaiting;
+  if (customerFailed > 0) return { kind: "problems", customer: customerFailed, waiting, owner: ownerFailed };
+  if (waiting === null) return { kind: "unknown" };
+  return waiting > 0 ? { kind: "waiting", waiting, owner: ownerFailed } : { kind: "ok", owner: ownerFailed };
 }
 
 /** 배너 — 최근 7일 고객 문자 실패 수. 없거나(사장님 쪽 실패만 있어도) 모르면 null(배너 없음). */

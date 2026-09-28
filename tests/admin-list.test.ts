@@ -603,6 +603,29 @@ describe("4-b. 화면 — 행 한 벌 · 간편 접수 · 가린 번호 · 전�
     expect(ls[0].href).not.toMatch(/0000000002|예시/);
   });
 
+  test("🔴 B-2(P5-22 · 리뷰 P2-13) — 행 링크는 들어온 탭·쪽을 싣는다(상태·쪽만 · 기본 탭 첫 쪽은 쿼리 없음) — 상세의 '← 접수 목록' 이 그리로 돌아간다", async () => {
+    const conf = confirmedRow(uuidN(5), "2026-09-30T05:30:00.000Z");
+    const html = await render({ status: "confirmed", page: "2" }, { items: [conf] });
+    const [r] = rowsOf(html);
+    expect(links(r.html)[0].href).toBe(`/admin/reservations/${conf.id}?from=confirmed&page=2`);
+    const plain = rowsOf(await render({}, { items: [WIZARD] }))[0];
+    expect(links(plain.html)[0].href).toBe(`/admin/reservations/${WIZARD.id}`);
+    const all = rowsOf(await render({ status: "all" }, { items: [WIZARD] }))[0];
+    expect(links(all.html)[0].href).toBe(`/admin/reservations/${WIZARD.id}?from=all`);
+    // 지난 확정 칸의 행도 같은 탭에서 들어간다
+    const past = confirmedRow(uuidN(6, "d"), "2026-09-26T23:00:00.000Z");
+    const withPast = await render({ status: "confirmed" }, { items: [conf], past: { items: [past], total: 1 } });
+    const pastRow = rowsOf(withPast).find((x) => x.id === past.id)!;
+    expect(links(pastRow.html)[0].href).toBe(`/admin/reservations/${past.id}?from=confirmed`);
+    // 주소에는 이름·번호가 없다 — 경로는 uuid, 쿼리 키는 from·page 뿐
+    for (const h of [links(r.html)[0].href, links(all.html)[0].href]) {
+      const u = new URL(h, "http://x.test");
+      expect(u.pathname).toMatch(/^\/admin\/reservations\/[0-9a-f-]{36}$/);
+      expect([...u.searchParams.keys()].every((k) => k === "from" || k === "page"), h).toBe(true);
+      expect(h).not.toMatch(/예시|821000000001/);
+    }
+  });
+
   test("🔴 목록의 번호는 가운데를 가린다 — 전체 번호는 tel: 안에만", async () => {
     const html = await render({}, { items: [WIZARD] });
     const t = text(html);

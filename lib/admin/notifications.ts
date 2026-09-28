@@ -433,6 +433,13 @@ export const HOME_ALERT_WINDOW_DAYS = 7;
 /** 카드·배너가 이어지는 곳 — 발송 기록의 '실패 · 최근 7일' 목록(주소에는 상태·기간뿐 — 개인정보 0). */
 export const HOME_ALERT_LIST_HREF = `${ADMIN_NOTIFICATIONS_PATH}?status=failed&period=7d`;
 
+/**
+ * '대기 중' 카드가 이어지는 곳 — 발송 기록의 '대기 · 최근 7일' 목록(P5-22 수정 라운드 · 리뷰 P2-1: 카드 숫자 = 이어지는 목록).
+ * 그 목록은 카드가 센 것(고객 문자 · 한 번도 시도 안 함 · 10분 넘음)의 **상위 집합**이다 — 사장님 쪽 대기와 다시 보낼 차례를 기다리는
+ * 것도 보인다(매뉴얼 1장에 적었다). 실패와 대기가 함께면 카드는 실패를 말하므로 실패 목록으로 간다(배너도 늘 실패 목록).
+ */
+export const HOME_WAITING_LIST_HREF = `${ADMIN_NOTIFICATIONS_PATH}?status=pending&period=7d`;
+
 export type TemplateAudience = "customer" | "owner";
 
 /**
@@ -460,20 +467,46 @@ export const CUSTOMER_MESSAGE_TEMPLATE_KEYS: readonly string[] = ALL_TEMPLATE_KE
 /** 사장님께 가는 알림 문안 키(접수 알림 문자·메일 · 발송 실패 알림 메일) — 홈 카드의 작은 줄로만 보인다(배너가 아니다). */
 export const OWNER_TEMPLATE_KEYS: readonly string[] = ALL_TEMPLATE_KEYS.filter((k) => templateAudience(k) === "owner");
 
+/**
+ * '대기 중' 의 기준 시간(P5-22 · P5-21 재검토 신규 P2-1) — 고객 문자가 **만든 지 이만큼 지나도록 한 번도 시도되지 않았으면** 오래 대기 중이다.
+ * 즉시 발송(lib/notify/inline.ts)이 켜져 있으면 접수·확정 응답 뒤 몇 초 안에 첫 시도가 끝난다(마감 INLINE_DEADLINE_MS = 40초 · claim 이 attempts 를 올린다).
+ * 10분은 그보다 넉넉히 길다 — 콜드 스타트·느린 응답으로 헛경보를 내지 않는다. 그 뒤에도 attempts = 0 이면 발송기가 그 행을 집지 않은 것이다:
+ * 문자 제공자 설정이 없거나(sender 가 없으면 claim 하지 않는다 — worker.ts) 즉시 발송이 꺼져 하루 1회 크론만 도는 경우다.
+ * 관리자 코드는 env 를 읽지 않는다(lib/notify/deps.ts 만 읽는다 — 경계) — 그래서 설정이 아니라 **데이터**로 판단한다.
+ */
+export const HOME_WAITING_MINUTES = 10;
+
 export interface HomeSendAlerts {
-  /** 최근 7일 고객 문자 실패(중복 억제 행 제외) — 배너·카드의 '확인 필요' 를 정한다. */
+  /** 최근 7일 고객 문자 실패(중복 억제 행 제외) — 배너·카드의 '확인 필요' 를 정한다. 모르면 함수가 던진다(배너의 근거다). */
   customerFailed: number;
-  /** 같은 7일의 사장님 쪽 알림 실패 — 카드의 작은 줄. */
-  ownerFailed: number;
+  /** 같은 7일의 사장님 쪽 알림 실패 — 카드의 작은 줄. **모르면 null**(리뷰 P2-2 — 고객 실패 수·배너를 끌어내리지 않는다). */
+  ownerFailed: number | null;
+  /**
+   * 같은 7일의 고객 문자 중 **오래 대기 중**인 것(P5-22) — status='pending' · attempts = 0(한 번도 시도되지 않음) · 만든 지 HOME_WAITING_MINUTES 넘음.
+   * 0 보다 크면 카드는 "이상 없음" 이 아니라 "대기 중 n건 — 문자 발송이 아직 켜지지 않았을 수 있어요" 다(실패가 아니라 배너는 없다).
+   * 재시도를 기다리는 행(attempts ≥ 1)은 세지 않는다 — 발송기는 켜져 있다(그 행은 곧 sent 나 failed 가 되어 여기서 다시 잡힌다).
+   * **모르면 null**(리뷰 P2-2) — 카드는 실패가 없을 때 "이상 없음" 이라 하지 않고 모름이 된다(문자가 쌓이는 중일 수 있다).
+   */
+  customerWaiting: number | null;
   windowDays: number;
+}
+
+/** 부가 집계(사장님 실패 · 대기) — 거부됐거나 오류·빈 count 면 null(모름). 0 으로 갈음하지 않는다. */
+function countOrNull(res: PromiseSettledResult<unknown>): number | null {
+  if (res.status !== "fulfilled") return null;
+  const value = res.value as CountResponse;
+  return value.error || typeof value.count !== "number" ? null : value.count;
 }
 
 /**
  * 관리 홈 발송 경보 — status='failed'(중복 억제 `duplicate_sent` 는 뺀다 — 손님은 이미 받았다) · created_at ≥ 지금 − 7일 ·
- * 받는 사람별 head 집계 둘(행은 오지 않는다 — 개인정보 0). 멈춘 대기(stuck)는 세지 않는다: 회수기(0007)가 다음 실행에 failed 로 바꾸면
+ * 받는 사람별 head 집계 둘(행은 오지 않는다 — 개인정보 0) + (P5-22) 오래 대기 중인 고객 문자 head 집계 하나 — 셋은 동시에 나간다.
+ * 멈춘 대기(stuck)는 실패로 세지 않는다: 회수기(0007)가 다음 실행에 failed 로 바꾸면
  * 그때 여기에 잡히고, 카드·배너가 이어지는 '실패 · 7일' 목록과 같은 수가 된다(두 숫자를 만들지 않는다).
  * 문안 키가 아웃박스 밖인 행(옛 행·손으로 넣은 행)은 받는 사람을 알 수 없어 여기서 세지 않는다 — 발송 기록 화면에는 그대로 보인다.
- * 모르는 것은 0 이 아니다 — 오류·빈 count 는 던진다(화면은 그 카드만 "불러오지 못했어요").
+ * 모르는 것은 0 이 아니다 — 고객 실패 수의 오류·빈 count 는 던진다(화면은 그 카드만 "불러오지 못했어요" · 배너 없음).
+ * 셋은 **서로를 끌어내리지 않는다**(P5-22 수정 라운드 · 리뷰 P2-2): allSettled 로 기다려, 사장님 실패·대기 집계가 실패하면 그 칸만 null 이다 —
+ * 부가 신호(대기)가 가장 급한 신호(보내지 못한 고객 문자 · 배너)를 지우지 않게.
  */
 export async function getHomeSendAlerts(params: NotificationSummaryParams = {}, client?: AdminNotificationsClient): Promise<HomeSendAlerts> {
   const now = params.now ?? new Date();
@@ -489,10 +522,26 @@ export async function getHomeSendAlerts(params: NotificationSummaryParams = {}, 
       .gte("created_at", since)
       .in("template", [...keys]);
 
-  const [customerRes, ownerRes] = await Promise.all([failedFor(CUSTOMER_MESSAGE_TEMPLATE_KEYS), failedFor(OWNER_TEMPLATE_KEYS)]);
+  const customerQuery = failedFor(CUSTOMER_MESSAGE_TEMPLATE_KEYS);
+  const ownerQuery = failedFor(OWNER_TEMPLATE_KEYS);
+  // 오래 대기 중인 고객 문자(P5-22) — 한 번도 시도되지 않았고(attempts = 0) 만든 지 HOME_WAITING_MINUTES 넘은 pending. 같은 7일 창.
+  // attempts = 0 이면 last_error 도 없다(격리 표식 `sent_unmarked:` 은 보낸 뒤라 attempts ≥ 1) — 따로 거르지 않는다.
+  const waitingBefore = new Date(now.getTime() - HOME_WAITING_MINUTES * 60 * 1000).toISOString();
+  const waitingQuery = db
+    .from(NOTIFICATIONS_TABLE)
+    .select(COUNT_COLUMN, { count: "exact", head: true })
+    .eq("status", "pending")
+    .eq("attempts", 0)
+    .gte("created_at", since)
+    .lt("created_at", waitingBefore)
+    .in("template", [...CUSTOMER_MESSAGE_TEMPLATE_KEYS]);
+
+  const [customerRes, ownerRes, waitingRes] = await Promise.allSettled([customerQuery, ownerQuery, waitingQuery]);
+  if (customerRes.status !== "fulfilled") throw customerRes.reason;
   return {
-    customerFailed: readCount("homeAlerts.customer", customerRes as CountResponse),
-    ownerFailed: readCount("homeAlerts.owner", ownerRes as CountResponse),
+    customerFailed: readCount("homeAlerts.customer", customerRes.value as CountResponse),
+    ownerFailed: countOrNull(ownerRes),
+    customerWaiting: countOrNull(waitingRes),
     windowDays: HOME_ALERT_WINDOW_DAYS,
   };
 }

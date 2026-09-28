@@ -51,6 +51,7 @@ vi.mock("next-intl/server", async () => {
 
 import { AdminSheet } from "@/components/admin/AdminSheet";
 import { ReservationActions, ReservationSheet } from "@/components/admin/ReservationActions";
+import { ReservationProcess } from "@/components/admin/ReservationProcess";
 import s from "@/components/admin/admin.module.css";
 import { getReservationActionLabels } from "@/components/admin/reservationActionLabels";
 import {
@@ -152,7 +153,8 @@ async function labels(): Promise<ReservationActionLabels> {
   return labelsCache;
 }
 
-const SUMMARY: ReservationSummary = { parts: ["인천공항 → 서울", "2026-10-01", "30명"], quick: true };
+/** 요약 상자 — 페이지가 만든 조각 그대로(P5-22 수정 라운드: 날짜는 페이지와 같은 "10월 1일 (목)" 표기 · 간편은 날짜만 · 상세는 시각까지). */
+const SUMMARY: ReservationSummary = { parts: ["인천공항 → 서울", "10월 1일 (목)", "30명"], quick: true };
 
 async function renderPanel(status: "new" | "confirmed" | "done" | "cancelled", initialMemo = ""): Promise<string> {
   return renderToStaticMarkup(
@@ -834,9 +836,19 @@ describe("5. messages/ko.json admin.detail — 브리프 문구", () => {
 // =============================================================================
 // 6. 마크업 — 처리 영역(첫 화면) · 시트
 // =============================================================================
+/**
+ * P5-22 — 상세 재배치(시안 #detail 처리 카드)로 진입 버튼이 **처리 카드(components/admin/ReservationProcess.tsx)** 로 옮겨 갔다.
+ * 확정·완료·취소 진입 버튼은 이제 처리 카드(데스크톱 오른쪽 열 · 휴대폰은 아래 행동 바와 맨 아래 칸)의 진입 버튼(SheetTrigger)이고,
+ * 누르면 채널로 처리 영역(ReservationActions — 시트·메모·토스트의 주인)에 시트를 열어 달라고 한다. 메모는 시안대로 본문의 메모 카드다.
+ * 이 절의 뜻은 그대로다: 취소 진입은 확정 버튼과 같은 줄·같은 크기가 아니다(구분선 아래 글자 버튼) · 안내 한 줄씩 · 끝난 접수에는 전이 버튼이 없다.
+ * 옛 단언 "메모가 확정과 취소 사이" 는 시안의 새 배치(메모는 따로 카드)로 바뀌었다 — 둘 사이는 구분선이 가른다.
+ */
 describe("6. 처리 영역 — 취소 진입 버튼은 확정 버튼과 같은 줄·같은 크기가 아니다 (구조)", () => {
-  test("신규 — 확정(주 버튼 영역) · 메모 · 구분선 · 취소(글자 버튼 영역) 순서", async () => {
-    const html = await renderPanel("new");
+  const processCard = async (status: "new" | "confirmed" | "done" | "cancelled") =>
+    renderToStaticMarkup(createElement(ReservationProcess, { id: ID, status, labels: await labels(), layout: "card" }));
+
+  test("신규 — 확정(주 버튼 영역) · 구분선 · 취소(글자 버튼 영역) 순서 (P5-22: 메모는 본문의 메모 카드로 — 시안)", async () => {
+    const html = await processCard("new");
     const primary = zone(html, "primary");
     const cancel = zone(html, "cancel");
     expect(primary).toContain('data-testid="admin-confirm"');
@@ -845,13 +857,14 @@ describe("6. 처리 영역 — 취소 진입 버튼은 확정 버튼과 같은 �
     expect(cancel).not.toContain('data-testid="admin-confirm"');
 
     const iConfirm = html.indexOf('data-testid="admin-confirm"');
-    const iMemo = html.indexOf('id="admin-memo"');
     const iRule = html.indexOf("<hr");
     const iCancel = html.indexOf('data-testid="admin-cancel"');
     expect(iConfirm).toBeGreaterThanOrEqual(0);
-    expect(iMemo, "메모가 확정과 취소 사이에 있다").toBeGreaterThan(iConfirm);
-    expect(iRule, "구분선이 메모 뒤·취소 앞에 있다").toBeGreaterThan(iMemo);
+    expect(iRule, "구분선이 확정 뒤·취소 앞에 있다").toBeGreaterThan(iConfirm);
     expect(iCancel).toBeGreaterThan(iRule);
+    // 메모는 처리 카드에 없다 — 처리 영역(ReservationActions)의 메모 카드
+    expect(html).not.toContain('id="admin-memo"');
+    expect(await renderPanel("new")).toContain('id="admin-memo"');
 
     // 모양 — 확정은 주 버튼, 취소는 글자 버튼(같은 클래스가 아니다)
     const confirmTag = openTag(html, "admin-confirm");
@@ -876,15 +889,17 @@ describe("6. 처리 영역 — 취소 진입 버튼은 확정 버튼과 같은 �
     // 메모 칸은 서버 상한에서 멈춘다(넘친 붙여넣기는 칸에서 잘려 보인다 — 서버가 몰래 자르지 않게)
     expect(attr(openTag(html, "admin-memo"), "maxLength")).toBe(String(ADMIN_MEMO_MAX_CHARS));
     expect(html).toContain("기존 메모");
-    // 처리 영역은 포커스를 받을 수 있는 이름 붙은 묶음이다(성공 뒤 포커스가 돌아올 자리)
-    const panel = openTag(html, "admin-reservation-actions");
+    // 처리 영역은 포커스를 받을 수 있는 이름 붙은 묶음이다(성공 뒤 포커스가 돌아올 자리) — P5-22 부터 처리 카드가 그 자리다(이름은 제목 '처리')
+    const card = await processCard("new");
+    const panel = openTag(card, "admin-reservation-actions");
     expect(attr(panel, "tabindex")).toBe("-1");
     expect(attr(panel, "role")).toBe("group");
-    expect(attr(panel, "aria-label")).toBe((await labels()).panel);
+    const titleId = attr(panel, "aria-labelledby");
+    expect(text(new RegExp(`<h2[^>]*id="${titleId}"[^>]*>([\\s\\S]*?)</h2>`).exec(card)![1])).toBe((await labels()).panel);
   });
 
   test("확정 — 운행 완료(주 버튼) + 취소(글자 버튼) · 확정 버튼 없음", async () => {
-    const html = await renderPanel("confirmed");
+    const html = await processCard("confirmed");
     expect(zone(html, "primary")).toContain('data-testid="admin-complete"');
     expect(zone(html, "cancel")).toContain('data-testid="admin-cancel"');
     expect(html).not.toContain('data-testid="admin-confirm"');
@@ -893,9 +908,13 @@ describe("6. 처리 영역 — 취소 진입 버튼은 확정 버튼과 같은 �
 
   test("완료·취소 — 전이 버튼 없음(메모만)", async () => {
     for (const status of ["done", "cancelled"] as const) {
+      const card = await processCard(status);
       const html = await renderPanel(status);
-      for (const id of ["admin-confirm", "admin-complete", "admin-cancel"]) expect(html, `${status}:${id}`).not.toContain(`data-testid="${id}"`);
-      expect(html, status).not.toContain("<hr");
+      for (const id of ["admin-confirm", "admin-complete", "admin-cancel"]) {
+        expect(card, `${status}:${id}`).not.toContain(`data-testid="${id}"`);
+        expect(html, `${status}:${id}`).not.toContain(`data-testid="${id}"`);
+      }
+      expect(card, status).not.toContain("<hr");
       expect(html, status).toContain('data-testid="admin-memo-save"');
     }
   });
@@ -915,10 +934,11 @@ describe("6-b. 확인 시트 마크업", () => {
     expect(text(new RegExp(`id="${descId}"[^>]*>([\\s\\S]*?)</p>`).exec(html)![1])).toBe(detail.sheet.confirmBody);
 
     const summary = text(zoneOf(html, "admin-sheet-summary"));
-    expect(summary).toContain("인천공항 → 서울 · 2026-10-01 · 30명");
+    expect(summary).toContain("인천공항 → 서울 · 10월 1일 (목) · 30명");
     expect(summary).toContain(detail.sheet.quickNote as string);
 
-    // 버튼 순서 — 왼쪽 닫기(보조) · 오른쪽 결과 동사(주 버튼)
+    // 버튼 순서(DOM) — 닫기(보조)가 먼저 · 결과 동사(주 버튼)가 뒤. 데스크톱은 왼쪽 닫기 · 오른쪽 결과 동사, 휴대폰은 CSS 로
+    // 결과 동사가 위 · 닫기가 맨 아래(P5-22 수정 라운드 · 리뷰 반려 P0-1 — tests/admin-sheet-arming.test.ts §4)
     const iClose = html.indexOf('data-testid="admin-sheet-close"');
     const iSubmit = html.indexOf('data-testid="admin-sheet-submit"');
     expect(iClose).toBeGreaterThan(0);
@@ -931,10 +951,10 @@ describe("6-b. 확인 시트 마크업", () => {
   });
 
   test("확정 — 이름을 읽지 못하면 이름 없는 제목 · 상세 접수면 간편 한 줄 없음", async () => {
-    const html = await renderSheet("confirm", { customerName: "" }, { summary: { parts: ["서울 → 부산", "2026-10-01 08:30"], quick: false } });
+    const html = await renderSheet("confirm", { customerName: "" }, { summary: { parts: ["서울 → 부산", "10월 1일 (목) 08:30"], quick: false } });
     expect(text(html)).toContain("이 접수를 확정할까요?");
     expect(text(html)).not.toContain(detail.sheet.quickNote as string);
-    expect(text(zoneOf(html, "admin-sheet-summary"))).toBe("서울 → 부산 · 2026-10-01 08:30");
+    expect(text(zoneOf(html, "admin-sheet-summary"))).toBe("서울 → 부산 · 10월 1일 (목) 08:30");
   });
 
   test("취소 — 짙은 면 [접수 취소하기] · 문자가 가지 않는다(굵게) · 사유 라디오 4개(기본 해제) · 요약 없음", async () => {
@@ -968,7 +988,7 @@ describe("6-b. 확인 시트 마크업", () => {
     expect(text(html)).toContain(`${NAME} 님 운행을 완료로 바꿀까요?`);
     expect(text(elementOf(html, "admin-sheet-submit"))).toBe(detail.sheet.completeSubmit);
     expect(attr(openTag(html, "admin-sheet-submit"), "data-variant")).toBe("primary");
-    expect(text(zoneOf(html, "admin-sheet-summary"))).toBe("인천공항 → 서울 · 2026-10-01 · 30명");
+    expect(text(zoneOf(html, "admin-sheet-summary"))).toBe("인천공항 → 서울 · 10월 1일 (목) · 30명");
   });
 
   test("실패 배너 — role=alert · 시트 안 · 실행 버튼은 다시 누를 수 있다", async () => {
@@ -1071,13 +1091,6 @@ const zoneOf = elementOf;
 // =============================================================================
 describe("7. 정적 — 진입 버튼은 시트를 열 뿐이다 · 서버액션은 시트의 실행에서만", () => {
   const ui = codeOf(ACTIONS_UI);
-  /** 소스에서 data-testid 가 붙은 JSX 요소 하나(여는 `<button` 부터 닫는 `</button>` 까지). */
-  const jsxOf = (testid: string): string => {
-    const at = ui.indexOf(`data-testid="${testid}"`);
-    expect(at, `${ACTIONS_UI} 에 ${testid} 가 없다`).toBeGreaterThanOrEqual(0);
-    const start = ui.lastIndexOf("<button", at);
-    return ui.slice(start, ui.indexOf("</button>", at));
-  };
 
   test("'use client' · 서버액션을 직접 부르지 않는다 — 네 이름은 import 와 액션 표에만 있다", () => {
     expect(read(ACTIONS_UI).split("\n")[0].trim()).toMatch(/^["']use client["'];?$/);
@@ -1088,15 +1101,28 @@ describe("7. 정적 — 진입 버튼은 시트를 열 뿐이다 · 서버액션
     expect(ui).toMatch(/panelController\(\{/);
   });
 
+  /**
+   * P5-22 — 진입 버튼은 처리 카드(ReservationProcess)·행동 바·위 제목줄의 SheetTrigger 로 옮겼다. 뜻은 그대로다: 누르면 **시트를 열기만** 한다.
+   * 길: SheetTrigger 의 onClick → 채널(requestSheet) → 처리 영역의 채널 처리기 → openSheet(연 버튼 기억 + controller.open). 실행(commit)은 시트의 실행 버튼뿐.
+   */
   test("진입 버튼(확정·완료·취소)은 시트를 열기만 한다", () => {
     const expected: Record<string, string> = { "admin-confirm": "confirm", "admin-complete": "complete", "admin-cancel": "cancel" };
+    const process = codeOf("components/admin/ReservationProcess.tsx");
     for (const [testid, kind] of Object.entries(expected)) {
-      const el = jsxOf(testid);
-      const onClick = /onClick=\{([^}]*)\}/.exec(el)?.[1] ?? "";
-      expect(onClick, testid).toMatch(new RegExp(`openSheet\\("${kind}"`));
-      expect(onClick, `${testid} 가 실행까지 한다`).not.toMatch(/commit|saveMemo|Reservation|startTransition/);
+      const el = new RegExp(`<SheetTrigger\\b[^>]*testId="${testid}"[^>]*/>`).exec(process)?.[0] ?? "";
+      expect(el, `${testid} 진입 버튼이 처리 카드에 없다`).not.toBe("");
+      expect(el, testid).toMatch(new RegExp(`kind="${kind}"`));
     }
+    const trigger = codeOf("components/admin/SheetTrigger.tsx");
+    const onClick = /onClick=\{([^}]*)\}/.exec(trigger)?.[1] ?? "";
+    expect(onClick).toMatch(/panelChannels\.requestSheet\(/);
+    expect(onClick, "진입 버튼이 실행까지 한다").not.toMatch(/commit|saveMemo|Reservation|startTransition/);
+    const handler = /channelOpen\.current = \(kind: SheetKind, opener: HTMLElement \| null\) => \{([\s\S]*?)\n {4}\};/.exec(ui)?.[1] ?? "";
+    expect(handler).toMatch(/openSheet\(kind, opener\);/);
+    expect(handler, "채널 처리기가 실행까지 한다").not.toMatch(/commit|saveMemo|Reservation\(|startTransition/);
     expect(ui).toMatch(/const openSheet = \(sheet: SheetKind, opener: HTMLElement\) => \{\s*openerRef\.current = opener;\s*controller\.open\(sheet\);\s*\};/);
+    // 처리 영역 자신에는 진입 버튼이 없다(연결은 채널 하나)
+    for (const testid of Object.keys(expected)) expect(ui).not.toContain(`data-testid="${testid}"`);
   });
 
   test("시트의 실행 버튼만 전이를 부른다 — 처리 중 표시 안에서(두 번 누름 방지)", () => {
@@ -1133,7 +1159,7 @@ describe("7. 정적 — 진입 버튼은 시트를 열 뿐이다 · 서버액션
     expect(sheet).toMatch(/className=\{s\.btnSecondary\} disabled=\{!closable\} onClick=\{onClose\}/);
     // 실행 버튼은 늦어져도 처리 중이면 막힌다 — 같은 판정을 두 번 보내지 않는다
     expect(sheet).toMatch(/disabled=\{pending \|\| submitDisabled\}/);
-    // 닫기 버튼이 실행 버튼보다 먼저(왼쪽) — DOM 순서
+    // 닫기 버튼이 실행 버튼보다 먼저 — DOM 순서(첫 포커스 · Tab). 모양은 데스크톱 왼쪽, 휴대폰 맨 아래(P5-22 수정 라운드 P0-1)
     expect(sheet.indexOf('data-testid="admin-sheet-close"')).toBeLessThan(sheet.indexOf('data-testid="admin-sheet-submit"'));
   });
 

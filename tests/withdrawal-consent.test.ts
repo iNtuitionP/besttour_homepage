@@ -42,6 +42,7 @@ import { withNotificationsLock } from "./helpers/db-lock";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
 import { runLocalSql, runLocalSqlExpectingError, runLocalSuperuserSqlExpectingError, sqlCells, sqlErrorText } from "./helpers/local-stack-sql";
 import { stripComments } from "./helpers/strip-comments";
+import { isTransientStatus, retryTransient } from "./helpers/transient";
 
 vi.mock("server-only", () => ({}));
 
@@ -589,12 +590,15 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("4. DB — 0021 새 행만
       throw new Error(`0021 이 이 DB 에 적용되지 않은 것으로 보인다 — 조회 HTTP ${probe.status}: ${JSON.stringify(probe.body).slice(0, 200)}`);
     }
   });
+  // 정리는 다시 해도 같은 결과(DELETE · GET)다 — 로컬 게이트웨이의 일시적 끊김(other side closed · 502/503/504)이면 몇 번 더 한다
+  // (P5-22 수정 라운드 — 이 afterAll 이 소켓 끊김으로 두 번 던졌다). 끝내 던져도 통지 잠금은 풀린다(tests/helpers/db-lock.ts runLocked 의 finally).
+  const cleanup = (method: "DELETE" | "GET", q: string) => retryTransient(() => rest(method, q), { retryResult: (r) => isTransientStatus(r.status) });
   afterEach(async () => {
-    while (inserted.length > 0) await rest("DELETE", `/reservations?id=eq.${inserted.pop() as string}`);
+    while (inserted.length > 0) await cleanup("DELETE", `/reservations?id=eq.${inserted.pop() as string}`);
   });
   afterAll(async () => {
-    await rest("DELETE", `/reservations?public_code=like.${PREFIX}*`);
-    const left = await rest("GET", `/reservations?select=id&public_code=like.${PREFIX}*`);
+    await cleanup("DELETE", `/reservations?public_code=like.${PREFIX}*`);
+    const left = await cleanup("GET", `/reservations?select=id&public_code=like.${PREFIX}*`);
     expect(left.body).toEqual([]);
   });
 

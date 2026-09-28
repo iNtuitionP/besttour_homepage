@@ -62,6 +62,59 @@ export function sheetClosable(pending: boolean, slow: boolean): boolean {
   return !pending || slow;
 }
 
+/**
+ * 실행 버튼의 **무장 지연**(P5-22 수정 라운드 · 리뷰 반려 P0-1) — 시트가 열린 뒤 이 시간 동안 실행 버튼은 누름을 받지 않는다.
+ * 휴대폰 상세의 아래 행동 바 [확정하기]를 두 번 누르면(더블탭 · 더블클릭) 첫 누름이 연 확정 시트의 실행 버튼이 같은 자리에 떠서
+ * 두 번째 누름이 확인 없이 확정 + 고객 문자가 됐다. 600ms 는 두 번 누름의 간격(더블탭 150~300ms · 느린 두 번째 누름)보다 길고,
+ * 일부러 읽고 누르는 사람을 붙잡지는 않는다(시트를 읽는 데 그보다 오래 걸린다). 첫 포커스는 그대로 [닫기]다.
+ * 배치로도 한 겹 더 막는다 — 1024px 미만에서는 [닫기]가 맨 아래라 두 번째 누름이 [닫기]에 떨어진다(admin.module.css 시트 절).
+ * tests/admin-sheet-arming.test.ts 가 잠근다.
+ */
+export const SHEET_ARM_MS = 600;
+
+/** 받아도 되는 누름인가 — 누름이 **시작된** 시각이 열린 뒤 SHEET_ARM_MS 가 지났다. 시각이 숫자가 아니면 받지 않는다(모르면 막는다). */
+export function sheetArmed(openedAt: number, pressedAt: number): boolean {
+  return Number.isFinite(openedAt) && Number.isFinite(pressedAt) && pressedAt - openedAt >= SHEET_ARM_MS;
+}
+
+/** event.timeStamp 를 믿어도 되는 폭 — 사건이 처리되기까지 이보다 오래 밀리지는 않는다. */
+const EVENT_TIME_TOLERANCE_MS = 10_000;
+
+/**
+ * 사건 시각 — `event.timeStamp` 가 `performance.now()` 와 같은 시계(지금부터 최근 10초 안)면 그 값, 아니면 지금.
+ * 요즘 브라우저의 timeStamp 는 performance.now() 와 같은 원점의 고해상도 시각이라 두 번째 누름이 **실제로** 언제였는지 알려 준다
+ * (메인 스레드가 바빠 처리기가 늦게 돌아도). 옛 브라우저의 epoch 밀리초 같은 다른 시계면 지금으로 떨어진다 — 무장 판정이
+ * "한참 뒤의 누름" 으로 속아 막을 것을 통과시키지 않게.
+ */
+export function eventTime(timeStamp: number, now: number): number {
+  return Number.isFinite(timeStamp) && timeStamp <= now && now - timeStamp <= EVENT_TIME_TOLERANCE_MS ? timeStamp : now;
+}
+
+export interface ArmingGuard {
+  /** 누름 시작 — 실행 버튼의 pointerdown · Enter/Space keydown(자동 반복 제외). 새 누름은 새 시각을 적는다. */
+  press(at: number): void;
+  /** click 에서 — 받아도 되는가. 누름 시작 기록이 없으면(보조기술·스크립트의 click) click 시각으로 본다. 판정 뒤 기록을 지운다. */
+  allow(clickAt: number): boolean;
+}
+
+/**
+ * 시트 하나의 무장 판정기(열린 시각 하나). 판정은 click 시각이 아니라 **누름이 시작된 시각**으로 한다 —
+ * 무장 전에 손가락을 댄 채 무장 뒤에 떼는 누름(두 번째 탭을 길게 누름)도 막는다.
+ */
+export function armingGuard(openedAt: number): ArmingGuard {
+  let pressedAt: number | null = null;
+  return {
+    press(at) {
+      pressedAt = at;
+    },
+    allow(clickAt) {
+      const at = pressedAt ?? clickAt;
+      pressedAt = null;
+      return sheetArmed(openedAt, at);
+    },
+  };
+}
+
 /** 성공 토스트가 되는 결과 코드. */
 export type SuccessCode = Extract<AdminActionCode, "confirmed" | "cancelled" | "completed" | "memoUpdated">;
 
@@ -93,9 +146,23 @@ export interface CancelReasonCopy {
   line: string;
 }
 
+/**
+ * 간편 접수의 "전화로 확인할 것" 문구(P5-22 · 시안 #detail) — 체크는 **화면 안내용**이라 저장하지 않는다(1단계 · 3단계에서 실제 칸 저장).
+ * `progress` 는 `{n}`·`{total}` 틀이다(화면이 채운다).
+ */
+export interface ChecklistLabels {
+  title: string;
+  progress: string;
+  items: readonly string[];
+  /** 저장되지 않는다는 한 줄(새로 열면 처음으로 돌아간다). */
+  note: string;
+  /** 확인한 것은 메모에 적어 두라는 한 줄. */
+  memoHint: string;
+}
+
 /** 처리 영역 문구 — 서버(components/admin/reservationActionLabels.tsx)가 messages/ko.json `admin.detail.*` 에서 만들어 내린다. */
 export interface ReservationActionLabels {
-  /** 처리 영역의 이름 — 성공 뒤 포커스가 돌아올 때 읽힌다. */
+  /** 처리 영역의 이름 — 성공 뒤 포커스가 돌아올 때 읽힌다(P5-22 부터 처리 카드의 제목). */
   panel: string;
   confirm: string;
   confirmHint: string;
@@ -103,16 +170,26 @@ export interface ReservationActionLabels {
   completeHint: string;
   cancel: string;
   cancelHint: string;
+  /** 처리 카드 — 더 누를 것이 없는 접수(운행 완료 · 취소)의 한 줄(P5-22). */
+  processDone: string;
+  processCancelled: string;
+  /** 휴대폰 위 제목줄 ⋯ 의 이름(누르면 취소 시트 — 시안 aria-label). */
+  moreCancel: string;
   memoLabel: string;
   memoHint: string;
   memoSave: string;
+  /** 메모 칸의 예시 자리글(시안). */
+  memoPlaceholder: string;
   processing: string;
+  checklist: ChecklistLabels;
   sheet: {
     close: string;
     /** 간편 접수의 요약 상자 한 줄. */
     quickNote: string;
     /** 처리 중 SHEET_STUCK_MS 가 지났을 때 시트 안 안내(닫아도 된다 · 결과가 오면 알린다). */
     slow: string;
+    /** 확정 시트의 확인 경고 — `{total}`·`{n}` 틀(P5-22 · 간편 접수이고 체크가 다 채워지지 않았을 때만). */
+    checkWarning: string;
     confirm: SheetCopy;
     cancel: SheetCopy & { reasonLegend: string; reasonHint: string; reasons: readonly CancelReasonCopy[] };
     complete: SheetCopy;
@@ -129,8 +206,31 @@ export interface ReservationActionLabels {
 /** 시트의 요약 상자 — 구간 · 날짜 · 인원. 운행 정보이지 고객 식별 정보가 아니다(이름·전화·메일은 없다). */
 export interface ReservationSummary {
   parts: readonly string[];
-  /** 간편 접수(0023 intake='quick') — "차량·시각은 통화로 정한 대로" 한 줄을 더한다. */
+  /** 간편 접수(0023 intake='quick') — "차량·시각은 통화로 정한 대로" 한 줄을 더한다. P5-22 부터 "전화로 확인할 것" 체크리스트도 이것으로 정한다. */
   quick: boolean;
+}
+
+// =============================================================================
+// 전화로 확인할 것 (P5-22) — 체크 수 · 확정 시트의 확인 경고
+// =============================================================================
+
+/** 체크리스트의 지금 — 몇 개 중 몇 개를 확인했나. */
+export interface ChecklistState {
+  checked: number;
+  total: number;
+}
+
+export function countChecked(checks: readonly boolean[]): number {
+  return checks.filter(Boolean).length;
+}
+
+/**
+ * 확정 시트의 확인 경고 — **확정 시트**이고, 체크리스트가 있고(간편 접수의 새 접수), 다 채우지 않았을 때만 그 상태를 돌려준다(아니면 null).
+ * 막지 않는다 — 경고만 한다(통화로 이미 확인했을 수 있다 · 브리프 §B). 취소·완료 시트에는 없다.
+ */
+export function sheetCheckWarning(sheet: SheetKind, checklist: ChecklistState | null | undefined): ChecklistState | null {
+  if (sheet !== "confirm" || checklist === null || checklist === undefined) return null;
+  return checklist.total > 0 && checklist.checked < checklist.total ? checklist : null;
 }
 
 // =============================================================================
@@ -437,6 +537,19 @@ export function wrapFocus<T>(items: readonly T[], active: T | null, shift: boole
  */
 export function focusReturn(lastClose: PanelState["lastClose"], openerAvailable: boolean): "opener" | "panel" {
   return lastClose === "changed" || !openerAvailable ? "panel" : "opener";
+}
+
+/**
+ * 늦은 결과 뒤 포커스 구하기(P5-22 수정 라운드 · 리뷰 P2-3). 처리 중에 시트를 닫으면(15초 탈출) 포커스는 연 버튼(처리 중 aria-disabled —
+ * 사라지지 않는다)으로 돌아간다. 그 뒤 늦게 온 결과(성공 · 이미 처리됨)의 새로고침이 그 버튼을 없애면 포커스가 <body> 로 빠진다 —
+ * 그때 보이는 처리 영역으로 옮긴다("rescue"). 버튼이 아직 있으면(결과를 기다리는 중 · 늦은 실패) 기다리고("wait"),
+ * 사장님이 이미 다른 곳에 포커스를 두었으면 건드리지 않고 기억을 놓는다("drop").
+ * `held` 는 기억해 둔 연 버튼(없으면 null) — connected: 아직 DOM 에 있나 · focused: 포커스가 그 버튼에 있나. `focusLost` 는 포커스가 body(또는 없음).
+ */
+export function focusRescue(held: { connected: boolean; focused: boolean } | null, focusLost: boolean): "rescue" | "wait" | "drop" {
+  if (held === null) return "drop";
+  if (!held.connected) return focusLost ? "rescue" : "drop";
+  return held.focused || focusLost ? "wait" : "drop";
 }
 
 export function toastDurationMs(hasLink: boolean): number {

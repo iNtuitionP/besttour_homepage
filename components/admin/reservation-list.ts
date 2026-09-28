@@ -9,7 +9,8 @@
  *     (메뉴 배지를 누르면 곧 그 숫자의 목록이다). 전체는 `?status=all` 로 명시한다.
  *   - 파서는 관대하다: 모르는 값·쓰레기값은 기본 탭·첫 쪽으로 떨어진다(주소창 오타로 화면이 500 이 되면 안 된다).
  *     조회 함수(lib/admin/reservations.ts listReservations)는 반대로 엄격하다.
- *   - 주소에는 **상태와 쪽만** 싣는다(제안서 ④ 원칙 7 — URL 에 개인정보 0). 상세로 가는 링크에는 uuid 만.
+ *   - 주소에는 **상태와 쪽만** 싣는다(제안서 ④ 원칙 7 — URL 에 개인정보 0). 상세로 가는 링크에는 uuid 와 들어온 탭·쪽만
+ *     (P5-22 B-2 — detailHref · 상세의 "← 접수 목록" 이 그리로 돌아간다).
  *   - '20건 더 보기'는 다음 쪽 주소로 바꾸고(같은 탭), 화면은 **첫 줄부터 쪽 × 20 건**을 다시 그린다. 그래서 "끝을 넘은 쪽" 이 없다 —
  *     목록이 비었다면 그 탭에 정말 한 건도 없는 것이다(빈 상태 문장이 거짓이 되지 않는다 · P5-20 리뷰 P2-3 의 경우가 사라진다).
  *     한 번에 그리는 양의 상한은 MAX_LIST_PAGES 쪽이다(넘으면 거짓 없는 안내 — 검색은 2단계).
@@ -67,6 +68,29 @@ export function listHref(tab: ListTab, page = 1): string {
   if (page > 1) qs.set("page", String(page));
   const s = qs.toString();
   return s ? `${LIST_PATH}?${s}` : LIST_PATH;
+}
+
+/**
+ * 상세로 가는 주소(P5-22 · P5-21 리뷰 P2-13 · 브리프 B-2) — uuid 경로에, 들어온 **탭·쪽**을 `?from=` · `&page=` 로 싣는다(기본 탭의 첫 쪽이면 쿼리 없음).
+ * 상세의 "← 접수 목록" 이 그 탭·쪽으로 돌아간다(backToListHref). 상태·쪽은 개인정보가 아니다 — 주소에 이름·번호는 여전히 0 이다.
+ * 브라우저 뒤로 가기 대신 이 길을 고른 이유는 보고서 ⑥: 링크가 늘 "접수 목록" 으로 간다(관리 홈에서 들어와도 거짓이 되지 않는다) ·
+ * 서버가 그리므로 JS 없이도 · 새로고침 뒤에도 같다 · 주소가 곧 상태라 시험할 수 있다.
+ */
+export function detailHref(id: string, from?: { tab: ListTab; page: number } | null): string {
+  const qs = new URLSearchParams();
+  if (from && from.tab !== DEFAULT_LIST_TAB) qs.set("from", from.tab);
+  if (from && from.page > 1) qs.set("page", String(from.page));
+  const s = qs.toString();
+  return s ? `${LIST_PATH}/${id}?${s}` : `${LIST_PATH}/${id}`;
+}
+
+/**
+ * 상세의 "← 접수 목록" 주소 — 상세 주소의 `from`·`page` 를 목록 파서(관대 — 모르는 값은 기본 탭·첫 쪽)로 읽어 목록 주소(listHref — 상태·쪽만)로.
+ * 같은 이름이 여러 번 오면(배열) 믿지 않는다 · 다른 키는 되울리지 않는다.
+ */
+export function backToListHref(query: Readonly<Record<string, string | string[] | undefined>> | null | undefined): string {
+  const one = (v: string | string[] | undefined): string | undefined => (typeof v === "string" ? v : undefined);
+  return listHref(parseListTab(one(query?.from)), parseListPage(one(query?.page)));
 }
 
 /** 쪽 → 읽을 행 수(첫 줄부터). */

@@ -7,7 +7,10 @@
  *   2. 관리 홈 발송 경보 — 최근 7일 **고객 문자** 실패만 배너를 띄운다. 8일 전 실패 · 사장님 쪽 알림 실패 · 중복 억제 행은 배너의 수를 바꾸지 않는다.
  *      표 전체를 세는 집계라 남의 행이 섞일 수 있다 — 그래서 절대값이 아니라 **넣기 전과의 차이**로 단언하고, 통지 잠금 안에서 돈다.
  *
- * 넣은 행은 전부 afterAll 에서 지운다(접수 코드·last_error 에 실행 표식). 통지 행은 전부 status='failed' 라 발송기가 집지 않는다(claim 은 pending 만).
+ *   3. (P5-22) 관리 홈 '문자 발송' 카드의 **대기 중** — 최근 7일 고객 문자 중 한 번도 시도되지 않고 10분 넘게 기다린 것만 센다(발송기가 꺼져 있다는 신호).
+ *
+ * 넣은 행은 전부 afterAll 에서 지운다(접수 코드·last_error 에 실행 표식 · 통지 행은 id 로). 실패 행은 status='failed' 라 발송기가 집지 않는다(claim 은 pending 만).
+ * 대기 행(3)은 pending 이지만 다음 시도 시각을 먼 뒤로 두어 claim 되지 않는다 — 그래도 통지 잠금 안에서만 넣고 지운다.
  * 주의: tests/ 아래라 세 게이트의 검사 대상이다 — 임시값 마커·금지어 리터럴을 두지 않는다. 이름·번호는 가짜다.
  */
 import { randomUUID } from "node:crypto";
@@ -20,7 +23,7 @@ vi.mock("server-only", () => ({}));
 // lib/admin/* 는 세션 클라이언트를 만들려고 next/headers 를 import 한다 — 여기서는 서비스 롤 클라이언트를 직접 넘기므로 부르지 않는다.
 vi.mock("next/headers", () => ({ cookies: vi.fn(async () => ({ getAll: () => [], set: () => {} })) }));
 
-import { sendBanner } from "@/components/admin/dashboard";
+import { sendBanner, sendCard } from "@/components/admin/dashboard";
 import { PAST_CONFIRMED_SHOWN, kstTodayStart } from "@/components/admin/reservation-list";
 import { getHomeSendAlerts, type HomeSendAlerts } from "@/lib/admin/notifications";
 import { listConfirmedPast, listReservations } from "@/lib/admin/reservations";
@@ -142,6 +145,11 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("DB — 관리 홈 발송 
   const inserted: number[] = [];
   const now = new Date();
   const fulfilled = (value: HomeSendAlerts): PromiseSettledResult<HomeSendAlerts> => ({ status: "fulfilled", value });
+  /** 이 로컬 DB 에서는 부가 집계도 성공해야 한다 — 모름(null · 수정 라운드 리뷰 P2-2)이면 여기서 실패로 드러낸다. */
+  const known = (v: number | null): number => {
+    expect(v, "집계를 불러오지 못했다(null)").not.toBeNull();
+    return v as number;
+  };
 
   async function failedRow(template: string, channel: "sms" | "email", event: "created" | "confirmed", ageMs: number, lastError = MARK) {
     const res = await rest<{ id: number }[]>(
@@ -166,10 +174,55 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("DB — 관리 홈 발송 
     inserted.push(res.body[0].id);
   }
 
+  /**
+   * P5-22 — 대기 행. 발송기가 집지 않게 다음 시도 시각을 먼 뒤로 둔다(claim 은 next_attempt_at <= now 만) — 그래도 claimable 한 pending 이라
+   * 이 블록은 통지 잠금 안이다(tests/helpers/db-lock.ts 완전성 게이트). 넣은 행은 afterAll 이 id 로 지운다.
+   */
+  async function pendingRow(template: string, channel: "sms" | "email", event: "created" | "confirmed", ageMs: number, attempts = 0) {
+    const res = await rest<{ id: number }[]>(
+      "POST",
+      "/notifications_log",
+      [
+        {
+          reservation_id: null,
+          event,
+          channel,
+          to_phone: channel === "email" ? "owner@example.test" : "+821000000978",
+          template,
+          status: "pending",
+          attempts,
+          last_error: attempts === 0 ? null : MARK,
+          created_at: new Date(now.getTime() - ageMs).toISOString(),
+          next_attempt_at: new Date(now.getTime() + 3650 * DAY_MS).toISOString(),
+        },
+      ],
+      "return=representation",
+    );
+    expect(res.status, JSON.stringify(res.body).slice(0, 200)).toBe(201);
+    inserted.push(res.body[0].id);
+  }
+
   afterAll(async () => {
     if (inserted.length > 0) await rest("DELETE", `/notifications_log?id=in.(${inserted.join(",")})`);
     const left = await rest<unknown[]>("GET", `/notifications_log?select=id&id=in.(${inserted.join(",") || "0"})`);
     expect(left.body).toEqual([]);
+  });
+
+  test("🔴 P5-22 — '대기 중' 은 최근 7일 고객 문자 중 한 번도 시도되지 않고 10분 넘게 기다린 것만 — 방금 것 · 시도한 것 · 사장님 쪽 · 8일 전은 세지 않는다 · 배너는 그대로", async () => {
+    const svc = createServiceClient();
+    const base = await getHomeSendAlerts({ now }, svc as never);
+    await pendingRow("created.customer.sms", "sms", "created", 5 * 60_000); // 5분 — 즉시 발송이면 아직 도는 중일 수 있다
+    await pendingRow("confirmed.customer.sms", "sms", "confirmed", 30 * 60_000, 1); // 시도함(재시도 대기) — 발송기는 켜져 있다
+    await pendingRow("created.owner.sms", "sms", "created", 30 * 60_000); // 사장님 쪽
+    await pendingRow("created.customer.sms", "sms", "created", 8 * DAY_MS); // 창 밖
+    const a1 = await getHomeSendAlerts({ now }, svc as never);
+    expect(a1.customerWaiting).toBe(base.customerWaiting);
+    await pendingRow("confirmed.customer.sms", "sms", "confirmed", 30 * 60_000); // 30분 · 한 번도 시도 안 함 → 대기
+    const a2 = await getHomeSendAlerts({ now }, svc as never);
+    expect(a2.customerWaiting).toBe(known(base.customerWaiting) + 1);
+    expect(a2.customerFailed).toBe(base.customerFailed);
+    expect(sendCard(fulfilled(a2)).kind).toBe(base.customerFailed > 0 ? "problems" : "waiting");
+    expect(sendBanner(fulfilled(a2))).toBe(sendBanner(fulfilled(base)));
   });
 
   test("🔴 8일 전 고객 문자 실패 · 사장님 알림 실패 · 중복 억제 행은 배너를 바꾸지 않고, 최근 7일 고객 문자 실패는 바꾼다", async () => {
@@ -186,7 +239,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("DB — 관리 홈 발송 
     await failedRow("created.owner.email", "email", "created", DAY_MS);
     const a2 = await getHomeSendAlerts({ now }, svc as never);
     expect(a2.customerFailed).toBe(base.customerFailed);
-    expect(a2.ownerFailed).toBe(base.ownerFailed + 1);
+    expect(a2.ownerFailed).toBe(known(base.ownerFailed) + 1);
     expect(sendBanner(fulfilled(a2))).toBe(sendBanner(fulfilled(base)));
     if (base.customerFailed === 0) expect(sendBanner(fulfilled(a2))).toBeNull();
 
@@ -199,7 +252,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("DB — 관리 홈 발송 
     await failedRow("created.customer.sms", "sms", "created", DAY_MS);
     const a4 = await getHomeSendAlerts({ now }, svc as never);
     expect(a4.customerFailed).toBe(base.customerFailed + 1);
-    expect(a4.ownerFailed).toBe(base.ownerFailed + 1);
+    expect(a4.ownerFailed).toBe(known(base.ownerFailed) + 1);
     expect(sendBanner(fulfilled(a4))).toBe(base.customerFailed + 1);
   });
 });

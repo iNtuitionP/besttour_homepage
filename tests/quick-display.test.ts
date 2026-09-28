@@ -14,7 +14,7 @@ import path from "node:path";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createTranslator } from "next-intl";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/headers", () => ({ cookies: vi.fn(async () => ({ getAll: () => [] })) }));
@@ -50,8 +50,12 @@ import { kstDate, tripDateText } from "@/lib/reservation-check/view";
 const ROOT = path.resolve(import.meta.dirname, "..");
 const ko = JSON.parse(readFileSync(path.join(ROOT, "messages", "ko.json"), "utf8")) as Record<string, unknown>;
 const t = createTranslator({ locale: "ko", messages: ko as never });
-const UNDECIDED = t("admin.labels.undecided" as never);
+/** P5-22 — 상세의 운행 카드는 미정 칸을 "전화로 확인"(전화 표시)으로 적는다(시안 #detail). 목록은 "시각 미정"·"차량 미정"(P5-21). */
+const UNDECIDED = t("admin.detail.trip.undecided" as never);
 const QUICK_BADGE = t("admin.labels.quickBadge" as never);
+/** 상세의 운행 날짜 — "10월 1일 (목)"(admin.dates.day · 시안) */
+const day = (month: number, d: number, weekday: number) =>
+  t("admin.dates.day" as never, { month, day: d, weekday: (t.raw("admin.dates.weekdays" as never) as string[])[weekday] } as never);
 
 const ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
 const BASE: ReservationDetailRow = {
@@ -100,27 +104,36 @@ describe("1. 운행일 표시 — 간편 접수는 날짜만", () => {
   });
 });
 
-describe("2. 관리자 상세 — 간편 접수 배지 · 날짜만 · 미정(전화 확인)", () => {
+describe("2. 관리자 상세 — 간편 접수 배지 · 날짜만 · 미정(전화로 확인)", () => {
+  // 상세의 날짜는 해가 다르면 연도가 붙는다("2026년 10월 1일 (목)") — 시계를 고정해 해가 바뀌어도 같은 뜻을 잰다(P5-22 수정 라운드)
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-28T01:00:00.000Z"));
+  });
+  afterEach(() => vi.useRealTimers());
+
   test("간편 행", async () => {
     vi.mocked(getReservation).mockResolvedValue(BASE);
     const out = await html(AdminReservationDetailPage({ params: Promise.resolve({ id: ID }) }));
     const body = text(out);
     expect(out).toContain('data-testid="admin-intake"');
     expect(body).toContain(QUICK_BADGE);
-    // 접수 방법 줄이 "전화로 확인해야 하는 접수" 임을 말한다(P5-20 문구 사전: "간편 접수 · 전화 확인 필요")
+    // 머리 칩이 "전화로 확인해야 하는 접수" 임을 말한다(P5-20 문구 사전: "간편 접수 · 전화 확인 필요")
     expect(body).toContain(t("admin.detail.value.intakeQuick" as never));
-    expect(out).toMatch(/data-testid="admin-depart">2026-10-01</);
-    expect(body).toContain("2026-10-03");
+    // P5-22 — 운행 카드의 가는 날·오는 날은 날짜만("10월 1일 (목)" — 시안). 시각을 붙이지 않는다
+    expect(out).toMatch(new RegExp(`data-testid="admin-depart"[^>]*>${day(10, 1, 4).replace(/[()]/g, "\\$&")}<`));
+    expect(body).toContain(day(10, 3, 6));
     // 시각 없음 — 운행일 자리에 00:00 이 나오지 않는다(접수·동의 시각 줄은 일시가 맞다)
     expect(body).not.toContain("2026-10-01 00:00");
     expect(body).not.toContain("2026-10-03 00:00");
-    // 여행 구분·차량·운행 구분·대수 → 미정(전화 확인). 네 번 이상 나온다.
+    expect(body).not.toMatch(/\(목\) 00:00|\(토\) 00:00/);
+    // 출발 시각·차량(대수)·왕복·편도·여행 구분 → 전화로 확인. 네 번 이상 나온다.
     expect(body.split(UNDECIDED).length - 1).toBeGreaterThanOrEqual(4);
     // 지어낸 값이 없다
     expect(body).not.toContain("45인승 우등");
     expect(body).not.toMatch(/\d+대/);
-    // 라벨도 "일시" 가 아니라 "일"
-    expect(body).toContain(t("admin.detail.field.departDate" as never));
+    // 라벨은 "일시" 가 아니라 날 — "가는 날"(시안)
+    expect(body).toContain(t("admin.detail.trip.go" as never));
   });
 
   test("위저드 행은 옛 표시 그대로 — 일시·차량·대수", async () => {
@@ -135,7 +148,9 @@ describe("2. 관리자 상세 — 간편 접수 배지 · 날짜만 · 미정(�
       return_at: "2026-10-01T09:00:00.000Z",
     });
     const body = text(await html(AdminReservationDetailPage({ params: Promise.resolve({ id: ID }) })));
-    expect(body).toContain("2026-10-01 08:30");
+    // P5-22 — 가는 날 + 출발 시각 두 칸(시안)
+    expect(body).toContain(day(10, 1, 4));
+    expect(body).toContain("08:30");
     expect(body).toContain("45인승 우등");
     expect(body).toContain("2대");
     expect(body).not.toContain(QUICK_BADGE);

@@ -613,7 +613,9 @@ a.hubItem:hover {
   font-variant-numeric: tabular-nums;
 }
 .todoValue[data-kind="ok"],
-.todoValue[data-kind="problem"] {
+.todoValue[data-kind="problem"],
+.todoValue[data-kind="waiting"] {
+  flex-wrap: wrap;
   font-size: 22px;
   color: var(--text-brand);
 }
@@ -1761,6 +1763,513 @@ a.hubItem:hover {
   margin: 0;
 }
 
+/* ── 접수 상세 재배치 (P5-22 · 시안 docs/handoff/2026-09-27-admin-ux #detail · 제안서 ⑤-3 · app/admin/(protected)/reservations/[id]/page.tsx) ──
+ * 머리(배지 줄 · "{이름} 님" · 한 줄 메타) → 두 열: DOM 은 연락·처리(.detailSide)가 먼저, 본문(.detailMain)이 뒤다.
+ *   <1024px  한 열 — 연락 카드가 맨 위. 처리 카드는 숨고(.processCard) 그 자리를 **아래 고정 행동 바**(.actionBar — [전화] [확정하기])가 맡는다.
+ *            셸의 위 제목줄·아래 탭 바는 이 화면에서만 숨고(.shell:has(.detailPage) — 시안·사용자 결정), 이 화면의 위 제목줄(.detailTop — ← · 접수 상세 · ⋯)이
+ *            그 자리에 붙는다. 스크롤 여백은 행동 바 높이 + 틈이다(포커스·실패 배너가 바 뒤로 숨지 않게 — P5-20 리뷰 P1-1 과 같은 기준).
+ *   ≥1024px  본문 2/3 + 오른쪽 1/3 열(sticky — P5-21 이 셸의 body 를 overflow-x: clip 으로 바꿔 sticky 가 산다 · 높이 720px 이상에서만 —
+ *            수정 라운드 리뷰 P2-4, 절 끝 미디어 쿼리). 오른쪽 열은 DOM 이 먼저지만 격자의 둘째 칸에 선다.
+ *            1024px 에서는 사이드바(248px) 뒤 본문이 712px 이라 오른쪽 열의 최소 폭(17.5rem)을 지키고, 넓어지면 1/3 이 된다.
+ * 누르는 자리: 행동 바·연락 카드의 전화/문자 48px · 체크 줄 48px · 위 제목줄 아이콘 44px. 색은 역할 토큰만.
+ */
+.detailPage {
+  background: var(--bg-page);
+  color: var(--text-primary);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+/* 셸의 위 제목줄(브랜드 · 홈페이지 보기 · 로그아웃)과 아래 탭 바를 이 화면에서만 숨긴다 — 상세는 ← 가 있는 작업 화면이라 아래를 주 동작에 내준다(제안서 ⑥-5) */
+.shell:has(.detailPage) .topbar,
+.shell:has(.detailPage) .tabbar,
+.shell:has(.detailPage) .tabbarSpacer {
+  display: none;
+}
+/* 스크롤 여백 — 위는 이 화면의 제목줄(56px · border-box) + 틈, 아래는 행동 바(버튼 48 + 위아래 틈 8·8 + 위 테두리 1) + 틈 8 + safe area.
+ * 셸의 규칙(:global(html):has(.shell) — 탭 바 높이)보다 뒤에 와서 이긴다(같은 무게). 1024px 이상은 되돌린다. */
+:global(html):has(.detailPage) {
+  scroll-padding-top: calc(56px + var(--space-stack-xs));
+  scroll-padding-bottom: calc(48px + 1px + 3 * var(--space-stack-xs) + env(safe-area-inset-bottom));
+}
+
+/* 휴대폰 위 제목줄 — ← (들어온 목록으로) · 접수 상세 · ⋯(취소 시트). 스크롤해도 위에 붙는다(셸의 제목줄과 같은 층) */
+.detailTop {
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  min-height: 56px;
+  padding: 0 var(--space-inline-xs);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-decorative);
+}
+.detailTopTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+/* 위 제목줄의 ← 링크 · ⋯ 버튼 — 44px(링크·버튼 공용이라 버튼 기본 모양을 걷는다) */
+.detailIconBtn {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--icon-brand);
+  cursor: pointer;
+}
+.detailIconBtn:hover {
+  background: var(--bg-subtle);
+}
+.detailIconBtn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.detailIconBtn[aria-disabled="true"] {
+  color: var(--action-disabled-fg);
+  cursor: not-allowed;
+}
+.detailIcon {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* ⋯ — 굵은 둥근 끝의 점 셋 */
+.moreIcon {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3.2;
+  stroke-linecap: round;
+}
+/* 데스크톱의 "← 접수 목록" — 휴대폰은 위 제목줄의 ← 가 맡는다 */
+.detailBackDesktop {
+  display: none;
+}
+
+/* 머리 */
+.detailHead {
+  padding: var(--space-stack-sm) 0 0;
+}
+.detailTitle {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+}
+.detailMeta {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+/* 두 열 — 좁은 화면은 한 열(칸 최소 폭 0 — 긴 값이 화면을 밀지 않는다) */
+.detailCols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-stack-sm);
+  margin: var(--space-stack-sm) 0 0;
+}
+.detailSide,
+.detailMain {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-stack-sm);
+  align-content: start;
+  min-width: 0;
+}
+
+/* 카드 — 흰 판 하나(제목은 본문보다 작지 않게 17px) */
+.detailCard {
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-stack-sm) var(--space-inline-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--elevation-raised);
+}
+.detailCard:focus {
+  outline: none;
+}
+.detailCard:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.detailCardTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  margin: 0 0 var(--space-stack-sm);
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.4;
+  color: var(--text-primary);
+}
+.detailCardIcon,
+.btnIcon,
+.undecidedIcon,
+.sheetWarnIcon,
+.recordsChevron {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.detailCardIcon {
+  width: 20px;
+  height: 20px;
+  color: var(--icon-default);
+}
+/* 카드 제목 오른쪽 작은 글자(체크 진행 "0/4 확인") */
+.cardAside {
+  margin-left: auto;
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--text-brand);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 연락 — 큰 번호 + [전화 걸기] [문자 보내기](48px · 서버가 그린 tel:·sms:) */
+.contactNum {
+  margin: 0 0 var(--space-stack-sm);
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+}
+/* 자리가 있으면 두 칸, 좁으면 한 줄씩 — 1024px 의 오른쪽 열(280px)에서는 두 칸이면 "문자 보내기" 가 두 줄로 꺾였다(실측).
+ * 칸 최소 폭 8rem 은 아이콘 + 틈 + 글자 + 안쪽 여백(≈123px)보다 넓다. min(100%, …) 은 칸이 카드보다 넓어지지 않게 한다 */
+.contactBtns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+  gap: var(--space-inline-xs);
+}
+.contactBtns > * {
+  min-height: 48px;
+  justify-content: center;
+  gap: var(--space-inline-xs);
+  padding: 0 var(--space-inline-xs);
+}
+.btnIcon {
+  width: 20px;
+  height: 20px;
+}
+.contactMail {
+  margin: var(--space-stack-sm) 0 0;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.contactMailLabel {
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+/* 처리 카드(데스크톱만) — 확정(주 버튼 · 전체 폭 48px) · 안내 · 구분선 · 취소(글자 버튼) · 안내 */
+.processCard {
+  display: none;
+}
+.processCard [data-variant="primary"],
+.mobileProcess [data-variant="primary"] {
+  width: 100%;
+  min-height: 48px;
+}
+.processNote {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+/* 휴대폰 맨 아래 — 취소(확정 버튼과 멀리 · 가운데) · 확정 상태면 그 위에 운행 완료. 1024px 이상은 처리 카드가 맡는다 */
+.mobileProcess {
+  padding: var(--space-stack-xs) 0 0;
+}
+.mobileProcess .cancelZone {
+  align-items: center;
+  text-align: center;
+}
+.mobileProcess .btnText {
+  margin: 0;
+}
+
+/* 운행 — 큰 구간 + 정의 목록(휴대폰 두 칸 · 1280px 이상 네 칸) · 미정 칸은 "전화로 확인"(회색 + 전화 표시) */
+.routeBig {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+.kv {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr);
+  gap: var(--space-stack-xs) var(--space-inline-sm);
+  margin: var(--space-stack-sm) 0 0;
+  font-size: 15.5px;
+  line-height: 1.5;
+}
+.kv dt {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.kv dd {
+  min-width: 0;
+  margin: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.kv .undecided {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-inline-xs) * 0.75);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.undecidedIcon {
+  width: 16px;
+  height: 16px;
+  color: var(--icon-brand);
+}
+.requestText {
+  margin: 0;
+  font-size: 15.5px;
+  line-height: 1.6;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+/* 전화로 확인할 것 — 체크 4개(줄 48px · 라벨이 체크를 감싼다). 체크한 줄은 흐리게 긋는다(시안). 저장하지 않는다 */
+.callChecklist {
+  display: grid;
+  gap: calc(var(--space-stack-xs) / 4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.callCheck {
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-sm);
+  min-height: 48px;
+  padding: calc(var(--space-stack-xs) / 2) calc(var(--space-inline-xs) * 0.75);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  font-size: 15.5px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+.callCheck:hover {
+  background: var(--bg-subtle);
+}
+.callCheckInput {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  margin: 0;
+  accent-color: var(--action-primary-bg);
+}
+.callCheckInput:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.callCheckInput:checked + .callCheckText {
+  color: var(--text-secondary);
+  text-decoration: line-through;
+}
+
+/* 메모 카드 — 칸 · [메모 저장](오른쪽) */
+.detailCard .textarea {
+  min-height: 6.5rem;
+  margin: var(--space-stack-xs) 0 0;
+}
+.memoFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-inline-xs);
+  margin: var(--space-stack-xs) 0 0;
+}
+
+/* 접수 기록(동의 · 보관) — 접힘. 요약 줄이 누르는 자리(48px) · 펼치면 표시가 뒤집힌다 */
+.records {
+  padding-top: var(--space-stack-xs);
+  padding-bottom: var(--space-stack-xs);
+}
+.recordsSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-inline-xs);
+  min-height: 48px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 800;
+  list-style: none;
+}
+.recordsSummary::-webkit-details-marker {
+  display: none;
+}
+.recordsSummary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-control);
+}
+.recordsChevron {
+  width: 20px;
+  height: 20px;
+  color: var(--icon-brand);
+  transition: transform var(--motion-base);
+}
+.records[open] .recordsChevron {
+  transform: rotate(180deg);
+}
+.recordsKv {
+  display: grid;
+  grid-template-columns: minmax(0, 9.5rem) minmax(0, 1fr);
+  gap: var(--space-stack-xs) var(--space-inline-sm);
+  margin: 0 0 var(--space-stack-sm);
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+.recordsKv dt {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.recordsKv dd {
+  margin: 0;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* 휴대폰 아래 고정 행동 바 — [전화] [확정하기](확정 뒤 [전화] [문자 보내기]) · 탭 바와 같은 층(30) · 시트(50)·토스트(60) 아래 */
+.actionBar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: var(--space-inline-xs);
+  padding: var(--space-stack-xs) var(--space-inline-sm) calc(var(--space-stack-xs) + env(safe-area-inset-bottom));
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border-decorative);
+}
+.actionBar:focus {
+  outline: none;
+}
+.actionBar:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -3px;
+}
+.actionBar > * {
+  width: 100%;
+  min-height: 48px;
+  justify-content: center;
+  gap: var(--space-inline-xs);
+  padding: 0 var(--space-inline-xs);
+}
+/* 번호에 숫자가 없어 [전화]를 그리지 못한 줄(검증을 거친 행에서는 생기지 않는다) — 남은 버튼 하나가 바 전체를 쓴다 */
+.actionBar > :only-child {
+  grid-column: 1 / -1;
+}
+/* 본문 끝 여백 = 위 스크롤 여백(바 높이 + 틈 + safe area) — 마지막 줄도 바 위로 온다 */
+.actionBarSpacer {
+  height: calc(48px + 1px + 3 * var(--space-stack-xs) + env(safe-area-inset-bottom));
+}
+
+@media (min-width: 1024px) {
+  .detailPage {
+    padding: 0 0 var(--space-section);
+  }
+  /* 넓은 화면에는 붙은 막대(행동 바 · 위 제목줄)가 없다 — 대신 틈 하나: 키보드 포커스로 스크롤될 때 버튼이 화면 가장자리에 딱 붙어
+   * 초점 테두리가 잘리지 않게(수정 라운드 · 리뷰 P2-4 — 낮은 화면에서 [이 접수 취소하기]가 516–560(화면 560)으로 붙었다) */
+  :global(html):has(.detailPage) {
+    scroll-padding-top: var(--space-stack-md);
+    scroll-padding-bottom: var(--space-stack-md);
+  }
+  .detailTop,
+  .mobileProcess {
+    display: none;
+  }
+  .actionBar,
+  .actionBarSpacer {
+    display: none;
+  }
+  /* 머리(.detailHead)의 위 여백은 휴대폰과 같다 — "← 접수 목록" 과 배지 줄 사이를 시안처럼 한 칸 띄운다 */
+  .detailBackDesktop {
+    display: inline-block;
+  }
+  .detailTitle {
+    font-size: 30px;
+  }
+  .detailCols {
+    grid-template-columns: minmax(0, 2fr) minmax(17.5rem, 1fr);
+    gap: var(--space-stack-md);
+    align-items: start;
+    margin: var(--space-stack-md) 0 0;
+  }
+  .detailSide {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .detailMain {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .detailCard {
+    padding: var(--space-stack-md) var(--space-inline-md);
+  }
+  .records {
+    padding-top: var(--space-stack-xs);
+    padding-bottom: var(--space-stack-xs);
+  }
+  .processCard {
+    display: block;
+  }
+}
+/* 오른쪽 열 sticky 는 열 전체가 화면에 들어가는 높이에서만(수정 라운드 · 리뷰 P2-4). 열은 492~608px(연락 + 처리 카드)이라 더 낮은 화면에서
+ * 붙이면 문서 스크롤을 따라 붙어 아래쪽 버튼([이 접수 취소하기])의 키보드 포커스가 화면 밖에 걸렸다(1024×520 · 1280×560 · 1024×640 실측).
+ * 720px = 가장 높은 열 608px + 위 틈 24px + 초점 테두리·여유. 그보다 낮으면 보통 흐름이라 포커스는 문서 스크롤로 보인다 */
+@media (min-width: 1024px) and (min-height: 720px) {
+  .detailSide {
+    position: sticky;
+    top: var(--space-stack-md);
+  }
+}
+@media (min-width: 1280px) {
+  .kv {
+    grid-template-columns: 7.5rem minmax(0, 1fr) 7.5rem minmax(0, 1fr);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .recordsChevron {
+    transition: none;
+  }
+}
+
 /* ── 확인 시트 · 결과 토스트 (P5-19 · 시안 docs/handoff/2026-09-27-admin-ux #detail) ─────────────────
  * 휴대폰은 아래에서 올라오는 시트, 1024px 이상은 가운데 대화상자. 딤은 --overlay-medium, 그림자는 고도 토큰만.
  * 토스트는 어두운 면(--bg-inverse) — 시트(50) 위에 뜬다(60). 자리(role=status)는 늘 있고 비어 있을 때는 누르는 것을 막지 않는다.
@@ -1809,6 +2318,27 @@ a.hubItem:hover {
   font-weight: 500;
   color: var(--text-secondary);
 }
+/* 확정 시트의 확인 경고(P5-22 · 시안 .warn) — 간편 접수의 "전화로 확인할 것" 을 다 채우지 않았을 때. 실패가 아니라 확인이라 흰 면 + 골드 테두리
+ * (새 접수 톤) · 표시는 골드(장식 — 글자가 뜻을 말한다). 막지 않는다 */
+.sheetWarn {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-inline-xs);
+  margin: var(--space-stack-sm) 0 0;
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  border: 1px solid var(--status-attention-border);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.55;
+}
+.sheetWarnIcon {
+  width: 20px;
+  height: 20px;
+  margin: calc(var(--space-stack-xs) / 4) 0 0;
+  color: var(--accent-decorative-strong);
+}
 .sheetBody {
   margin: var(--space-stack-sm) 0 0;
   font-size: 15.5px;
@@ -1828,15 +2358,23 @@ a.hubItem:hover {
 .sheetSlow:empty {
   margin: 0;
 }
+/* 시트 버튼(P5-22 수정 라운드 · 리뷰 반려 P0-1) — 1024px 미만은 세로로 쌓는다: 실행 버튼(data-variant)이 위, [닫기]가 **맨 아래 전체 폭**.
+ * 아래 고정 행동 바의 [확정하기]를 두 번 누르면 두 번째 누름이 그 자리에 뜬 시트의 [닫기]에 떨어진다(예전에는 실행 버튼이 같은 자리였다 —
+ * 확인 없이 확정·고객 문자). 시안(나란히)과 다른 점은 안전을 위한 것이다(보고서). DOM 은 [닫기]가 먼저 그대로다(첫 포커스 · Tab 순서).
+ * 누를 자리는 48px(행동 바와 같은 높이). 1024px 이상은 가운데 대화상자라 행동 바가 없고 예전처럼 나란히(아래 미디어 쿼리) */
 .sheetActions {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-inline-xs);
   margin: var(--space-stack-md) 0 0;
 }
 .sheetActions > button {
   width: 100%;
+  min-height: 48px;
   padding: 0 var(--space-inline-xs);
+}
+.sheetActions > [data-variant] {
+  order: -1;
 }
 /* 취소 사유 — 라디오를 칩 모양으로(원은 숨기고 라벨이 누를 자리) */
 .reasonSet {
@@ -1960,6 +2498,16 @@ a.hubItem:hover {
   .sheet {
     padding: var(--space-stack-md) var(--space-inline-md);
     border-radius: var(--radius-surface);
+  }
+  /* 가운데 대화상자 — 왼쪽 [닫기](보조) · 오른쪽 결과 동사(시안 · P5-19 그대로) */
+  .sheetActions {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  }
+  .sheetActions > button {
+    min-height: 2.75rem;
+  }
+  .sheetActions > [data-variant] {
+    order: 0;
   }
   .toastRegion {
     bottom: calc(var(--space-stack-md) + env(safe-area-inset-bottom));

@@ -109,6 +109,7 @@ bash scripts/check-mockup-drift.sh       # 목업 커밋 해시 고정 + public/
   그래서 claim/reap 결과를 단언하는 블록과, claim 가능한 pending 행을 남기는 블록은 **서로 배타적이어야** 한다 — vitest는 파일을 병렬로 돌린다.
   `tests/db-test-preconditions.test.ts` 의 완전성 게이트가 테스트 파일을 grep해 **잠금을 빠뜨린 파일이 있으면 매번 실패**시킨다(파일 목록을 하드코딩하지 않고 유도하며, 마커가 낡아 아무 파일도 못 고르는 상황도 잡는다).
   잠금은 **남의 잠금을 훔치지 않는다**(훔치는 구현을 두 번 만들었다가 둘 다 깨졌다). 테스트를 강제 종료하면 잠금 디렉터리가 남고, 다음 실행이 **대기 한도**(`tests/helpers/db-lock.ts` 의 `LOCK_ACQUIRE_TIMEOUT_MS`) 뒤 **`rm -rf <경로>` 를 찍으며 크게 실패**한다 — 조용히 통과하는 것보다 낫다. CI는 매번 새 컨테이너라 누수가 남지 않는다.
+  **잠금 해제는 `afterAll` 에 두지 마라** (P5-22, 2026-09-28 — 두 번 독립 재현): vitest 는 한 describe 의 `afterAll` 하나가 던지면 **나머지 `afterAll` 을 건너뛴다.** 정리 훅(로컬 스택 `SocketError: other side closed`)이 먼저 던지자 해제가 빠져 잠금이 남았고, 뒤 파일 10개가 420초를 기다리다 함께 실패했다. 지금 `withDbLock` 은 스위트 전체를 `aroundAll` 로 감싸 **`finally` 에서 해제**한다. 정리 훅의 일시적 소켓 오류는 `tests/helpers/transient.ts` 로 두 번까지 재시도한다(단언이 걸린 요청·insert 는 재시도하지 않는다 — 진짜 실패를 가리지 않게).
   **이 한도는 숫자를 문서에 박지 말고 헬퍼 상수를 본다** — 잠금 안에서 도는 블록이 늘면 줄이 길어져 한도도 올라간다(2026-09-23 P1-7: 180초에서 **420초**로. 그날 DB 블록 11개가 경합이 아니라 **대기**로 함께 실패했다). 기준은 헬퍼 주석대로 "줄 선 블록들의 합보다 넉넉하게" 다.
 - **갤러리·앨범 표를 건드리는 DB 블록은 `withGalleryLock()`** (P6-3b, 2026-09-15). 같은 표를 다투는 파일이 다섯이다(`home`·`admin-gallery`·`gallery-albums`·`gallery-albums-public`·`write-privileges`).
   실측: 잠금을 빼고 10회 돌리면 **8회 실패**하고(`home.test.ts` 의 `getGallery` 가 남의 행을 본다) 붙이면 10/10 통과한다.

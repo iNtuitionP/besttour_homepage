@@ -5,7 +5,7 @@
  * 넓은 목록(≥1024px · 목록 화면의 data-layout="table")에서는 표 모양 7칸이다 — 모양은 CSS(admin.module.css `.inq…`)가 바꾸고 마크업은 하나다.
  *   카드: 상태 배지 + 간편 칩 · 경과 / **이름** + 가운데 가린 번호 / 구간 / 날짜·시각(또는 "시각 미정") · 차량·대수(또는 "차량 미정") · 인원 / 오른쪽 전화
  *   표:   상태 · 고객 · 운행 구간 · 출발 · 차량·인원 · 접수 경과 · [전화]
- * 행 전체가 상세 링크(uuid 만 — URL 에 개인정보 0)이고, 전화 버튼은 **별개의 목표**다(행 안 누를 요소 둘 · 전화는 44px).
+ * 행 전체가 상세 링크(uuid + 들어온 탭·쪽 — URL 에 개인정보 0 · P5-22 B-2)이고, 전화 버튼은 **별개의 목표**다(행 안 누를 요소 둘 · 전화는 44px).
  *
  * 🔴 개인정보는 서버가 그린다 — 이것은 컴포넌트가 아니라 **함수**다(`reservationRow(row, …)` 로 부른다). 서버 컴포넌트로 만들어 행을 props 로 넘기면
  * dev 가 그 props 를 HTML 에 디버그 정보로 싣는다(P3-5 리뷰 N-2 · 메모리 "React 19.1 dev embeds server-component props in HTML").
@@ -32,7 +32,7 @@ import type { ReactElement } from "react";
 import type { ReservationListRow } from "@/lib/admin/reservations";
 import { isLocationCode, locationLabelKo } from "@/lib/codes";
 
-import { elapsedSince, kstDayDiff, kstParts, listPhoneText, stayNights, telHref } from "./reservation-list";
+import { detailHref, elapsedSince, kstDayDiff, kstParts, listPhoneText, stayNights, telHref, type ListTab } from "./reservation-list";
 import type { ReservationRowLabels } from "./reservationRowLabels";
 import { StatusBadge } from "./StatusBadge";
 import { reservationBadge, type StatusBadgeLabels } from "./status-badge";
@@ -48,6 +48,11 @@ export interface ReservationRowContext {
   vehicles: ReadonlyMap<string, string>;
   /** 확정 탭 — 출발까지 남은 날("2일 뒤")을 날짜 옆에. */
   departRelative?: boolean;
+  /**
+   * 행이 놓인 목록의 탭·쪽(P5-22 B-2) — 상세로 가는 링크에 싣는다(`?from=` · `&page=`). 상세의 "← 접수 목록" 이 그리로 돌아간다.
+   * 없으면(관리 홈 미리보기) uuid 만 — 상세의 돌아가기는 기본 탭(새 접수)이다.
+   */
+  from?: { tab: ListTab; page: number };
 }
 
 /** 원문 틀의 `{이름}` 자리를 채운다. 틀이 문자열이 아니면 빈 글자(지어내지 않는다). */
@@ -134,7 +139,7 @@ export function reservationRow(row: ReservationListRow, index: number | null, ct
   const tel = telHref(row.phone);
   return (
     <li key={row.id} className={s.inq} data-row-id={row.id} data-urgent={urgent ? "true" : undefined}>
-      <Link className={s.inqLink} href={`/admin/reservations/${row.id}`} data-row-index={index ?? undefined}>
+      <Link className={s.inqLink} href={detailHref(row.id, ctx.from)} data-row-index={index ?? undefined}>
         <span className={s.inqStatus}>
           <StatusBadge badge={badge} labels={ctx.badgeLabels} />
           {quick ? <StatusBadge badge={{ kind: "quick" }} labels={{ ...ctx.badgeLabels, quick: ctx.labels.quickChip }} /> : null}

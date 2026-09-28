@@ -427,7 +427,7 @@
         "airport_pickup": "공항픽업",
         "family": "가족여행",
         "ceremony": "관혼상제",
-        "workshop": "워크샵",
+        "workshop": "워크숍",
         "social": "친목회",
         "religious": "종교단체",
         "univ_mt": "대학MT",
@@ -445,7 +445,6 @@
         "card": "카드",
         "tax_invoice": "세금계산서발행"
       },
-      "undecided": "미정(전화 확인)",
       "quickBadge": "간편 접수"
     },
     "home": {
@@ -473,6 +472,10 @@
         "notifyProblem": "확인 필요",
         "notifyProblemSub": "최근 {days}일 고객 문자 실패 {n}건",
         "notifyOwner": "사장님 알림 실패 {n}건 — 발송 기록에서 확인",
+        "notifyOwnerUnknown": "사장님 알림 실패 수는 지금 불러오지 못했어요",
+        "notifyWaiting": "대기 중 {n}건",
+        "notifyWaitingSub": "문자 발송이 아직 켜지지 않았을 수 있어요",
+        "notifyWaitingMinor": "고객 문자 대기 중 {n}건",
         "trips": "이번 주 운행",
         "tripsNone": "7일 안에 출발하는 확정 접수가 없어요",
         "tripsMore": "외 {n}일"
@@ -513,6 +516,7 @@
       "short": "{month}/{day}({weekday})",
       "range": "{from}~{to}",
       "day": "{month}월 {day}일 ({weekday})",
+      "dayYear": "{year}년 {month}월 {day}일 ({weekday})",
       "full": "{month}월 {day}일 {weekday}요일",
       "time": "{hour}:{minute}"
     },
@@ -662,49 +666,74 @@
     },
     "detail": {
       "title": "접수 상세",
+      "titleName": "{name} 님",
       "back": "← 접수 목록",
+      "backAria": "접수 목록으로",
       "notFound": "이 접수를 찾을 수 없어요. 목록에서 다시 골라 주세요.",
-      "sectionCustomer": "고객",
       "sectionTrip": "운행",
       "sectionOptions": "접수 조건",
-      "sectionConsent": "동의 · 보유",
       "sectionAdmin": "처리",
+      "records": "접수 기록 (동의 · 보관)",
+      "meta": {
+        "received": "{when} 접수 ({ago})",
+        "today": "오늘 {time}",
+        "date": "{month}월 {day}일 {time}",
+        "year": "{year}년 {month}월 {day}일 {time}",
+        "intakeQuick": "홈 간편 견적",
+        "code": "접수번호 {code}"
+      },
+      "contact": {
+        "title": "연락",
+        "call": "전화 걸기",
+        "sms": "문자 보내기"
+      },
+      "bar": {
+        "label": "연락 · 처리",
+        "call": "전화",
+        "sms": "문자 보내기"
+      },
+      "trip": {
+        "go": "가는 날",
+        "back": "오는 날",
+        "stay": "기간",
+        "pax": "인원",
+        "time": "출발 시각",
+        "tripType": "왕복·편도",
+        "undecided": "전화로 확인"
+      },
+      "checklist": {
+        "title": "전화로 확인할 것",
+        "progress": "{n}/{total} 확인",
+        "items": ["차량 종류와 대수", "출발 시각과 타는 곳", "왕복인지 편도인지", "여행 목적 (예: 워크숍 · 가족 여행)"],
+        "note": "체크는 저장되지 않아요. 화면을 새로 열면 처음으로 돌아가요.",
+        "memoHint": "확인한 내용은 아래 메모에 적어 두세요."
+      },
+      "process": {
+        "done": "운행 완료로 바꾼 접수예요. 더 처리할 일이 없어요.",
+        "cancelled": "취소한 접수예요. 더 처리할 일이 없어요.",
+        "moreCancel": "더보기 — 접수 취소"
+      },
       "field": {
-        "code": "접수번호",
-        "status": "상태",
         "createdAt": "접수 일시",
         "confirmedAt": "확정 일시",
-        "name": "고객명",
-        "phone": "전화번호",
         "email": "메일 주소",
         "purpose": "여행 구분",
         "vehicle": "차량",
-        "route": "운행 구간",
         "waypoints": "경유지",
-        "tripType": "운행 구분",
-        "departAt": "출발 일시",
-        "returnAt": "돌아오는 일시",
-        "busCount": "차량 대수",
-        "passengers": "예상 인원",
         "contactMethod": "견적 확인 방법",
         "paymentMethod": "계산 방법",
         "parking": "주차료",
         "vat": "부가세(VAT)",
         "message": "요청 사항",
-        "memo": "관리자 메모",
         "privacyConsentAt": "개인정보 동의",
         "marketingConsentAt": "광고성 정보 수신 동의",
         "withdrawalConsentAt": "청약철회 제한 동의",
-        "retentionUntil": "파기 예정",
-        "intake": "접수 방법",
-        "departDate": "출발일",
-        "returnDate": "도착일"
+        "retentionUntil": "파기 예정"
       },
       "value": {
         "none": "—",
         "included": "포함 조건",
         "excluded": "미포함 조건",
-        "consented": "동의",
         "notConsented": "미동의",
         "noWithdrawalRecord": "기록 없음(동의 기록 도입 전 접수)",
         "intakeQuick": "간편 접수 · 전화 확인 필요",
@@ -719,6 +748,7 @@
       "memoLabel": "관리자 메모",
       "memoHint": "고객에게는 보이지 않아요. 고친 메모는 확정·취소·운행 완료를 누를 때 함께 저장돼요. 다 지울 때는 '메모 저장'을 눌러 주세요.",
       "memoSave": "메모 저장",
+      "memoPlaceholder": "예: 45인승 1대 · 7시 강남역 출발 · 워크숍",
       "processing": "처리 중…",
       "toastLink": "발송 기록 보기",
       "sheet": {
@@ -747,7 +777,8 @@
         "completeBody": "완료로 바꾸면 되돌릴 수 없어요. 고객에게 문자는 가지 않아요.",
         "completeSubmit": "완료로 바꾸기",
         "memoTooLong": "메모가 {max}자를 넘어요(지금 {count}자). 메모를 줄인 뒤 다시 눌러 주세요.",
-        "memoTooLongWithReason": "취소 사유를 덧붙이면 메모가 {max}자를 넘어요(지금 {count}자). 메모를 줄인 뒤 다시 눌러 주세요."
+        "memoTooLongWithReason": "취소 사유를 덧붙이면 메모가 {max}자를 넘어요(지금 {count}자). 메모를 줄인 뒤 다시 눌러 주세요.",
+        "checkWarning": "전화로 확인할 것 {total}개 중 {n}개를 확인했어요. 통화로 확인하셨나요?"
       },
       "result": {
         "confirmed": "확정했어요. 확정 안내 문자를 보내고 있어요.",
