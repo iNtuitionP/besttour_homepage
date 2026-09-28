@@ -24,7 +24,12 @@
  *
  * 훅이 없다. 그래서 테스트가 함수를 직접 불러 돌려준 요소의 ref 를 확인할 수 있다(tests/admin-banner.test.ts — DOM 없는 vitest).
  * 문구는 부르는 쪽이 카탈로그에서 넘긴다(한글 리터럴 0).
+ *
+ * P5-21 — 배너 끝에 **다음 행동 링크 하나**를 둘 수 있다(`action` — 관리 홈의 "보내지 못한 문자 … [발송 기록 보기]"). 링크 글자와 주소만 받는다.
+ * 서버 화면이 그리는 상태 배너(관리 홈)는 결과를 들고 있는 클라이언트 상태가 없어 시도 번호·비우기가 필요 없다 — tests/admin-banner.test.ts §4 가 그 경우만 뺀다.
  */
+import Link from "next/link";
+
 import s from "./admin.module.css";
 
 /** 배너가 붙을 때 React 가 부른다. 떼어질 때(null)는 아무것도 하지 않는다. 모듈 수준 함수라 다시 그려도 다시 불리지 않는다. */
@@ -37,6 +42,7 @@ export function AdminBanner({
   variant = "block",
   attempt,
   testId,
+  action,
 }: {
   /** 비었거나 null 이면 아무것도 그리지 않는다. */
   text: string | null;
@@ -45,6 +51,8 @@ export function AdminBanner({
   /** 시도 번호 — 동작 시작에 배너를 비우지 않는 자리가 실패마다 늘려 넘긴다(위 ②). 바뀌면 같은 문구라도 다시 붙고 다시 스크롤한다. */
   attempt?: number;
   testId?: string;
+  /** 배너 끝의 다음 행동 링크(선택) — 글자와 주소만. */
+  action?: { href: string; label: string };
 }) {
   if (text === null || text === "") return null;
   return (
@@ -56,6 +64,14 @@ export function AdminBanner({
       data-testid={testId}
     >
       {text}
+      {action !== undefined ? (
+        <>
+          {" "}
+          <Link className={s.bannerLink} href={action.href}>
+            {action.label}
+          </Link>
+        </>
+      ) : null}
     </p>
   );
 }

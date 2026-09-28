@@ -322,11 +322,14 @@ describe("5. 섹션 제목 · 캡션", () => {
     },
   );
 
-  test("통계의 구간 표도 같은 규칙 · 제목이 따로 없는 표(접수 목록 · 문자 기록)는 캡션을 화면에서만 숨긴다", () => {
+  test("통계의 구간 표도 같은 규칙 · 제목이 따로 없는 표(발송 기록)는 캡션을 화면에서만 숨긴다 · 접수 목록(P5-21 카드 행)은 표가 아니라 이름 붙은 목록", () => {
     expect(codeOf("app/admin/(protected)/stats/page.tsx")).not.toMatch(/<caption>\{t\("inquiry\.segments"\)\}<\/caption>/);
-    for (const rel of ["app/admin/(protected)/reservations/page.tsx", "app/admin/(protected)/notifications/page.tsx"]) {
-      expect(codeOf(rel), rel).toMatch(/<caption className=\{a\.srOnly\}>/);
-    }
+    expect(codeOf("app/admin/(protected)/notifications/page.tsx")).toMatch(/<caption className=\{a\.srOnly\}>/);
+    // 접수 목록 — 묶음이 없으면 목록이 aria-label 로, 묶음이 있으면 묶음 제목(h2)이 이름을 준다(보이는 제목을 캡션으로 되풀이하지 않는다)
+    const list = codeOf("app/admin/(protected)/reservations/page.tsx");
+    expect(list).not.toMatch(/<caption/);
+    expect(list).toMatch(/aria-label=\{t\("listLabel"\)\}/);
+    expect(list).toMatch(/aria-labelledby=/);
     expect(block(".srOnly")).toMatch(/clip|clip-path/);
   });
 });

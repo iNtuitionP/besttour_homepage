@@ -36,6 +36,9 @@ import { structuredLog, type StructuredLogEntry } from "@/lib/log";
  * 전체 로드·새로고침 · router.refresh()(확정·취소·완료 뒤 처리 영역이 부른다) · 서버액션의 revalidatePath("/admin","layout") 뒤다.
  * 그 밖에 사장님이 탭만 오가는 동안 새로 들어온 접수는 배지에 늦게 반영될 수 있다 — 접수 목록 화면은 이동마다 새로 읽으므로 목록이 늘 정답이다
  * (판단 근거는 P5-20 보고서 ④).
+ * P5-21(리뷰 P2-10 "두 숫자 금지"): 숫자를 그리는 화면(관리 홈 · 접수 목록)은 자기가 센 값을 메뉴에 보고하고(components/admin/NavBadgeReport.tsx),
+ * 메뉴는 이 레이아웃 값과 보고 중 **더 새로 센 쪽**을 그린다 — 그래서 레이아웃은 센 시각(`badgeAt`)을 함께 넘긴다.
+ * 같은 요청에서 센 두 값은 countNewReservations 의 요청 범위 memo 로 애초에 같다.
  *
  * 로그아웃(P5-11 · D5)도 셸에 있다. 라벨만 여기서 풀어 내리고, 실제 동작은 AdminTabs 안의 form 제출이
  * actions/admin/session.ts 로 POST 한다 — 그 액션이 자기 첫 문장에서 다시 게이트를 탄다. 이 레이아웃의
@@ -61,6 +64,7 @@ function navBadgeUnknown(err: unknown): null {
 
 export default async function AdminProtectedLayout({ children }: { children: React.ReactNode }) {
   await requireAdmin();
+  const badgeAt = Date.now();
   const [t, session, newCount] = await Promise.all([
     getTranslations({ locale: routing.defaultLocale, namespace: "admin.tabs" }),
     getTranslations({ locale: routing.defaultLocale, namespace: "admin.session" }),
@@ -82,7 +86,7 @@ export default async function AdminProtectedLayout({ children }: { children: Rea
   const badge = navBadge(newCount, (n) => t("newCount", { n }));
 
   return (
-    <AdminTabs items={items} hubs={hubs} labels={labels} signOutLabel={session("signOut")} badge={badge} publicHref="/">
+    <AdminTabs items={items} hubs={hubs} labels={labels} signOutLabel={session("signOut")} badge={badge} badgeAt={badgeAt} publicHref="/">
       <AdminToastProvider>{children}</AdminToastProvider>
     </AdminTabs>
   );

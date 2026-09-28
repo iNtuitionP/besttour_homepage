@@ -17,9 +17,12 @@
  * 한 벌의 마크업을 폭에 따라 보여 준다: ≥1024px 왼쪽 사이드바 248px · <1024px 위 제목줄 56px + 아래 탭 바 4개(56px + safe area).
  * 사이드바는 position:fixed 다 — html·body 의 overflow-x:hidden(app/globals.css) 때문에 sticky 는 달라붙지 않는다(body 가 스크롤하지 않는
  * 스크롤 상자가 된다). 그래서 격자의 첫 칸을 비워 자리를 잡고, 사이드바를 그 자리에 고정해 둔다(간격 px 없이 — 격자 칸이 곧 자리다).
- * 위 제목줄은 제자리(흐름 안)에 둔다 — 같은 이유로 sticky 가 듣지 않고, fixed 로 띄우면 본문 첫 줄·앵커 이동이 그 아래로 숨는다.
+ * 위 제목줄(<1024px)은 P5-21 부터 **sticky** 다 — 셸이 있는 문서의 body 만 `overflow-x: clip`(스크롤 상자를 만들지 않는 자르기)으로 바꿔
+ * sticky 가 뷰포트에 붙는다(아래 :global(body):has(.shell)). 전역 규칙(app/globals.css)을 clip 으로 바꾸는 길은 공개 사이트 전/후 비교에서
+ * 회귀가 나와 쓰지 않았다(공개 헤더·지도가 새로 달라붙어 겹친다 — P5-21 보고서 ④). 로그인 화면·공개 사이트는 그대로다.
  * 이동은 늘 화면 아래 탭 바가 맡는다(fixed). 탭 바가 본문 끝을 가리지 않게 본문 끝에 탭 바 높이만큼 빈 자리(.tabbarSpacer)를 두고,
  * 스크롤 도중에도 가리지 않게 문서의 아래 scroll-padding 을 같은 높이로 둔다(포커스·실패 배너 — 리뷰 P1-1 · 아래 :global(html)).
+ * 위도 같다 — 붙어 있는 제목줄 밑으로 포커스가 숨지 않게 위 scroll-padding 을 제목줄 높이 + 틈으로 둔다.
  * 현재 표시는 **옅은 면 + 띠 + 굵은 글자**다 — 채운 보라(--action-primary-bg)는 버튼 전용이다(시안 ⑤-0 · 제안서 ②-9).
  */
 .shell {
@@ -229,8 +232,11 @@
   outline-offset: 2px;
 }
 
-/* 위 제목줄(<1024px) — 브랜드 · 홈페이지 보기 · 로그아웃 */
+/* 위 제목줄(<1024px) — 브랜드 · 홈페이지 보기 · 로그아웃. 스크롤해도 위에 붙는다(sticky — 탭 바(30)·시트(50)·토스트(60) 아래 층) */
 .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 25;
   display: flex;
   align-items: center;
   gap: var(--space-inline-xs);
@@ -238,6 +244,11 @@
   padding: 0 var(--space-inline-xs) 0 var(--space-page-x);
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-decorative);
+}
+/* 셸이 있는 문서만 — body 가 스크롤 상자가 되지 않게(overflow-x: hidden 은 스크롤 상자를 만들어 sticky 를 죽인다). clip 은 넘친 것을 똑같이
+ * 자르지만 스크롤 상자를 만들지 않는다. clip 을 모르는 브라우저에서는 이 선언이 빠져 전역의 hidden 이 남는다(제목줄이 예전처럼 흘러갈 뿐이다). */
+:global(body):has(.shell) {
+  overflow-x: clip;
 }
 .topBrand {
   display: flex;
@@ -298,8 +309,10 @@
  * 브라우저의 포커스 스크롤(Tab)과 scrollIntoView(실패 배너 — AdminBanner)가 이 여백을 따라 탭 바 **위**에 멈춘다.
  * 문서의 스크롤은 뷰포트(<html>)가 맡으므로 <html> 에 걸고, 셸이 있는 화면에만 건다(:has(.shell) — 로그인 화면·공개 사이트는 그대로).
  * 탭 바 높이는 px 로 적는다(항목이 px) — rem 이면 글자 크기 설정에 따라 여백과 바가 어긋난다. 틈(간격 토큰)은 포커스 링 몫이다.
- * 1024px 이상(탭 바 없음)은 아래 미디어 쿼리에서 되돌린다. */
+ * 1024px 이상(탭 바 없음)은 아래 미디어 쿼리에서 되돌린다.
+ * 위 여백(P5-21) = 붙어 있는 위 제목줄 높이(min-height 56px — border-box 라 아래 테두리 포함) + 틈. */
 :global(html):has(.shell) {
+  scroll-padding-top: calc(56px + var(--space-stack-xs));
   scroll-padding-bottom: calc(56px + 1px + var(--space-stack-xs) + env(safe-area-inset-bottom));
 }
 
@@ -402,6 +415,7 @@
     display: none;
   }
   :global(html):has(.shell) {
+    scroll-padding-top: auto;
     scroll-padding-bottom: auto;
   }
 }
@@ -463,15 +477,764 @@ a.hubItem:hover {
   color: var(--icon-default);
 }
 
-/* ── 관리 홈(/admin — 대시보드는 P5-21) ─────────────────────────────────────── */
-.homeActions {
-  margin: var(--space-stack-sm) 0 0;
-}
+/* ── 관리 홈 대시보드(/admin — P5-21 · 시안 #home) ───────────────────────────────
+ * 날짜 + 한 줄 요약 · (넓은 화면) 주 버튼 → 배너 → 할 일 카드 4장(휴대폰 2×2 · 1024px 이상 4열 · 카드 전체가 링크) →
+ * 새 접수 미리보기(목록과 같은 행 — 아래 .inq) · 다가오는 운행 · 홈페이지 점검 · 이번 달(1024px 이상 두 칸).
+ * 카드의 왼쪽 5px 선이 톤이다(새 접수 = 골드 테두리 · 급함 = 가장 짙은 보라 · 이상 없음 = 옅은 보라 · 보통 = 장식선) — 무엇인지는 글자가 말한다.
+ */
 /* 버튼 모양의 링크 — .btnPrimary 와 함께 쓴다(면·글자는 그 규칙이) */
 .btnLink {
   display: inline-flex;
   align-items: center;
   text-decoration: none;
+}
+.homeHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-stack-sm) var(--space-inline-md);
+  padding: var(--space-stack-lg) 0 var(--space-stack-sm);
+}
+.homeHeadText {
+  flex: 1 1 20rem;
+  min-width: 0;
+}
+.eyebrow {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.lede {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+/* 넓은 화면에서만 — 휴대폰은 카드가 같은 곳으로 간다(시안 d-desktop) */
+.desktopOnly {
+  display: none;
+}
+.todoGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-inline-xs);
+  margin: var(--space-stack-sm) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.todoGrid > li {
+  display: flex;
+  min-width: 0;
+}
+.todo {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-stack-xs) / 2);
+  width: 100%;
+  min-height: 118px;
+  padding: var(--space-stack-sm) var(--space-inline-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-left-width: 5px;
+  border-radius: var(--radius-surface);
+  box-shadow: var(--elevation-raised);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+.todo:hover {
+  border-top-color: var(--border-strong);
+  border-right-color: var(--border-strong);
+  border-bottom-color: var(--border-strong);
+}
+.todo:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.todo[data-tone="attention"] {
+  border-left-color: var(--status-attention-border);
+}
+.todo[data-tone="urgent"] {
+  border-left-color: var(--status-urgent-bg);
+}
+.todo[data-tone="ok"] {
+  border-left-color: var(--status-confirmed-border);
+}
+.todo[data-tone="plain"] {
+  border-left-color: var(--border-decorative);
+}
+.todoLabel {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-inline-xs) * 0.75);
+  padding: 0 var(--space-inline-md) 0 0;
+  font-size: 14.5px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+.todoDot {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--status-attention-bg);
+  border: 1px solid var(--status-attention-border);
+}
+.todoIcon,
+.todoArrow,
+.todoOkIcon,
+.secLinkIcon,
+.checkIcon,
+.groupIcon {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.todoIcon {
+  width: 18px;
+  height: 18px;
+  color: var(--icon-default);
+}
+.todo[data-tone="urgent"] .todoIcon {
+  color: var(--status-urgent-bg);
+}
+.todoValue {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-inline-xs) * 0.75);
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+.todoValue[data-kind="ok"],
+.todoValue[data-kind="problem"] {
+  font-size: 22px;
+  color: var(--text-brand);
+}
+.todoOkIcon {
+  width: 22px;
+  height: 22px;
+  stroke-width: 2.6;
+}
+.todoSub {
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+/* 카드의 작은 덧줄 — 문자 발송 카드의 사장님 쪽 알림 실패(배너가 아니다 · 컨트롤러 결정 P1-2) */
+.todoMinor {
+  margin-top: calc(var(--space-stack-xs) / 2);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+.todoUnknown {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.todoArrow {
+  position: absolute;
+  top: var(--space-stack-sm);
+  right: var(--space-inline-xs);
+  width: 18px;
+  height: 18px;
+  color: var(--icon-default);
+}
+.homeCols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.homeCol {
+  min-width: 0;
+}
+.homeSec {
+  margin: var(--space-stack-md) 0 0;
+}
+.secHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 var(--space-inline-sm);
+  margin: 0 0 var(--space-stack-xs);
+}
+.secTitle {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+.secCount {
+  color: var(--text-brand);
+  font-variant-numeric: tabular-nums;
+}
+.secMuted {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.secLink {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--space-inline-xs) / 4);
+  min-height: 44px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-link);
+  text-decoration: none;
+}
+.secLink:focus-visible,
+.checkLink:focus-visible,
+.inlineLink:focus-visible,
+.bannerLink:focus-visible,
+.miniStat:focus-visible,
+.tripLink:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.secLinkIcon {
+  width: 18px;
+  height: 18px;
+}
+/* 흰 판 하나(다가오는 운행 · 홈페이지 점검 · 미리보기의 빈/모름 한 줄) */
+.panel {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--elevation-raised);
+}
+.panelNote {
+  margin: 0;
+  padding: var(--space-stack-sm) var(--space-inline-sm);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.inlineLink {
+  color: var(--text-link);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+/* 다가오는 운행 — 날짜별 묶음 */
+.tripDay {
+  padding: var(--space-stack-sm) var(--space-inline-sm);
+  border-top: 1px solid var(--border-decorative);
+}
+.tripDay:first-child {
+  border-top: 0;
+}
+.tripDayHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 var(--space-inline-xs);
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+}
+.tripList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.trip {
+  margin: var(--space-stack-xs) 0 0;
+}
+.tripLink {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: var(--space-inline-xs);
+  align-items: start;
+  min-height: 44px;
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+.tripLink:hover .tripRoute {
+  text-decoration: underline;
+}
+.tripTime {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.5;
+  color: var(--text-brand);
+  font-variant-numeric: tabular-nums;
+}
+.tripTime[data-undecided="true"] {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.tripBody {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: calc(var(--space-stack-xs) / 2);
+  min-width: 0;
+}
+.tripRoute {
+  font-size: 15px;
+  font-weight: 700;
+}
+.tripMeta {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+/* 홈페이지 점검 — 한 줄에 그림 · 이름과 지금 상태 · 할 일 링크 */
+.checkRow {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: var(--space-inline-xs);
+  align-items: center;
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  border-top: 1px solid var(--border-decorative);
+}
+.checkRow:first-child {
+  border-top: 0;
+}
+.checkIcon {
+  width: 22px;
+  height: 22px;
+  color: var(--icon-default);
+}
+.checkRow[data-warn="true"] .checkIcon {
+  color: var(--accent-decorative-strong);
+}
+.checkText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+}
+.checkName {
+  font-size: 15px;
+  font-weight: 700;
+}
+.checkStatus {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.checkLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 14.5px;
+  font-weight: 800;
+  color: var(--text-link);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.miniStat {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 var(--space-inline-xs);
+  margin: var(--space-stack-sm) 0 0;
+  padding: 0 var(--space-inline-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--elevation-raised);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+@media (min-width: 1024px) {
+  .desktopOnly {
+    display: inline-flex;
+  }
+  .todoGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--space-inline-sm);
+  }
+  .homeCols {
+    grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+    column-gap: var(--space-inline-md);
+  }
+}
+
+/* ── 접수 목록(P5-21 · 시안 #list) — 상태 탭 · 행(카드 / 넓은 목록의 표 모양) · 더 보기 ─────────────────
+ * 탭 줄만 가로로 스크롤한다(페이지는 넘치지 않는다). 현재 탭 = 보라 글자 + 아래 3px 띠(채운 보라 아님). 건수: 새 접수 = 골드 알약(메뉴 배지와 같은 톤) ·
+ * 나머지 = 옅은 알약. 선은 inset 그림자로 그린다(음수 여백 px 없이 — tests/layout.test.ts §4).
+ */
+.statusTabs {
+  /* 위치 기준: 탭 안의 srOnly(absolute)가 이 상자에 담기게 한다 — 없으면 기준이 문서가 되어 스크롤 상자의 잘림도 셸의 clip 도
+     받지 않고 문서 폭을 늘렸다(375 실측 428px). */
+  position: relative;
+  margin: var(--space-stack-sm) 0 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.statusTabs::-webkit-scrollbar {
+  display: none;
+}
+.statusTabList {
+  display: flex;
+  gap: calc(var(--space-inline-xs) / 2);
+  width: max-content;
+  min-width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  box-shadow: inset 0 -1px 0 var(--border-decorative);
+}
+.statusTabList > li {
+  flex: none;
+}
+.statusTab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  min-height: 48px;
+  padding: 0 calc(var(--space-inline-xs) * 1.5);
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.statusTab:hover {
+  color: var(--text-brand);
+}
+.statusTab:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+/* 현재 탭 — aria-current="true"(한 문서의 "page" 는 사이드바 '접수' 하나 · 리뷰 P2-14) */
+.statusTab[aria-current="true"] {
+  color: var(--text-brand);
+  font-weight: 800;
+  box-shadow: inset 0 -3px 0 var(--border-strong);
+}
+.statusTabCount {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 var(--space-inline-xs);
+  border-radius: 999em;
+  background: var(--bg-subtle);
+  color: var(--text-brand);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.statusTabCount[data-tone="attention"] {
+  background: var(--status-attention-bg);
+  color: var(--status-attention-fg);
+  border: 1px solid var(--status-attention-border);
+}
+.listHint {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.moreRow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-stack-xs);
+  margin: var(--space-stack-sm) 0 0;
+}
+.privacyNote {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+/* 행 — 한 벌의 마크업(components/admin/reservationRow.tsx). 휴대폰 = 카드: 상태·경과 / 이름·가린 번호 / 구간 / 날짜·차량·인원 + 오른쪽 전화 */
+.inqTable {
+  margin: var(--space-stack-sm) 0 0;
+}
+.inqHead {
+  display: none;
+}
+.inqList {
+  display: grid;
+  gap: var(--space-stack-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.inqGroup {
+  margin: 0;
+}
+.groupHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  margin: var(--space-stack-sm) 0 var(--space-stack-xs);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+.inqGroup:first-of-type .groupHead {
+  margin-top: 0;
+}
+.groupHead[data-tone="urgent"] {
+  color: var(--status-urgent-bg);
+}
+/* 묶음 제목 밑 한 줄 — 확정 탭의 '운행일이 지난 확정' 안내 · 다가오는 운행이 없을 때의 문장(수정 라운드 · 리뷰 P1-1) */
+.groupNote {
+  margin: 0 0 var(--space-stack-xs);
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.groupIcon {
+  width: 16px;
+  height: 16px;
+}
+.inq {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 56px;
+  align-items: stretch;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--elevation-raised);
+}
+/* 답이 늦은 접수 — 왼쪽 4px 띠(칸을 밀지 않게 안쪽 그림자로) */
+.inq[data-urgent="true"] {
+  box-shadow: inset 4px 0 0 var(--status-urgent-bg), var(--elevation-raised);
+}
+.inqLink {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "status ago"
+    "who who"
+    "trip trip"
+    "meta meta";
+  gap: calc(var(--space-stack-xs) / 2) var(--space-inline-xs);
+  min-width: 0;
+  padding: var(--space-stack-sm) calc(var(--space-inline-xs) / 2) var(--space-stack-sm) var(--space-inline-sm);
+  border-radius: var(--radius-surface) 0 0 var(--radius-surface);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+.inqLink:hover .inqName {
+  text-decoration: underline;
+}
+.inqLink:focus-visible,
+.call:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.inqStatus {
+  grid-area: status;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: calc(var(--space-inline-xs) * 0.75);
+  min-width: 0;
+}
+.inqAgo {
+  grid-area: ago;
+  align-self: center;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.inqAgo[data-late="true"] {
+  color: var(--status-urgent-bg);
+}
+.inqWho {
+  grid-area: who;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-inline-xs);
+  margin: calc(var(--space-stack-xs) / 2) 0 0;
+  min-width: 0;
+}
+.inqName {
+  font-size: 17px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.inqPhone {
+  font-size: 14px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.inqTrip {
+  grid-area: trip;
+  min-width: 0;
+  font-size: 15.5px;
+  font-weight: 700;
+}
+.inqMuted {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.inqMeta {
+  grid-area: meta;
+  min-width: 0;
+  font-size: 14.5px;
+  color: var(--text-secondary);
+}
+.inqDate {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+/* 출발 칸의 둘째 덩어리 — "시각 · 남은 날"(넓은 목록에서 한 줄 · 가운데점 앞은 줄바꿈 없는 공백 · 리뷰 P2-6) */
+.inqTime {
+  font-variant-numeric: tabular-nums;
+}
+.call {
+  display: grid;
+  place-items: center;
+  border-left: 1px solid var(--border-decorative);
+  border-radius: 0 var(--radius-surface) var(--radius-surface) 0;
+  color: var(--icon-brand);
+  text-decoration: none;
+}
+.callCircle {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--bg-subtle);
+}
+.call:hover .callCircle {
+  box-shadow: inset 0 0 0 2px var(--border-strong);
+}
+.callIcon {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 넓은 목록(접수 화면 ≥1024px) — 같은 행을 표 모양 7칸으로: 상태 · 고객 · 운행 구간 · 출발 · 차량·인원 · 접수 · [전화].
+ * 칸은 전부 줄어들 수 있다(minmax(0, …)) — 사이드바(248px)가 본문을 줄여도 가로 스크롤이 없다(옛 min-width 68rem 표를 없앴다). */
+@media (min-width: 1024px) {
+  .inqTable[data-layout="table"] {
+    overflow: hidden;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-decorative);
+    border-radius: var(--radius-surface);
+    box-shadow: var(--elevation-raised);
+  }
+  .inqTable[data-layout="table"] .inqHead {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 56px;
+    align-items: center;
+    padding: var(--space-stack-xs) 0;
+    background: var(--bg-subtle);
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--text-secondary);
+  }
+  .inqHeadCells,
+  .inqTable[data-layout="table"] .inqLink {
+    grid-template-columns: minmax(104px, 0.9fr) minmax(0, 1.2fr) minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1.1fr) minmax(72px, 0.6fr);
+    grid-template-areas: none;
+    column-gap: var(--space-inline-xs);
+  }
+  .inqHeadCells {
+    display: grid;
+    padding: 0 calc(var(--space-inline-xs) / 2) 0 var(--space-inline-sm);
+  }
+  .inqHeadCall {
+    text-align: center;
+  }
+  .inqTable[data-layout="table"] .inqList {
+    gap: 0;
+  }
+  /* 표 모양에서는 줄 사이 선만 — 카드의 그림자는 걷는다(그림자 규약상 inset 빈 그림자로 — tests/layout.test.ts §4) */
+  .inqTable[data-layout="table"] .inq {
+    border: 0;
+    border-top: 1px solid var(--border-decorative);
+    border-radius: 0;
+    box-shadow: inset 0 0 0 0 transparent;
+  }
+  .inqTable[data-layout="table"] .inq[data-urgent="true"] {
+    box-shadow: inset 4px 0 0 var(--status-urgent-bg);
+  }
+  .inqTable[data-layout="table"] .inqLink {
+    align-items: center;
+    min-height: 68px;
+    padding: var(--space-stack-xs) calc(var(--space-inline-xs) / 2) var(--space-stack-xs) var(--space-inline-sm);
+    border-radius: 0;
+  }
+  .inqTable[data-layout="table"] .inqLink:hover {
+    background: var(--bg-page);
+  }
+  .inqTable[data-layout="table"] .inqStatus,
+  .inqTable[data-layout="table"] .inqWho,
+  .inqTable[data-layout="table"] .inqTrip,
+  .inqTable[data-layout="table"] .inqAgo {
+    grid-area: auto;
+    margin: 0;
+  }
+  .inqTable[data-layout="table"] .inqWho {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .inqTable[data-layout="table"] .inqName {
+    font-size: 16px;
+  }
+  .inqTable[data-layout="table"] .inqTrip {
+    font-size: 15px;
+  }
+  .inqTable[data-layout="table"] .inqMeta {
+    display: contents;
+  }
+  .inqTable[data-layout="table"] .inqWhen,
+  .inqTable[data-layout="table"] .inqBus {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    font-size: 15px;
+  }
+  .inqTable[data-layout="table"] .inqSep {
+    display: none;
+  }
+  .inqTable[data-layout="table"] .groupHead {
+    margin: 0;
+    padding: var(--space-stack-xs) var(--space-inline-sm);
+    background: var(--bg-subtle);
+    border-top: 1px solid var(--border-decorative);
+  }
+  .inqTable[data-layout="table"] .groupNote {
+    margin: 0;
+    padding: 0 var(--space-inline-sm) var(--space-stack-xs);
+    background: var(--bg-subtle);
+  }
+  .inqTable[data-layout="table"] .call {
+    border-radius: 0;
+  }
 }
 
 /* ── 필터 ───────────────────────────────────────────────────────────────── */
@@ -832,7 +1595,7 @@ a.hubItem:hover {
   background: var(--action-primary-bg);
   border: 1px solid transparent;
 }
-.btnPrimary:hover:not(:disabled) {
+.btnPrimary:hover:not(:disabled):not([aria-disabled="true"]) {
   background: var(--action-primary-bg-hover);
 }
 .btnSecondary {
@@ -840,7 +1603,7 @@ a.hubItem:hover {
   background: var(--action-secondary-bg);
   border: 1px solid var(--action-secondary-border);
 }
-.btnSecondary:hover:not(:disabled) {
+.btnSecondary:hover:not(:disabled):not([aria-disabled="true"]) {
   background: var(--action-secondary-bg-hover);
 }
 /* 되돌릴 수 없는 동작의 최종 버튼 — 확인 시트 안에서만(P5-19). 긍정 동작(보라)과 한눈에 구분되는 가장 짙은 면. */
@@ -849,12 +1612,16 @@ a.hubItem:hover {
   background: var(--action-destructive-bg);
   border: 1px solid transparent;
 }
-.btnDestructive:hover:not(:disabled) {
+.btnDestructive:hover:not(:disabled):not([aria-disabled="true"]) {
   background: var(--action-destructive-bg-hover);
 }
+/* 처리 중(P5-21 · components/admin/PendingButton.tsx) — disabled 대신 aria-disabled 라 포커스를 잃지 않는다. 모양은 disabled 와 같다. */
 .btnPrimary:disabled,
 .btnSecondary:disabled,
-.btnDestructive:disabled {
+.btnDestructive:disabled,
+.btnPrimary[aria-disabled="true"],
+.btnSecondary[aria-disabled="true"],
+.btnDestructive[aria-disabled="true"] {
   color: var(--action-disabled-fg);
   background: var(--action-disabled-bg);
   border-color: var(--action-disabled-border);
@@ -925,6 +1692,14 @@ a.hubItem:hover {
   font-weight: 700;
   line-height: 1.6;
   color: var(--text-brand);
+}
+/* 배너 끝의 다음 행동 링크(P5-21 — 관리 홈 "보내지 못한 문자 … [발송 기록 보기]") */
+.bannerLink {
+  color: var(--text-link);
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  white-space: nowrap;
 }
 /* 표 칸 안의 좁은 배너(목록의 노출 버튼 옆) */
 .bannerInline {

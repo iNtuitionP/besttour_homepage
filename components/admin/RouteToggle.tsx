@@ -8,6 +8,7 @@
  * props 는 id·현재 상태·문구뿐이다. 마지막 판정은 언제나 DB 다.
  *
  * 결과 알림(P5-20): 성공은 레이아웃의 토스트, 실패는 이 버튼 옆 배너(role=alert — 다음 누름 때 걷힌다). 판정은 feedback.ts.
+ * 처리 중(P5-21): 공용 PendingButton — disabled 대신 aria-disabled + 누름 무시라 포커스가 body 로 떨어지지 않는다(P5-20 ⑧-1).
  */
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -19,6 +20,7 @@ import s from "./admin.module.css";
 import { AdminBanner } from "./AdminBanner";
 import { useAdminToast } from "./AdminToast";
 import { feedbackKind } from "./feedback";
+import { PendingButton } from "./PendingButton";
 
 export interface RouteToggleLabels {
   turnOn: string;
@@ -46,9 +48,9 @@ export function RouteToggle({ id, active, labels }: { id: number; active: boolea
 
   return (
     <>
-      <button type="button" className={s.btnSecondary} disabled={pending} onClick={onClick} data-testid="admin-route-toggle">
+      <PendingButton className={s.btnSecondary} pending={pending} onClick={onClick} testId="admin-route-toggle">
         {pending ? labels.processing : active ? labels.turnOff : labels.turnOn}
-      </button>
+      </PendingButton>
       <AdminBanner text={banner} variant="inline" />
     </>
   );

@@ -61,7 +61,7 @@ export function routesLine(res: Settled<readonly { active: boolean; price_from: 
     : { key: "routes.noPrice", values: { total: rows.length, live: live.length, n: noPrice } };
 }
 
-/** 문자 기록 — 발송 내역 화면 맨 위 요약과 **같은 값·같은 말**(admin.notifications.summary.*). 키는 그 네임스페이스 기준이다. */
+/** 발송 기록 — 발송 내역 화면 맨 위 요약과 **같은 값·같은 말**(admin.notifications.summary.* — 기간을 문구에 적는다). 키는 그 네임스페이스 기준이다. */
 export type NotificationsHubLine = { kind: "unknown" } | { kind: "ok" } | { kind: "problems"; parts: { key: "failed" | "stuck" | "sentUnconfirmed"; n: number }[] };
 
 export function notificationsLine(res: Settled<{ failed: number; stuck: number; sentUnconfirmed: number; ok: boolean }>): NotificationsHubLine {

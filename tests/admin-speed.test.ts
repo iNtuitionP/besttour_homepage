@@ -591,6 +591,7 @@ const RENDER_MOCKS = [
   "@/lib/queries",
   "@/lib/queries/vehicles",
   "@/lib/analytics/dashboard",
+  "next/navigation",
 ];
 
 const WIZARD_ROW = {
@@ -678,14 +679,19 @@ describe("4-b. 화면 — 게이트가 끝난 뒤, 독립 조회는 동시에", 
     vi.doMock("next-intl/server", () => ({ getTranslations: async () => translate }));
   }
 
-  test("예약 목록 — 목록과 차량 라벨을 동시에 읽는다", async () => {
-    const bar = gateAndBarrier(2);
+  test("예약 목록 — 목록 · 탭 건수 · 차량 라벨을 동시에 읽는다 (P5-21 — 탭 건수가 셋째 조회)", async () => {
+    const bar = gateAndBarrier(3);
     common(bar);
+    vi.doMock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {}, push: () => {}, replace: () => {} }) }));
     vi.doMock("@/lib/admin/reservations", async () => ({
       ...(await vi.importActual<Record<string, unknown>>("@/lib/admin/reservations")),
       listReservations: async () => {
         await bar.arrive("listReservations");
         return { items: [], hasMore: false, nextCursor: null };
+      },
+      countReservationsByStatus: async () => {
+        await bar.arrive("countReservationsByStatus");
+        return { new: 0, confirmed: 0, done: 0, cancelled: 0 };
       },
     }));
     vi.doMock("@/lib/queries", async () => ({
@@ -700,7 +706,41 @@ describe("4-b. 화면 — 게이트가 끝난 뒤, 독립 조회는 동시에", 
     };
     await within(page.default({ searchParams: Promise.resolve({}) }), "reservations");
     expect(bar.beforeGate, "조회가 게이트보다 먼저 시작했다").toEqual([]);
-    expect(bar.arrived()).toBe(2);
+    expect(bar.arrived()).toBe(3);
+  });
+
+  test("예약 목록 · 확정 탭 — 다가오는 운행 · 지난 확정 · 탭 건수 · 차량 라벨을 동시에 읽는다 (P5-21 수정 라운드 — 리뷰 P1-1 의 두 조회)", async () => {
+    const bar = gateAndBarrier(4);
+    common(bar);
+    vi.doMock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {}, push: () => {}, replace: () => {} }) }));
+    vi.doMock("@/lib/admin/reservations", async () => ({
+      ...(await vi.importActual<Record<string, unknown>>("@/lib/admin/reservations")),
+      listReservations: async () => {
+        await bar.arrive("listReservations");
+        return { items: [], hasMore: false, nextCursor: null };
+      },
+      listConfirmedPast: async () => {
+        await bar.arrive("listConfirmedPast");
+        return { items: [], total: 0 };
+      },
+      countReservationsByStatus: async () => {
+        await bar.arrive("countReservationsByStatus");
+        return { new: 0, confirmed: 0, done: 0, cancelled: 0 };
+      },
+    }));
+    vi.doMock("@/lib/queries", async () => ({
+      ...(await vi.importActual<Record<string, unknown>>("@/lib/queries")),
+      getVehicles: async () => {
+        await bar.arrive("getVehicles");
+        return [];
+      },
+    }));
+    const page = (await import("@/app/admin/(protected)/reservations/page")) as {
+      default: (p: { searchParams: Promise<Record<string, string>> }) => Promise<unknown>;
+    };
+    await within(page.default({ searchParams: Promise.resolve({ status: "confirmed" }) }), "reservations-confirmed");
+    expect(bar.beforeGate, "조회가 게이트보다 먼저 시작했다").toEqual([]);
+    expect(bar.arrived()).toBe(4);
   });
 
   test("예약 상세 — 예약 한 건과 차량 라벨을 동시에 읽는다", async () => {

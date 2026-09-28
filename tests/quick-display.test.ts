@@ -25,8 +25,10 @@ vi.mock("@/lib/queries", () => ({
 }));
 vi.mock("@/lib/admin/reservations", async (importOriginal) => {
   const mod = await importOriginal<typeof import("@/lib/admin/reservations")>();
-  return { ...mod, getReservation: vi.fn(), listReservations: vi.fn() };
+  return { ...mod, getReservation: vi.fn(), listReservations: vi.fn(), countReservationsByStatus: vi.fn(async () => ({ new: 2, confirmed: 0, done: 0, cancelled: 0 })) };
 });
+// P5-21 — 목록의 '20건 더 보기'(클라이언트)가 라우터를 쓴다. 이 파일은 마크업만 본다.
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {}, push: () => {}, replace: () => {} }) }));
 vi.mock("next-intl/server", async () => {
   const { createTranslator: ct } = await import("next-intl");
   const { readFileSync: rf } = await import("node:fs");
@@ -141,7 +143,11 @@ describe("2. 관리자 상세 — 간편 접수 배지 · 날짜만 · 미정(�
   });
 });
 
-describe("3. 관리자 목록 — 간편 접수 배지 · 날짜만 · 차량 미정 · 인원만", () => {
+/**
+ * P5-21 — 목록이 표에서 카드 행(한 벌의 마크업)으로 바뀌었다. 뜻은 그대로다: 간편 접수 행은 **날짜만**(시각 자리 "시각 미정") ·
+ * **차량 미정** · 인원만 — 지어낸 시각·차량·대수가 없다. 칩 글자는 목록에서 짧게 "간편"(리뷰 P2-7 · 시안 #list), 상세는 그대로 "간편 접수".
+ */
+describe("3. 관리자 목록 — 간편 칩 · 날짜만(시각 미정) · 차량 미정 · 인원만", () => {
   test("간편 행 한 줄 + 위저드 행 한 줄 — null 에 깨지지 않는다", async () => {
     vi.mocked(listReservations).mockResolvedValue({
       items: [
@@ -152,19 +158,23 @@ describe("3. 관리자 목록 — 간편 접수 배지 · 날짜만 · 차량 �
       nextCursor: null,
     });
     const out = await html(AdminReservationsPage({ searchParams: Promise.resolve({}) }));
-    const rows = out.split("<tr>").slice(2); // 머리 행 다음부터
+    const rows = [...out.matchAll(/<li[^>]*data-row-id="[^"]+"[^>]*>[\s\S]*?<\/li>/g)].map((m) => m[0]);
     expect(rows).toHaveLength(2);
     const [quick, wizard] = rows.map(text);
-    expect(quick).toContain("QK2345AB");
-    expect(quick).toContain(QUICK_BADGE);
-    expect(quick).toContain("2026-10-01");
-    expect(quick).not.toMatch(/2026-10-01 \d{2}:\d{2}/);
-    expect(quick).toContain(UNDECIDED);
+    const res = t.raw("admin.reservations" as never) as Record<string, string>;
+    expect(quick).toContain(res.quickChip);
+    expect(quick).toContain("10/1(목)");
+    expect(quick).toContain(res.timeUndecided);
+    expect(quick).not.toMatch(/\d{2}:\d{2}/);
+    expect(quick).toContain(res.vehicleUndecided);
     expect(quick).toContain("30명");
     expect(quick).not.toMatch(/\d+대/);
-    expect(wizard).toContain("2026-10-01 08:30");
-    expect(wizard).toContain("45인승 우등");
-    expect(wizard).toContain("1대 · 30명");
-    expect(wizard).not.toContain(QUICK_BADGE);
+    expect(quick).not.toContain("45인승 우등");
+    expect(wizard).toContain("10/1(목)");
+    expect(wizard).toContain("08:30");
+    expect(wizard).toContain("45인승 우등 1대");
+    expect(wizard).toContain("30명");
+    expect(wizard).not.toContain(res.quickChip);
+    expect(wizard).not.toContain(res.timeUndecided);
   });
 });

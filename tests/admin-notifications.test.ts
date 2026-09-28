@@ -665,7 +665,7 @@ describe("7. 정적 규약", () => {
 // 8. 탭 · 문구 카탈로그
 // =============================================================================
 describe("8. 탭 · 문구", () => {
-  // P5-20 — 사이드바·탭 바 개편: 홈이 첫 항목, 발송 내역은 '기록' 묶음의 첫 항목(메뉴 이름 '문자 기록')이다(tests/admin-nav.test.ts).
+  // P5-20 — 사이드바·탭 바 개편: 홈이 첫 항목, 발송 내역은 '기록' 묶음의 첫 항목이다(메뉴 이름은 P5-21 부터 '발송 기록' · tests/admin-nav.test.ts).
   test("탭 — 발송 내역이 '기록' 묶음에 있고 여덟 항목 전부 ready 다", async () => {
     const { ADMIN_TABS, ADMIN_TAB_KEYS } = await import("@/components/admin/tabs");
     expect([...ADMIN_TAB_KEYS]).toEqual(["home", "reservations", "notices", "popups", "gallery", "routes", "notifications", "stats"]);

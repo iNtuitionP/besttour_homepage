@@ -88,8 +88,8 @@ import {
   isUuid,
   listReservations,
   parseCursor,
-  parseStatusFilter,
 } from "@/lib/admin/reservations";
+import { parseListTab } from "@/components/admin/reservation-list";
 import { QUERY_TAGS } from "@/lib/queries/tags";
 
 import { stripComments } from "./helpers/strip-comments";
@@ -479,11 +479,14 @@ describe("3. lib/admin/reservations.ts — 목록·상세 쿼리", () => {
     await expect(listReservations({}, client)).rejects.toThrow();
   });
 
-  test("파서는 관대하고 쿼리는 엄격하다 — URL 의 쓰레기값은 기본값으로 떨어진다", () => {
-    expect(parseStatusFilter("new")).toBe("new");
-    expect(parseStatusFilter("bogus")).toBe("all");
-    expect(parseStatusFilter(undefined)).toBe("all");
-    expect(parseStatusFilter(["new", "done"])).toBe("all");
+  // P5-21 — 목록 화면의 탭 파서는 components/admin/reservation-list.ts 의 parseListTab 이다(기본 탭 = 새 접수 · tests/admin-list.test.ts).
+  // 뜻은 그대로다: 파서는 관대하고(쓰레기값 → 기본 탭) 쿼리는 엄격하다(목록 밖의 status 는 DB 를 부르지 않고 던진다 — 위 테스트).
+  test("파서는 관대하고 쿼리는 엄격하다 — URL 의 쓰레기값은 기본값(새 접수 탭)으로 떨어진다", () => {
+    expect(parseListTab("new")).toBe("new");
+    expect(parseListTab("bogus")).toBe("new");
+    expect(parseListTab(undefined)).toBe("new");
+    expect(parseListTab(["new", "done"])).toBe("new");
+    expect(parseListTab("all")).toBe("all");
     expect(parseCursor("40")).toBe(40);
     expect(parseCursor("-1")).toBe(0);
     expect(parseCursor("abc")).toBe(0);
@@ -912,7 +915,8 @@ describe("6. 정적 규약", () => {
       expect(tabs[k], `admin.tabs.${k}`).toBeTruthy();
     }
     const list = ko.admin.reservations as Record<string, unknown>;
-    for (const k of ["title", "sub", "empty", "filterLabel", "prev", "next", "detail", "status", "col", "filter"]) {
+    // P5-21 — 목록이 카드 행 + '20건 더 보기'가 되어 옛 쪽 넘김(prev·next)·'상세 보기' 글자는 빠졌다. 화면이 쓰는 키가 살아 있는지를 본다.
+    for (const k of ["title", "sub", "empty", "emptyAll", "emptyNew", "filterLabel", "status", "col", "filter", "listLabel", "more", "clearFilter"]) {
       expect(list[k], `admin.reservations.${k}`).toBeTruthy();
     }
     for (const s of ["new", "confirmed", "done", "cancelled"]) {

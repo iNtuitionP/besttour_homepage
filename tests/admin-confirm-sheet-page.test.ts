@@ -133,8 +133,8 @@ describe("1. 처리 영역 props — 개인정보 원문 0 (이름·전화·메�
     expect(labels.sheet.confirm.title).toBe("{name} 님 접수를 확정할까요?");
     expect(labels.sheet.cancel.title).toBe("{name} 님 접수를 취소할까요?");
     expect(labels.sheet.complete.title).toContain("{name}");
-    // P5-20 — 메뉴 이름이 '문자 기록' 이 되어 링크 글자도 같은 말로(경로는 그대로 발송 내역 화면)
-    expect(labels.toastLink).toEqual({ label: "문자 기록 보기", href: "/admin/notifications" });
+    // 메뉴 이름과 같은 말(P5-21 부터 '발송 기록' — 그 화면에 메일 행도 있다 · 컨트롤러 결정). 가는 곳은 그대로 발송 내역 화면.
+    expect(labels.toastLink).toEqual({ label: "발송 기록 보기", href: "/admin/notifications" });
   });
 
   test("찾을 수 없는 예약이면 처리 영역을 그리지 않는다", async () => {

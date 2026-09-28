@@ -34,8 +34,10 @@ vi.mock("@/lib/queries", () => ({
 }));
 vi.mock("@/lib/admin/reservations", async (importOriginal) => {
   const mod = await importOriginal<typeof import("@/lib/admin/reservations")>();
-  return { ...mod, getReservation: vi.fn(), listReservations: vi.fn() };
+  return { ...mod, getReservation: vi.fn(), listReservations: vi.fn(), countReservationsByStatus: vi.fn(async () => ({ new: 2, confirmed: 1, done: 0, cancelled: 0 })) };
 });
+// P5-21 — 목록의 '20건 더 보기'(클라이언트)가 라우터를 쓴다. 이 파일은 마크업만 본다.
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {}, push: () => {}, replace: () => {} }), usePathname: () => "/admin/reservations" }));
 vi.mock("next-intl/server", async () => {
   const { createTranslator: ct } = await import("next-intl");
   const { readFileSync: rf } = await import("node:fs");
@@ -268,40 +270,41 @@ const BASE: ReservationDetailRow = {
 };
 
 describe("4. 교체한 곳", () => {
-  test("예약 목록 — 상태 칸은 StatusBadge(72시간 넘은 새 접수 = N일째 대기) · 간편 접수 칩 · 옛 배지 없음", async () => {
+  test("예약 목록 — 행마다 StatusBadge(72시간 넘은 새 접수 = N일째 대기) 뒤에 간편 칩 · 옛 배지 없음 (P5-21 카드 행)", async () => {
     vi.mocked(listReservations).mockResolvedValue({
-      items: [
-        BASE,
-        { ...BASE, id: "8c9e6679-7425-40de-944b-e07fc1f90ae8", public_code: "WZ2345AB", intake: "wizard", created_at: new Date(Date.now() - HOUR).toISOString() },
-        { ...BASE, id: "9c9e6679-7425-40de-944b-e07fc1f90ae9", public_code: "CF2345AB", intake: "wizard", status: "confirmed" },
-      ],
+      items: [BASE, { ...BASE, id: "8c9e6679-7425-40de-944b-e07fc1f90ae8", public_code: "WZ2345AB", intake: "wizard", created_at: new Date(Date.now() - HOUR).toISOString() }],
       hasMore: false,
       nextCursor: null,
     });
     const html = renderToStaticMarkup((await AdminReservationsPage({ searchParams: Promise.resolve({}) })) as ReactElement);
     const kinds = badgeTags(html).map((t) => attr(t, "data-kind"));
-    expect(kinds).toEqual(["quick", "waiting", "new", "confirmed"]);
+    expect(kinds).toEqual(["waiting", "quick", "new"]);
     expect(text(html)).toContain("3일째 대기");
     expect(html).not.toMatch(/data-status="(new|confirmed|done|cancelled)"/);
+    // 확정 탭의 행은 확정 배지
+    vi.mocked(listReservations).mockResolvedValue({
+      items: [{ ...BASE, id: "9c9e6679-7425-40de-944b-e07fc1f90ae9", public_code: "CF2345AB", intake: "wizard", status: "confirmed" }],
+      hasMore: false,
+      nextCursor: null,
+    });
+    const confirmed = renderToStaticMarkup((await AdminReservationsPage({ searchParams: Promise.resolve({ status: "confirmed" }) })) as ReactElement);
+    expect(badgeTags(confirmed).map((t) => attr(t, "data-kind"))).toEqual(["confirmed"]);
   });
 
   /**
-   * 🔴 브라우저 실측(보고서 ⑦): 사이드바(248px)가 본문 폭을 줄여 접수 표(1212px)가 1280~1599px 에서 스크롤 상자 안으로 밀린다 —
-   * 맨 끝의 상태 칸이 첫 화면에서 사라졌다(1280: 대수·인원 · 상태 · 상세 숨김). 배지는 한눈에 보려고 있는 것이라
-   * 상태 칸을 접수번호 바로 뒤로 옮긴다(표의 전체 재설계는 P5-21). 머리 칸과 본문 칸이 같은 자리여야 한다.
+   * 🔴 P5-20 브라우저 실측: 사이드바(248px)가 본문 폭을 줄여 옛 접수 표(1212px)가 1280~1599px 에서 스크롤 상자 안으로 밀렸고,
+   * 맨 끝의 상태 칸이 첫 화면에서 사라졌다. P5-21 은 표를 카드 행으로 바꿨다 — 상태 배지가 **행의 첫 칸**이라 어떤 폭에서도 먼저 보인다
+   * (≥1024px 표 모양 7칸도 첫 칸이 상태다 · 가로 스크롤 상자 없음).
    */
-  test("🔴 예약 목록 — 상태 칸은 접수번호 바로 뒤(머리·본문 같은 자리) — 좁은 PC 폭에서도 첫 화면에 보인다", async () => {
+  test("🔴 예약 목록 — 상태 배지는 행(상세 링크)의 첫 칸이다 · 옛 가로 스크롤 표(tableWrap)는 없다", async () => {
     vi.mocked(listReservations).mockResolvedValue({ items: [BASE], hasMore: false, nextCursor: null });
     const html = renderToStaticMarkup((await AdminReservationsPage({ searchParams: Promise.resolve({}) })) as ReactElement);
-    const col = (ko.admin.reservations as Record<string, Record<string, string>>).col;
-    const heads = [...html.matchAll(/<th[^>]*>([\s\S]*?)<\/th>/g)].map((m) => text(m[1]));
-    expect(heads.indexOf(col.status)).toBe(heads.indexOf(col.code) + 1);
-    const firstRow = /<tbody>\s*<tr[^>]*>([\s\S]*?)<\/tr>/.exec(html)![1];
-    const cells = [...firstRow.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((m) => m[1]);
-    expect(cells).toHaveLength(heads.length);
-    const statusCell = cells[heads.indexOf(col.status)];
-    expect(badgeTags(statusCell).map((t) => attr(t, "data-kind"))).toEqual(["waiting"]);
-    expect(text(cells[heads.indexOf(col.code)])).toContain(BASE.public_code);
+    const link = /<a[^>]*data-row-index="0"[^>]*>([\s\S]*?)<\/a>/.exec(html);
+    expect(link).not.toBeNull();
+    const firstCell = /^<span[^>]*>([\s\S]*?)<\/span><\/span>/.exec(link![1]);
+    expect(firstCell, "행의 첫 칸").not.toBeNull();
+    expect(badgeTags(firstCell![0]).map((t) => attr(t, "data-kind"))).toEqual(["waiting", "quick"]);
+    expect(html).not.toMatch(/<table/);
   });
 
   test("예약 상세 — 머리 배지가 StatusBadge(오래된 새 접수 = N일째 대기) · 접수 방법 줄의 간편 칩", async () => {
@@ -313,10 +316,12 @@ describe("4. 교체한 곳", () => {
     expect(html).not.toMatch(/data-status="(new|confirmed|done|cancelled)"/);
   });
 
-  test("정적 — 세 화면이 StatusBadge 를 쓰고 옛 배지 모양(`data-status={r.status}`·`data-intake`)이 없다", () => {
-    for (const rel of [LIST_PAGE, DETAIL_PAGE, STATS_PAGE]) {
+  test("정적 — 세 화면이 StatusBadge 를 쓰고 옛 배지 모양(`data-status={r.status}`·`data-intake`)이 없다 (목록은 P5-21 부터 행 함수가 그린다)", () => {
+    const ROW = "components/admin/reservationRow.tsx";
+    for (const rel of [DETAIL_PAGE, STATS_PAGE, ROW]) expect(codeOf(rel), rel).toMatch(/<StatusBadge\b/);
+    expect(codeOf(LIST_PAGE)).toMatch(/reservationRow\(/);
+    for (const rel of [LIST_PAGE, DETAIL_PAGE, STATS_PAGE, ROW]) {
       const src = codeOf(rel);
-      expect(src, rel).toMatch(/<StatusBadge\b/);
       expect(src, rel).not.toMatch(/data-status=\{(r|row)\.status\}/);
       expect(src, rel).not.toMatch(/data-intake=/);
     }

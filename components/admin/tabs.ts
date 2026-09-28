@@ -7,7 +7,7 @@
  * 대신 링크가 아니라 `aria-disabled` 로 렌더한다(components/admin/AdminTabs.tsx).
  *
  * P5-20 — 메뉴가 두 모양이 됐다(시안 docs/handoff/2026-09-27-admin-ux · 제안서 ⑥ 내비 결정).
- *   - ≥1024px **왼쪽 사이드바**: 매일(홈 · 접수) / 묶음 "홈페이지"(공지 · 팝업 · 갤러리 · 대표 노선) / 묶음 "기록"(문자 기록 · 통계).
+ *   - ≥1024px **왼쪽 사이드바**: 매일(홈 · 접수) / 묶음 "홈페이지"(공지 · 팝업 · 갤러리 · 대표 노선) / 묶음 "기록"(발송 기록 · 통계).
  *     항목 순서가 곧 사이드바 순서다 — 같은 묶음은 이어져 있다.
  *   - <1024px **아래 탭 바 4개**: 매일 두 항목은 탭에 바로, 나머지 묶음은 **허브 화면**(ADMIN_HUBS)으로 간다. "더보기" 탭은 없다
  *     (Apple HIG — 넘치는 탭을 모은 More 탭을 피한다). 라벨은 한글 5자 이내(SEED).
@@ -46,7 +46,7 @@ export const ADMIN_TABS: readonly AdminTab[] = [
   { key: "popups", href: "/admin/popups", ready: true, group: "site", mobileHub: true },
   { key: "gallery", href: "/admin/gallery", ready: true, group: "site", mobileHub: true },
   { key: "routes", href: "/admin/routes", ready: true, group: "site", mobileHub: true },
-  // P5-8 발송 내역(메뉴 이름 '문자 기록') — 읽기 전용. 아웃박스가 기록만 하고 아무도 읽지 않던 구멍을 막는 화면이다(lib/admin/notifications.ts 헤더).
+  // P5-8 발송 내역(메뉴 이름 '발송 기록' — P5-21 · 메일 행도 있다) — 읽기 전용. 아웃박스가 기록만 하고 아무도 읽지 않던 구멍을 막는 화면이다(lib/admin/notifications.ts 헤더).
   { key: "notifications", href: "/admin/notifications", ready: true, group: "records", mobileHub: true },
   // P5-17 통계 — 읽기 전용. 0022 의 definer 함수 하나가 집계해 준다(lib/admin/stats.ts 헤더). 매일 누르는 화면이 아니라 **맨 뒤**다.
   { key: "stats", href: "/admin/stats", ready: true, group: "records", mobileHub: true },
@@ -135,4 +135,23 @@ export interface NavBadge {
 export function navBadge(count: number | null, label: (n: number) => string): NavBadge | null {
   if (count === null || !Number.isInteger(count) || count <= 0) return null;
   return { visible: badgeCountText(count), label: label(count) };
+}
+
+/**
+ * 배지 한 벌과 그 수를 **센 시각**(서버의 ms) — P5-21 · 리뷰 P2-10 "두 숫자 금지".
+ *
+ * 레이아웃은 탭 사이 이동에서 다시 렌더되지 않아 배지가 늦게 반영될 수 있다(P5-20 보고서 ④). 그런데 관리 홈 카드와 접수 목록 탭은
+ * 이동마다 새로 센다 — 같은 화면에 사이드바 "3" 과 카드 "4" 가 함께 보이면 제안서 ④ 원칙 2 가 피하려던 두 숫자다.
+ * 그래서 숫자를 그리는 화면은 자기가 센 값을 메뉴에 **보고**하고(components/admin/NavBadgeReport.tsx), 메뉴는 둘 중 **더 새로 센 쪽**을 그린다.
+ * 같은 요청에서 센 두 값은 lib/admin/reservations.ts countNewReservations 의 요청 범위 memo 로 애초에 같다.
+ */
+export interface TimedNavBadge {
+  badge: NavBadge | null;
+  /** 센 시각(서버 Date.now()). */
+  at: number;
+}
+
+/** 메뉴가 그릴 배지 — 화면의 보고가 레이아웃 값보다 새것(같은 때 포함)이면 보고를, 아니면 레이아웃 값을. 보고의 null(0건)도 그대로 따른다. */
+export function pickNavBadge(layout: TimedNavBadge, reported: TimedNavBadge | null): NavBadge | null {
+  return reported !== null && reported.at >= layout.at ? reported.badge : layout.badge;
 }

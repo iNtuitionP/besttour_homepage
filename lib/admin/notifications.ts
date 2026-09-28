@@ -35,7 +35,14 @@ import "server-only";
 import { cookies } from "next/headers";
 
 import { maskEmailAddress, maskStoredPhone } from "../mask";
-import { DUPLICATE_SENT_ERROR, MAX_ATTEMPTS, SENT_UNMARKED_PREFIX, notificationRecordState, type NotificationRecordState } from "../notify/outbox";
+import {
+  ALL_TEMPLATE_KEYS,
+  DUPLICATE_SENT_ERROR,
+  MAX_ATTEMPTS,
+  SENT_UNMARKED_PREFIX,
+  notificationRecordState,
+  type NotificationRecordState,
+} from "../notify/outbox";
 import { createSsrClient } from "../supabase/ssr";
 import type { NotifyChannel, NotifyEvent, OutboxStatus } from "../types";
 
@@ -410,4 +417,82 @@ export async function getNotificationSummary(
   const sentUnconfirmed = readCount("summary.sentUnconfirmed", unconfirmedRes as CountResponse);
 
   return { failed, stuck, sentUnconfirmed, windowHours: SUMMARY_WINDOW_HOURS, ok: failed === 0 && stuck === 0 && sentUnconfirmed === 0 };
+}
+
+// =============================================================================
+// 관리 홈 발송 경보 — 최근 7일 · 받는 사람별 (P5-21 수정 라운드 · 컨트롤러 결정 P1-2)
+// =============================================================================
+
+/**
+ * 관리 홈 배너·'문자 발송' 카드의 기간. 위 요약(실패는 기간 없음)을 그대로 쓰면 한 번 뜬 경보가 사라지지 않았다 —
+ * 실패 행을 바꾸는 관리자 동작이 없고 파기 배치가 예약과 함께 지울 때까지(확정 건은 5년) 남기 때문이다(리뷰 P1-2).
+ * 발송 기록 화면의 기간 필터 '7d'(created_at 기준 — PERIOD_HOURS)와 **같은 창**이다: 카드·배너는 그 걸러 본 목록으로 이어진다.
+ */
+export const HOME_ALERT_WINDOW_DAYS = 7;
+
+/** 카드·배너가 이어지는 곳 — 발송 기록의 '실패 · 최근 7일' 목록(주소에는 상태·기간뿐 — 개인정보 0). */
+export const HOME_ALERT_LIST_HREF = `${ADMIN_NOTIFICATIONS_PATH}?status=failed&period=7d`;
+
+export type TemplateAudience = "customer" | "owner";
+
+/**
+ * 문안 키의 받는 사람 — 키 모양은 lib/notify/outbox.ts 가 정한다: 예약 통지 `${event}.${audience}.${channel}` ·
+ * 발송 실패 알림 `${event}.owner.failure.email`. 둘째 칸이 받는 사람이다. 모르는 모양이면 null.
+ */
+export function templateAudience(key: string): TemplateAudience | null {
+  const audience = key.split(".")[1];
+  return audience === "customer" || audience === "owner" ? audience : null;
+}
+
+/** 문안 키의 채널 — 마지막 칸. */
+function templateChannel(key: string): string {
+  return key.split(".").at(-1) ?? "";
+}
+
+/**
+ * 고객에게 가는 **문자**(SMS · 알림톡) 문안 키 — 아웃박스가 받아들이는 키 전부(ALL_TEMPLATE_KEYS)에서 가른다. 목록을 손으로 적지 않는다:
+ * 아웃박스에 고객 문안이 늘면 여기에 저절로 들어온다. 홈 배너는 이 수로만 뜬다 — "고객에게 전화로 알려 주세요" 가 참인 경우다.
+ */
+export const CUSTOMER_MESSAGE_TEMPLATE_KEYS: readonly string[] = ALL_TEMPLATE_KEYS.filter(
+  (k) => templateAudience(k) === "customer" && (templateChannel(k) === "sms" || templateChannel(k) === "alimtalk"),
+);
+
+/** 사장님께 가는 알림 문안 키(접수 알림 문자·메일 · 발송 실패 알림 메일) — 홈 카드의 작은 줄로만 보인다(배너가 아니다). */
+export const OWNER_TEMPLATE_KEYS: readonly string[] = ALL_TEMPLATE_KEYS.filter((k) => templateAudience(k) === "owner");
+
+export interface HomeSendAlerts {
+  /** 최근 7일 고객 문자 실패(중복 억제 행 제외) — 배너·카드의 '확인 필요' 를 정한다. */
+  customerFailed: number;
+  /** 같은 7일의 사장님 쪽 알림 실패 — 카드의 작은 줄. */
+  ownerFailed: number;
+  windowDays: number;
+}
+
+/**
+ * 관리 홈 발송 경보 — status='failed'(중복 억제 `duplicate_sent` 는 뺀다 — 손님은 이미 받았다) · created_at ≥ 지금 − 7일 ·
+ * 받는 사람별 head 집계 둘(행은 오지 않는다 — 개인정보 0). 멈춘 대기(stuck)는 세지 않는다: 회수기(0007)가 다음 실행에 failed 로 바꾸면
+ * 그때 여기에 잡히고, 카드·배너가 이어지는 '실패 · 7일' 목록과 같은 수가 된다(두 숫자를 만들지 않는다).
+ * 문안 키가 아웃박스 밖인 행(옛 행·손으로 넣은 행)은 받는 사람을 알 수 없어 여기서 세지 않는다 — 발송 기록 화면에는 그대로 보인다.
+ * 모르는 것은 0 이 아니다 — 오류·빈 count 는 던진다(화면은 그 카드만 "불러오지 못했어요").
+ */
+export async function getHomeSendAlerts(params: NotificationSummaryParams = {}, client?: AdminNotificationsClient): Promise<HomeSendAlerts> {
+  const now = params.now ?? new Date();
+  const db = client ?? (await sessionClient());
+  const since = new Date(now.getTime() - HOME_ALERT_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
+
+  const failedFor = (keys: readonly string[]) =>
+    db
+      .from(NOTIFICATIONS_TABLE)
+      .select(COUNT_COLUMN, { count: "exact", head: true })
+      .eq("status", "failed")
+      .or(`last_error.is.null,last_error.neq.${DUPLICATE_SENT_ERROR}`)
+      .gte("created_at", since)
+      .in("template", [...keys]);
+
+  const [customerRes, ownerRes] = await Promise.all([failedFor(CUSTOMER_MESSAGE_TEMPLATE_KEYS), failedFor(OWNER_TEMPLATE_KEYS)]);
+  return {
+    customerFailed: readCount("homeAlerts.customer", customerRes as CountResponse),
+    ownerFailed: readCount("homeAlerts.owner", ownerRes as CountResponse),
+    windowDays: HOME_ALERT_WINDOW_DAYS,
+  };
 }

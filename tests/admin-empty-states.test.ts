@@ -3,7 +3,8 @@
  *
  *   1. 접수 목록 — 쪽 번호(cursor)가 끝을 넘으면 목록이 비는데, 예전에는 "아직 들어온 접수가 없어요."(전체) /
  *      "이 상태의 접수가 없어요."(걸러 본 상태)라고 했다. 바로 아래에는 "← 이전" 이 보인다. 2쪽의 새 접수를 확정하고 돌아와도 그렇다.
- *      → "이 쪽에는 더 없어요." + [첫 쪽 보기](같은 상태의 첫 쪽).
+ *      → P5-20: "이 쪽에는 더 없어요." + [첫 쪽 보기]. P5-21: 목록이 "20건 더 보기"(늘 첫 줄부터 읽는다)가 되어 그 상황이 없어졌다 —
+ *        빈 목록은 그 탭에 정말 한 건도 없다는 뜻이고, 문장은 두 종류(데이터 없음 · 걸러 본 결과 없음)다.
  *   2. 갤러리 — 앨범으로 거른 화면이 비면, 다른 앨범에 사진이 있어도 "아직 올린 사진이 없어요." 라고 했다.
  *      → "고른 앨범에 사진이 없어요." + [모든 사진 보기] · [사진 올리기]. 사진이 정말 하나도 없을 때만 "아직 올린 사진이 없어요."
  *
@@ -24,8 +25,10 @@ vi.mock("next/link", () => ({
 vi.mock("@/lib/queries", () => ({ getVehicles: vi.fn(async () => []) }));
 vi.mock("@/lib/admin/reservations", async (importOriginal) => {
   const mod = await importOriginal<typeof import("@/lib/admin/reservations")>();
-  return { ...mod, listReservations: vi.fn() };
+  return { ...mod, listReservations: vi.fn(), countReservationsByStatus: vi.fn(async () => ({ new: 0, confirmed: 0, done: 0, cancelled: 0 })) };
 });
+// P5-21 — 목록의 '20건 더 보기'(클라이언트)가 라우터를 쓴다.
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {}, push: () => {}, replace: () => {} }) }));
 vi.mock("@/lib/admin/gallery", async (importOriginal) => {
   const mod = await importOriginal<typeof import("@/lib/admin/gallery")>();
   return { ...mod, listAdminAlbums: vi.fn(), listAdminPhotos: vi.fn(), galleryUsage: vi.fn() };
@@ -65,33 +68,33 @@ async function renderReservations(params: Record<string, string>): Promise<strin
   return renderToStaticMarkup((await AdminReservationsPage({ searchParams: Promise.resolve(params) })) as ReactElement);
 }
 
-describe("1. 접수 목록 — 끝을 넘은 쪽", () => {
-  test("카탈로그 — 거짓 없는 두 문장(해요체) · 첫 쪽으로 가는 링크 이름", () => {
-    expect(res.emptyPage).toBe("이 쪽에는 더 없어요.");
-    expect(res.firstPage).toBe("첫 쪽 보기");
+/**
+ * P5-21 — 목록이 "20건 더 보기"(쪽 수 × 20 을 **첫 줄부터** 한 번에 읽는다)로 바뀌어, 리뷰 P2-3 이 짚은 "끝을 넘은 쪽" 자체가 없어졌다.
+ * 뒤쪽 쪽 번호로 들어와도 목록은 첫 줄부터이므로, 비었다면 그 탭에 정말 한 건도 없는 것이다 — 그래서 문장이 거짓이 되지 않는다.
+ * 빈 상태는 두 종류(브리프 §B): ① 데이터 없음(새 접수 탭 · 전체 탭) ② 걸러 본 결과 없음(확정·운행 완료·취소 탭) + [전체 보기].
+ */
+describe("1. 접수 목록 — 빈 상태 두 종류 · 뒤쪽 쪽 번호도 거짓 없는 문장", () => {
+  test("옛 '쪽' 문장(이 쪽에는 더 없어요 · 첫 쪽 보기)은 카탈로그에서 빠졌다 — 그 상황이 더는 생기지 않는다", () => {
+    expect(res.emptyPage).toBeUndefined();
+    expect(res.firstPage).toBeUndefined();
   });
 
-  test("🔴 전체 · 끝을 넘은 쪽 → '이 쪽에는 더 없어요.' + [첫 쪽 보기](/admin/reservations) — '아직 들어온 접수가 없어요' 가 아니다", async () => {
-    const html = await renderReservations({ cursor: "40" });
-    expect(text(html)).toContain(res.emptyPage);
-    expect(text(html)).not.toContain(res.emptyAll);
-    expect(links(html)).toContainEqual({ href: "/admin/reservations", text: res.firstPage });
+  test("🔴 기본(새 접수) 탭이 비었으면 '새 접수가 없어요…' + [전체 보기] — 뒤쪽 쪽 번호로 들어와도 같은 문장", async () => {
+    const cases: Record<string, string>[] = [{}, { page: "3" }];
+    for (const params of cases) {
+      const html = await renderReservations(params);
+      expect(text(html)).toContain(res.emptyNew);
+      expect(links(html)).toContainEqual({ href: "/admin/reservations?status=all", text: res.clearFilter });
+    }
   });
 
-  test("🔴 걸러 본 상태 · 끝을 넘은 쪽 → 같은 문장 + 같은 상태의 첫 쪽(?status=new) — '이 상태의 접수가 없어요' 가 아니다", async () => {
-    const html = await renderReservations({ status: "new", cursor: "20" });
-    expect(text(html)).toContain(res.emptyPage);
-    expect(text(html)).not.toContain(res.empty);
-    expect(links(html)).toContainEqual({ href: "/admin/reservations?status=new", text: res.firstPage });
-  });
-
-  test("첫 쪽의 빈 목록은 예전 그대로 — 전체면 '아직 들어온 접수가 없어요.', 걸러 봤으면 '이 상태의 접수가 없어요.' + [전체 보기]", async () => {
-    const all = await renderReservations({});
+  test("🔴 전체 탭이 비었으면 '아직 들어온 접수가 없어요.' · 걸러 본 탭이 비었으면 '이 상태의 접수가 없어요.' + [전체 보기]", async () => {
+    const all = await renderReservations({ status: "all", page: "2" });
     expect(text(all)).toContain(res.emptyAll);
-    expect(text(all)).not.toContain(res.emptyPage);
+    expect(text(all)).not.toContain(res.empty);
     const filtered = await renderReservations({ status: "cancelled" });
     expect(text(filtered)).toContain(res.empty);
-    expect(links(filtered)).toContainEqual({ href: "/admin/reservations", text: res.clearFilter });
+    expect(links(filtered)).toContainEqual({ href: "/admin/reservations?status=all", text: res.clearFilter });
   });
 });
 

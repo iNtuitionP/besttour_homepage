@@ -100,7 +100,7 @@ const links = (html: string) => [...html.matchAll(/<a\s[^>]*>[\s\S]*?<\/a>/g)].m
 // 1. 메뉴 정의 — components/admin/tabs.ts
 // =============================================================================
 describe("1. 메뉴 정의 (tabs.ts)", () => {
-  test("항목·순서 — 홈 · 접수 / 공지 · 팝업 · 갤러리 · 대표 노선 / 문자 기록 · 통계 (브리프 §B · 시안 사이드바)", () => {
+  test("항목·순서 — 홈 · 접수 / 공지 · 팝업 · 갤러리 · 대표 노선 / 발송 기록 · 통계 (브리프 §B · 시안 사이드바)", () => {
     expect([...ADMIN_TAB_KEYS]).toEqual(["home", "reservations", "notices", "popups", "gallery", "routes", "notifications", "stats"]);
     expect(ADMIN_TABS.map((t) => t.key)).toEqual([...ADMIN_TAB_KEYS]);
     expect(ADMIN_TABS.map((t) => t.href)).toEqual([
@@ -241,7 +241,7 @@ describe("2. 메뉴 마크업 — 사이드바", () => {
     expect(text(side)).toContain(tabsKo.brand);
     const got = links(region(html, "admin-sidebar-nav")).map((l) => [l.href, l.text]);
     expect(got).toEqual(ADMIN_TABS.map((t) => [t.href, tabsKo[t.key]]));
-    // 묶음 제목이 제자리에 — 접수 뒤·공지 앞에 '홈페이지', 대표 노선 뒤·문자 기록 앞에 '기록'
+    // 묶음 제목이 제자리에 — 접수 뒤·공지 앞에 '홈페이지', 대표 노선 뒤·발송 기록 앞에 '기록'
     const s = text(region(html, "admin-sidebar-nav"));
     const at = (w: string) => s.indexOf(w);
     expect(at(tabsKo.site)).toBeGreaterThan(at(tabsKo.reservations));
@@ -531,11 +531,15 @@ describe("3. 레이아웃 — 배지는 게이트 뒤에서 한 번 센다", () 
     return { props: tabs!.props, order, tree, logs };
   }
 
-  test("조회는 게이트가 끝난 뒤에 시작한다 · 건수 4 → 배지 {4, '새 접수 4건'}", async () => {
+  test("조회는 게이트가 끝난 뒤에 시작한다 · 건수 4 → 배지 {4, '새 접수 4건'} · 센 시각(badgeAt)을 함께 넘긴다(P5-21 — 화면이 센 수와 어느 쪽이 새것인지 가른다)", async () => {
+    const before = Date.now();
     const { props, order } = await renderLayout(async () => 4);
     expect(order).toEqual(["gate", "count"]);
     expect(props.badge).toEqual({ visible: "4", label: "새 접수 4건" });
     expect(props.signOutLabel).toBe((ko.admin.session as Record<string, string>).signOut);
+    expect(typeof props.badgeAt).toBe("number");
+    expect(props.badgeAt as number).toBeGreaterThanOrEqual(before);
+    expect(props.badgeAt as number).toBeLessThanOrEqual(Date.now());
   });
 
   test("건수 0 → 배지 없음(null)", async () => {
@@ -584,26 +588,47 @@ describe("3. 레이아웃 — 배지는 게이트 뒤에서 한 번 센다", () 
 });
 
 // =============================================================================
-// 4. 관리 홈 — 링크만(대시보드는 P5-21) · '관리자' 세 글자가 아니라 제목·안내
+// 4. 관리 홈 — P5-21 부터 대시보드(자세한 값 정의는 tests/admin-dashboard.test.ts) · 여기서는 메뉴와의 이음새만
 // =============================================================================
 describe("4. 관리 홈 /admin", () => {
-  test("첫 문장 게이트 · 제목·안내·접수 링크 · 카탈로그 문구(거짓 없는 '곧 채워져요')", async () => {
+  test("첫 문장 게이트 · 제목(오늘 확인할 일) · 접수로 가는 링크 · 옛 자리표시자('곧 채워져요')는 없다 · 조회가 모두 실패해도 화면은 열린다", async () => {
     vi.resetModules();
+    const boom = async () => {
+      throw new Error("down");
+    };
     vi.doMock("@/lib/auth/requireAdmin", () => ({ requireAdmin: async () => ({ userId: "u", email: "e" }) }));
     vi.doMock("next-intl/server", realTranslator);
+    vi.doMock("@/lib/admin/reservations", async () => ({
+      ...(await vi.importActual<Record<string, unknown>>("@/lib/admin/reservations")),
+      countNewReservations: boom,
+      countNewByIntake: boom,
+      countOverdueNew: boom,
+      countConfirmedDeparting: boom,
+      listConfirmedDeparting: boom,
+      listConfirmedDepartDates: boom,
+      listReservations: boom,
+      countCreatedBetween: boom,
+    }));
+    vi.doMock("@/lib/admin/notifications", async () => ({ ...(await vi.importActual<Record<string, unknown>>("@/lib/admin/notifications")), getHomeSendAlerts: boom }));
+    vi.doMock("@/lib/admin/popups", async () => ({ ...(await vi.importActual<Record<string, unknown>>("@/lib/admin/popups")), listAdminPopups: boom }));
+    vi.doMock("@/lib/admin/notices", async () => ({ ...(await vi.importActual<Record<string, unknown>>("@/lib/admin/notices")), listAdminNotices: boom }));
+    vi.doMock("@/lib/admin/routes", async () => ({ ...(await vi.importActual<Record<string, unknown>>("@/lib/admin/routes")), listAdminRoutes: boom }));
+    vi.doMock("@/lib/queries", () => ({ getVehicles: boom }));
     try {
       const page = (await import("@/app/admin/(protected)/page")) as { default: () => Promise<ReactElement> };
       const html = renderToStaticMarkup(await page.default());
-      const home = ko.admin.home as Record<string, string>;
-      expect(home.title).toBe("관리 홈");
-      expect(home.sub).toContain("곧 채워져요");
+      const home = ko.admin.home as Record<string, unknown> & Record<string, string>;
+      expect(home.title).toBe("오늘 확인할 일");
+      expect(home.sub).toBeUndefined();
       expect(text(html)).toContain(home.title);
-      expect(text(html)).toContain(home.sub);
+      expect(text(html)).not.toContain("곧 채워져요");
       expect(links(html).map((l) => l.href)).toContain("/admin/reservations");
+      expect(text(html)).toContain(home.unknown);
       expect(codeOf(HOME)).toMatch(/export default async function \w+\([^)]*\)[^{]*\{\s*await requireAdmin\(\);/);
     } finally {
-      vi.doUnmock("@/lib/auth/requireAdmin");
-      vi.doUnmock("next-intl/server");
+      for (const m of ["@/lib/auth/requireAdmin", "next-intl/server", "@/lib/admin/reservations", "@/lib/admin/notifications", "@/lib/admin/popups", "@/lib/admin/notices", "@/lib/admin/routes", "@/lib/queries"]) {
+        vi.doUnmock(m);
+      }
       vi.resetModules();
     }
   });
@@ -778,13 +803,13 @@ describe("5. 허브 — /admin/site (홈페이지)", () => {
 describe("5-b. 허브 — /admin/records (기록)", () => {
   const n = ko.admin.notifications as Record<string, Record<string, string>>;
 
-  test("두 항목(문자 기록 · 통계) — 순서 · 경로", async () => {
+  test("두 항목(발송 기록 · 통계) — 순서 · 경로", async () => {
     const { html } = await renderHub("records", {});
     for (const t of hubItems("records")) expect(attr(hubRow(html, t.key), "href")).toBe(t.href);
     expect(text(html)).toContain(hubKo.records.title);
   });
 
-  test("문자 기록 — 이상 없으면 '이상 없음', 있으면 발송 내역 요약과 같은 말 · 통계는 설명 한 줄(무거운 집계를 부르지 않는다)", async () => {
+  test("발송 기록 — 이상 없으면 '이상 없음', 있으면 발송 내역 요약과 같은 말 · 통계는 설명 한 줄(무거운 집계를 부르지 않는다)", async () => {
     const ok = await renderHub("records", {});
     expect(text(hubRow(ok.html, "notifications"))).toContain(n.summary.ok);
     expect(text(hubRow(ok.html, "stats"))).toContain(hubKo.stats);

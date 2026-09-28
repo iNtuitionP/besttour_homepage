@@ -336,17 +336,30 @@ describe("4. 같은 실패가 두 번이면 두 번 보인다 (재리뷰 P2-R1)"
    * 나머지 배너 자리는 동작을 시작할 때 배너를 비운다(`setBanner("")` → 요청 → 문구 = 비움과 문구가 다른 렌더라 다시 붙는다).
    * 시도 번호도 비우기도 없는 자리가 새로 생기면 여기서 걸린다.
    */
-  test("🔴 AdminBanner 를 그리는 곳은 전부 — 시도 번호를 넘기거나, 동작 시작에 배너를 비운다", () => {
+  /**
+   * P5-21 — 서버 화면이 그리는 **상태 배너**(관리 홈의 "보내지 못한 문자" 배너)는 이 규칙의 대상이 아니다: 결과를 들고 있는 클라이언트 상태가 없어
+   * "같은 문구가 비워지지 않은 채 다시 선다" 는 경우가 생기지 않는다(서버가 그릴 때마다 그 순간의 사실이고, 같은 사실이면 그대로 두는 것이 맞다 —
+   * 새로고침마다 스크롤을 끌어당기지 않는다). 그래서 'use client' 가 아닌 파일은 뺀다 — 결과 배너(동작 뒤에 뜨는 것)는 언제나 클라이언트 부품 안이다.
+   */
+  test("🔴 AdminBanner 를 그리는 곳은 전부 — 시도 번호를 넘기거나, 동작 시작에 배너를 비운다 (서버 화면의 상태 배너는 제외)", () => {
     const offenders: string[] = [];
+    const serverFiles: string[] = [];
     for (const f of shellFiles()) {
       if (f === BANNER) continue;
       const src = codeOf(f);
+      const isClient = /^["']use client["'];?$/.test(src.split("\n")[0].trim());
       for (const tag of src.match(/<AdminBanner\b[\s\S]*?\/>/g) ?? []) {
+        if (!isClient) {
+          serverFiles.push(f);
+          continue;
+        }
         if (/\battempt=\{/.test(tag)) continue;
         if (/\bsetBanner\(""\)/.test(src)) continue;
         offenders.push(`${f}: ${tag.replace(/\s+/g, " ").slice(0, 90)}`);
       }
     }
     expect(offenders).toEqual([]);
+    // 빠진 서버 화면은 관리 홈 하나뿐이다 — 늘어나면 여기서 다시 판단한다
+    expect([...new Set(serverFiles)]).toEqual(["app/admin/(protected)/page.tsx"]);
   });
 });
