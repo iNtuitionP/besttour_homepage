@@ -800,7 +800,10 @@ describe("8. 화면 배선 · 문구 · 공개 화면", { timeout: 60_000 }, () 
 describe("9. 카피 2건 (P6-10 잔여) — 빼기만, 새 주장 0", () => {
   const ko = JSON.parse(read("messages/ko.json")) as { home: { hero: { slides: { trust: { heading: string } } }; fleet: { lines: Record<string, string>; disc: string } } };
   const OLD_HEADING = "외국인 투어로 다져온\n운행 기준";
-  const OLD_BUS45 = "단체 워크샵·현장학습·종교단체 이동에 쓰이는 대형 차량. DVD·노래방 시스템 완비.";
+  // 2026-09-28 표기 정정(워크샵 → 워크숍, 표준어 — 관리자 글과 한 표기로). 주장이 아니라 맞춤법이라
+  // "빼기만 했다" 를 볼 때는 같은 정정을 옛 값에도 적용한 뒤 비교한다 — 이 절이 잡으려는 것(새 수식어·새 주장)은 그대로 잡는다.
+  const spelling = (s: string) => s.replaceAll("워크샵", "워크숍");
+  const OLD_BUS45 = spelling("단체 워크샵·현장학습·종교단체 이동에 쓰이는 대형 차량. DVD·노래방 시스템 완비.");
 
   test("slides.trust.heading — `로 다져온` 만 뺐다", () => {
     const now = ko.home.hero.slides.trust.heading;
