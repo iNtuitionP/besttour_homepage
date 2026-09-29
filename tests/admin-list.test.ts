@@ -111,7 +111,14 @@ const MIN = 60_000;
 const NOW = new Date("2026-09-28T01:00:00.000Z");
 const ago = (ms: number) => new Date(NOW.getTime() - ms).toISOString();
 
-const text = (h: string) => h.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+// <wbr>(줄바꿈 자리 — 글자가 아니다 · P5-23 라운드 2 날짜 범위 "…~<wbr>…")는 빈칸으로 읽지 않는다
+const text = (h: string) =>
+  h
+    .replace(/<wbr\s*\/?>/g, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
 const attr = (tag: string, name: string): string | null => new RegExp(`\\s${name}="([^"]*)"`, "i").exec(tag)?.[1] ?? null;
 const links = (h: string) =>
   [...h.matchAll(/<a\s[^>]*>[\s\S]*?<\/a>/g)].map((m) => ({ tag: /^<a\s[^>]*>/.exec(m[0])![0], href: (attr(m[0], "href") ?? "").replace(/&amp;/g, "&"), text: text(m[0]) }));
@@ -786,9 +793,13 @@ describe("4-b. 화면 — 행 한 벌 · 간편 접수 · 가린 번호 · 전�
     const date = fill(dates.short as string, { month: 9, day: 30, weekday: (dates.weekdays as string[])[3] });
     const time = fill(dates.time as string, { hour: "14", minute: "30" });
     const rel = fill(resObj("relative").after, { n: 2 });
-    // <b>날짜</b> 다음 칸 하나 안에 시각과 '· 남은 날'이 함께 — 가운데점 앞은 줄바꿈 없는 공백(U+00A0)
+    // <b>날짜</b> 다음 칸 하나 안에 시각과 '· 남은 날'이 함께 — 가운데점 **앞뒤** 가 줄바꿈 없는 공백(U+00A0 — P5-23 라운드 3: '·' 는 줄 머리에도 줄 끝에도 서지 않는다)
+    // 붙은 구분점(segments.tsx glued) — 가운데점 글자는 읽히지 않는다(aria-hidden) · 두 빈칸은 화면 읽기에 남는다
     const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    expect(r).toMatch(new RegExp(`<b[^>]*>${esc(date)}</b> <span[^>]*><span[^>]*>${esc(time)}</span><span[^>]*> · ${esc(rel)}</span></span>`));
+    const NB = String.fromCharCode(0xa0);
+    const glue = `<span[^>]*>${NB}<span aria-hidden="true">·</span>${NB}</span>`;
+    expect(r).toMatch(new RegExp(`<b[^>]*>${esc(date)}</b> <span[^>]*><span[^>]*>${esc(time)}</span>${glue}<span[^>]*>${esc(rel)}</span></span>`));
+    expect(text(r)).toContain(`${time} · ${rel}`);
   });
 
   test("🔴 숫자가 없는 번호면 전화 버튼을 그리지 않는다(리뷰 P2-9) · 행 링크는 그대로", async () => {

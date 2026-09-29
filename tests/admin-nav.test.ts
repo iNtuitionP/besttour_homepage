@@ -40,6 +40,7 @@ vi.mock("next/image", () => ({
 // 서버액션 모듈 — 'use server' 파일이 next/headers 를 끌어오지 않게 바꿔치기. 마크업 테스트는 부르지 않는다.
 vi.mock("@/actions/admin/session", () => ({ signOutAdmin: vi.fn() }));
 
+import { formatAdminDate } from "@/components/admin/admin-date";
 import { AdminTabs, type AdminNavItem } from "@/components/admin/AdminTabs";
 import {
   ADMIN_BADGE_TAB,
@@ -448,12 +449,21 @@ describe("2-e. 셸 CSS", () => {
 
   /**
    * 🔴 브라우저 실측(보고서 ⑦): 공지·팝업 화면의 두 칸 격자(폼 20~26rem + 목록)가 **뷰포트** 1024px 에서 켜지는데, 사이드바가
-   * 본문을 248px 줄여 목록 칸이 236px 로 좁아졌다(게시일·상태·처리 칸이 스크롤 뒤로 숨음). 두 칸은 본문이 넉넉한 1280px 부터.
+   * 본문을 248px 줄여 목록 칸이 236px 로 좁아졌다(게시일·상태·처리 칸이 스크롤 뒤로 숨음). 그래서 두 칸을 1280px 부터로 미뤘지만,
+   * P5-23 라운드 1 촬영에서 **1280 에서도** 목록 칸이 좁아 제목이 낱말마다 꺾이고 '노출 끄기' 가 두 줄이 됐다.
+   * 라운드 2(컨트롤러 B-5): 두 칸을 걷었다 — **모든 폭에서 한 칸, 목록이 먼저**, 등록 폼은 그 아래 자기 카드. 목록 칸이 좁아질 폭이 없다(같은 뜻의 더 강한 형태).
    */
-  test("🔴 공지·팝업의 두 칸 격자는 1280px 부터 — 1024~1279px 은 한 칸(사이드바가 본문을 248px 줄인다)", () => {
-    const twoCol = rules.filter((r) => r.selector.split(",").map((s) => s.trim()).includes(".popupGrid") && decl(r.body, "grid-template-columns")?.includes("26rem"));
-    expect(twoCol.map((r) => r.media)).toEqual(["(min-width: 1280px)"]);
-    expect(decl(body(".popupGrid"), "grid-template-columns")).toBe("minmax(0, 1fr)");
+  test("🔴 공지·팝업은 모든 폭에서 한 칸 — 두 칸 격자가 없다 · 목록 섹션이 등록 폼보다 먼저(P5-23 라운드 2 B-5)", () => {
+    expect(rules.filter((r) => r.selector.split(",").map((s) => s.trim()).includes(".popupGrid"))).toEqual([]);
+    for (const [page, list, form] of [
+      ["app/admin/(protected)/notices/page.tsx", "notice-list-title", "notice-new-title"],
+      ["app/admin/(protected)/popups/page.tsx", "popup-list-title", "popup-new-title"],
+    ] as const) {
+      const src = read(page);
+      expect(src, page).not.toMatch(/popupGrid/);
+      expect(src.indexOf(`id="${list}"`), page).toBeGreaterThan(0);
+      expect(src.indexOf(`id="${list}"`), `${page} — 목록이 등록 폼보다 먼저`).toBeLessThan(src.indexOf(`id="${form}"`));
+    }
   });
 
   test("누르는 자리 높이 — 사이드바 항목·링크·로그아웃 44px · 위 제목줄 56px · 탭 바 항목 56px(아래 고정)", () => {
@@ -744,10 +754,22 @@ describe("5. 허브 — /admin/site (홈페이지)", () => {
       usage: async () => ({ photos: 7, bytes: 1234 }),
       routes: async () => [ROUTE(1, true, 400000), ROUTE(2, true, null), ROUTE(3, false, null)],
     });
-    expect(text(hubRow(html, "notices"))).toContain(fill(hubKo.notices.live, { n: 2, date: "2026-09-25" }));
+    // 마지막 게시일은 관리자 날짜 틀(P5-23 라운드 2 A-3) — 원형 "2026-09-25" 가 아니라 "9월 25일 (금)"(올해가 아니면 연도까지 — 기준은 지금 KST)
+    const d = ko.admin.dates as Record<string, unknown>;
+    const labels = {
+      weekdays: d.weekdays as string[],
+      ...(Object.fromEntries(["day", "dayYear", "md", "mdYear", "month", "monthYear", "time", "dateTime", "period"].map((k) => [k, String(d[k])])) as Record<string, string>),
+    } as unknown as Parameters<typeof formatAdminDate>[2];
+    const lastDate = (formatAdminDate("2026-09-25", new Date(), labels) ?? "").replace(/\s+/g, " ");
+    expect(lastDate).toMatch(/9월 25일 \(금\)$/);
+    // 줄은 조각 줄이다(P5-23 라운드 3) — 문장의 " · " 는 조각 사이 CSS 장식이 되어 DOM 글자로는 빈칸 하나다
+    const asSegments = (s: string) => s.split(" · ").join(" ");
+    expect(text(hubRow(html, "notices"))).toContain(asSegments(fill(hubKo.notices.live, { n: 2, date: lastDate })));
+    expect(text(hubRow(html, "notices"))).not.toMatch(/\d{4}-\d{2}-\d{2}/);
     expect(text(hubRow(html, "popups"))).toContain(fill(hubKo.popups.live, { n: 1 }));
     expect(text(hubRow(html, "gallery"))).toContain(fill(hubKo.gallery.count, { n: 7 }));
-    expect(text(hubRow(html, "routes"))).toContain(fill(hubKo.routes.noPrice, { total: 3, live: 2, n: 1 }));
+    expect(text(hubRow(html, "routes"))).toContain(asSegments(fill(hubKo.routes.noPrice, { total: 3, live: 2, n: 1 })));
+    expect(text(hubRow(html, "routes")), "구분점은 DOM 글자가 아니다").not.toContain(" · ");
   });
 
   test("비어 있을 때 — 거짓 없는 한 줄(노출 중 없음 · 아직 없음)", async () => {

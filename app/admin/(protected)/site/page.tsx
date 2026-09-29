@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 
-import { galleryLine, noticesLine, popupsLine, routesLine, type HubLine } from "@/components/admin/hub";
+import { formatAdminDate } from "@/components/admin/admin-date";
+import { getAdminDateLabels } from "@/components/admin/adminDateLabels";
+import { galleryLine, hubLineValues, noticesLine, popupsLine, routesLine, type HubLine } from "@/components/admin/hub";
+import { segments, splitSegments } from "@/components/admin/segments";
 import { hubItems } from "@/components/admin/tabs";
 import { routing } from "@/i18n/routing";
 import { galleryUsage } from "@/lib/admin/gallery";
@@ -29,11 +32,13 @@ import q from "@/components/quote/quote.module.css";
 export default async function AdminSiteHubPage() {
   await requireAdmin();
 
-  const [t, tabs] = await Promise.all([
+  const [t, tabs, dateLabels] = await Promise.all([
     getTranslations({ locale: routing.defaultLocale, namespace: "admin.hub" }),
     getTranslations({ locale: routing.defaultLocale, namespace: "admin.tabs" }),
+    getAdminDateLabels(),
   ]);
-  const today = toKstDateString(new Date());
+  const now = new Date();
+  const today = toKstDateString(now);
   const [notices, popups, usage, routes] = await Promise.allSettled([listAdminNotices(), listAdminPopups(), galleryUsage(), listAdminRoutes()]);
 
   const lines: Record<string, HubLine> = {
@@ -42,9 +47,10 @@ export default async function AdminSiteHubPage() {
     gallery: galleryLine(usage),
     routes: routesLine(routes),
   };
+  // 날짜는 관리자 날짜 틀로("마지막 게시일 9월 27일 (일)" — P5-23 라운드 2 A-3) · 줄은 조각 사이에서만 꺾인다(C-14)
   const lineText = (key: string): string => {
     const line = lines[key];
-    return line === undefined ? "" : t(line.key, line.values);
+    return line === undefined ? "" : t(line.key, hubLineValues(line, (d) => formatAdminDate(d, now, dateLabels, { keep: true })));
   };
 
   return (
@@ -61,7 +67,7 @@ export default async function AdminSiteHubPage() {
                 <Link className={a.hubItem} href={item.href} data-hub-item={item.key}>
                   <span className={a.hubText}>
                     <span className={a.hubTitle}>{tabs(item.key)}</span>
-                    <span className={a.hubStatus}>{lineText(item.key)}</span>
+                    <span className={a.hubStatus}>{segments(splitSegments(lineText(item.key)))}</span>
                   </span>
                   <svg className={a.hubChevron} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                     <path d="M9 5l7 7-7 7" />

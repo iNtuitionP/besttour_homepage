@@ -82,12 +82,18 @@ export function newSplit(total: Settled<number>, split: Settled<{ quick: number;
  * 최근 7일 발송 경보 — lib/admin/notifications.ts getHomeSendAlerts 의 모양(이 순수 모듈은 서버 모듈을 가져오지 않는다).
  * 사장님 실패 · 대기 수는 **모르면 null** 이다(P5-22 수정 라운드 · 리뷰 P2-2 — 부가 집계가 고객 실패 수·배너를 끌어내리지 않는다).
  */
-type SendAlertsLike = { customerFailed: number; ownerFailed: number | null; customerWaiting?: number | null };
+type SendAlertsLike = { customerFailed: number; ownerFailed: number | null; customerWaiting?: number | null; customerOverdue?: number | null };
+
+/**
+ * 대기 중의 원인 — 한 번도 시도 못 한 고객 문자가 있으면 neverTried(발송이 꺼져 있다는 신호 — 더 근본적인 원인이 먼저),
+ * 아니면 overdue(시도는 했고 보낼 때가 지나 다음 발송을 기다린다 — P5-23 리뷰 P1-1). 카드 덧말이 이것으로 갈린다.
+ */
+export type SendWaitingCause = "neverTried" | "overdue";
 
 export type SendCard =
   | { kind: "unknown" }
   | { kind: "ok"; owner: number | null }
-  | { kind: "waiting"; waiting: number; owner: number | null }
+  | { kind: "waiting"; waiting: number; cause: SendWaitingCause; owner: number | null }
   | { kind: "problems"; customer: number; waiting: number | null; owner: number | null };
 
 /**
@@ -102,15 +108,21 @@ export type SendCard =
  *
  * 수정 라운드(리뷰 P2-2) — 부가 집계를 모를 때: 실패가 있으면 실패(확인 필요 · 배너)는 그대로 말하고 모르는 칸만 비운다(null).
  * 실패가 없는데 대기 수를 모르면 "이상 없음" 이 아니라 **모름**이다 — 발송기가 꺼져 문자가 쌓이는 중일 수 있다(그것이 이 카드가 생긴 까닭).
- * (customerWaiting 을 아예 싣지 않은 옛 모양은 0 으로 읽는다 — null 과 다르다.)
+ * (customerWaiting · customerOverdue 를 아예 싣지 않은 옛 모양은 0 으로 읽는다 — null 과 다르다.)
+ *
+ * P5-23 리뷰 P1-1 — 대기 중 = 한 번도 시도 못 한 것(customerWaiting) + **보낼 때가 지난 재시도**(customerOverdue). 하루 1회 크론에서는
+ * 지난 재시도가 다음 접수·확정이나 다음 날 아침까지 나가지 않는다 — 그동안 "이상 없음" 이면 안 된다. 둘 중 하나라도 모르면 합도 모른다.
  */
 export function sendCard(res: Settled<SendAlertsLike>): SendCard {
   if (res.status !== "fulfilled") return { kind: "unknown" };
   const { customerFailed, ownerFailed } = res.value;
-  const waiting = res.value.customerWaiting === undefined ? 0 : res.value.customerWaiting;
+  const neverTried = res.value.customerWaiting === undefined ? 0 : res.value.customerWaiting;
+  const overdue = res.value.customerOverdue === undefined ? 0 : res.value.customerOverdue;
+  const waiting = neverTried === null || overdue === null ? null : neverTried + overdue;
   if (customerFailed > 0) return { kind: "problems", customer: customerFailed, waiting, owner: ownerFailed };
   if (waiting === null) return { kind: "unknown" };
-  return waiting > 0 ? { kind: "waiting", waiting, owner: ownerFailed } : { kind: "ok", owner: ownerFailed };
+  if (waiting === 0) return { kind: "ok", owner: ownerFailed };
+  return { kind: "waiting", waiting, cause: neverTried !== null && neverTried > 0 ? "neverTried" : "overdue", owner: ownerFailed };
 }
 
 /** 배너 — 최근 7일 고객 문자 실패 수. 없거나(사장님 쪽 실패만 있어도) 모르면 null(배너 없음). */

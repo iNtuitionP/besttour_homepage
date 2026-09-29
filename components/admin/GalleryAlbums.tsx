@@ -125,6 +125,12 @@ function AlbumRow({
 
   return (
     <li className={s.albumRow} data-testid="admin-gallery-album">
+      {/* 상태 배지는 줄 머리에(사진 카드와 같은 자리 — P5-23 라운드 2 B-10). 아래 버튼 줄은 저장 · 노출 두 버튼만 같은 높이로 선다. */}
+      <p className={s.albumState}>
+        <span className={s.badge} data-state={album.active ? "live" : "off"}>
+          {album.active ? labels.state.live : labels.state.off}
+        </span>
+      </p>
       <div className={s.dateRow}>
         <div className={s.dateCol}>
           <label className={s.label} htmlFor={`album-title-${album.id}`}>
@@ -171,9 +177,6 @@ function AlbumRow({
       </div>
 
       <div className={s.rowActions}>
-        <span className={s.badge} data-state={album.active ? "live" : "off"}>
-          {album.active ? labels.state.live : labels.state.off}
-        </span>
         <button
           type="button"
           className={s.btnPrimary}
@@ -282,34 +285,36 @@ export function GalleryAlbums({ albums, labels }: { albums: readonly AdminAlbumV
 
   return (
     <div data-testid="admin-gallery-albums">
-      <div className={s.dateRow}>
-        <div className={s.dateCol}>
-          <label className={s.label} htmlFor="album-new-title">
-            {labels.albumTitle}
-          </label>
-          <input
-            id="album-new-title"
-            className={s.input}
-            value={title}
-            maxLength={ALBUM_TITLE_MAX}
-            disabled={pending}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        </div>
-        <div className={s.dateCol}>
-          <label className={s.label} htmlFor="album-new-slug">
-            {labels.albumSlug}
-          </label>
-          <input
-            id="album-new-slug"
-            className={s.input}
-            value={slug}
-            maxLength={ALBUM_SLUG_MAX}
-            disabled={pending}
-            onChange={(e) => setSlug(e.target.value)}
-          />
-          <p className={s.hint}>{labels.albumSlugHint}</p>
-        </div>
+      {/* 새 앨범 — 다른 폼과 같은 순서(이름 → 안내 → 입력칸 · P5-23 라운드 2 B-9). 안내가 입력칸 아래에 있던 유일한 칸이었다. */}
+      <div className={s.field}>
+        <label className={s.label} htmlFor="album-new-title">
+          {labels.albumTitle}
+        </label>
+        <input
+          id="album-new-title"
+          className={s.input}
+          value={title}
+          maxLength={ALBUM_TITLE_MAX}
+          disabled={pending}
+          onChange={(e) => setTitle(e.target.value)}
+        />
+      </div>
+      <div className={s.field}>
+        <label className={s.label} htmlFor="album-new-slug">
+          {labels.albumSlug}
+        </label>
+        <p className={s.hint} id="album-new-slug-hint">
+          {labels.albumSlugHint}
+        </p>
+        <input
+          id="album-new-slug"
+          className={s.input}
+          value={slug}
+          maxLength={ALBUM_SLUG_MAX}
+          disabled={pending}
+          aria-describedby="album-new-slug-hint"
+          onChange={(e) => setSlug(e.target.value)}
+        />
       </div>
       <div className={s.rowActions}>
         <button type="button" className={s.btnPrimary} disabled={pending} onClick={() => onCreate(false)} data-testid="admin-gallery-album-create">

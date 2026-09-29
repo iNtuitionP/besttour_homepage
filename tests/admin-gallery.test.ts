@@ -739,8 +739,11 @@ describe("4-B. 업로드 커밋과 되돌리기", () => {
     const src = codeOf(UPLOADER_UI);
     expect(src).toMatch(/commitUpload\(/);
     expect(src).toMatch(/record: recordGalleryUpload/);
-    // 잠금 해제는 finally 안에 있어야 한다(F1) — try 를 빠져나가는 어떤 경로에서도 화면이 잠기지 않는다
-    expect(src).toMatch(/finally\s*\{[\s\S]{0,200}setBusy\(false\)/);
+    // 잠금 해제는 finally 안에 있어야 한다(F1) — try 를 빠져나가는 어떤 경로에서도 화면이 잠기지 않는다.
+    // P5-23 리뷰 P2-1 — 순서·마무리는 순수 흐름(lib/admin/galleryPick.ts)으로 옮겼다: 부품은 setBusy 를 포트로 넘기고, 흐름의 finally 가 푼다
+    // (던지는 한 장 · 던지는 준비에서도 풀리는지는 tests/admin-gallery-pick.test.ts 가 흐름을 돌려 본다)
+    expect(src).toMatch(/await runGalleryPick\(\{[\s\S]*\bsetBusy,\s/);
+    expect(codeOf("lib/admin/galleryPick.ts")).toMatch(/finally\s*\{[\s\S]{0,200}flow\.setBusy\(false\)/);
     // 되돌리기 **판단**은 순수 모듈에만 있어야 한다. 컴포넌트에서 remove 가 등장해도 되는 곳은
     // 포트 어댑터(storagePort)뿐이고, 업로드 루프(onPick) 안에는 없어야 한다 — 두 곳에 규칙이 갈리면 M2 가 되살아난다.
     const loop = src.slice(src.indexOf("const onPick"));

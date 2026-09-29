@@ -214,11 +214,33 @@ describe("1-b. 순수 — 한 줄 요약 · 카드 값", () => {
    * 실패가 아니라 배너는 띄우지 않는다. 실패가 있으면 실패가 먼저(급함)이고 대기는 작은 줄.
    */
   test("🔴 대기 — 실패가 없고 오래 대기 중인 고객 문자가 있으면 '대기 중'(이상 없음이 아니다) · 실패가 있으면 실패가 먼저 · 배너는 실패만", () => {
-    expect(sendCard(A(0, 0, 3))).toEqual({ kind: "waiting", waiting: 3, owner: 0 });
-    expect(sendCard(A(0, 2, 1))).toEqual({ kind: "waiting", waiting: 1, owner: 2 });
+    expect(sendCard(A(0, 0, 3))).toEqual({ kind: "waiting", waiting: 3, cause: "neverTried", owner: 0 });
+    expect(sendCard(A(0, 2, 1))).toEqual({ kind: "waiting", waiting: 1, cause: "neverTried", owner: 2 });
     expect(sendCard(A(1, 0, 4))).toEqual({ kind: "problems", customer: 1, waiting: 4, owner: 0 });
     expect(sendBanner(A(0, 0, 9))).toBeNull();
     expect(sendBanner(A(1, 0, 9))).toBe(1);
+  });
+
+  /**
+   * P5-23 리뷰 P1-1 — 재시도를 기다리다 **보낼 때가 지난** 고객 문자(한 번 이상 시도 · 다음 시도 시각 또는 lease 끝이 10분 넘게 지남)도 대기 중이다.
+   * 크론이 하루 1회라 그런 문자는 다음 접수·확정이나 다음 날 08:00 까지 나가지 않는다 — 그동안 카드가 "이상 없음" 이면 안 된다.
+   * 발송 기록의 둘째 줄은 그 행을 "보낼 차례" · "오래 멈춤" 으로 말한다(같은 규칙). 이유가 달라 덧말도 다르다:
+   * 한 번도 시도 못 한 것이 있으면 "문자 발송이 아직 켜지지 않았을 수 있어요"(발송이 꺼져 있다는 신호가 먼저) · 시도는 했으면 다음 발송 때 다시 보낸다.
+   */
+  test("🔴 대기 — 보낼 때가 지난 재시도(overdue)도 센다 · 수 = 한 번도 못 보낸 것 + 지난 재시도 · 덧말은 원인에 따라", () => {
+    const B = (customerFailed: number, customerWaiting: number | null, customerOverdue: number | null) =>
+      fulfilled({ customerFailed, ownerFailed: 0, customerWaiting, customerOverdue, windowDays: 7 });
+    expect(sendCard(B(0, 0, 2))).toEqual({ kind: "waiting", waiting: 2, cause: "overdue", owner: 0 });
+    expect(sendCard(B(0, 1, 2))).toEqual({ kind: "waiting", waiting: 3, cause: "neverTried", owner: 0 });
+    expect(sendCard(B(0, 0, 0))).toEqual({ kind: "ok", owner: 0 });
+    // 실패가 있으면 실패가 먼저 — 작은 줄의 대기 수는 둘의 합
+    expect(sendCard(B(1, 4, 2))).toEqual({ kind: "problems", customer: 1, waiting: 6, owner: 0 });
+    // 하나라도 모르면 합도 모른다 — 실패가 없으면 카드는 모름(이상 없음이 아니다)
+    expect(sendCard(B(0, 0, null))).toEqual({ kind: "unknown" });
+    expect(sendCard(B(0, null, 0))).toEqual({ kind: "unknown" });
+    expect(sendCard(B(2, 1, null))).toEqual({ kind: "problems", customer: 2, waiting: null, owner: 0 });
+    // 배너는 여전히 실패만
+    expect(sendBanner(B(0, 3, 5))).toBeNull();
   });
 
   test("🔴 배너는 최근 7일 고객 문자 실패만 — 사장님 쪽 실패만 있거나 모르면 배너가 아니다", () => {
@@ -238,7 +260,7 @@ describe("1-b. 순수 — 한 줄 요약 · 카드 값", () => {
     expect(sendCard(P(0, 0, null))).toEqual({ kind: "unknown" });
     expect(sendCard(P(0, 3, null))).toEqual({ kind: "unknown" });
     expect(sendCard(P(2, null, null))).toEqual({ kind: "problems", customer: 2, waiting: null, owner: null });
-    expect(sendCard(P(0, null, 3))).toEqual({ kind: "waiting", waiting: 3, owner: null });
+    expect(sendCard(P(0, null, 3))).toEqual({ kind: "waiting", waiting: 3, cause: "neverTried", owner: null });
     expect(sendCard(P(0, null, 0))).toEqual({ kind: "ok", owner: null });
     expect(sendBanner(P(2, null, null))).toBe(2);
     expect(sendBanner(P(0, null, null))).toBeNull();
@@ -443,28 +465,41 @@ describe("2. 조회 함수 — head 집계 · 개인정보 0 · 0 으로 갈음�
     expect(lib.PERIOD_HOURS["7d"]).toBe(lib.HOME_ALERT_WINDOW_DAYS * 24);
 
     const r = recorder({ count: 2, error: null });
-    expect(await lib.getHomeSendAlerts({ now: NOW }, r.client as never)).toEqual({ customerFailed: 2, ownerFailed: 2, customerWaiting: 2, windowDays: 7 });
+    expect(await lib.getHomeSendAlerts({ now: NOW }, r.client as never)).toEqual({ customerFailed: 2, ownerFailed: 2, customerWaiting: 2, customerOverdue: 2, windowDays: 7 });
     const since = new Date(NOW.getTime() - 7 * 24 * HOUR).toISOString();
     // P5-22 — 셋째 집계: 오래 대기 중인 고객 문자(한 번도 시도되지 않았고 만든 지 HOME_WAITING_MINUTES 넘음)
     const waitingBefore = new Date(NOW.getTime() - lib.HOME_WAITING_MINUTES * 60_000).toISOString();
-    expect(of(r.calls, "from")).toEqual([["notifications_log"], ["notifications_log"], ["notifications_log"]]);
+    // P5-23 리뷰 P1-1 — 넷째 집계: 보낼 때가 지난 재시도(1 ≤ 시도 < MAX · 다음 시도 시각(또는 lease 끝)이 HOME_WAITING_MINUTES 넘게 지남 · 격리 행 제외)
+    expect(of(r.calls, "from")).toEqual([["notifications_log"], ["notifications_log"], ["notifications_log"], ["notifications_log"]]);
     for (const s of of(r.calls, "select")) expect(s[1]).toEqual({ count: "exact", head: true });
     expect(of(r.calls, "eq")).toEqual([
       ["status", "failed"],
       ["status", "failed"],
       ["status", "pending"],
       ["attempts", 0],
+      ["status", "pending"],
     ]);
-    expect(of(r.calls, "or")).toEqual([["last_error.is.null,last_error.neq.duplicate_sent"], ["last_error.is.null,last_error.neq.duplicate_sent"]]);
+    expect(of(r.calls, "or")).toEqual([
+      ["last_error.is.null,last_error.neq.duplicate_sent"],
+      ["last_error.is.null,last_error.neq.duplicate_sent"],
+      ["last_error.is.null,last_error.not.like.sent_unmarked:*"],
+    ]);
     expect(of(r.calls, "gte")).toEqual([
       ["created_at", since],
       ["created_at", since],
       ["created_at", since],
+      ["attempts", 1],
+      ["created_at", since],
     ]);
-    expect(of(r.calls, "lt")).toEqual([["created_at", waitingBefore]]);
+    expect(of(r.calls, "lt")).toEqual([
+      ["created_at", waitingBefore],
+      ["attempts", 5],
+      ["next_attempt_at", waitingBefore],
+    ]);
     expect(of(r.calls, "in")).toEqual([
       ["template", [...lib.CUSTOMER_MESSAGE_TEMPLATE_KEYS]],
       ["template", [...lib.OWNER_TEMPLATE_KEYS]],
+      ["template", [...lib.CUSTOMER_MESSAGE_TEMPLATE_KEYS]],
       ["template", [...lib.CUSTOMER_MESSAGE_TEMPLATE_KEYS]],
     ]);
     // 기준 시간 — 즉시 발송이 켜져 있으면 접수·확정 응답 뒤 몇 초 안에 첫 시도가 끝난다(마감 40초). 10분은 그보다 넉넉히 길다.
@@ -481,15 +516,29 @@ describe("2. 조회 함수 — head 집계 · 개인정보 0 · 0 으로 갈음�
     const run = (results: Parameters<typeof perQuery>[0]) => lib.getHomeSendAlerts({ now: NOW }, perQuery(results).client as never);
     // 대기 집계만 오류(응답의 error) · 거부(fetch 가 죽음) · count 없음 — 대기만 모름
     for (const bad of [{ count: null, error: { code: "57014", message: "canceling statement" } }, "throw" as const, { count: null }]) {
-      expect(await run([{ count: 2 }, { count: 1 }, bad]), JSON.stringify(bad)).toEqual({ customerFailed: 2, ownerFailed: 1, customerWaiting: null, windowDays: 7 });
+      expect(await run([{ count: 2 }, { count: 1 }, bad, { count: 3 }]), JSON.stringify(bad)).toEqual({
+        customerFailed: 2,
+        ownerFailed: 1,
+        customerWaiting: null,
+        customerOverdue: 3,
+        windowDays: 7,
+      });
+      // 지난 재시도 집계만 실패 — 그 칸만 모름(리뷰 P1-1 — 넷째 집계도 나머지를 끌어내리지 않는다)
+      expect(await run([{ count: 2 }, { count: 1 }, { count: 3 }, bad]), JSON.stringify(bad)).toEqual({
+        customerFailed: 2,
+        ownerFailed: 1,
+        customerWaiting: 3,
+        customerOverdue: null,
+        windowDays: 7,
+      });
     }
     // 사장님 집계만 실패 — 사장님 수만 모름
-    expect(await run([{ count: 0 }, "throw", { count: 4 }])).toEqual({ customerFailed: 0, ownerFailed: null, customerWaiting: 4, windowDays: 7 });
+    expect(await run([{ count: 0 }, "throw", { count: 4 }, { count: 0 }])).toEqual({ customerFailed: 0, ownerFailed: null, customerWaiting: 4, customerOverdue: 0, windowDays: 7 });
     // 고객 실패 수를 모르면 던진다 — 카드는 "불러오지 못했어요" · 배너 없음(예전과 같다: 배너의 근거가 이 수다)
-    await expect(run(["throw", { count: 1 }, { count: 1 }])).rejects.toThrow();
-    await expect(run([{ count: null, error: { code: "42501", message: "denied" } }, { count: 1 }, { count: 1 }])).rejects.toThrow(/42501/);
-    // 코드 — 셋을 allSettled 로 기다린다(하나의 거부가 나머지를 버리지 않는다)
-    expect(codeOf("lib/admin/notifications.ts")).toMatch(/await Promise\.allSettled\(\[customerQuery, ownerQuery, waitingQuery\]\)/);
+    await expect(run(["throw", { count: 1 }, { count: 1 }, { count: 1 }])).rejects.toThrow();
+    await expect(run([{ count: null, error: { code: "42501", message: "denied" } }, { count: 1 }, { count: 1 }, { count: 1 }])).rejects.toThrow(/42501/);
+    // 코드 — 넷을 allSettled 로 기다린다(하나의 거부가 나머지를 버리지 않는다)
+    expect(codeOf("lib/admin/notifications.ts")).toMatch(/await Promise\.allSettled\(\[customerQuery, ownerQuery, waitingQuery, overdueQuery\]\)/);
   });
 
   test("🔴 새 접수 건수는 요청 범위 memo(React cache) — 레이아웃(배지)과 홈·목록이 한 요청 안에서 같은 값을 받는다", () => {
@@ -553,7 +602,7 @@ interface Setup {
   newCount?: number | "fail";
   split?: { quick: number; wizard: number } | "fail";
   overdue?: number | "fail";
-  alerts?: { customerFailed: number; ownerFailed: number | null; customerWaiting?: number | null } | "fail";
+  alerts?: { customerFailed: number; ownerFailed: number | null; customerWaiting?: number | null; customerOverdue?: number | null } | "fail";
   tripCount?: number | "fail";
   trips?: ReservationListRow[] | "fail";
   tripDates?: { departAts: string[]; capped: boolean } | "fail";
@@ -570,7 +619,7 @@ function arrange(s: Setup) {
   vi.mocked(countNewByIntake).mockImplementation(() => val(s.split, { quick: 1, wizard: 1 }));
   vi.mocked(countOverdueNew).mockImplementation(() => val(s.overdue, 1));
   vi.mocked(getHomeSendAlerts).mockImplementation(() =>
-    s.alerts === "fail" ? Promise.reject(new Error("down")) : Promise.resolve({ customerWaiting: 0, ...(s.alerts ?? { customerFailed: 0, ownerFailed: 0 }), windowDays: 7 }),
+    s.alerts === "fail" ? Promise.reject(new Error("down")) : Promise.resolve({ customerWaiting: 0, customerOverdue: 0, ...(s.alerts ?? { customerFailed: 0, ownerFailed: 0 }), windowDays: 7 }),
   );
   vi.mocked(countConfirmedDeparting).mockImplementation(() => val(s.tripCount, 2));
   vi.mocked(listConfirmedDeparting).mockImplementation(() => val(s.trips, TRIPS));
@@ -759,6 +808,25 @@ describe("3-b. 화면 — 배너 · 미리보기 · 다가오는 운행 · 점�
     expect(fill(c.notifyWaitingMinor, { n: 2 })).toBe("고객 문자 대기 중 2건");
   });
 
+  test("🔴 대기 중 — 보낼 때가 지난 재시도만 있으면(리뷰 P1-1) '대기 중 n건 · 보내지 못한 문자는 다음 발송 때 다시 보내요'(발송이 꺼졌다는 덧말이 아니다) · 섞이면 합 · 작은 줄도 합", async () => {
+    const c = homeObj("card");
+    const only = card((await renderHome({ alerts: { customerFailed: 0, ownerFailed: 0, customerWaiting: 0, customerOverdue: 2 } })).html, "notify");
+    expect(attr(only.tag, "data-tone")).toBe("attention");
+    expect(only.text).toContain(fill(c.notifyWaiting, { n: 2 }));
+    expect(only.text).toContain(c.notifyOverdueSub);
+    expect(c.notifyOverdueSub).toBe("보내지 못한 문자는 다음 발송 때 다시 보내요");
+    expect(only.text, "시도는 했다 — '발송이 꺼졌을 수 있다' 가 아니다").not.toContain(c.notifyWaitingSub);
+    expect(only.text).not.toContain(c.notifyOk);
+    // 한 번도 못 보낸 것이 섞이면 수는 합 · 덧말은 발송이 꺼졌다는 쪽(더 근본적인 원인)
+    const mixed = card((await renderHome({ alerts: { customerFailed: 0, ownerFailed: 0, customerWaiting: 1, customerOverdue: 2 } })).html, "notify");
+    expect(mixed.text).toContain(fill(c.notifyWaiting, { n: 3 }));
+    expect(mixed.text).toContain(c.notifyWaitingSub);
+    expect(mixed.text).not.toContain(c.notifyOverdueSub);
+    // 실패가 함께면 실패가 먼저 — 작은 줄의 대기 수는 합
+    const withFail = card((await renderHome({ alerts: { customerFailed: 1, ownerFailed: 0, customerWaiting: 1, customerOverdue: 2 } })).html, "notify");
+    expect(withFail.text).toContain(fill(c.notifyWaitingMinor, { n: 3 }));
+  });
+
   test("🔴 카드가 이어지는 목록 = 카드가 말한 것(리뷰 P2-1) — 대기 중은 '대기 · 최근 7일' · 확인 필요·이상 없음·모름은 '실패 · 최근 7일' · 배너는 늘 '실패 · 최근 7일'", async () => {
     const lib = await vi.importActual<typeof import("@/lib/admin/notifications")>("@/lib/admin/notifications");
     expect(lib.HOME_WAITING_LIST_HREF).toBe("/admin/notifications?status=pending&period=7d");
@@ -814,6 +882,9 @@ describe("3-b. 화면 — 배너 · 미리보기 · 다가오는 운행 · 점�
     expect(section).toContain(c.notifyOwnerUnknown);
     // 실패가 아니다 — 배너(맨 위 안내 줄)는 뜨지 않는다고 적는다
     expect(section).toMatch(/실패는 아닙니다/);
+    // 리뷰 P1-1 — 보낼 때가 지난 재시도도 센다: 그 덧말을 화면 문구 그대로 적고, "곧 발송이나 실패로 바뀐다"(하루 1회 크론에서는 거짓)를 더는 쓰지 않는다
+    expect(section).toContain(c.notifyOverdueSub);
+    expect(section).not.toMatch(/여기서 세지 않습니다/);
   });
 
   test("🔴 '문자' 라는 말은 센 것과 맞는다(리뷰 P2-1) — 홈은 고객 문자(SMS·알림톡 문안)만 세고, 발송 기록 요약은 모든 알림을 기간과 함께 말한다", () => {
@@ -821,7 +892,8 @@ describe("3-b. 화면 — 배너 · 미리보기 · 다가오는 운행 · 점�
     const summary = notifyKo.summary as Record<string, string>;
     for (const k of ["failed", "stuck", "sentUnconfirmed", "ok"]) expect(summary[k], k).not.toMatch(/문자/);
     expect(summary.failed).toContain("(전체 기간)");
-    expect(summary.stuck).toContain(`(최근 ${SUMMARY_WINDOW_HOURS}시간)`);
+    // 재검토 P2-A — 창은 마지막 시도(updated_at)
+    expect(summary.stuck).toContain(`(최근 ${SUMMARY_WINDOW_HOURS}시간 안에 마지막 시도)`);
     expect(summary.sentUnconfirmed).toContain("(전체 기간)");
     expect(summary.note).toContain("고객에게 가는 문자라면");
   });
@@ -916,10 +988,15 @@ describe("3-b. 화면 — 배너 · 미리보기 · 다가오는 운행 · 점�
     expect(p.text).toContain(hub.popups.noneLive);
     expect(p.links).toEqual([expect.objectContaining({ href: "/admin/popups#popup-title", text: homeObj("check").popupsMake })]);
     const n = checkRow(html, "notices");
-    expect(n.text).toContain(fill(hub.notices.live, { n: 1, date: "2026-09-25" }));
+    // 마지막 게시일은 관리자 날짜 틀(P5-23 라운드 2 A-3 — 원형 "2026-09-25" 대신 "9월 25일 (금)" · 기준 시각이 2026년이라 연도 없음).
+    // 줄은 조각 줄이다(라운드 3) — 문장의 " · " 는 조각 사이 CSS 장식이 되어 DOM 글자로는 빈칸 하나다.
+    const asSegments = (s: string) => s.split(" · ").join(" ");
+    expect(n.text).toContain(asSegments(fill(hub.notices.live, { n: 1, date: "9월 25일 (금)" })));
+    expect(n.text).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+    expect(n.text, "구분점은 DOM 글자가 아니다").not.toContain(" · ");
     expect(n.links).toEqual([expect.objectContaining({ href: "/admin/notices#notice-title", text: homeObj("check").noticesWrite })]);
     const r = checkRow(html, "routes");
-    expect(r.text).toContain(fill(hub.routes.noPrice, { total: 3, live: 2, n: 1 }));
+    expect(r.text).toContain(asSegments(fill(hub.routes.noPrice, { total: 3, live: 2, n: 1 })));
     expect(attr(r.tag, "data-warn")).toBe("true");
     expect(r.links).toEqual([expect.objectContaining({ href: "/admin/routes", text: homeObj("check").routesCheck })]);
   });

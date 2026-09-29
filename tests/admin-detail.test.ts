@@ -239,17 +239,26 @@ describe("1. 머리 — 배지 줄 · '{이름} 님' · 한 줄 메타", () => {
     expect([...wiz.matchAll(/<span[^>]*data-testid="admin-status-badge"[^>]*>/g)].map((m) => attr(m[0], "data-kind"))).toEqual(["waiting"]);
   });
 
-  test("🔴 한 줄 메타 — '{접수 시각} 접수 ({경과}) · 홈 간편 견적 · 접수번호 {코드}' (오늘이면 시각만 · 상세 접수는 날짜)", async () => {
+  /**
+   * P5-23 라운드 3 — 메타 줄은 조각 줄이다(components/admin/segments.tsx): 조각 셋이 차례로 서고, 조각 사이 가운데점은 CSS(`.seg::before`)가
+   * 그리는 장식이라 DOM 글자에 없다(읽히지 않는다 · 줄 머리에서는 잘린다). 그래서 글자로는 조각이 빈칸 하나로 이어지고, 조각 수는 셋이다.
+   */
+  test("🔴 한 줄 메타 — '{접수 시각} 접수 ({경과})' / '홈 간편 견적' / '접수번호 {코드}' 세 조각 (오늘이면 시각만 · 상세 접수는 날짜)", async () => {
     const meta = dobj("meta");
-    const quick = text(elementOf(await render(QUICK_ROW), "admin-detail-meta"));
+    // vitest 의 CSS 모듈 이름은 `_seg_<해시>` 모양이다
+    const segsOf = (h: string) => (h.match(/class="_seg_[0-9a-f]+"/g) ?? []).length;
+    const quickHtml = elementOf(await render(QUICK_ROW), "admin-detail-meta");
+    const quick = text(quickHtml);
     const when = fill(meta.today, { time: fill(dates.time as string, { hour: "09", minute: "35" }) });
     const ago = fill((res.elapsed as unknown as Record<string, string>).minutes, { n: 25 });
-    expect(quick).toBe(`${fill(meta.received, { when, ago })} · ${meta.intakeQuick} · ${fill(meta.code, { code: "QK2345AB" })}`);
-    expect(quick).toBe("오늘 09:35 접수 (25분 전) · 홈 간편 견적 · 접수번호 QK2345AB");
+    expect(quick).toBe(`${fill(meta.received, { when, ago })} ${meta.intakeQuick} ${fill(meta.code, { code: "QK2345AB" })}`);
+    expect(quick).toBe("오늘 09:35 접수 (25분 전) 홈 간편 견적 접수번호 QK2345AB");
+    expect(quick, "가운데점은 DOM 글자가 아니다(CSS 장식)").not.toContain("·");
+    expect(segsOf(quickHtml)).toBe(3);
     const wizard = text(elementOf(await render(WIZARD_ROW), "admin-detail-meta"));
     // 상세 접수는 기존 문구 그대로("상세 접수" — admin.detail.value.intakeWizard)
-    expect(wizard).toBe(`${fill(meta.received, { when: fill(meta.date, { month: 9, day: 25, time: "09:00" }), ago: fill((res.elapsed as unknown as Record<string, string>).days, { n: 3 }) })} · ${dobj("value").intakeWizard} · ${fill(meta.code, { code: "WZ2345AB" })}`);
-    expect(wizard).toBe("9월 25일 09:00 접수 (3일 전) · 상세 접수 · 접수번호 WZ2345AB");
+    expect(wizard).toBe(`${fill(meta.received, { when: fill(meta.date, { month: 9, day: 25, time: "09:00" }), ago: fill((res.elapsed as unknown as Record<string, string>).days, { n: 3 }) })} ${dobj("value").intakeWizard} ${fill(meta.code, { code: "WZ2345AB" })}`);
+    expect(wizard).toBe("9월 25일 09:00 접수 (3일 전) 상세 접수 접수번호 WZ2345AB");
     // 해가 다르면 연도까지
     const old = text(elementOf(await render({ ...WIZARD_ROW, created_at: "2025-12-31T03:00:00.000Z" }), "admin-detail-meta"));
     expect(old.startsWith(fill(meta.year, { year: 2025, month: 12, day: 31, time: "12:00" }))).toBe(true);
@@ -430,7 +439,8 @@ describe("3. 운행 카드 — 큰 구간 · 가는 날 · 오는 날 · 기간 
 // 4. 접수 기록 — 접힘 · 원장 라벨
 // =============================================================================
 describe("4. 접수 기록 (동의 · 보관) — <details> 접힘 · 라벨은 기존 admin.detail.field.*", () => {
-  test("🔴 접힌 채로 시작 · 요약 문구(시안) · 동의·파기 라벨 = 원장 라벨 그대로 · 값은 KST 벽시계", async () => {
+  // P5-23 라운드 2(컨트롤러 A-3) — 값은 KST 시각 그대로이되 원형("2026-09-28 09:35") 대신 관리자 날짜 틀("9월 28일 (월) 09:35" · 올해가 아니면 연도까지)
+  test("🔴 접힌 채로 시작 · 요약 문구(시안) · 동의·파기 라벨 = 원장 라벨 그대로 · 값은 KST 시각(관리자 날짜 틀)", async () => {
     const html = await render(QUICK_ROW);
     const tag = openTag(html, "admin-records");
     expect(tag.startsWith("<details")).toBe(true);
@@ -442,11 +452,13 @@ describe("4. 접수 기록 (동의 · 보관) — <details> 접힘 · 라벨은 
     expect(field.withdrawalConsentAt).toBe("청약철회 제한 동의");
     expect(field.marketingConsentAt).toBe("광고성 정보 수신 동의");
     expect(field.retentionUntil).toBe("파기 예정");
-    expect(rows[field.privacyConsentAt]).toBe("2026-09-28 09:35");
-    expect(rows[field.withdrawalConsentAt]).toBe("2026-09-28 09:35");
+    expect(rows[field.privacyConsentAt]).toBe("9월 28일 (월) 09:35");
+    expect(rows[field.withdrawalConsentAt]).toBe("9월 28일 (월) 09:35");
     expect(rows[field.marketingConsentAt]).toBe(dobj("value").notConsented);
-    expect(rows[field.retentionUntil]).toBe("2027-09-28 09:35");
-    expect(rows[field.createdAt]).toBe("2026-09-28 09:35");
+    expect(rows[field.retentionUntil]).toBe("2027년 9월 28일 (화) 09:35");
+    expect(rows[field.createdAt]).toBe("9월 28일 (월) 09:35");
+    // 원형 날짜(YYYY-MM-DD)는 접수 기록 어디에도 없다
+    expect(text(elementOf(html, "admin-records"))).not.toMatch(/\d{4}-\d{2}-\d{2}/);
     expect(rows[field.confirmedAt]).toBe(dobj("value").none);
     expect(openTag(html, "admin-withdrawal-consent")).toMatch(/<dd/);
   });

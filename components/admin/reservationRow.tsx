@@ -27,13 +27,14 @@
 import "server-only";
 
 import Link from "next/link";
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 
 import type { ReservationListRow } from "@/lib/admin/reservations";
 import { isLocationCode, locationLabelKo } from "@/lib/codes";
 
 import { detailHref, elapsedSince, kstDayDiff, kstParts, listPhoneText, stayNights, telHref, type ListTab } from "./reservation-list";
 import type { ReservationRowLabels } from "./reservationRowLabels";
+import { glued, keepLastWord, segments } from "./segments";
 import { StatusBadge } from "./StatusBadge";
 import { reservationBadge, type StatusBadgeLabels } from "./status-badge";
 
@@ -71,11 +72,31 @@ function routeParts(row: ReservationListRow, ctx: ReservationRowContext): { rout
   return { route, tripType: tripType === "" ? null : tripType };
 }
 
-/** 차량 — 간편 접수(또는 비어 있음)는 "차량 미정", 상세 접수는 "45인승 2대". */
+/**
+ * 차량 — 간편 접수(또는 비어 있음)는 "차량 미정", 상세 접수는 "45인승 2대". 대수는 앞 낱말에 붙는다(keepLastWord — 좁은 칸에서
+ * "35인승 관광버스 / 1대" 처럼 단위만 떨어지지 않게 · P5-23 라운드 2 C-14).
+ */
 function vehicleText(row: ReservationListRow, ctx: ReservationRowContext): { text: string; undecided: boolean } {
   if (row.intake === "quick" || row.vehicle_slug === null) return { text: ctx.labels.vehicleUndecided, undecided: true };
   const name = ctx.vehicles.get(row.vehicle_slug) ?? row.vehicle_slug;
-  return { text: row.bus_count === null ? name : fillTemplate(ctx.labels.busValue, { vehicle: name, buses: row.bus_count }), undecided: false };
+  return { text: row.bus_count === null ? name : keepLastWord(fillTemplate(ctx.labels.busValue, { vehicle: name, buses: row.bus_count })), undecided: false };
+}
+
+/**
+ * 날짜 범위 "10/19(월)~10/20(화)" — 물결표 뒤에 줄바꿈 자리(<wbr>)를 둔다(C-14). 범위 전체가 빈칸 없는 한 낱말이라 넓은 목록의 좁은 출발 칸에서는
+ * 브라우저가 아무 데서나 잘랐다("…~10 / /20(화)"). 이제 꺾인다면 물결표 뒤에서 — 날짜 하나씩 온전히. 글자는 그대로(<wbr> 는 글자가 아니다).
+ * 물결표가 없으면(틀이 바뀌면) 글자 그대로.
+ */
+function rangeNode(range: string): ReactNode {
+  const at = range.indexOf("~");
+  if (at < 0) return range;
+  return (
+    <>
+      {range.slice(0, at + 1)}
+      <wbr />
+      {range.slice(at + 1)}
+    </>
+  );
 }
 
 /** 출발 시각 — 간편 접수는 "시각 미정"(00:00 은 자리값). */
@@ -101,10 +122,10 @@ function stayParts(row: ReservationListRow, ctx: ReservationRowContext): { range
   };
 }
 
-/** 구간 옆의 흐린 글자 — 운행 구분(왕복·편도)과 여러 날 운행의 기간을 가운데점으로. 둘 다 없으면 null. */
-function tripAside(tripType: string | null, stay: { nights: string } | null): string | null {
+/** 구간 옆의 흐린 글자 — 운행 구분(왕복·편도)과 여러 날 운행의 기간(부르는 쪽이 " · " 로 이어 줄바꿈 없는 한 덩어리로 그린다). 둘 다 없으면 null. */
+function tripAside(tripType: string | null, stay: { nights: string } | null): string[] | null {
   const parts = [tripType, stay?.nights ?? null].filter((p): p is string => p !== null && p !== "");
-  return parts.length === 0 ? null : parts.join(" · ");
+  return parts.length === 0 ? null : parts;
 }
 
 /** 남은 날 — 오늘 · 내일 · N일 뒤 · N일 지남(운행일이 지난 확정). */
@@ -150,29 +171,48 @@ export function reservationRow(row: ReservationListRow, index: number | null, ct
         </span>
         <span className={s.inqTrip}>
           {route}
-          {aside !== null ? <span className={s.inqMuted}> {aside}</span> : null}
+          {aside !== null ? (
+            <>
+              {" "}
+              {/* 구간 옆 덧말("왕복 · 1박 2일")은 줄바꿈 없는 한 덩어리 — 통째로 움직이고, 붙은 구분점이라 '·' 가 줄 머리·끝에 서지 않는다 */}
+              <span className={`${s.inqMuted} ${s.nowrap}`}>{glued(aside)}</span>
+            </>
+          ) : null}
         </span>
-        <span className={s.inqMeta}>
-          <span className={s.inqWhen}>
-            <b className={s.inqDate}>{stay !== null ? stay.range : dateText(row.depart_at, ctx)}</b>{" "}
-            <span className={s.inqTime}>
-              <span className={time.undecided ? s.inqMuted : undefined}>{time.text}</span>
-              {relative !== "" ? <span className={s.inqMuted}>{` · ${relative}`}</span> : null}
+        {/* 메타 줄 = 조각 줄(components/admin/segments.tsx 와 같은 상자 · P5-23 라운드 3): 날짜·시각 / 차량·인원 두 조각이고,
+            조각 사이 구분점은 CSS(.seg::before)가 그린다 — 같은 줄의 두 조각 사이에만 보이고 줄 머리에서는 잘린다(줄 끝에는 올 수 없다).
+            차량과 인원은 붙은 구분점(glued)으로 한 조각 — 좁으면 둘이 함께 다음 줄로 간다("…1대 / 30명" 처럼 인원만 떨어지지 않는다).
+            넓은 목록(표 모양)에서는 조각 줄이 날짜·시각 칸과 차량·인원 칸으로 풀리고 조각 구분점과 차량·인원 사이 구분점은 걷는다(CSS). */}
+        <span className={`${s.inqMeta} ${s.segs}`}>
+          <span className={s.segsIn}>
+            <span className={`${s.seg} ${s.inqWhen}`}>
+              <b className={s.inqDate}>{stay !== null ? rangeNode(stay.range) : dateText(row.depart_at, ctx)}</b>{" "}
+              <span className={s.inqTime}>
+                {/* "시각 · 남은 날" 은 한 덩어리(붙은 구분점 — 좁은 출발 칸에서도 '·' 가 줄 머리·끝에 서지 않는다) */}
+                {glued([
+                  <span key="time" className={time.undecided ? s.inqMuted : undefined}>
+                    {time.text}
+                  </span>,
+                  relative !== "" ? (
+                    <span key="relative" className={s.inqMuted}>
+                      {relative}
+                    </span>
+                  ) : null,
+                ])}
+              </span>
+            </span>{" "}
+            <span className={`${s.seg} ${s.inqBus}`}>
+              {glued([
+                <span key="vehicle" className={vehicle.undecided ? s.inqMuted : undefined}>
+                  {vehicle.text}
+                </span>,
+                row.passengers !== null ? (
+                  <span key="pax" className={s.inqMuted}>
+                    {fillTemplate(ctx.labels.paxValue, { n: row.passengers })}
+                  </span>
+                ) : null,
+              ])}
             </span>
-          </span>
-          <span className={s.inqSep} aria-hidden="true">
-            {" · "}
-          </span>
-          <span className={s.inqBus}>
-            <span className={vehicle.undecided ? s.inqMuted : undefined}>{vehicle.text}</span>
-            {row.passengers !== null ? (
-              <>
-                <span className={s.inqSep} aria-hidden="true">
-                  {" · "}
-                </span>
-                <span className={s.inqMuted}>{fillTemplate(ctx.labels.paxValue, { n: row.passengers })}</span>
-              </>
-            ) : null}
           </span>
         </span>
         <span className={s.inqAgo} data-late={urgent ? "true" : undefined}>
@@ -203,7 +243,6 @@ export function tripRow(row: ReservationListRow, ctx: ReservationRowContext): Re
   const time = timeText(row, ctx);
   const vehicle = vehicleText(row, ctx);
   const pax = row.passengers !== null ? fillTemplate(ctx.labels.paxValue, { n: row.passengers }) : null;
-  const meta = [row.name, stay?.range ?? null, vehicle.text, pax].filter((p): p is string => p !== null && p !== "").join(" · ");
   return (
     <li key={row.id} className={s.trip} data-trip-id={row.id}>
       <Link className={s.tripLink} href={`/admin/reservations/${row.id}`}>
@@ -213,9 +252,16 @@ export function tripRow(row: ReservationListRow, ctx: ReservationRowContext): Re
         <span className={s.tripBody}>
           <span className={s.tripRoute}>
             {route}
-            {aside !== null ? <span className={s.inqMuted}> {aside}</span> : null}
+            {aside !== null ? (
+              <>
+                {" "}
+                <span className={`${s.inqMuted} ${s.nowrap}`}>{glued(aside)}</span>
+              </>
+            ) : null}
           </span>
-          <span className={s.tripMeta}>{meta}</span>
+          {/* 이름 · (여러 날이면) 날짜 범위 · 차량·인원 — 조각마다 한 덩어리(C-14). 차량과 인원은 붙은 구분점으로 한 조각(라운드 3 — 인원만 떨어지지 않는다).
+              이름은 함수 안에서 곧바로 글자로 그린다(부품 props 아님) */}
+          <span className={s.tripMeta}>{segments([row.name, stay?.range ?? null, glued([vehicle.text, pax])])}</span>
           <StatusBadge badge={{ kind: "confirmed" }} labels={ctx.badgeLabels} />
         </span>
       </Link>

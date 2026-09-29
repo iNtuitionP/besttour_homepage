@@ -470,14 +470,19 @@ describe("5. 요약 집계", () => {
     expect(summary).toMatchObject({ failed: 0, stuck: 0, sentUnconfirmed: 3, ok: false });
   });
 
-  test("집계 조건 — failed 는 전체 기간(중복 억제 duplicate_sent 제외) · stuck 은 pending + attempts >= MAX + 최근 24시간(격리 행 제외) · 격리 행은 따로", async () => {
+  /**
+   * P5-23 재검토 P2-A — stuck(요약 "다시 보내기를 다 쓴 알림")의 24시간은 **마지막 시도(updated_at)** 로 잰다. 다섯 번째 claim 이 updated_at 을 찍는다.
+   * 예전 창(created_at)은 그 행들을 대개 놓쳤다: 하루 1회 크론에서 다섯 번째 claim 은 흔히 만든 지 이틀이 넘은 뒤라, 같은 화면의 행은
+   * "다시 보내기를 다 씀" 인데 같은 이름의 요약 칸은 0 이었다.
+   */
+  test("집계 조건 — failed 는 전체 기간(중복 억제 duplicate_sent 제외) · stuck 은 pending + attempts >= MAX + **마지막 시도(updated_at)** 최근 24시간(격리 행 제외) · 격리 행은 따로", async () => {
     const stub = dbStub({ [NOTIFICATIONS_TABLE]: ZERO3 });
     await getNotificationSummary({ now: NOW }, stub.client);
     expect(SUMMARY_WINDOW_HOURS).toBe(24);
     expect(argsOf(stub.calls, NOTIFICATIONS_TABLE, "eq")).toEqual([["status", "failed"], ["status", "pending"], ["status", "pending"]]);
     expect(argsOf(stub.calls, NOTIFICATIONS_TABLE, "gte")).toEqual([
       ["attempts", MAX_ATTEMPTS],
-      ["created_at", "2026-09-14T03:00:00.000Z"],
+      ["updated_at", "2026-09-14T03:00:00.000Z"],
     ]);
     expect(argsOf(stub.calls, NOTIFICATIONS_TABLE, "or")).toEqual([
       ["last_error.is.null,last_error.neq.duplicate_sent"],
@@ -696,10 +701,12 @@ describe("8. 탭 · 문구", () => {
     for (const k of ["title", "sub", "listLabel", "empty", "prev", "next", "pageLabel", "maskNote"]) {
       expect(n[k], k).toBeTruthy();
     }
+    // P5-23 라운드 2(컨트롤러 B-6) — 1280 에서 옆으로 밀리지 않게 칸을 합쳤다: 종류+문자 종류 → 알림, 기록·갱신 → 기록 시각(갱신은 둘째 줄),
+    // 다음 시도 → '대기' 배지의 둘째 줄(다시 보낼 예정 {시각}). 머리글마다 라벨이 있다는 뜻은 그대로다.
     const col = n.col as Record<string, unknown>;
-    for (const k of ["status", "channel", "template", "to", "code", "attempts", "nextAttemptAt", "lastError", "createdAt", "updatedAt"]) {
-      expect(col[k], `col.${k}`).toBeTruthy();
-    }
+    expect(Object.keys(col).sort()).toEqual(["alert", "attempts", "code", "lastError", "status", "time", "to"]);
+    for (const k of Object.keys(col)) expect(col[k], `col.${k}`).toBeTruthy();
+    expect(n.updatedLine, "갱신 시각 둘째 줄").toContain("{time}");
     const summary = n.summary as Record<string, unknown>;
     for (const k of ["title", "failed", "stuck", "ok", "note"]) expect(summary[k], `summary.${k}`).toBeTruthy();
     for (const s of NOTIFICATION_STATUSES) expect((n.status as Record<string, unknown>)[s], s).toBeTruthy();

@@ -111,6 +111,8 @@ export default async function AdminGalleryPage({ searchParams }: { searchParams:
             labels={{
               upload: t("upload"),
               uploadHint: t("uploadHint"),
+              pickNone: t("pickNone"),
+              pickCount: t.raw("pickCount") as string,
               uploadTarget: t("uploadTarget"),
               albumNone: t("albumNone"),
               processing: t("processing"),

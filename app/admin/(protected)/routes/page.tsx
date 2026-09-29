@@ -64,9 +64,11 @@ export default async function AdminRoutesPage() {
           {rows.length === 0 ? (
             <p className={a.empty}>{t("empty")}</p>
           ) : (
-            <div className={a.tableWrap}>
+            <div className={`${a.tableWrap} ${a.contentWrap}`}>
               {/* 표 이름은 섹션 제목이 말한다 — 같은 말의 캡션을 또 적지 않는다(P5-20) */}
-              <table className={a.tablePopups} aria-labelledby="route-list-title">
+              {/* 칸마다 세로 가운데(P5-23 라운드 2 B-8) — 노선 이름·금액·배지·버튼이 한 줄에 선다. 1024px 미만은 공지·팝업과 같은 카드
+                  (노선 이름을 한 덩어리로 두자 375 표가 옆으로 173px 밀렸다 — 카드면 밀리지 않고 버튼이 늘 보인다) */}
+              <table className={`${a.tablePopups} ${a.contentTable} ${a.tableMiddle}`} aria-labelledby="route-list-title" data-testid="admin-routes-table">
                 <thead>
                   <tr>
                     <th className={a.th} scope="col">
@@ -91,7 +93,8 @@ export default async function AdminRoutesPage() {
                     const amount = formatPriceKrw(row.price_from);
                     return (
                       <tr key={row.id}>
-                        <td className={`${a.td} ${a.tdStrong}`}>
+                        {/* 노선 이름("서울 → 부산")은 한 덩어리 — 좁은 폭에서 "서울 → / 부산" 으로 갈리지 않는다(C-14 · 표는 자기 상자 안에서 옆으로 밀린다) */}
+                        <td className={`${a.td} ${a.tdStrong} ${a.tdNowrap}`} data-cell="title">
                           <Link className={a.rowLink} href={`${ADMIN_ROUTES_PATH}/${row.id}`}>
                             {t("routeValue", {
                               origin: routePlaceLabel(row.origin_code),
@@ -99,14 +102,19 @@ export default async function AdminRoutesPage() {
                             })}
                           </Link>
                         </td>
-                        <td className={`${a.td} ${a.tdNowrap}`}>{amount === "" ? t("noPrice") : amount}</td>
-                        <td className={`${a.td} ${a.tdNowrap}`}>{row.sort === null ? t("noSort") : row.sort}</td>
-                        <td className={a.td}>
+                        <td className={`${a.td} ${a.tdNowrap}`} data-cell="meta">
+                          {amount === "" ? t("noPrice") : amount}
+                        </td>
+                        <td className={`${a.td} ${a.tdNowrap}`} data-cell="meta">
+                          {/* 카드에서만 보이는 칸 이름(순서 숫자만으로는 뜻을 모른다) — 표에서는 머리글이 말한다 */}
+                          <span className={a.cellLabel}>{t("col.sort")}</span> {row.sort === null ? t("noSort") : row.sort}
+                        </td>
+                        <td className={a.td} data-cell="meta">
                           <span className={a.badge} data-state={row.active ? "live" : "off"}>
                             {row.active ? t("state.live") : t("state.off")}
                           </span>
                         </td>
-                        <td className={a.td}>
+                        <td className={a.td} data-cell="actions">
                           <div className={a.rowActions}>
                             <Link className={a.rowLink} href={`${ADMIN_ROUTES_PATH}/${row.id}`}>
                               {t("editLink")}

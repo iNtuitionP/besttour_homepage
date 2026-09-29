@@ -180,22 +180,24 @@ export function RouteForm({
         />
       </div>
 
-      <div className={s.checkRow}>
-        <input
-          id="route-active"
-          name={ROUTE_FIELDS.active}
-          type="checkbox"
-          defaultChecked={initial.active}
-          disabled={pending}
-          aria-describedby="route-active-hint"
-        />
-        <label className={s.label} htmlFor="route-active">
-          {labels.field.active}
-        </label>
+      <div className={s.field}>
+        <div className={s.checkRow}>
+          <input
+            id="route-active"
+            name={ROUTE_FIELDS.active}
+            type="checkbox"
+            defaultChecked={initial.active}
+            disabled={pending}
+            aria-describedby="route-active-hint"
+          />
+          <label className={s.label} htmlFor="route-active">
+            {labels.field.active}
+          </label>
+        </div>
+        <p className={s.hint} id="route-active-hint">
+          {labels.hint.active}
+        </p>
       </div>
-      <p className={s.hint} id="route-active-hint">
-        {labels.hint.active}
-      </p>
 
       <div className={s.formActions}>
         <button type="submit" className={s.btnPrimary} disabled={pending} data-testid="admin-route-submit">

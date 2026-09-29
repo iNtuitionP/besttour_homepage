@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { getTranslations } from "next-intl/server";
 
 import { AdminLoginForm } from "@/components/admin/AdminLoginForm";
@@ -33,6 +34,8 @@ export default async function AdminLoginPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const t = await getTranslations({ locale: routing.defaultLocale, namespace: "admin.login" });
+  // 카드 머리의 이름 — 셸 사이드바와 같은 말("베스트투어 관리" · admin.tabs.brand)이다(P5-23 라운드 2 B-13)
+  const tTabs = await getTranslations({ locale: routing.defaultLocale, namespace: "admin.tabs" });
 
   const allowlistEmpty = adminEmailAllowlist().length === 0;
   let guardReady = true;
@@ -64,6 +67,10 @@ export default async function AdminLoginPage({
   return (
     <main className={s.main} data-testid="admin-login">
       <div className={s.card}>
+        <p className={s.brand} data-testid="admin-login-brand">
+          <Image className={s.brandMark} src="/brand/symbol-mark.png" alt="" width={32} height={29} />
+          <span className={s.brandName}>{tTabs("brand")}</span>
+        </p>
         <h1 className={s.title}>{t("title")}</h1>
         <p className={s.sub}>{t("sub")}</p>
         <AdminLoginForm

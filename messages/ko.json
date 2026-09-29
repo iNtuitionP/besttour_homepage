@@ -425,14 +425,14 @@
     "labels": {
       "purpose": {
         "airport_pickup": "공항픽업",
-        "family": "가족여행",
+        "family": "가족 여행",
         "ceremony": "관혼상제",
         "workshop": "워크숍",
         "social": "친목회",
         "religious": "종교단체",
         "univ_mt": "대학MT",
         "field_trip": "현장학습",
-        "foreign_vip": "외국인의전.관광",
+        "foreign_vip": "외국인 의전·관광",
         "etc": "기타"
       },
       "contact": {
@@ -443,7 +443,7 @@
       "payment": {
         "cash": "현금",
         "card": "카드",
-        "tax_invoice": "세금계산서발행"
+        "tax_invoice": "세금계산서 발행"
       },
       "quickBadge": "간편 접수"
     },
@@ -464,7 +464,7 @@
         "newSplit": "간편 {quick} · 상세 {wizard}",
         "newNone": "기다리는 새 접수가 없어요",
         "overdue": "답이 늦은 접수",
-        "overdueSub": "72시간 넘게 기다리는 중",
+        "overdueSub": "72시간 넘게 대기",
         "overdueNone": "72시간 넘게 기다린 접수가 없어요",
         "notify": "문자 발송",
         "notifyOk": "이상 없음",
@@ -475,6 +475,7 @@
         "notifyOwnerUnknown": "사장님 알림 실패 수는 지금 불러오지 못했어요",
         "notifyWaiting": "대기 중 {n}건",
         "notifyWaitingSub": "문자 발송이 아직 켜지지 않았을 수 있어요",
+        "notifyOverdueSub": "보내지 못한 문자는 다음 발송 때 다시 보내요",
         "notifyWaitingMinor": "고객 문자 대기 중 {n}건",
         "trips": "이번 주 운행",
         "tripsNone": "7일 안에 출발하는 확정 접수가 없어요",
@@ -517,8 +518,14 @@
       "range": "{from}~{to}",
       "day": "{month}월 {day}일 ({weekday})",
       "dayYear": "{year}년 {month}월 {day}일 ({weekday})",
+      "md": "{month}월 {day}일",
+      "mdYear": "{year}년 {month}월 {day}일",
+      "month": "{month}월",
+      "monthYear": "{year}년 {month}월",
       "full": "{month}월 {day}일 {weekday}요일",
-      "time": "{hour}:{minute}"
+      "time": "{hour}:{minute}",
+      "dateTime": "{date} {time}",
+      "period": "{from} ~ {to}"
     },
     "login": {
       "title": "관리자 로그인",
@@ -806,6 +813,7 @@
         "imagePath": "사진 주소 (선택)",
         "startsAt": "시작일",
         "endsAt": "종료일",
+        "period": "노출 기간",
         "active": "노출"
       },
       "hint": {
@@ -953,7 +961,7 @@
       },
       "homeLookLabel": "홈에서 이렇게 보여요",
       "homeLookNote": "저장된 값 기준이에요. 금액이 비어 있으면 홈은 금액만 감추고 노선과 핀은 그대로 보여 드려요.",
-      "homeLookNoPrice": "금액을 감추고 노선·핀만 보여요",
+      "homeLookNoPrice": "금액을 감추고 노선과 핀만 보여요",
       "homeLookOn": "홈 지도와 목록에 보여요",
       "homeLookOff": "홈에서 빠져 있어요",
       "save": "노선 저장하기",
@@ -981,7 +989,9 @@
       "emptyAction": "사진 올리기",
       "uploadTitle": "사진 올리기",
       "upload": "사진 고르기",
-      "uploadHint": "한 번에 30장까지, 한 장에 20MB까지 올릴 수 있어요. jpg · png · webp · heic 파일을 받아요. 원본은 따로 보관하고 홈에는 줄인 사진만 보여요.",
+      "uploadHint": "한 번에 30장까지, 한 장에 20MB까지 올릴 수 있어요. jpg, png, webp, heic 파일을 받아요. 원본은 따로 보관하고 홈에는 줄인 사진만 보여요.",
+      "pickNone": "아직 고른 사진이 없어요",
+      "pickCount": "{n}장을 골랐어요",
       "uploadRunning": "올리는 중… ({done} / {total})",
       "uploadDone": "{ok}장을 올렸어요.",
       "uploadFailedAll": "사진을 올리지 못했어요. 이유는 목록에서 사진마다 확인해 주세요.",
@@ -1032,7 +1042,7 @@
       "reject": {
         "count": "한 번에 30장까지만 올릴 수 있어서 이 사진은 빼 두었어요.",
         "size": "20MB가 넘어서 올리지 못했어요.",
-        "type": "받을 수 없는 형식이에요. jpg · png · webp · heic 파일만 올려 주세요.",
+        "type": "받을 수 없는 형식이에요. jpg, png, webp, heic 파일만 올려 주세요.",
         "empty": "파일이 비어 있어요.",
         "decode": "사진을 열지 못했어요.",
         "encode": "사진을 홈에 쓸 형식으로 바꾸지 못했어요.",
@@ -1123,9 +1133,9 @@
         "created": {
           "owner": {
             "sms": "사장님 접수 알림",
-            "email": "사장님 접수 알림(메일)",
+            "email": "사장님 접수 알림",
             "failure": {
-              "email": "사장님 접수 통지 실패 알림(메일)"
+              "email": "사장님 접수 통지 실패 알림"
             }
           },
           "customer": {
@@ -1135,7 +1145,7 @@
         "confirmed": {
           "owner": {
             "failure": {
-              "email": "사장님 확정 통지 실패 알림(메일)"
+              "email": "사장님 확정 통지 실패 알림"
             }
           },
           "customer": {
@@ -1145,26 +1155,64 @@
       },
       "col": {
         "status": "상태",
-        "channel": "종류",
-        "template": "문자 종류",
+        "alert": "알림",
         "to": "받는 번호",
         "code": "접수번호",
         "attempts": "시도",
-        "nextAttemptAt": "다음 시도",
-        "lastError": "마지막 오류",
-        "createdAt": "기록 일시",
-        "updatedAt": "갱신 일시"
+        "lastError": "오류",
+        "time": "기록 시각"
       },
+      "updatedLine": "갱신 {time}",
       "attemptsValue": "{n}회",
       "none": "—",
+      "pending": {
+        "sending": "보내는 중",
+        "retry": "다시 보낼 예정 {time}",
+        "due": "보낼 차례 · 다음 발송 때 나가요",
+        "stalled": "오래 멈춤 — 확인 필요",
+        "exhausted": "다시 보내기를 다 씀 — 확인 필요"
+      },
+      "error": {
+        "timeout": "응답 시간 초과",
+        "network": "발송 회사 연결 실패",
+        "auth": "발송 회사 인증 실패",
+        "tooMany": "요청이 너무 많음",
+        "rejectedRequest": "요청을 받지 않음",
+        "providerDown": "발송 회사 장애",
+        "providerRejected": "발송 회사가 거절",
+        "badResponse": "응답을 읽지 못함",
+        "recipient": "받는 번호 확인 필요",
+        "channel": "지원하지 않는 발송 방식",
+        "noSender": "발송 수단 없음",
+        "alimtalk": "알림톡 준비 안 됨",
+        "varsLoad": "접수 정보 읽기 실패",
+        "notFound": "접수를 찾지 못함",
+        "template": "문안 만들기 실패",
+        "unknownTemplate": "모르는 문안 종류",
+        "internal": "내부 점검 오류",
+        "threw": "발송 중 오류",
+        "duplicate": "이미 보낸 알림",
+        "leaseExpired": "여러 번 시도 후 멈춤",
+        "sentUnmarked": "기록 저장 지연",
+        "other": "기타 오류"
+      },
       "summary": {
         "title": "발송 상태",
         "failed": "보내지 못한 알림 {n}건 (전체 기간)",
-        "stuck": "보내지 못하고 멈춘 알림 {n}건 (최근 24시간)",
+        "stuck": "다시 보내기를 다 쓴 알림 {n}건 (최근 24시간 안에 마지막 시도)",
         "ok": "이상 없음 — 지금까지 보내지 못한 알림이 없어요",
         "note": "보내지 못한 것이 고객에게 가는 문자라면 사장님이 전화로 직접 안내해 주셔야 해요. 다시 보내는 기능은 아직 없어요.",
         "sentUnconfirmed": "발송됨 · 기록 확인 필요 {n}건 (전체 기간)",
-        "sentUnconfirmedNote": "문자 회사가 받은 건이에요. 저장만 늦어지고 있고, 시스템이 자동으로 다시 기록해요."
+        "sentUnconfirmedNote": "문자 회사가 받은 건이에요. 저장만 늦어지고 있고, 시스템이 자동으로 다시 기록해요.",
+        "grid": {
+          "failed": "보내지 못한 알림",
+          "stuck": "다시 보내기를 다 쓴 알림",
+          "stuckNote": "마지막 시도 · 최근 {hours}시간",
+          "sentUnconfirmed": "기록 확인 필요",
+          "sentUnconfirmedNote": "발송됨 · 전체 기간"
+        },
+        "count": "{n}건",
+        "periodAll": "전체 기간"
       },
       "prev": "← 이전",
       "next": "다음 →",

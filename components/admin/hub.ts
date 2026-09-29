@@ -8,7 +8,8 @@
  *   - 조회는 허브 화면이 게이트를 통과한 **뒤에** 서로 기다리지 않고 **동시에**(Promise.allSettled) 보낸다. 조회는 전부 이미 있는 목록 함수다 —
  *     각 목록 화면이 여는 것과 같은 조회라 허브가 더 무겁지 않다(새 조회·새 집계 함수를 만들지 않았다).
  *   - 하나가 실패해도 화면은 열린다. 그 줄만 "지금은 상태를 불러오지 못했어요"(unknown) — **모르는 것을 "없음"·"이상 없음" 이라 하지 않는다.**
- *   - 숫자는 DB 가 지금 준 행을 센 것이다(실증 문제 없음 — CLAUDE.md §3). 날짜는 저장된 값 그대로(공지 목록과 같은 표기).
+ *   - 숫자는 DB 가 지금 준 행을 센 것이다(실증 문제 없음 — CLAUDE.md §3). 날짜는 저장된 값을 돌려주고, 화면이 관리자 날짜 틀로
+ *     바꿔 채운다(hubLineValues — 공지 목록과 같은 표기 "9월 27일 (일)").
  *
  * 돌려주는 것은 카탈로그 키(messages/ko.json `admin.hub.*` 기준)와 채울 값뿐이다 — 문구는 여기 없다(한글 리터럴 0). React·Next·DB 없음.
  */
@@ -32,6 +33,16 @@ export function noticesLine(res: Settled<readonly { active: boolean; published_a
   if (live.length === 0) return { key: "notices.noneLive" };
   const last = live.map((r) => r.published_at).reduce((a, b) => (b > a ? b : a));
   return { key: "notices.live", values: { n: live.length, date: last } };
+}
+
+/**
+ * 줄에 채울 값 — 날짜 값(`date`, 저장된 YYYY-MM-DD)은 부르는 쪽의 날짜 틀로 바꿔 채운다(P5-23 라운드 2 · 컨트롤러 A-3:
+ * 원형 "2026-09-27" 대신 관리자 날짜 "9월 27일 (일)"). 틀이 읽지 못하면 저장값 그대로 둔다(지어내지 않는다). 순수 — 틀은 인자로 받는다.
+ */
+export function hubLineValues(line: HubLine, formatDate: (value: string) => string | null): HubLine["values"] {
+  const values = line.values;
+  if (values === undefined || typeof values.date !== "string") return values;
+  return { ...values, date: formatDate(values.date) ?? values.date };
 }
 
 /** 팝업 — 지금 방문자에게 보이는 것(활성 + 오늘이 기간 안)의 개수. 판정은 부르는 쪽이 공개 화면과 같은 함수로(popupState). */

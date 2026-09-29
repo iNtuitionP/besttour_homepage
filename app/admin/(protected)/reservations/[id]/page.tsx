@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 
+import { formatAdminDate } from "@/components/admin/admin-date";
+import { getAdminDateLabels } from "@/components/admin/adminDateLabels";
 import { ReservationActions } from "@/components/admin/ReservationActions";
 import { ReservationProcess } from "@/components/admin/ReservationProcess";
 import { SheetTrigger } from "@/components/admin/SheetTrigger";
@@ -12,13 +14,14 @@ import { CUSTOMER_NAME_ELEMENT_ID, fillTemplate, type ReservationSummary } from 
 import { getReservationActionLabels } from "@/components/admin/reservationActionLabels";
 import { getReservationRowLabels } from "@/components/admin/reservationRowLabels";
 import { reservationBadge } from "@/components/admin/status-badge";
+import { segments } from "@/components/admin/segments";
 import { getStatusBadgeLabels } from "@/components/admin/statusBadgeLabels";
 import { routing } from "@/i18n/routing";
 import { LEGACY_CONTACT_METHODS, LEGACY_PAYMENT_METHODS, getReservation, isUuid, type ReservationDetailRow } from "@/lib/admin/reservations";
 import { requireAdmin } from "@/lib/auth/requireAdmin";
 import { PURPOSES, isLocationCode, locationLabelKo } from "@/lib/codes";
 import { getVehicles } from "@/lib/queries";
-import { TRIP_TYPES, kstWallClock } from "@/lib/reservation-check/view";
+import { TRIP_TYPES } from "@/lib/reservation-check/view";
 
 import a from "@/components/admin/admin.module.css";
 import q from "@/components/quote/quote.module.css";
@@ -156,7 +159,14 @@ export default async function AdminReservationDetailPage({ params, searchParams 
   const quick = row.intake === "quick";
   const canConfirm = row.status === "new";
   const canCancel = row.status === "new" || row.status === "confirmed";
-  const [actionLabels, badgeLabels, rowLabels] = await Promise.all([getReservationActionLabels(), getStatusBadgeLabels(), getReservationRowLabels()]);
+  const [actionLabels, badgeLabels, rowLabels, dateLabels] = await Promise.all([
+    getReservationActionLabels(),
+    getStatusBadgeLabels(),
+    getReservationRowLabels(),
+    getAdminDateLabels(),
+  ]);
+  // 접수 기록의 시각 — 관리자 날짜 틀("9월 28일 (월) 20:02" · 올해가 아니면 연도까지 — P5-23 라운드 2 A-3). 읽지 못하면 "—".
+  const stamp = (iso: string): string => formatAdminDate(iso, now, dateLabels, { time: true }) ?? none;
   const routeText = tRoot("admin.reservations.routeValue", {
     origin: placeLabel(row.origin_code),
     destination: placeLabel(row.destination_code),
@@ -168,7 +178,7 @@ export default async function AdminReservationDetailPage({ params, searchParams 
   const received = receivedAt(row.created_at, now);
   const when =
     received === null
-      ? kstWallClock(row.created_at)
+      ? stamp(row.created_at)
       : received.kind === "today"
         ? t("meta.today", { time: clock(received.hour, received.minute) })
         : received.kind === "date"
@@ -237,12 +247,15 @@ export default async function AdminReservationDetailPage({ params, searchParams 
             <span id={CUSTOMER_NAME_ELEMENT_ID}>{row.name}</span>
             {name.after}
           </h1>
+          {/* 한 줄 메타 — 조각마다 한 덩어리(P5-23 라운드 2 C-14): "접수번호 P523N001" 이 둘로 갈리거나 줄 끝에 '·' 가 남지 않는다 */}
           <p className={a.detailMeta} data-testid="admin-detail-meta">
-            {t("meta.received", { when, ago })}
-            {" · "}
-            <span data-testid="admin-intake">{quick ? t("meta.intakeQuick") : t("value.intakeWizard")}</span>
-            {" · "}
-            {t("meta.code", { code: row.public_code })}
+            {segments([
+              t("meta.received", { when, ago }),
+              <span key="intake" data-testid="admin-intake">
+                {quick ? t("meta.intakeQuick") : t("value.intakeWizard")}
+              </span>,
+              t("meta.code", { code: row.public_code }),
+            ])}
           </p>
         </header>
 
@@ -392,23 +405,23 @@ export default async function AdminReservationDetailPage({ params, searchParams 
               </summary>
               <dl className={a.recordsKv}>
                 <dt>{t("field.createdAt")}</dt>
-                <dd>{kstWallClock(row.created_at)}</dd>
+                <dd>{stamp(row.created_at)}</dd>
                 <dt>{t("field.confirmedAt")}</dt>
-                <dd>{row.confirmed_at === null ? none : kstWallClock(row.confirmed_at)}</dd>
+                <dd>{row.confirmed_at === null ? none : stamp(row.confirmed_at)}</dd>
                 <dt>{t("field.privacyConsentAt")}</dt>
-                <dd>{kstWallClock(row.privacy_consent_at)}</dd>
+                <dd>{stamp(row.privacy_consent_at)}</dd>
                 <dt>{t("field.withdrawalConsentAt")}</dt>
                 <dd data-testid="admin-withdrawal-consent">
                   {row.withdrawal_consent_at !== null
-                    ? kstWallClock(row.withdrawal_consent_at)
+                    ? stamp(row.withdrawal_consent_at)
                     : row.withdrawal_consent_legacy
                       ? t("value.noWithdrawalRecord")
                       : none}
                 </dd>
                 <dt>{t("field.marketingConsentAt")}</dt>
-                <dd>{row.marketing_consent_at === null ? t("value.notConsented") : kstWallClock(row.marketing_consent_at)}</dd>
+                <dd>{row.marketing_consent_at === null ? t("value.notConsented") : stamp(row.marketing_consent_at)}</dd>
                 <dt>{t("field.retentionUntil")}</dt>
-                <dd>{kstWallClock(row.retention_until)}</dd>
+                <dd>{stamp(row.retention_until)}</dd>
               </dl>
             </details>
 

@@ -150,19 +150,23 @@ export function GalleryPhotoCard({
         </span>
       </div>
 
+      {/* 이름 → 안내 → 입력칸(P5-23 라운드 2 B-9 — 다른 폼과 같은 순서) */}
       <div className={s.field}>
         <label className={s.label} htmlFor={`caption-${photo.id}`}>
           {labels.caption}
         </label>
+        <p className={s.hint} id={`caption-hint-${photo.id}`}>
+          {labels.captionHint}
+        </p>
         <input
           id={`caption-${photo.id}`}
           className={s.input}
           value={caption}
           maxLength={GALLERY_CAPTION_MAX}
           disabled={pending}
+          aria-describedby={`caption-hint-${photo.id}`}
           onChange={(e) => setCaption(e.target.value)}
         />
-        <p className={s.hint}>{labels.captionHint}</p>
       </div>
 
       <div className={s.dateRow}>

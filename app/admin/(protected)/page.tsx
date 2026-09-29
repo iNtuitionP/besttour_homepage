@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 
+import { formatAdminDate } from "@/components/admin/admin-date";
+import { getAdminDateLabels } from "@/components/admin/adminDateLabels";
 import { AdminBanner } from "@/components/admin/AdminBanner";
 import {
   homeLede,
@@ -13,11 +15,12 @@ import {
   tripDays,
   upcomingWindow,
 } from "@/components/admin/dashboard";
-import { noticesLine, popupsLine, routesLine, type HubLine } from "@/components/admin/hub";
+import { hubLineValues, noticesLine, popupsLine, routesLine, type HubLine } from "@/components/admin/hub";
 import { NavBadgeReport } from "@/components/admin/NavBadgeReport";
 import { kstParts, listHref } from "@/components/admin/reservation-list";
 import { fillTemplate, relativeDayText, reservationRow, tripRow, type ReservationRowContext } from "@/components/admin/reservationRow";
 import { getReservationRowLabels } from "@/components/admin/reservationRowLabels";
+import { dashUnits, segments, splitSegments } from "@/components/admin/segments";
 import { getStatusBadgeLabels } from "@/components/admin/statusBadgeLabels";
 import { navBadge } from "@/components/admin/tabs";
 import { routing } from "@/i18n/routing";
@@ -109,12 +112,13 @@ export default async function AdminHomePage() {
   const upcoming = upcomingWindow(now);
   const month = monthWindow(now);
 
-  const [t, tTabs, tHub, badgeLabels, rowLabels] = await Promise.all([
+  const [t, tTabs, tHub, badgeLabels, rowLabels, dateLabels] = await Promise.all([
     getTranslations({ locale: routing.defaultLocale, namespace: "admin" }),
     getTranslations({ locale: routing.defaultLocale, namespace: "admin.tabs" }),
     getTranslations({ locale: routing.defaultLocale, namespace: "admin.hub" }),
     getStatusBadgeLabels(),
     getReservationRowLabels(),
+    getAdminDateLabels(),
   ]);
 
   const [newCount, split, overdue, alerts, tripCount, trips, tripDates, queue, popups, notices, routes, monthCounts, vehicles] = await Promise.allSettled([
@@ -176,7 +180,8 @@ export default async function AdminHomePage() {
   const popupLine = popupsLine(popups, (row) => popupState(row, todayKey) === "live");
   const noticeLine = noticesLine(notices);
   const routeLine = routesLine(routes);
-  const hubText = (line: HubLine) => tHub(line.key, line.values);
+  // 날짜는 관리자 날짜 틀("마지막 게시일 9월 27일 (일)" — P5-23 라운드 2 A-3) · 줄은 조각 사이에서만 꺾인다(C-14)
+  const hubText = (line: HubLine) => segments(splitSegments(tHub(line.key, hubLineValues(line, (d) => formatAdminDate(d, now, dateLabels, { keep: true })))));
 
   return (
     <main className={q.main} data-testid="admin">
@@ -213,6 +218,8 @@ export default async function AdminHomePage() {
           </li>
           <li>
             <Link className={a.todo} href={listHref("new")} data-card="overdue" data-tone={overdue.status === "fulfilled" && overdue.value > 0 ? "urgent" : "plain"}>
+              {/* 카드 이름은 360px 이상에서 한 줄(화살표는 이름 폭을 가져가지 않는다 · 좁은 카드는 글자를 조금 줄인다 — P5-23 라운드 3).
+                  더 좁아 꺾여야 하면 앞에서부터 채워 "답이 늦은 / 접수"(admin.module.css .todoLabel — text-wrap: wrap) */}
               <span className={a.todoLabel}>
                 <Icon name="alert" className={a.todoIcon} />
                 {t("home.card.overdue")}
@@ -251,7 +258,8 @@ export default async function AdminHomePage() {
                   <span className={a.todoValue} data-kind="waiting">
                     {t("home.card.notifyWaiting", { n: notify.waiting })}
                   </span>
-                  <span className={a.todoSub}>{t("home.card.notifyWaitingSub")}</span>
+                  {/* 덧말은 원인에 따라(P5-23 리뷰 P1-1) — 한 번도 못 보낸 것이 있으면 발송이 꺼졌을 수 있다 · 시도는 했으면 다음 발송 때 다시 보낸다 */}
+                  <span className={a.todoSub}>{notify.cause === "neverTried" ? t("home.card.notifyWaitingSub") : t("home.card.notifyOverdueSub")}</span>
                 </>
               ) : (
                 <span className={a.todoUnknown}>{unknown}</span>
@@ -262,7 +270,8 @@ export default async function AdminHomePage() {
               {/* 사장님 쪽 실패 수 — 모르면 0 이라 하지 않고 그렇다고 적는다(수정 라운드 · 리뷰 P2-2) */}
               {notify.kind !== "unknown" && notify.owner === null ? <span className={a.todoMinor}>{t("home.card.notifyOwnerUnknown")}</span> : null}
               {notify.kind !== "unknown" && notify.owner !== null && notify.owner > 0 ? (
-                <span className={a.todoMinor}>{t("home.card.notifyOwner", { n: notify.owner })}</span>
+                // 줄표 앞뒤가 한 덩어리씩 — "…1건 — / 발송 기록에서 확인"(줄표가 줄 머리에 서거나 "발송 / 기록" 으로 갈라지지 않는다 · 라운드 3)
+                <span className={a.todoMinor}>{dashUnits(t("home.card.notifyOwner", { n: notify.owner }))}</span>
               ) : null}
               <Icon name="chevron" className={a.todoArrow} />
             </Link>
@@ -277,8 +286,12 @@ export default async function AdminHomePage() {
                     <span className={a.todoSub}>{t("home.card.tripsNone")}</span>
                   ) : dates !== null && dates.shown.length > 0 ? (
                     <span className={a.todoSub}>
-                      {dates.shown.map(shortDate).join(" · ")}
-                      {dates.more > 0 ? ` ${t("home.card.tripsMore", { n: dates.more })}` : null}
+                      {/* 날짜 하나가 한 조각(구분점은 같은 줄의 두 날짜 사이에만 — C-14 · 라운드 3) · "외 N일" 은 마지막 날짜와 한 덩어리 */}
+                      {segments(
+                        dates.shown.map((d, i) =>
+                          i === dates.shown.length - 1 && dates.more > 0 ? `${shortDate(d)} ${t("home.card.tripsMore", { n: dates.more })}` : shortDate(d),
+                        ),
+                      )}
                     </span>
                   ) : null}
                 </>
@@ -360,7 +373,7 @@ export default async function AdminHomePage() {
                 </h2>
               </div>
               <ul className={a.panel}>
-                <li className={a.checkRow} data-check="popups">
+                <li className={a.checkItem} data-check="popups">
                   <Icon name="popups" className={a.checkIcon} />
                   <p className={a.checkText}>
                     <span className={a.checkName}>{t("home.check.popups")}</span>
@@ -376,7 +389,7 @@ export default async function AdminHomePage() {
                     </Link>
                   )}
                 </li>
-                <li className={a.checkRow} data-check="notices">
+                <li className={a.checkItem} data-check="notices">
                   <Icon name="notices" className={a.checkIcon} />
                   <p className={a.checkText}>
                     <span className={a.checkName}>{t("home.check.notices")}</span>
@@ -386,7 +399,7 @@ export default async function AdminHomePage() {
                     {t("home.check.noticesWrite")}
                   </Link>
                 </li>
-                <li className={a.checkRow} data-check="routes" data-warn={routeLine.key === "routes.noPrice" ? "true" : undefined}>
+                <li className={a.checkItem} data-check="routes" data-warn={routeLine.key === "routes.noPrice" ? "true" : undefined}>
                   <Icon name="routes" className={a.checkIcon} />
                   <p className={a.checkText}>
                     <span className={a.checkName}>{t("home.check.routes")}</span>

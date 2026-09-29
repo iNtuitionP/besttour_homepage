@@ -231,22 +231,24 @@ export function NoticeForm({
         />
       </div>
 
-      <div className={s.checkRow}>
-        <input
-          id="notice-active"
-          name={NOTICE_FIELDS.active}
-          type="checkbox"
-          defaultChecked={initial.active}
-          disabled={pending}
-          aria-describedby="notice-active-hint"
-        />
-        <label className={s.label} htmlFor="notice-active">
-          {labels.field.active}
-        </label>
+      <div className={s.field}>
+        <div className={s.checkRow}>
+          <input
+            id="notice-active"
+            name={NOTICE_FIELDS.active}
+            type="checkbox"
+            defaultChecked={initial.active}
+            disabled={pending}
+            aria-describedby="notice-active-hint"
+          />
+          <label className={s.label} htmlFor="notice-active">
+            {labels.field.active}
+          </label>
+        </div>
+        <p className={s.hint} id="notice-active-hint">
+          {labels.hint.active}
+        </p>
       </div>
-      <p className={s.hint} id="notice-active-hint">
-        {labels.hint.active}
-      </p>
 
       <div className={s.formActions}>
         <button type="submit" className={s.btnPrimary} disabled={pending} data-testid="admin-notice-submit">

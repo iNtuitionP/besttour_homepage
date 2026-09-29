@@ -327,9 +327,12 @@ async function publicCodes(rows: readonly DbRow[], db: AdminNotificationsClient)
 // =============================================================================
 
 /**
- * `stuck` 집계의 창. 24시간을 잡아도 놓치는 것이 없는 이유: `pending` 인 채 attempts 를 다 쓴 행은 lease(5분)가
- * 지나는 즉시 회수기(0007)가 `failed` 로 바꾸고, 그러면 첫 번째 숫자(failed, 기간 제한 없음)가 잡는다.
- * 즉 `stuck` 은 "회수되기 전의 몇 분~몇 시간" 을 보는 창이고, 그보다 오래된 것은 failed 로 넘어가 있다.
+ * `stuck` 집계의 창 — **마지막 시도(updated_at)** 기준(P5-23 재검토 P2-A). `pending` 인 채 attempts 를 다 쓴 행은 다섯 번째 claim 뒤 기록 없이
+ * 멈춘 것이고, 회수기(0007)가 **다음 발송 실행**(즉시 발송 · 하루 1회 크론)에 `failed` 로 바꾼다 — 그러면 첫 번째 숫자(failed, 기간 제한 없음)가 잡는다.
+ * 다섯 번째 claim 이 updated_at 을 찍으므로, 이 창은 "회수를 기다리는" 행(하루 1회 크론이면 길어야 하루)을 센다.
+ * 예전 창은 created_at 이었다 — 하루 1회 크론에서 다섯 번째 claim 은 흔히 만든 지 이틀이 넘은 뒤라, 같은 화면의 행은 "다시 보내기를 다 씀" 인데
+ * 요약 칸은 0 이었다. 회수가 하루 넘게 늦으면(크론을 놓침) 그 행은 요약에서 빠지지만 목록에는 그대로 보이고, 작은 줄이 창을 그대로 말한다
+ * ("마지막 시도 · 최근 24시간").
  */
 export const SUMMARY_WINDOW_HOURS = 24;
 
@@ -340,7 +343,8 @@ export interface NotificationSummary {
    */
   failed: number;
   /**
-   * status = 'pending' 이면서 attempts >= MAX_ATTEMPTS 이고 최근 24시간 안에 생긴 건수 — 더 시도되지 않는 행.
+   * status = 'pending' 이면서 attempts >= MAX_ATTEMPTS 이고 **마지막 시도(updated_at)가 최근 24시간 안**인 건수 — 더 시도되지 않는 행
+   * (화면: "다시 보내기를 다 쓴 알림" · 작은 줄 "마지막 시도 · 최근 24시간" · 행 둘째 줄 "다시 보내기를 다 씀").
    * 격리 행(보냈지만 기록 못 함)은 빼고 센다 — 아래 sentUnconfirmed 가 따로 센다.
    */
   stuck: number;
@@ -402,7 +406,7 @@ export async function getNotificationSummary(
     .select(COUNT_COLUMN, { count: "exact", head: true })
     .eq("status", "pending")
     .gte("attempts", MAX_ATTEMPTS)
-    .gte("created_at", stuckSince)
+    .gte("updated_at", stuckSince)
     .or(`last_error.is.null,last_error.not.like.${SENT_UNMARKED_PREFIX}*`);
 
   const unconfirmedQuery = db
@@ -484,10 +488,16 @@ export interface HomeSendAlerts {
   /**
    * 같은 7일의 고객 문자 중 **오래 대기 중**인 것(P5-22) — status='pending' · attempts = 0(한 번도 시도되지 않음) · 만든 지 HOME_WAITING_MINUTES 넘음.
    * 0 보다 크면 카드는 "이상 없음" 이 아니라 "대기 중 n건 — 문자 발송이 아직 켜지지 않았을 수 있어요" 다(실패가 아니라 배너는 없다).
-   * 재시도를 기다리는 행(attempts ≥ 1)은 세지 않는다 — 발송기는 켜져 있다(그 행은 곧 sent 나 failed 가 되어 여기서 다시 잡힌다).
    * **모르면 null**(리뷰 P2-2) — 카드는 실패가 없을 때 "이상 없음" 이라 하지 않고 모름이 된다(문자가 쌓이는 중일 수 있다).
    */
   customerWaiting: number | null;
+  /**
+   * 같은 7일의 고객 문자 중 **보낼 때가 지난 재시도**(P5-23 리뷰 P1-1) — status='pending' · 1 ≤ attempts < MAX_ATTEMPTS · 격리 행 아님 ·
+   * next_attempt_at(다음 시도 시각, 집힌 채 멈췄으면 lease 끝)이 HOME_WAITING_MINUTES 넘게 지남. 발송 기록 둘째 줄의 "보낼 차례" · "오래 멈춤" 과 같은 규칙이다.
+   * 예전에는 "곧 발송이나 실패로 바뀐다" 며 세지 않았다 — 크론이 하루 1회라 그 '곧' 이 하루까지 가고, 그동안 카드는 "이상 없음" 이었다.
+   * 발송은 켜져 있으므로(한 번 이상 시도했다) 카드 덧말은 "다음 발송 때 다시 보내요" 다. **모르면 null.**
+   */
+  customerOverdue: number | null;
   windowDays: number;
 }
 
@@ -500,12 +510,13 @@ function countOrNull(res: PromiseSettledResult<unknown>): number | null {
 
 /**
  * 관리 홈 발송 경보 — status='failed'(중복 억제 `duplicate_sent` 는 뺀다 — 손님은 이미 받았다) · created_at ≥ 지금 − 7일 ·
- * 받는 사람별 head 집계 둘(행은 오지 않는다 — 개인정보 0) + (P5-22) 오래 대기 중인 고객 문자 head 집계 하나 — 셋은 동시에 나간다.
- * 멈춘 대기(stuck)는 실패로 세지 않는다: 회수기(0007)가 다음 실행에 failed 로 바꾸면
+ * 받는 사람별 head 집계 둘(행은 오지 않는다 — 개인정보 0) + (P5-22) 오래 대기 중인 고객 문자 head 집계 하나 + (P5-23 리뷰 P1-1) 보낼 때가 지난
+ * 재시도 head 집계 하나 — 넷은 동시에 나간다.
+ * 시도를 다 쓴 대기(stuck)는 실패로 세지 않는다: 회수기(0007)가 다음 실행에 failed 로 바꾸면
  * 그때 여기에 잡히고, 카드·배너가 이어지는 '실패 · 7일' 목록과 같은 수가 된다(두 숫자를 만들지 않는다).
  * 문안 키가 아웃박스 밖인 행(옛 행·손으로 넣은 행)은 받는 사람을 알 수 없어 여기서 세지 않는다 — 발송 기록 화면에는 그대로 보인다.
  * 모르는 것은 0 이 아니다 — 고객 실패 수의 오류·빈 count 는 던진다(화면은 그 카드만 "불러오지 못했어요" · 배너 없음).
- * 셋은 **서로를 끌어내리지 않는다**(P5-22 수정 라운드 · 리뷰 P2-2): allSettled 로 기다려, 사장님 실패·대기 집계가 실패하면 그 칸만 null 이다 —
+ * 넷은 **서로를 끌어내리지 않는다**(P5-22 수정 라운드 · 리뷰 P2-2): allSettled 로 기다려, 사장님 실패·대기 집계가 실패하면 그 칸만 null 이다 —
  * 부가 신호(대기)가 가장 급한 신호(보내지 못한 고객 문자 · 배너)를 지우지 않게.
  */
 export async function getHomeSendAlerts(params: NotificationSummaryParams = {}, client?: AdminNotificationsClient): Promise<HomeSendAlerts> {
@@ -535,13 +546,27 @@ export async function getHomeSendAlerts(params: NotificationSummaryParams = {}, 
     .gte("created_at", since)
     .lt("created_at", waitingBefore)
     .in("template", [...CUSTOMER_MESSAGE_TEMPLATE_KEYS]);
+  // 보낼 때가 지난 재시도(P5-23 리뷰 P1-1) — 한 번 이상 시도했고(1 ≤ attempts < MAX) 다음 시도 시각(또는 집힌 채 멈춘 lease 끝)이 기준 시간 넘게 지났다.
+  // 발송 기록 둘째 줄(lib/admin/notificationDisplay.ts pendingSubState)의 "보낼 차례" · "오래 멈춤" 과 같은 규칙 · 같은 7일 창.
+  // 격리 행(보냈지만 기록 못 함 — next_attempt_at 이 먼 미래라 어차피 걸리지 않는다)은 이름으로도 뺀다. 시도를 다 쓴 행은 다음 실행에 실패로 닫혀 실패 수가 센다.
+  const overdueQuery = db
+    .from(NOTIFICATIONS_TABLE)
+    .select(COUNT_COLUMN, { count: "exact", head: true })
+    .eq("status", "pending")
+    .gte("attempts", 1)
+    .lt("attempts", MAX_ATTEMPTS)
+    .gte("created_at", since)
+    .lt("next_attempt_at", waitingBefore)
+    .or(`last_error.is.null,last_error.not.like.${SENT_UNMARKED_PREFIX}*`)
+    .in("template", [...CUSTOMER_MESSAGE_TEMPLATE_KEYS]);
 
-  const [customerRes, ownerRes, waitingRes] = await Promise.allSettled([customerQuery, ownerQuery, waitingQuery]);
+  const [customerRes, ownerRes, waitingRes, overdueRes] = await Promise.allSettled([customerQuery, ownerQuery, waitingQuery, overdueQuery]);
   if (customerRes.status !== "fulfilled") throw customerRes.reason;
   return {
     customerFailed: readCount("homeAlerts.customer", customerRes.value as CountResponse),
     ownerFailed: countOrNull(ownerRes),
     customerWaiting: countOrNull(waitingRes),
+    customerOverdue: countOrNull(overdueRes),
     windowDays: HOME_ALERT_WINDOW_DAYS,
   };
 }

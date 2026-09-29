@@ -330,7 +330,9 @@ describe("2-b. 관리자 예약 상세 — 청약철회 제한 동의 시각", (
   test("화면 — 값이 있으면 KST 시각, legacy 면 '기록 없음(동의 기록 도입 전 접수)' (날짜를 박지 않는다)", () => {
     const src = stripComments(read("app/admin/(protected)/reservations/[id]/page.tsx"), "admin-detail.tsx");
     expect(src).toMatch(/t\("field\.withdrawalConsentAt"\)/);
-    expect(src).toMatch(/row\.withdrawal_consent_at !== null\s*\?\s*kstWallClock\(row\.withdrawal_consent_at\)\s*:\s*row\.withdrawal_consent_legacy\s*\?\s*t\("value\.noWithdrawalRecord"\)\s*:\s*none/);
+    // P5-23 라운드 2(A-3) — 시각은 원형 "YYYY-MM-DD HH:MM"(kstWallClock) 대신 관리자 날짜 틀(KST · "9월 28일 (월) 22:25" · 올해가 아니면 연도까지)
+    expect(src).toMatch(/row\.withdrawal_consent_at !== null\s*\?\s*stamp\(row\.withdrawal_consent_at\)\s*:\s*row\.withdrawal_consent_legacy\s*\?\s*t\("value\.noWithdrawalRecord"\)\s*:\s*none/);
+    expect(src).toMatch(/const stamp = \(iso: string\): string => formatAdminDate\(iso, now, dateLabels, \{ time: true \}\) \?\? none;/);
     const ko = JSON.parse(read("messages/ko.json")) as { admin: { detail: { field: Record<string, string>; value: Record<string, string> } } };
     expect(ko.admin.detail.field.withdrawalConsentAt).toBe("청약철회 제한 동의");
     expect(ko.admin.detail.value.noWithdrawalRecord).toBe("기록 없음(동의 기록 도입 전 접수)");

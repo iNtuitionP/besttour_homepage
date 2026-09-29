@@ -1225,24 +1225,8 @@ function cssRules(css: string): { selector: string; body: string; media: string 
   return out;
 }
 const decl = (body: string, prop: string): string | null => new RegExp(`(?:^|;|\\s)${prop}\\s*:\\s*([^;]+)`).exec(body)?.[1].trim() ?? null;
-/** `grid-template-columns` 값을 맨 바깥 공백으로만 나눈다(괄호 안 공백은 트랙의 일부다). */
-function topLevelTracks(value: string): string[] {
-  const out: string[] = [];
-  let depth = 0;
-  let cur = "";
-  for (const ch of value.trim()) {
-    if (ch === "(") depth++;
-    if (ch === ")") depth--;
-    if (/\s/.test(ch) && depth === 0) {
-      if (cur) out.push(cur);
-      cur = "";
-    } else cur += ch;
-  }
-  if (cur) out.push(cur);
-  return out;
-}
 
-describe("8. CSS — 역할 토큰 · 글자 버튼 · 격자 항목 최소 폭 0", () => {
+describe("8. CSS — 역할 토큰 · 글자 버튼 · 목록이 화면을 밀지 않는다", () => {
   const rules = cssRules(read(ADMIN_CSS));
   const rule = (selector: string, media: string | null = null) => rules.filter((r) => r.selector === selector && r.media === media);
 
@@ -1264,23 +1248,25 @@ describe("8. CSS — 역할 토큰 · 글자 버튼 · 격자 항목 최소 폭 
     expect(primary).toMatch(/background:\s*var\(--action-primary-bg\)/);
   });
 
-  test("🔴 .popupGrid — 칸 정의가 항목 최소 폭을 0 으로 만든다(표는 자기 스크롤 상자 안에서만 밀린다)", () => {
-    const base = rule(".popupGrid");
-    expect(base.length, ".popupGrid 기본 규칙").toBeGreaterThan(0);
-    expect(decl(base.map((r) => r.body).join(";"), "grid-template-columns"), "1024px 미만에도 칸 정의가 있어야 한다").toBe("minmax(0, 1fr)");
-    const items = rule(".popupGrid > *");
-    expect(items.length, ".popupGrid > * 규칙").toBeGreaterThan(0);
-    expect(decl(items.map((r) => r.body).join(";"), "min-width")).toBe("0");
-    // 넓은 화면의 두 칸 중 늘어나는 칸도 최소 0
-    const wide = rules.filter((r) => r.selector === ".popupGrid" && r.media !== null);
-    expect(wide.length).toBeGreaterThan(0);
-    for (const r of wide) {
-      const tracks = topLevelTracks(decl(r.body, "grid-template-columns") ?? "");
-      expect(tracks.length, r.media ?? "").toBeGreaterThan(1);
-      // 맨 fr 트랙(= minmax(auto, 1fr))이 없다 — 늘어나는 칸은 전부 최소 0 으로 감싼다
-      expect(tracks.filter((t) => /^\d*\.?\d+fr$/.test(t)), r.media ?? "").toEqual([]);
-      expect(tracks.at(-1), r.media ?? "").toBe("minmax(0, 1fr)");
-    }
+  /**
+   * P5-19(②-13) — 공지·팝업 목록 표의 최소 폭(.tablePopups 30rem)이 화면을 밀어 오른쪽 버튼이 `overflow-x:hidden` 에 **가려졌다.**
+   * 그때는 두 칸 격자(.popupGrid)의 항목 최소 폭을 0 으로 막았다. P5-23 라운드 2(컨트롤러 B-5)에서 격자를 걷고 목록을 모든 폭에서 한 칸으로 두었으므로,
+   * 같은 뜻(목록이 화면을 밀지 않는다 · 버튼이 늘 보인다)을 새 형태로 잠근다: 1024px 미만에서는 행이 카드가 되어 **표 최소 폭 자체가 없다.**
+   */
+  test("🔴 공지·팝업 목록이 화면을 밀지 않는다 — 1024px 미만은 카드(표 최소 폭 0 · 머리글 숨김) · 두 칸 격자 없음", () => {
+    const NARROW = "(max-width: 1023.98px)";
+    const at = (selector: string) =>
+      rules
+        .filter((r) => r.media === NARROW && r.selector.split(",").map((s) => s.trim()).includes(selector))
+        .map((r) => r.body)
+        .join(";");
+    expect(decl(at(".contentTable"), "min-width"), "좁은 폭에서 표 최소 폭이 남아 있다").toBe("0");
+    expect(decl(at(".contentTable"), "display")).toBe("block");
+    expect(decl(at(".contentTable thead"), "display")).toBe("none");
+    expect(decl(at(".contentWrap"), "overflow")).toBe("visible");
+    // 버튼 칸은 카드의 한 줄 전체 — 보인다
+    expect(decl(at('.contentTable td[data-cell="actions"]'), "flex")).toBe("1 1 100%");
+    expect(rules.filter((r) => r.selector.includes(".popupGrid")), "두 칸 격자가 돌아왔다").toEqual([]);
   });
 
   test("늦음 안내 자리 — 늘 있지만(role=status) 비어 있으면 자리를 차지하지 않는다", () => {

@@ -17,6 +17,7 @@ import type { ReservationStatus } from "@/lib/reservation-check/view";
 
 import { PROCESS_REGION_ATTR } from "./reservation-panel";
 import type { ReservationActionLabels } from "./reservation-sheet";
+import { sentences } from "./segments";
 import { SheetTrigger } from "./SheetTrigger";
 
 import s from "./admin.module.css";
@@ -55,7 +56,8 @@ export function ReservationProcess({
         ) : null}
         <div className={s.cancelZone} data-zone="cancel">
           <SheetTrigger id={id} kind="cancel" label={labels.cancel} variant="text" testId="admin-cancel-mobile" />
-          <p className={s.hint}>{labels.cancelHint}</p>
+          {/* 문장마다 한 덩어리 — 끝 문장이 "…알려 / 주세요." 로 꺾이지 않는다(P5-23 라운드 2 C-15) */}
+          <p className={s.hint}>{sentences(labels.cancelHint)}</p>
         </div>
       </div>
     );
@@ -85,7 +87,7 @@ export function ReservationProcess({
           <hr className={s.divider} />
           <div className={s.cancelZone} data-zone="cancel">
             <SheetTrigger id={id} kind="cancel" label={labels.cancel} variant="text" testId="admin-cancel" />
-            <p className={s.hint}>{labels.cancelHint}</p>
+            <p className={s.hint}>{sentences(labels.cancelHint)}</p>
           </div>
         </>
       ) : (

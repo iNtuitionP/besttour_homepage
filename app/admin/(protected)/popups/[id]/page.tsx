@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 
+import { formatAdminPeriod } from "@/components/admin/admin-date";
+import { getAdminDateLabels } from "@/components/admin/adminDateLabels";
 import { getCopyWarningLabels } from "@/components/admin/copyWarningLabels";
 import { PopupForm } from "@/components/admin/PopupForm";
 import { PopupSample } from "@/components/admin/PopupSample";
@@ -58,6 +60,9 @@ export default async function AdminPopupEditPage({ params }: { params: Params })
     failed: t("result.failed"),
     copyWarning: t("result.copyWarning"),
   };
+  // 부제의 노출 기간 — 관리자 날짜 틀("10월 13일 ~ 11월 13일" · P5-23 라운드 2 A-3). 입력 칸(type=date)의 값은 그대로다.
+  const periodText =
+    formatAdminPeriod(row.starts_at, row.ends_at, new Date(), await getAdminDateLabels()) ?? t("periodValue", { start: row.starts_at, end: row.ends_at });
 
   return (
     <main className={q.main} data-testid="admin-popup-edit">
@@ -68,7 +73,7 @@ export default async function AdminPopupEditPage({ params }: { params: Params })
 
         <header className={q.pageHead}>
           <h1 className={q.title}>{t("edit")}</h1>
-          <p className={q.sub}>{t("periodValue", { start: row.starts_at, end: row.ends_at })}</p>
+          <p className={q.sub}>{periodText}</p>
         </header>
 
         {/* 폼 구역의 이름은 화면 제목(h1)과 같은 말이라 따로 적지 않는다(P5-20 — 제목 중복 정리) */}
@@ -92,6 +97,7 @@ export default async function AdminPopupEditPage({ params }: { params: Params })
                 imagePath: t("field.imagePath"),
                 startsAt: t("field.startsAt"),
                 endsAt: t("field.endsAt"),
+                period: t("field.period"),
                 active: t("field.active"),
               },
               hint: {

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 
 import { notificationsLine } from "@/components/admin/hub";
+import { segments } from "@/components/admin/segments";
 import { hubItems } from "@/components/admin/tabs";
 import { routing } from "@/i18n/routing";
 import { getNotificationSummary } from "@/lib/admin/notifications";
@@ -31,12 +32,13 @@ export default async function AdminRecordsHubPage() {
   const [summary] = await Promise.allSettled([getNotificationSummary()]);
   const notify = notificationsLine(summary);
 
-  const lineText = (key: string): string => {
-    if (key === "stats") return t("stats");
-    if (key !== "notifications") return "";
-    if (notify.kind === "unknown") return t("unknown");
-    if (notify.kind === "ok") return n("ok");
-    return notify.parts.map((p) => n(p.key, { n: p.n })).join(" · ");
+  // 한 줄 상태의 조각 — 문제가 여럿이면 문제 하나가 한 덩어리(P5-23 라운드 2 C-14: 375 에서 "…(최근 24시간) · 발송됨 ·" 처럼 줄 끝에 '·' 가 남았다)
+  const lineParts = (key: string): string[] => {
+    if (key === "stats") return [t("stats")];
+    if (key !== "notifications") return [];
+    if (notify.kind === "unknown") return [t("unknown")];
+    if (notify.kind === "ok") return [n("ok")];
+    return notify.parts.map((p) => n(p.key, { n: p.n }));
   };
 
   return (
@@ -53,7 +55,7 @@ export default async function AdminRecordsHubPage() {
                 <Link className={a.hubItem} href={item.href} data-hub-item={item.key}>
                   <span className={a.hubText}>
                     <span className={a.hubTitle}>{tabs(item.key)}</span>
-                    <span className={a.hubStatus}>{lineText(item.key)}</span>
+                    <span className={a.hubStatus}>{segments(lineParts(item.key))}</span>
                   </span>
                   <svg className={a.hubChevron} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                     <path d="M9 5l7 7-7 7" />

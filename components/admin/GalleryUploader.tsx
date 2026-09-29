@@ -16,7 +16,8 @@
  *   5. 행 기록  recordGalleryUpload(경로·크기)
  *   3~5 의 되돌리기 규칙은 lib/admin/galleryUpload.ts `commitUpload` 에 있다 — **행이 만들어지지 않았음이 증명될 때만**
  *   파일을 지우고, 응답을 못 받았거나 결과가 불확실하면 파일을 남긴 채 "확인 필요"로 알린다(독립 리뷰 F1·M2).
- *   한 장의 어떤 실패도 루프를 멈추지 못하고(try/catch), 무슨 일이 있어도 마지막에 잠금이 풀린다(finally).
+ *   한 번의 고르기 순서(전부 걸러짐 · 한 장씩 · 잠금 풀기 · 고른 장수 줄 되돌리기 · 요약)는 lib/admin/galleryPick.ts `runGalleryPick` 에 있다 —
+ *   한 장의 어떤 실패도 루프를 멈추지 못하고, 무슨 일이 있어도 마지막에 잠금이 풀리고 고른 장수 줄이 되돌아간다(P5-23 리뷰 P2-1).
  *
  * **HEIC (실측, 2026-09-15)**: HeadlessChrome/145 · Windows 에서 실제 .heic 3종을 시험한 결과
  *   `ImageDecoder.isTypeSupported('image/heic')` → false, `createImageBitmap` → InvalidStateError,
@@ -41,6 +42,7 @@ import {
   type GalleryActionCode,
   type GalleryRejectReason,
 } from "@/lib/admin/galleryInput";
+import { runGalleryPick } from "@/lib/admin/galleryPick";
 import { commitUpload, type GalleryStoragePort } from "@/lib/admin/galleryUpload";
 import { createBrowserSupabase } from "@/lib/supabase/client";
 
@@ -57,6 +59,10 @@ const PUBLIC_CACHE_CONTROL = "31536000";
 export interface GalleryUploaderLabels {
   upload: string;
   uploadHint: string;
+  /** 고른 사진이 없을 때 버튼 옆 한 줄. */
+  pickNone: string;
+  /** "{n}" 자리표시자가 든 원문 — 고른 장수. */
+  pickCount: string;
   uploadTarget: string;
   albumNone: string;
   processing: string;
@@ -120,6 +126,8 @@ export function GalleryUploader({
   const [albumId, setAlbumId] = useState<number | null>(defaultAlbumId);
   const [items, setItems] = useState<Item[]>([]);
   const [busy, setBusy] = useState(false);
+  /** 고른 장수 — 버튼 옆 한 줄(P5-23 라운드 2 B-10). 한 번의 고르기가 끝나면(전부 걸러져도) 흐름의 resetPicker 가 입력칸을 비우고 0 으로 되돌린다. */
+  const [picked, setPicked] = useState(0);
   const [failure, setFailure] = useState("");
   /**
    * 요약 배너가 선 횟수(AdminBanner attempt) — 고른 것이 전부 걸러지면 같은 틱에 비우고 다시 써서, 같은 문구가 두 번이면
@@ -152,111 +160,107 @@ export function GalleryUploader({
     }));
     const acceptedItems: Item[] = accepted.map((f, i) => ({ key: `a${i}-${f.name}`, name: f.name, state: "waiting", message: "" }));
     setItems([...acceptedItems, ...rejectedItems]);
-    if (accepted.length === 0) {
-      // 고른 것이 전부 걸러졌다(형식·크기·장수) — 올릴 것이 없으니 곧바로 요약
-      summarize(0, rejected.length);
-      return;
-    }
 
-    setBusy(true);
-    let ok = 0;
-
-    // finally 가 잠금을 푼다. 무엇이 던지든(포트·React·브라우저) 업로더가 잠긴 채 남지 않는다 — 리뷰 F1 의 핵심.
-    try {
-      const client = createBrowserSupabase();
-      const storage = storagePort(client);
-
-      for (let i = 0; i < accepted.length; i += 1) {
+    // 순서·마무리(전부 걸러짐 · 한 장씩 · 잠금 풀기 · 고른 장수 줄 되돌리기)는 순수 흐름(lib/admin/galleryPick.ts)이 정한다 — 여기서는 포트만 잇는다.
+    let storage: GalleryStoragePort | undefined;
+    await runGalleryPick({
+      accepted: accepted.length,
+      rejected: rejected.length,
+      prepare: () => {
+        storage = storagePort(createBrowserSupabase());
+      },
+      uploadOne: async (i) => {
         const file = accepted[i];
         const key = acceptedItems[i].key;
         mark(key, "working", labels.running.replace("{done}", String(i + 1)).replace("{total}", String(accepted.length)));
+        if (storage === undefined) throw new Error("storage not prepared");
 
-        // 한 장의 실패가 나머지를 멈추지 않는다. 예상 못 한 예외도 여기서 끝난다.
-        try {
-          const ext = fileExtension(file.name);
-          if (ext === null) {
-            mark(key, "failed", labels.reject.type);
-            continue;
-          }
-
-          // 1. 디코드 — HEIC 는 여기서 걸린다(위 헤더의 실측)
-          let bitmap: ImageBitmap;
-          try {
-            bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
-          } catch {
-            mark(key, "failed", isHeicExtension(ext) ? labels.heicHelp : labels.reject.decode);
-            continue;
-          }
-
-          // 2. 축소 → WebP
-          const size = fitLongEdge(bitmap.width, bitmap.height, GALLERY_PUBLIC_LONG_EDGE);
-          let webp: Blob | null = null;
-          try {
-            const canvas = document.createElement("canvas");
-            canvas.width = size.width;
-            canvas.height = size.height;
-            const ctx = canvas.getContext("2d");
-            if (ctx) {
-              ctx.drawImage(bitmap, 0, 0, size.width, size.height);
-              webp = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", WEBP_QUALITY));
-            }
-          } finally {
-            bitmap.close();
-          }
-          // 타입까지 확인한다 — WebP 를 못 만드는 브라우저는 조용히 PNG 를 돌려준다(.webp 이름의 PNG 를 저장하지 않는다)
-          if (!webp || webp.type !== "image/webp") {
-            mark(key, "failed", labels.reject.encode);
-            continue;
-          }
-
-          // 3~5. 업로드 두 번 + 기록. 되돌리기 판단은 commitUpload 안에 있다(리뷰 F1·M2)
-          const outcome = await commitUpload({
-            paths: buildUploadPaths(crypto.randomUUID(), ext, new Date()),
-            original: file,
-            publicBody: webp,
-            originalContentType: contentTypeFor(ext),
-            publicCacheControl: PUBLIC_CACHE_CONTROL,
-            meta: {
-              width: size.width,
-              height: size.height,
-              // bytes 는 **원본** 크기다(P6-1 §7-1 · 스펙 §13.9 (2)의 용량 추정이 보는 축)
-              bytes: file.size,
-              albumId,
-              caption: null,
-              sort: 0,
-              active: true,
-            },
-            storage,
-            record: recordGalleryUpload,
-          });
-
-          if (outcome.kind === "done") {
-            ok += 1;
-            mark(key, "done", labels.result.recorded);
-          } else {
-            mark(key, "failed", labels.reject[outcome.reason]);
-          }
-        } catch {
-          // 여기까지 온 예외는 정체를 모른다 — 파일이 올라갔는지도 알 수 없으므로 "확인 필요"다(리뷰 M2 와 같은 원칙)
-          mark(key, "failed", labels.reject.needsCheck);
+        const ext = fileExtension(file.name);
+        if (ext === null) {
+          mark(key, "failed", labels.reject.type);
+          return false;
         }
-      }
-    } finally {
-      setBusy(false);
-      if (inputRef.current) inputRef.current.value = "";
-      if (ok > 0) {
-        // 다 올린 뒤 한 번 — 성공 장수만(실패한 장은 진행 목록에 그 자리 이유와 함께 남아 있다)
-        toast.show({ text: labels.done.replace("{ok}", String(ok)) });
-        router.refresh();
-      }
-      // 실패한 장이 있으면 요약 배너 — 전부 실패면 토스트가 없어서 이것이 유일한 알림이다. 올라가지 못한 장 = 고른 장 − 올라간 장
-      summarize(ok, accepted.length + rejected.length - ok);
-    }
+
+        // 1. 디코드 — HEIC 는 여기서 걸린다(위 헤더의 실측)
+        let bitmap: ImageBitmap;
+        try {
+          bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+        } catch {
+          mark(key, "failed", isHeicExtension(ext) ? labels.heicHelp : labels.reject.decode);
+          return false;
+        }
+
+        // 2. 축소 → WebP
+        const size = fitLongEdge(bitmap.width, bitmap.height, GALLERY_PUBLIC_LONG_EDGE);
+        let webp: Blob | null = null;
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = size.width;
+          canvas.height = size.height;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.drawImage(bitmap, 0, 0, size.width, size.height);
+            webp = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", WEBP_QUALITY));
+          }
+        } finally {
+          bitmap.close();
+        }
+        // 타입까지 확인한다 — WebP 를 못 만드는 브라우저는 조용히 PNG 를 돌려준다(.webp 이름의 PNG 를 저장하지 않는다)
+        if (!webp || webp.type !== "image/webp") {
+          mark(key, "failed", labels.reject.encode);
+          return false;
+        }
+
+        // 3~5. 업로드 두 번 + 기록. 되돌리기 판단은 commitUpload 안에 있다(리뷰 F1·M2)
+        const outcome = await commitUpload({
+          paths: buildUploadPaths(crypto.randomUUID(), ext, new Date()),
+          original: file,
+          publicBody: webp,
+          originalContentType: contentTypeFor(ext),
+          publicCacheControl: PUBLIC_CACHE_CONTROL,
+          meta: {
+            width: size.width,
+            height: size.height,
+            // bytes 는 **원본** 크기다(P6-1 §7-1 · 스펙 §13.9 (2)의 용량 추정이 보는 축)
+            bytes: file.size,
+            albumId,
+            caption: null,
+            sort: 0,
+            active: true,
+          },
+          storage,
+          record: recordGalleryUpload,
+        });
+
+        if (outcome.kind === "done") {
+          mark(key, "done", labels.result.recorded);
+          return true;
+        }
+        mark(key, "failed", labels.reject[outcome.reason]);
+        return false;
+      },
+      // 여기까지 온 예외는 정체를 모른다 — 파일이 올라갔는지도 알 수 없으므로 "확인 필요"다(리뷰 M2 와 같은 원칙)
+      onThrow: (i) => mark(acceptedItems[i].key, "failed", labels.reject.needsCheck),
+      setBusy,
+      resetPicker: () => {
+        if (inputRef.current) inputRef.current.value = "";
+        setPicked(0);
+      },
+      finish: (ok, failed) => {
+        if (ok > 0) {
+          // 다 올린 뒤 한 번 — 성공 장수만(실패한 장은 진행 목록에 그 자리 이유와 함께 남아 있다)
+          toast.show({ text: labels.done.replace("{ok}", String(ok)) });
+          router.refresh();
+        }
+        // 실패한 장이 있으면 요약 배너 — 전부 실패면 토스트가 없어서 이것이 유일한 알림이다
+        summarize(ok, failed);
+      },
+    });
   };
 
   return (
     <div className={s.uploader} data-testid="admin-gallery-uploader">
-      <p className={s.hint}>{labels.uploadHint}</p>
+      <p className={`${s.hint} ${s.uploaderHint}`}>{labels.uploadHint}</p>
 
       <div className={s.field}>
         <label className={s.label} htmlFor="gallery-upload-album">
@@ -278,21 +282,40 @@ export function GalleryUploader({
         </select>
       </div>
 
+      {/* 사진 고르기(P5-23 라운드 2 · 컨트롤러 B-10) — 브라우저 기본 파일 칸("파일 선택 · 선택된 파일 없음") 대신 버튼 모양의 라벨과
+          고른 장수 한 줄. 진짜 입력칸은 그대로 있다: 보이지 않게 접었을 뿐 Tab 으로 포커스를 받고 Enter·Space 로 열린다(포커스 링은 라벨에 그린다).
+          입력칸의 이름은 그 라벨("사진 고르기")이고, 고른 장수 줄이 설명(aria-describedby)이다. */}
       <div className={s.field}>
-        <label className={s.label} htmlFor="gallery-upload-input">
-          {labels.upload}
-        </label>
         <input
           ref={inputRef}
           id="gallery-upload-input"
-          className={s.input}
+          className={s.fileInput}
           type="file"
           multiple
           accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif"
           disabled={busy}
           data-max-files={GALLERY_MAX_FILES}
-          onChange={(e) => void onPick(e.target.files)}
+          aria-describedby="gallery-upload-count"
+          onKeyDown={(e) => {
+            // 버튼 모양이라 Enter 로도 연다 — 브라우저의 파일 칸은 Space 로만 열린다(크롬 실측)
+            if (e.key === "Enter") {
+              e.preventDefault();
+              e.currentTarget.click();
+            }
+          }}
+          onChange={(e) => {
+            setPicked(e.target.files?.length ?? 0);
+            void onPick(e.target.files);
+          }}
         />
+        <div className={s.pickRow}>
+          <label className={`${s.btnSecondary} ${s.pickButton}`} htmlFor="gallery-upload-input" data-disabled={busy ? "true" : undefined}>
+            {labels.upload}
+          </label>
+          <span className={s.pickCount} id="gallery-upload-count" data-testid="admin-gallery-pick-count">
+            {picked === 0 ? labels.pickNone : labels.pickCount.replace("{n}", String(picked))}
+          </span>
+        </div>
       </div>
 
       {busy ? (

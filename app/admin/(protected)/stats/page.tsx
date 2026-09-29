@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 
+import { formatAdminDate, formatAdminMonth } from "@/components/admin/admin-date";
+import { getAdminDateLabels } from "@/components/admin/adminDateLabels";
+import { segments, splitSegments } from "@/components/admin/segments";
 import { StatusBadge } from "@/components/admin/StatusBadge";
 import type { StatusBadgeLabels } from "@/components/admin/status-badge";
 import { getStatusBadgeLabels } from "@/components/admin/statusBadgeLabels";
@@ -99,6 +102,12 @@ export default async function AdminStatsPage({ searchParams }: { searchParams: S
   ]);
   // P5-20 — ② 의 처리 대기 카드는 상태 배지로 이름을 단다(메뉴 배지·목록과 같은 "새 접수" · 72시간 넘은 것은 "답이 늦은 접수").
   const badgeLabels = await getStatusBadgeLabels();
+  // 날짜는 관리자 날짜 틀(P5-23 라운드 2 A-3) — 기간 줄 "9월 1일 ~ 9월 29일" · 막대 축 "9월 1일"(하루·주 단위) / "9월"(달 단위). 올해가 아니면 연도까지.
+  const dateLabels = await getAdminDateLabels();
+  const now = new Date();
+  const day = (d: string): string => formatAdminDate(d, now, dateLabels, { weekday: false, keep: true }) ?? d;
+  const bucketText = (bucket: string): string =>
+    (stats?.range.bucket === "month" ? formatAdminMonth(bucket, now, dateLabels) : formatAdminDate(bucket, now, dateLabels, { weekday: false, keep: true })) ?? bucket;
   const analyticsHref = vercelAnalyticsUrl();
   const vehicleNames = new Map(vehicles.map((v) => [v.slug, v.nameKo]));
 
@@ -127,7 +136,8 @@ export default async function AdminStatsPage({ searchParams }: { searchParams: S
             </Link>
           ))}
         </nav>
-        <p className={a.hint}>{t("rangeNote", { from: range.from, to: range.to })}</p>
+        {/* 조각마다 한 덩어리 — "…기준으로 / 세요." 처럼 마지막 낱말만 떨어지지 않는다(C-15) */}
+        <p className={a.hint}>{segments(splitSegments(t("rangeNote", { from: day(range.from), to: day(range.to) })))}</p>
         <p className={a.hint}>{t("cohortNote")}</p>
 
         {view === "denied" || stats === null ? (
@@ -151,7 +161,7 @@ export default async function AdminStatsPage({ searchParams }: { searchParams: S
               </p>
             ) : (
               <>
-                <Trend stats={stats} t={t} />
+                <Trend stats={stats} t={t} bucketText={bucketText} />
 
                 <section className={a.section} aria-labelledby="stats-inquiry">
                   <h2 className={a.sectionTitle} id="stats-inquiry">
@@ -320,9 +330,10 @@ function Overview({
         <article className={a.statCard}>
           <p className={a.statLabel}>{t("overview.confirmed")}</p>
           <p className={a.statValue} data-weak={confirmation.rate_pct === null ? "true" : undefined}>
+            {/* "17건 중 9건 · 53%" — 좁은 카드에서 '·' 가 줄 끝에 남지 않게 조각으로(C-14) */}
             {confirmation.rate_pct === null
               ? count(0)
-              : t("overview.confirmedValue", { total: confirmation.total, n: confirmation.confirmed, pct: confirmation.rate_pct })}
+              : segments(splitSegments(t("overview.confirmedValue", { total: confirmation.total, n: confirmation.confirmed, pct: confirmation.rate_pct })))}
           </p>
           <p className={a.statNote}>{t("overview.confirmedNote", { n: confirmation.pending })}</p>
           {purgeWarning ? (
@@ -430,7 +441,7 @@ function Attention({
   );
 }
 
-function Trend({ stats, t }: { stats: AdminStats; t: T }) {
+function Trend({ stats, t, bucketText }: { stats: AdminStats; t: T; bucketText: (bucket: string) => string }) {
   const points = stats.trend;
   // 막대 높이의 분모 — 가려진 칸을 세지 않고 0 이 되지 않는다(lib/admin/stats.ts visibleMax).
   const peak = visibleMax(points.map((p) => ({ count: p.total })));
@@ -442,13 +453,11 @@ function Trend({ stats, t }: { stats: AdminStats; t: T }) {
       <h2 className={a.sectionTitle} id="stats-trend">
         {t("trend.title")}
       </h2>
-      <p className={a.statNote}>
-        {t("trend.note")} · {t(unitKey)}
-      </p>
+      <p className={a.statNote}>{segments([t("trend.note"), t(unitKey)])}</p>
       <p className={a.hint}>{t("trend.unsplitNote")}</p>
       <div className={a.trendChart} role="list" aria-label={t("trend.title")}>
         {points.map((p) => {
-          const label = t(p.split ? "trend.bucketLabel" : "trend.bucketLabelUnsplit", { bucket: p.bucket, n: p.total });
+          const label = t(p.split ? "trend.bucketLabel" : "trend.bucketLabelUnsplit", { bucket: bucketText(p.bucket), n: p.total });
           return (
             <div key={p.bucket} className={a.trendCol} role="listitem" title={label} aria-label={label}>
               <span className={a.trendStack} style={{ height: `${barWidthPercent(p.total, peak)}%` }}>
@@ -467,8 +476,8 @@ function Trend({ stats, t }: { stats: AdminStats; t: T }) {
         })}
       </div>
       <p className={a.trendAxis}>
-        <span>{points[0]?.bucket ?? ""}</span>
-        <span>{points[points.length - 1]?.bucket ?? ""}</span>
+        <span>{points.length > 0 ? bucketText(points[0].bucket) : ""}</span>
+        <span>{points.length > 0 ? bucketText(points[points.length - 1].bucket) : ""}</span>
       </p>
       {/* 범례에 기간 합계를 적지 않는다 — 쪼개지지 않은 버킷이 섞이면 합이 뜻을 잃고, 상태별 합계는 위 «한눈에 보기» 가 말한다. */}
       <ul className={a.legend}>

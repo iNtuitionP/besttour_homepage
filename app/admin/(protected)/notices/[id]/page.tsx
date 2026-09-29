@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 
+import { formatAdminDate } from "@/components/admin/admin-date";
+import { getAdminDateLabels } from "@/components/admin/adminDateLabels";
 import { getCopyWarningLabels } from "@/components/admin/copyWarningLabels";
 import { NoticeForm } from "@/components/admin/NoticeForm";
 import { routing } from "@/i18n/routing";
@@ -47,6 +49,8 @@ export default async function AdminNoticeEditPage({ params }: { params: Params }
 
   const categoryLabels = tc.raw("category") as Record<string, string | undefined>;
   const categories = NOTICE_CATEGORIES.map((code) => ({ code, label: categoryLabels[code] ?? code }));
+  // 부제의 게시일 — 관리자 날짜 틀("9월 20일 (일)" · P5-23 라운드 2 A-3). 입력 칸(type=date)의 값은 그대로 YYYY-MM-DD 다.
+  const publishedText = formatAdminDate(row.published_at, new Date(), await getAdminDateLabels(), { keep: true }) ?? row.published_at;
 
   const results = {
     created: t("result.created"),
@@ -69,7 +73,7 @@ export default async function AdminNoticeEditPage({ params }: { params: Params }
 
         <header className={q.pageHead}>
           <h1 className={q.title}>{t("edit")}</h1>
-          <p className={q.sub}>{t("publishedValue", { date: row.published_at })}</p>
+          <p className={q.sub}>{t("publishedValue", { date: publishedText })}</p>
         </header>
 
         {/* 폼 구역의 이름은 화면 제목(h1)과 같은 말이라 따로 적지 않는다(P5-20 — 제목 중복 정리) */}

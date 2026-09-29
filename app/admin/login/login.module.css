@@ -10,6 +10,32 @@
   background: var(--bg-page);
   color: var(--text-primary);
   padding: var(--space-stack-xl) var(--space-page-x);
+  /* P5-23 라운드 2(B-13) — 관리자 셸과 같은 규칙: 낱말 안에서 꺾지 않고(keep-all) 긴 주소만 어디서든 꺾는다(anywhere) ·
+     문단 끝에 낱말 하나만 남기지 않는다(pretty — 점진적 개선). 라운드 1 에서 "브/라우저" · "주/소" 처럼 낱말이 갈렸다. */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+/* 카드 머리 — 셸 사이드바와 같은 브랜드 표식 + "베스트투어 관리"(B-13) */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  margin: 0 0 var(--space-stack-md);
+}
+
+.brandMark {
+  width: 32px;
+  height: auto;
+  flex: none;
+}
+
+.brandName {
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--text-primary);
 }
 
 .card {

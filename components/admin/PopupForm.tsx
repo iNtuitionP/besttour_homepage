@@ -44,7 +44,7 @@ export interface PopupFormValues {
 }
 
 export interface PopupFormLabels {
-  field: Record<"title" | "body" | "imagePath" | "startsAt" | "endsAt" | "active", string>;
+  field: Record<"title" | "body" | "imagePath" | "startsAt" | "endsAt" | "period" | "active", string>;
   hint: Record<"title" | "body" | "imagePath" | "period" | "active", string>;
   notice: string;
   submit: string;
@@ -194,7 +194,11 @@ export function PopupForm({
         />
       </div>
 
-      <div className={s.field}>
+      {/* 노출 기간 — 다른 칸과 같은 순서(이름 → 안내 → 입력칸 · P5-23 라운드 2 B-9). 두 날짜 칸을 한 묶음으로 읽게 group 으로 이름을 단다. */}
+      <div className={s.field} role="group" aria-labelledby="popup-period-label">
+        <span className={s.label} id="popup-period-label">
+          {labels.field.period}
+        </span>
         <p className={s.hint} id="popup-period-hint">
           {labels.hint.period}
         </p>
@@ -234,22 +238,24 @@ export function PopupForm({
         </div>
       </div>
 
-      <div className={s.checkRow}>
-        <input
-          id="popup-active"
-          name={POPUP_FIELDS.active}
-          type="checkbox"
-          defaultChecked={initial.active}
-          disabled={pending}
-          aria-describedby="popup-active-hint"
-        />
-        <label className={s.label} htmlFor="popup-active">
-          {labels.field.active}
-        </label>
+      <div className={s.field}>
+        <div className={s.checkRow}>
+          <input
+            id="popup-active"
+            name={POPUP_FIELDS.active}
+            type="checkbox"
+            defaultChecked={initial.active}
+            disabled={pending}
+            aria-describedby="popup-active-hint"
+          />
+          <label className={s.label} htmlFor="popup-active">
+            {labels.field.active}
+          </label>
+        </div>
+        <p className={s.hint} id="popup-active-hint">
+          {labels.hint.active}
+        </p>
       </div>
-      <p className={s.hint} id="popup-active-hint">
-        {labels.hint.active}
-      </p>
 
       <p className={s.hint}>{labels.notice}</p>
 

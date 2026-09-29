@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 
+import { formatAdminDate } from "@/components/admin/admin-date";
+import { getAdminDateLabels } from "@/components/admin/adminDateLabels";
 import { getCopyWarningLabels } from "@/components/admin/copyWarningLabels";
 import { NoticeForm } from "@/components/admin/NoticeForm";
 import { NoticeToggle } from "@/components/admin/NoticeToggle";
@@ -34,7 +36,9 @@ export default async function AdminNoticesPage() {
   const copyWarning = await getCopyWarningLabels();
   const tc = await getTranslations({ locale: routing.defaultLocale, namespace: "home.notice" });
   const rows = await listAdminNotices();
-  const today = toKstDateString(new Date());
+  const dateLabels = await getAdminDateLabels();
+  const now = new Date();
+  const today = toKstDateString(now);
 
   const categoryLabels = tc.raw("category") as Record<string, string | undefined>;
   const categories = NOTICE_CATEGORIES.map((code) => ({ code, label: categoryLabels[code] ?? code }));
@@ -82,90 +86,94 @@ export default async function AdminNoticesPage() {
           <p className={q.sub}>{t("sub")}</p>
         </header>
 
-        <div className={a.popupGrid}>
-          <section className={a.section} aria-labelledby="notice-new-title">
-            <h2 className={a.sectionTitle} id="notice-new-title">
-              {t("new")}
-            </h2>
-            <NoticeForm
-              mode="create"
-              listHref={ADMIN_NOTICES_PATH}
-              categories={categories}
-              initial={{ title: "", body: "", category: NOTICE_CATEGORIES[0], publishedAt: today, active: true }}
-              labels={{ ...labels, submit: t("create") }}
-            />
-          </section>
-
-          <section className={a.section} aria-labelledby="notice-list-title">
-            <h2 className={a.sectionTitle} id="notice-list-title">
-              {t("listLabel")}
-            </h2>
-            {rows.length === 0 ? (
-              // 빈 상태 — 방향("왼쪽에서")이 아니라 다음 행동(공지 쓰기 → 같은 화면의 제목 칸)과 짝짓는다(P5-20)
-              <div className={a.empty}>
-                <p>{t("empty")}</p>
-                <a className={a.emptyAction} href="#notice-title">
-                  {t("emptyAction")}
-                </a>
-              </div>
-            ) : (
-              <div className={a.tableWrap}>
-                {/* 표 이름은 섹션 제목이 말한다 — 같은 말의 캡션을 또 적지 않는다(P5-20) */}
-                <table className={a.tablePopups} aria-labelledby="notice-list-title">
-                  <thead>
-                    <tr>
-                      <th className={a.th} scope="col">
-                        {t("col.title")}
-                      </th>
-                      <th className={a.th} scope="col">
-                        {t("col.category")}
-                      </th>
-                      <th className={a.th} scope="col">
-                        {t("col.publishedAt")}
-                      </th>
-                      <th className={a.th} scope="col">
-                        {t("col.state")}
-                      </th>
-                      <th className={a.th} scope="col">
-                        {t("col.actions")}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((row) => (
-                      <tr key={row.id}>
-                        <td className={`${a.td} ${a.tdStrong}`}>
+        {/* 목록이 먼저, 모든 폭에서 한 칸(P5-23 라운드 2 · 컨트롤러 B-5) — 새 공지 쓰기는 그 아래 자기 카드다.
+            목록은 1024px 이상에서 표, 그보다 좁으면 행이 카드(제목 · 분류 · 게시일 · 상태 · 버튼)가 된다(같은 마크업). */}
+        <section className={a.section} aria-labelledby="notice-list-title">
+          <h2 className={a.sectionTitle} id="notice-list-title">
+            {t("listLabel")}
+          </h2>
+          {rows.length === 0 ? (
+            // 빈 상태 — 방향이 아니라 다음 행동(공지 쓰기 → 같은 화면의 제목 칸)과 짝짓는다(P5-20)
+            <div className={a.empty}>
+              <p>{t("empty")}</p>
+              <a className={a.emptyAction} href="#notice-title">
+                {t("emptyAction")}
+              </a>
+            </div>
+          ) : (
+            <div className={`${a.tableWrap} ${a.contentWrap}`}>
+              {/* 표 이름은 섹션 제목이 말한다 — 같은 말의 캡션을 또 적지 않는다(P5-20) */}
+              <table className={`${a.tablePopups} ${a.contentTable} ${a.tableMiddle}`} aria-labelledby="notice-list-title" data-testid="admin-notices-table">
+                <thead>
+                  <tr>
+                    <th className={a.th} scope="col">
+                      {t("col.title")}
+                    </th>
+                    <th className={a.th} scope="col">
+                      {t("col.category")}
+                    </th>
+                    <th className={a.th} scope="col">
+                      {t("col.publishedAt")}
+                    </th>
+                    <th className={a.th} scope="col">
+                      {t("col.state")}
+                    </th>
+                    <th className={a.th} scope="col">
+                      {t("col.actions")}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={row.id}>
+                      <td className={`${a.td} ${a.tdStrong}`} data-cell="title">
+                        <Link className={a.rowLink} href={`${ADMIN_NOTICES_PATH}/${row.id}`}>
+                          {row.title}
+                        </Link>
+                      </td>
+                      <td className={a.td} data-cell="meta">
+                        {categoryLabels[row.category] ?? row.category}
+                      </td>
+                      <td className={`${a.td} ${a.tdNowrap}`} data-cell="meta">
+                        {formatAdminDate(row.published_at, now, dateLabels) ?? row.published_at}
+                      </td>
+                      <td className={a.td} data-cell="meta">
+                        <span className={a.badge} data-state={row.active ? "live" : "off"}>
+                          {row.active ? t("state.live") : t("state.off")}
+                        </span>
+                      </td>
+                      <td className={a.td} data-cell="actions">
+                        <div className={a.rowActions}>
                           <Link className={a.rowLink} href={`${ADMIN_NOTICES_PATH}/${row.id}`}>
-                            {row.title}
+                            {t("editLink")}
                           </Link>
-                        </td>
-                        <td className={a.td}>{categoryLabels[row.category] ?? row.category}</td>
-                        <td className={`${a.td} ${a.tdNowrap}`}>{row.published_at}</td>
-                        <td className={a.td}>
-                          <span className={a.badge} data-state={row.active ? "live" : "off"}>
-                            {row.active ? t("state.live") : t("state.off")}
-                          </span>
-                        </td>
-                        <td className={a.td}>
-                          <div className={a.rowActions}>
-                            <Link className={a.rowLink} href={`${ADMIN_NOTICES_PATH}/${row.id}`}>
-                              {t("editLink")}
-                            </Link>
-                            <NoticeToggle
-                              id={row.id}
-                              active={row.active}
-                              labels={{ turnOn: t("turnOn"), turnOff: t("turnOff"), processing: t("processing"), results }}
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-        </div>
+                          <NoticeToggle
+                            id={row.id}
+                            active={row.active}
+                            labels={{ turnOn: t("turnOn"), turnOff: t("turnOff"), processing: t("processing"), results }}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        <section className={a.section} aria-labelledby="notice-new-title" data-testid="admin-notice-new">
+          <h2 className={a.sectionTitle} id="notice-new-title">
+            {t("new")}
+          </h2>
+          <NoticeForm
+            mode="create"
+            listHref={ADMIN_NOTICES_PATH}
+            categories={categories}
+            initial={{ title: "", body: "", category: NOTICE_CATEGORIES[0], publishedAt: today, active: true }}
+            labels={{ ...labels, submit: t("create") }}
+          />
+        </section>
       </div>
     </main>
   );
