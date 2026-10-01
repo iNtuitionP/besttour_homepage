@@ -23,7 +23,7 @@ import { SectionHead } from "@/components/home/SectionHead";
 import { OfficialKoreanNotice } from "@/components/legal/OfficialKoreanNotice";
 import { LegalRecordList } from "@/components/legal/LegalTable";
 import { PageHeader } from "@/components/pages/PageHeader";
-import { consultPhone } from "@/lib/contact-phone";
+import { consultPhone, localPhone } from "@/lib/contact-phone";
 import { koLang, ledgerUi } from "@/lib/i18n/ledger-ui";
 import { COMPANY } from "@/lib/legal/disclosures";
 import { pageAlternates } from "@/lib/site-url";
@@ -92,8 +92,9 @@ export default async function AboutPage({ params }: { params: Params }) {
     headOffice: COMPANY.address,
     branch: COMPANY.branchAddress,
     consultTel: consultPhone(locale).display,
-    mobile: COMPANY.mobile,
-    fax: COMPANY.fax,
+    // 휴대전화·팩스 — en 은 +82 표기(P7-4 · localPhone — 원장 값은 그대로, 표시만)
+    mobile: localPhone(COMPANY.mobile, locale).display,
+    fax: localPhone(COMPANY.fax, locale).display,
     email: COMPANY.email,
   };
 

@@ -41,6 +41,7 @@ import {
 } from "react";
 
 import { inertBackground } from "@/components/quote/quick-quote";
+import { lockDocumentScroll } from "@/lib/scroll-lock";
 
 import { AdminBanner } from "./AdminBanner";
 import { SHEET_ARM_MS, armingGuard, eventTime, sheetClosable, wrapFocus, type ArmingGuard } from "./reservation-sheet";
@@ -122,17 +123,17 @@ export function AdminSheet({
   }, []);
 
   // 열릴 때 — 배경 inert · 스크롤 잠금 · 포커스는 [닫기]. 닫힐 때 되돌린다.
+  // 스크롤 잠금은 문서 루트에(P7-4 후속 ③ · lib/scroll-lock.ts): body 에 overflow: hidden 을 걸면 그동안 body 가 스크롤 상자가 되어
+  // 위 제목줄(sticky — body 는 overflow-x: clip, P5-21)이 떨어지고, 문서 스크롤(<html> 이 맡는다)은 잠기지도 않았다.
   useEffect(() => {
     const backdrop = backdropRef.current;
     if (!backdrop) return;
     const restoreInert = inertBackground(backdrop, document.body);
-    const body = document.body;
-    const prevOverflow = body.style.overflow;
-    body.style.overflow = "hidden";
+    const unlock = lockDocumentScroll();
     closeRef.current?.focus();
     return () => {
       restoreInert();
-      body.style.overflow = prevOverflow;
+      unlock();
     };
   }, []);
 

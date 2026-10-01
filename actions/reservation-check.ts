@@ -19,7 +19,7 @@ import { headers } from "next/headers";
 import { checkGuardDeps } from "@/lib/guard/deps";
 import { structuredLog } from "@/lib/log";
 import { supabaseReservationCheckDb } from "@/lib/reservation-check/db";
-import { checkGuardContext, formDataToCheckRaw } from "@/lib/reservation-check/formData";
+import { checkGuardContext, formDataToCheckLocale, formDataToCheckRaw } from "@/lib/reservation-check/formData";
 import { runCheckGuards, type CheckGuardOutcome } from "@/lib/reservation-check/guards";
 import { lookupReservation, type LookupOutcome } from "@/lib/reservation-check/lookup";
 import {
@@ -33,6 +33,8 @@ import {
 import { createServiceClient } from "@/lib/supabase/server";
 
 export async function checkReservation(formData: FormData): Promise<CheckResult> {
+  // 결과 카드의 지명·차종 언어(P7-4) — 폼의 숨은 칸. 던지지 않는 순수 함수라 try 밖이다(모르는 값은 ko).
+  const locale = formDataToCheckLocale(formData);
   let outcome: CheckGuardOutcome;
   try {
     const requestHeaders = await headers();
@@ -47,7 +49,7 @@ export async function checkReservation(formData: FormData): Promise<CheckResult>
 
   let found: LookupOutcome;
   try {
-    found = await lookupReservation(outcome.input, { db: supabaseReservationCheckDb(createServiceClient()) });
+    found = await lookupReservation(outcome.input, { db: supabaseReservationCheckDb(createServiceClient()), locale });
   } catch (err) {
     structuredLog(checkThrownToLog("reservation_check.lookup_failed", err));
     return checkFailureResult("server");

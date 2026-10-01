@@ -32,6 +32,20 @@ export const CHECK_GUARD_FORM_FIELDS = {
   website: HONEYPOT_FIELD,
 } as const;
 
+/**
+ * 화면 로케일 숨은 칸 (P7-4 · 브리프 §7) — 결과 카드의 지명·차종을 화면 언어로 보이기 위해서만 쓴다(검증·조회 조건과 무관).
+ * zod 입력(CheckInput) 밖이라 위 계약표의 `raw` 에 섞지 않는다. 클라이언트 사본은 components/reservation-check/fields.ts 의 CL.
+ */
+export const CHECK_LOCALE_FIELD = "locale" as const;
+
+export type CheckLocale = "ko" | "en";
+
+/** 숨은 칸 → "en" 만 en, 그 밖(빈 값·다른 글자·FormData 아님)은 전부 기본 로케일 ko — 던지지 않는다. */
+export function formDataToCheckLocale(fd: unknown): CheckLocale {
+  if (!(fd instanceof FormData)) return "ko";
+  return fd.get(CHECK_LOCALE_FIELD) === "en" ? "en" : "ko";
+}
+
 export interface CheckGuardFields {
   website?: string;
 }

@@ -14,7 +14,9 @@ import { LegalPageHeader } from "@/components/legal/LegalPageHeader";
 import { OfficialKoreanNotice } from "@/components/legal/OfficialKoreanNotice";
 import { WithdrawalRestrictionText } from "@/components/legal/WithdrawalRestrictionText";
 import { koLang, ledgerUi } from "@/lib/i18n/ledger-ui";
+import { publicDateLabelsFor } from "@/lib/i18n/public-dates";
 import { CANCELLATION, LEGAL_PAGES, TERMS, WITHDRAWAL } from "@/lib/legal/disclosures";
+import { formatPublicDate } from "@/lib/public-date";
 import { pageAlternates } from "@/lib/site-url";
 import styles from "@/components/legal/legal.module.css";
 
@@ -45,6 +47,7 @@ export default async function TermsPage({ params }: { params: Params }) {
       <LegalPageHeader
         title={ui.pages.terms}
         effectiveDate={LEGAL_PAGES.terms.effectiveDate}
+        effectiveDateText={formatPublicDate(LEGAL_PAGES.terms.effectiveDate, publicDateLabelsFor(locale), { style: "posted" })}
         effectiveDateLabel={ui.labels.effectiveDate}
       />
       <OfficialKoreanNotice notice={ui.officialNotice} />

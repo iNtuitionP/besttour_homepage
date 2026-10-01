@@ -46,11 +46,13 @@
  * 접힌 상태에선 카드 칸이 지도 높이 안이다. "노선 전체 보기"로 펼치면 다시 지도보다 길어지므로 지도를 붙잡아 둔다.
  * P2-9: 이 규칙은 반드시 위 기본 .mapFrame(position: relative) **뒤**에 둔다 — 전에는 앞에 있어서 relative 가 이겼고,
  * sticky 는 동작하지 않은 채 top 만 먹어 지도가 16px 아래로 밀려 있었다(브라우저 실측 — 보고서 §5).
+ * P7-4: 머리글도 붙게 되어(app/globals.css overflow-x: clip) top 을 머리글 높이 + 간격으로 둔다 — 16px 그대로면 지도 위가
+ * 머리글에 가렸다(P5-21 실측 1280px 61px · 1024px 45px). 머리글 높이는 역할 토큰 하나(--layout-header-h)다.
  */
 @media (min-width: 960px) {
   .mapFrame {
     position: sticky;
-    top: var(--space-stack-sm);
+    top: calc(var(--layout-header-h) + var(--space-stack-sm));
   }
 }
 
@@ -196,7 +198,7 @@
 /* ── 범례 ──────────────────────────────────────────────────────────────── */
 .caption {
   margin-top: 10px;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.6;
   color: var(--text-secondary);
   text-align: center;
@@ -294,7 +296,7 @@
   display: block;
   margin-top: 2px;
   font-style: normal;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 800;
   color: var(--text-brand);
 }

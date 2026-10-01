@@ -14,7 +14,7 @@
  *   - 개발 프리뷰(?previewResult=): 서버액션 대신 mock 결과 3종(preview-result.ts). production 에서는 page.tsx 가 null 을 내린다.
  * 한글 리터럴·원장 import 없음 — 문구는 messages/ko.json reservationCheck.*, 법정 문구·예약·상담 전화는 서버 페이지가 props 로 넣는다.
  */
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { useActionState, useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
 import { checkReservation } from "@/actions/reservation-check";
@@ -23,7 +23,7 @@ import type { CheckFieldErrors, CheckResult } from "@/lib/reservation-check/resu
 
 import q from "@/components/quote/quote.module.css";
 import s from "./check.module.css";
-import { CF, CG } from "./fields";
+import { CF, CG, CL } from "./fields";
 import { previewCheckAction, type PreviewResultMode } from "./preview-result";
 import { ReservationCard } from "./ReservationCard";
 import { validateCheckForm } from "./validate";
@@ -47,6 +47,7 @@ export function CheckForm(props: CheckFormProps) {
 function CheckRound({ bookingNotice, tel, previewResult, onAgain }: CheckFormProps & { onAgain: () => void }) {
   const t = useTranslations("reservationCheck");
   const tRoot = useTranslations();
+  const locale = useLocale();
   const idPrefix = useId();
   const id = (k: string) => `${idPrefix}-${k}`;
 
@@ -102,6 +103,8 @@ function CheckRound({ bookingNotice, tel, previewResult, onAgain }: CheckFormPro
 
   return (
     <form className={q.card} action={formAction} onSubmit={onSubmit} noValidate data-testid="reservation-check-form" data-pending={pending}>
+      {/* 화면 로케일(P7-4) — 결과 카드의 지명·차종을 이 언어로. 조회 조건과 무관하다(lib/reservation-check/formData.ts formDataToCheckLocale). */}
+      <input type="hidden" name={CL} value={locale === "en" ? "en" : "ko"} />
       {/* 허니팟 — 사람은 보지도 포커스하지도 못한다. 채워지면 서버가 not_found 와 같은 응답을 돌려준다. */}
       <div className={q.hp} aria-hidden="true">
         <label htmlFor={id("website")}>Website</label>

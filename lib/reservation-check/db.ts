@@ -14,6 +14,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { RESERVATION_CHECK_SELECT, type ReservationCheckDb, type ReservationCheckRow } from "./lookup";
+import type { VehicleNames } from "./view";
 
 const RESERVATIONS = "reservations";
 const VEHICLES = "vehicles";
@@ -25,11 +26,13 @@ export function supabaseReservationCheckDb(client: SupabaseClient): ReservationC
       if (error) throw new Error(`reservations select 실패: [${error.code}] ${error.message}`);
       return (data as ReservationCheckRow | null) ?? null;
     },
-    async vehicleNameKo(slug: string): Promise<string | null> {
-      const { data, error } = await client.from(VEHICLES).select("name_ko").eq("slug", slug).maybeSingle();
+    // P7-4: 영문 화면은 name_en 을 보인다 — 한 번의 select 로 두 이름을 함께 읽는다(조회 횟수는 그대로). name_en 이 문자열이 아니면 "" (뷰가 name_ko 로 폴백).
+    async vehicleNames(slug: string): Promise<VehicleNames | null> {
+      const { data, error } = await client.from(VEHICLES).select("name_ko,name_en").eq("slug", slug).maybeSingle();
       if (error) throw new Error(`vehicles select 실패: [${error.code}] ${error.message}`);
-      const name: unknown = (data as { name_ko?: unknown } | null)?.name_ko;
-      return typeof name === "string" && name.length > 0 ? name : null;
+      const row = data as { name_ko?: unknown; name_en?: unknown } | null;
+      if (typeof row?.name_ko !== "string" || row.name_ko.length === 0) return null;
+      return { ko: row.name_ko, en: typeof row.name_en === "string" ? row.name_en : "" };
     },
   };
 }

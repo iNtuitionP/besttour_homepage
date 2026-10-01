@@ -1,7 +1,16 @@
 {
   "common": {
     "siteName": "Bestour",
-    "description": "Bestour — charter bus booking agency"
+    "description": "Bestour — charter bus booking agency",
+    "dates": {
+      "weekdays": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+      "months": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+      "day": "{weekday}, {month} {day}",
+      "dayYear": "{weekday}, {month} {day}, {year}",
+      "date": "{month} {day}, {year}",
+      "time": "{hour}:{minute}",
+      "dateTime": "{date}, {time}"
+    }
   },
   "layout": {
     "skipToContent": "Skip to main content",
@@ -50,6 +59,8 @@
       "slideLabel": "{n} / {total} {title}",
       "prev": "Previous slide",
       "next": "Next slide",
+      "pause": "Pause automatic slides",
+      "play": "Play automatic slides",
       "dotsLabel": "Choose a slide",
       "dotLabel": "Show slide {n} — {title}",
       "slides": {
@@ -65,7 +76,7 @@
           "title": "Nationwide service",
           "tag": "Nationwide · Round trip / One way / One way + one way",
           "heading": "We go <em>anywhere</em> nationwide",
-          "body": "We arrange buses <b>nationwide</b>, from Seoul to Jeju. Below are sample service areas. For workshops, field trips, religious groups, weddings and funerals, you can choose the trip type that fits your schedule.",
+          "body": "We arrange buses <b>nationwide</b>, from Seoul to Jeju. Below are sample service areas. For workshops, field trips, religious groups, weddings and funerals, tell us your dates and group size, and we will guide you from there.",
           "chips": ["Seoul", "Busan", "Daegu", "Incheon", "Gwangju", "Daejeon", "Ulsan", "Gyeonggi", "Gangwon", "North Chungcheong", "South Chungcheong", "North Jeolla", "South Jeolla", "North Gyeongsang", "South Gyeongsang", "Jeju"],
           "chipsOn": 0
         },
@@ -143,7 +154,7 @@
     },
     "fleet": {
       "eyebrow": "Vehicles",
-      "title": "<ac>{count} types</ac> of purple bus — choose one to fit your group",
+      "title": "<ac>{count} types</ac> of purple bus, matched to your group size",
       "seat": "{n}-seat",
       "capacityLabel": "Capacity",
       "capacity": "Up to <b>{n} people</b>",
@@ -176,7 +187,8 @@
       "eyebrow": "Notices",
       "title": "Customer support <ac>news</ac>",
       "category": { "info": "Info", "notice": "Notice", "airport": "Airport" },
-      "csTitle": "Customer support"
+      "csTitle": "Customer support",
+      "more": "View all notices"
     },
     "popup": {
       "close": "Close",
@@ -353,7 +365,7 @@
         "title": "{brand} Vehicles · Insurance",
         "description": "Seating capacity and features of each Bestour charter bus type, and information on vehicle insurance."
       },
-      "empty": "Vehicle information is being prepared. You can choose a vehicle type when you request a quote.",
+      "empty": "Vehicle information is being prepared. Tell us your dates and group size, and we will suggest a suitable vehicle.",
       "insurance": {
         "eyebrow": "Insurance"
       }

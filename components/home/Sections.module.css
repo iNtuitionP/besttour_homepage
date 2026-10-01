@@ -255,7 +255,7 @@
   border-radius: var(--radius-chip);
   background: var(--bg-inverse);
   color: var(--text-on-inverse);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 800;
 }
 .busBody {
@@ -286,12 +286,13 @@
 }
 .busMeta > div {
   display: grid;
-  grid-template-columns: 52px minmax(0, 1fr);
+  /* 라벨 칸 52px — 글자가 12px 로 커져(P7-4) 영문 "Capacity" 가 넘칠 때만 넓어진다 */
+  grid-template-columns: minmax(52px, max-content) minmax(0, 1fr);
   gap: var(--space-inline-xs);
   align-items: baseline;
 }
 .busMeta dt {
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.02em;
   color: var(--text-brand);
@@ -450,7 +451,7 @@
   border-radius: var(--radius-chip);
   background: var(--bg-subtle);
   color: var(--text-brand);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
 }
 .noticeTitle {
@@ -459,6 +460,29 @@
   font-weight: 700;
   line-height: 1.5;
   letter-spacing: -0.02em;
+}
+/* 홈 공지 항목 → 상세 링크(P7-4) — /notices 목록(components/pages/pages.module.css .noticeLink)과 같은 모양.
+ * 누르는 영역 44px — 보이는 줄은 그대로: 위아래 안쪽 여백으로 상자를 키우고 같은 만큼 바깥 여백을 빼 줄 간격을 지킨다(항목의 위아래 여백 안). */
+.noticeLink {
+  padding-block: calc((var(--size-target-min) - 1lh) / 2);
+  margin-block: calc((1lh - var(--size-target-min)) / 2);
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--border-decorative);
+  text-underline-offset: 3px;
+}
+.noticeLink:hover {
+  color: var(--text-link);
+  text-decoration-color: currentColor;
+}
+.noticeLink:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}
+/* "공지 전체 보기" — 갤러리 섹션의 .galMore 와 같은 자리(목록 아래) */
+.noticeMore {
+  margin: var(--space-stack-md) 0 0;
 }
 .noticeDate {
   margin-left: auto;
@@ -486,7 +510,7 @@
 }
 .csList > div {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-inline-sm);
   padding: 0 0 var(--space-stack-xs);
@@ -504,7 +528,11 @@
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
+/* 전화·메일 링크 — 누르는 영역 44px(P7-4 · 스펙 §10.1 고연령 손님). 글자 크기는 그대로, 줄이 조금 높아진다(목업과 다른 점 — 보고서 ④) */
 .csList a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--size-target-min);
   color: inherit;
 }
 .csList a:focus-visible {

@@ -16,7 +16,8 @@ import { noticeDate } from "@/components/home/notice-date";
 import { PageHeader } from "@/components/pages/PageHeader";
 import { splitParagraphs } from "@/components/pages/paragraphs";
 import { Link } from "@/i18n/navigation";
-import { ledgerUi } from "@/lib/i18n/ledger-ui";
+import { koLang, ledgerUi } from "@/lib/i18n/ledger-ui";
+import { formatPublicDate, publicDateLabels } from "@/lib/public-date";
 import { getNotice } from "@/lib/queries";
 import { pageAlternates } from "@/lib/site-url";
 
@@ -62,15 +63,21 @@ export default async function NoticeDetailPage({ params }: { params: Params }) {
   const notice = await getNoticeOnce(id);
   if (!notice) notFound();
 
-  const [t, tc, tNotice, tMenu] = await Promise.all([
+  const [t, tc, tNotice, tMenu, tCommon] = await Promise.all([
     getTranslations("pages.notices.detail"),
     getTranslations("pages.common"),
     getTranslations("home.notice"),
     getTranslations("layout.menu"),
+    getTranslations("common"),
   ]);
   const categories = tNotice.raw("category") as Record<string, string | undefined>;
   const date = noticeDate(notice.publishedAt);
   const paragraphs = splitParagraphs(notice.body);
+  // P7-4: 게시일의 보이는 글자는 공개 화면 공용 틀("2026년 9월 22일" · "Sep 22, 2026") — <time dateTime> 은 YYYY-MM-DD 그대로.
+  const dates = publicDateLabels(tCommon.raw("dates"));
+  const shownDate = formatPublicDate(date, dates, { style: "posted" }) ?? date;
+  // P7-4: 사장님이 쓴 제목·본문 — 영문 화면에서 lang="ko"(ko 화면은 undefined 라 속성이 없다)
+  const lang = koLang(locale);
 
   return (
     <main className={h.main} data-testid="notice-detail-page">
@@ -81,6 +88,7 @@ export default async function NoticeDetailPage({ params }: { params: Params }) {
         current={notice.title}
         eyebrow={tMenu("notices")}
         title={notice.title}
+        contentLang={lang}
       />
 
       <section className={`${h.section} ${h.toneWhite}`} data-section="notice-detail">
@@ -90,11 +98,11 @@ export default async function NoticeDetailPage({ params }: { params: Params }) {
               <p className={p.articleMeta}>
                 <span className={s.noticeCat}>{categories[notice.category] ?? notice.category}</span>
                 <span>
-                  {t("publishedAt")} <time dateTime={date}>{date}</time>
+                  {t("publishedAt")} <time dateTime={date}>{shownDate}</time>
                 </span>
               </p>
             </div>
-            <div data-testid="notice-body">
+            <div data-testid="notice-body" lang={lang}>
               {paragraphs.map((paragraph, i) => (
                 <p key={i}>{paragraph}</p>
               ))}

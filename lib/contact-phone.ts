@@ -13,6 +13,7 @@
  */
 import { routing } from "@/i18n/routing";
 import { COMPANY } from "@/lib/legal/disclosures";
+import { intlPhone } from "@/lib/phone-format";
 
 export interface ContactPhone {
   /** 화면에 보이는 번호 — ko: 010-…, 그 밖: +82 … */
@@ -29,5 +30,26 @@ export function consultPhone(locale: string): ContactPhone {
   return {
     display: locale === routing.defaultLocale ? COMPANY.consultTel : COMPANY.consultTelIntl,
     href: CONSULT_TEL_HREF,
+  };
+}
+
+/**
+ * 국내 표기 번호의 국제 표기 (P7-4 · 브리프 §7) — 순수 함수는 lib/phone-format.ts(원장 import 없음 — 클라이언트 트리도 쓴다)에 있고
+ * 여기서 다시 내보낸다. 이 모듈에는 번호 리터럴이 없다(tests/contact-phone.test.ts §1).
+ */
+export { intlPhone };
+
+/**
+ * 원장의 국내 표기 번호(사장님 휴대전화 · 팩스 · 개인정보 보호책임자 등)를 로케일에 맞춰 보인다 (P7-4).
+ *   - 표시: 한국어 화면은 원장 표기 그대로, 그 밖의 로케일은 intlPhone(+82).
+ *   - 링크: `0` 으로 시작하면 E.164(`tel:+82…`), 아니면(15xx) 숫자만(`tel:15…`) — 어느 화면에서 눌러도 같은 번호다.
+ * 예약·상담 전화는 원장이 국제 표기를 따로 가진다 — consultPhone 을 쓴다(같은 결과지만 원장 값이 정본이다).
+ */
+export function localPhone(domestic: string, locale: string): ContactPhone {
+  const v = domestic.trim();
+  const digits = v.replace(/\D/g, "");
+  return {
+    display: locale === routing.defaultLocale ? v : intlPhone(v),
+    href: /^0\d/.test(v) ? `tel:+82${digits.slice(1)}` : `tel:${digits}`,
   };
 }

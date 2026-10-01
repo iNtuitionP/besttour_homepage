@@ -134,13 +134,16 @@ describe("1. 모바일 메뉴 패널은 헤더 가로 줄(.inner)의 자식이 �
     expect(css).toMatch(/\.panel\[hidden\]\s*\{\s*display:\s*none;?\s*\}/);
   });
 
-  test("닫힘 동작 — Escape · 바깥 누름(pointerdown) · 링크 누름, 열린 동안 body 스크롤 잠금", () => {
+  // P7-4: 잠금은 body 가 아니라 문서 루트에(lib/scroll-lock.ts — body 에 걸면 붙어 있는 머리글이 패널째 화면 밖으로 떨어졌다.
+  // 잠금 함수 자체는 tests/uiux-polish.test.ts §1 이 잠근다)
+  test("닫힘 동작 — Escape · 바깥 누름(pointerdown) · 링크 누름, 열린 동안 배경 스크롤 잠금(문서 루트)", () => {
     const src = codeOf(MOBILE_MENU);
     expect(src).toMatch(/event\.key\s*===\s*["']Escape["']/);
     expect(src).toMatch(/addEventListener\(\s*["']pointerdown["']/);
     expect(src).toMatch(/removeEventListener\(\s*["']pointerdown["']/);
     expect(src).toMatch(/\.contains\(/);
-    expect(src).toMatch(/document\.body\.style\.overflow\s*=\s*["']hidden["']/);
+    expect(src).toMatch(/const unlock = lockDocumentScroll\(\);/);
+    expect(src).toMatch(/unlock\(\);/);
     expect(src).toMatch(/onNavigate=\{/);
   });
 });

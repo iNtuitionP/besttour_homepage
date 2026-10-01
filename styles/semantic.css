@@ -146,15 +146,27 @@
 
   /* ── 레이아웃 ────────────────────────────────────────────────────── */
   --layout-maxw: var(--maxw); /* 1280px — 콘텐츠 최대 폭 */
+  /* 붙어 있는(sticky) 공개 머리글의 높이 — 아래 테두리 포함. 1280px 이상에서 넓어진다(아래 미디어 쿼리). 머리글 줄 높이 ·
+     지도 sticky top · 문서 scroll-padding(앵커·포커스) 이 이 하나를 쓴다(P7-4 — 한 곳에서 바꾼다). */
+  --layout-header-h: var(--header-h);
+  /* 누르는 영역 최소 44px — 닫기 X·화살표·점·하단 링크(P7-4). 보이는 크기는 그대로 두고 누르는 상자만 키울 때도 이 값이다. */
+  --size-target-min: var(--target);
 
   /* ── 모션 ────────────────────────────────────────────────────────── */
   --motion-ease: var(--ease); /* 가감속 곡선 */
   --motion-base: var(--t);    /* 기본 트랜지션 (지속시간 + 곡선) */
 }
 
-/* 페이지 좌우 패딩만 화면 폭에 따라 달라진다. 다른 역할 토큰은 화면 폭과 무관하다. */
+/* 페이지 좌우 패딩은 화면 폭에 따라 달라진다. */
 @media (min-width: 768px) {
   :root {
     --space-page-x: var(--s4); /* 32px */
+  }
+}
+
+/* 공개 머리글 높이 — 1280px 이상은 줄이 76px(+ 테두리 1px). components/layout/Header.module.css 의 분기점과 같다(P7-4). */
+@media (min-width: 1280px) {
+  :root {
+    --layout-header-h: var(--header-h-lg);
   }
 }

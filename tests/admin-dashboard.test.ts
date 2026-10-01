@@ -1184,10 +1184,12 @@ describe("6. 셸 — 위 제목줄 고정 · 공개 사이트 무영향", () => 
       .map((r) => r.body)
       .join(";");
 
-  test("🔴 공개 사이트 전역 규칙은 그대로 — app/globals.css 의 html,body overflow-x: hidden(전/후 비교에서 회귀가 있어 전역 clip 은 적용하지 않았다)", () => {
-    const g = read("app/globals.css");
-    expect(g).toMatch(/html,\s*\nbody\s*\{\s*max-width:\s*100vw;\s*overflow-x:\s*hidden;\s*\}/);
-    expect(g).not.toMatch(/overflow-x:\s*clip/);
+  // P5-21 은 전역 clip 을 보류했다(붙은 공개 헤더가 ≥960px 지도 윗부분을 가리는 회귀 — P5-21 보고서 ④). P7-4(브리프 §1)가 그 두 결정을
+  // 내렸다: 헤더는 붙이고, 지도 sticky top 을 헤더 높이 변수 + 틈으로 내린다(tests/uiux-polish.test.ts §1 이 지도·앵커·토큰을 잠근다).
+  // 그래서 전역도 clip 이다 — 앞줄 hidden 은 clip 을 모르는 브라우저용 폴백. 관리자 셸의 clip(아래)은 그대로 둔다(같은 값 · 무해).
+  test("🔴 공개 사이트 전역 규칙 — app/globals.css 의 html,body overflow-x: clip(P7-4 · hidden 은 앞줄 폴백뿐) · 관리자 셸 규칙과 같은 값", () => {
+    const g = read("app/globals.css").replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(g).toMatch(/html,\s*\nbody\s*\{\s*max-width:\s*100vw;\s*overflow-x:\s*hidden;\s*overflow-x:\s*clip;\s*\}/);
   });
 
   test("🔴 관리자 셸에만 — body 가 스크롤 상자가 되지 않게 overflow-x: clip(:has(.shell) · 로그인·공개 화면 무영향) → 위 제목줄 sticky", () => {

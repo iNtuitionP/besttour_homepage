@@ -130,12 +130,14 @@ const ROW: ReservationCheckRow = {
   created_at: "2026-09-13T05:04:00.000Z", // KST 2026-09-13 14:04
 };
 const VEHICLE_NAME = "45인승 관광버스";
+/** P7-4: 차량 이름은 ko·en 한 쌍으로 읽는다(영문 화면은 name_en). */
+const VEHICLE_NAMES = { ko: VEHICLE_NAME, en: "45-seat Coach" };
 
 type FakeDb = ReservationCheckDb & { find: ReturnType<typeof vi.fn>; veh: ReturnType<typeof vi.fn> };
-function fakeDb(row: ReservationCheckRow | null, vehicleName: string | null = VEHICLE_NAME): FakeDb {
+function fakeDb(row: ReservationCheckRow | null, vehicleNames: { ko: string; en: string } | null = VEHICLE_NAMES): FakeDb {
   const find = vi.fn(async () => row);
-  const veh = vi.fn(async () => vehicleName);
-  return { findByPublicCode: find, vehicleNameKo: veh, find, veh };
+  const veh = vi.fn(async () => vehicleNames);
+  return { findByPublicCode: find, vehicleNames: veh, find, veh };
 }
 
 function limiterSet(success = true): RateLimiterSet {
@@ -326,7 +328,7 @@ describe("2. runCheckGuards — zod → 허니팟 → rateLimit (형식 틀린 �
 describe("3. lookupReservation — 부재와 불일치는 같은 결과, 일치는 마스킹 뷰", () => {
   const input = { publicCode: CODE, phoneLast4: LAST4 };
 
-  test("(a) 부재 → { found:false } · findByPublicCode 1회 · vehicleNameKo 0", async () => {
+  test("(a) 부재 → { found:false } · findByPublicCode 1회 · vehicleNames 0", async () => {
     const absent = fakeDb(null);
     expect(await lookupReservation(input, { db: absent })).toEqual({ found: false });
     expect(absent.find).toHaveBeenCalledTimes(1);
@@ -334,7 +336,7 @@ describe("3. lookupReservation — 부재와 불일치는 같은 결과, 일치�
     expect(absent.veh).toHaveBeenCalledTimes(0);
   });
 
-  test("(b) 존재 + 뒷자리 불일치 → { found:false } · vehicleNameKo 0 · (a) 와 toEqual + JSON 바이트 동일", async () => {
+  test("(b) 존재 + 뒷자리 불일치 → { found:false } · vehicleNames 0 · (a) 와 toEqual + JSON 바이트 동일", async () => {
     const absent = await lookupReservation(input, { db: fakeDb(null) });
     const present = fakeDb(ROW);
     const mismatch = await lookupReservation({ ...input, phoneLast4: "0000" }, { db: present });
@@ -438,19 +440,26 @@ describe("3. lookupReservation — 부재와 불일치는 같은 결과, 일치�
         ),
       );
     const card = (messages.reservationCheck as { card: Record<string, string> }).card;
-    const quickView = toReservationView(
-      { ...ROW, intake: "quick", trip_type: null, vehicle_slug: null, bus_count: null, depart_at: "2026-09-30T15:00:00.000Z", return_at: "2026-10-02T15:00:00.000Z" },
-      null,
-    );
-    const quickHtml = render(quickView);
-    expect(quickHtml).not.toContain(`<dt>${card.vehicle}</dt>`);
-    expect(quickHtml).not.toContain(`<dt>${card.busCount}</dt>`);
-    expect(quickHtml).toContain(`<dt>${card.departDate}</dt><dd>2026-10-01</dd>`);
-    expect(quickHtml).toContain(`<dt>${card.returnDate}</dt><dd>2026-10-03</dd>`);
-    expect(quickHtml).not.toContain(`<dt>${card.departAt}</dt>`);
-    const wizardHtml = render(toReservationView(ROW, VEHICLE_NAME));
-    expect(wizardHtml).toContain(`<dt>${card.vehicle}</dt><dd>${VEHICLE_NAME}</dd>`);
-    expect(wizardHtml).toContain(`<dt>${card.departAt}</dt><dd>2026-10-01 08:30</dd>`);
+    // P7-4: 카드의 날짜는 공개 화면 공용 틀(lib/public-date.ts · 카탈로그 common.dates)로 보인다 — 올해(KST)면 연도 없이.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-30T03:00:00.000Z"));
+    try {
+      const quickView = toReservationView(
+        { ...ROW, intake: "quick", trip_type: null, vehicle_slug: null, bus_count: null, depart_at: "2026-09-30T15:00:00.000Z", return_at: "2026-10-02T15:00:00.000Z" },
+        null,
+      );
+      const quickHtml = render(quickView);
+      expect(quickHtml).not.toContain(`<dt>${card.vehicle}</dt>`);
+      expect(quickHtml).not.toContain(`<dt>${card.busCount}</dt>`);
+      expect(quickHtml).toContain(`<dt>${card.departDate}</dt><dd>10월 1일 (목)</dd>`);
+      expect(quickHtml).toContain(`<dt>${card.returnDate}</dt><dd>10월 3일 (토)</dd>`);
+      expect(quickHtml).not.toContain(`<dt>${card.departAt}</dt>`);
+      const wizardHtml = render(toReservationView(ROW, VEHICLE_NAMES));
+      expect(wizardHtml).toContain(`<dt>${card.vehicle}</dt><dd>${VEHICLE_NAME}</dd>`);
+      expect(wizardHtml).toContain(`<dt>${card.departAt}</dt><dd>10월 1일 (목) 08:30</dd>`);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("(c) 4자리 이상 숫자열은 날짜·대수·인원·마스킹 뒷자리 외 0 · 5자리 이상 숫자열 0 (전화 원문이 어떤 형식으로도 없다)", async () => {
@@ -520,20 +529,20 @@ describe("3. lookupReservation — 부재와 불일치는 같은 결과, 일치�
         expect(out.view.statusKey).toBe(`reservationCheck.status.${status}`);
       }
     }
-    expect(() => toReservationView({ ...ROW, status: "weird" }, VEHICLE_NAME)).toThrow();
+    expect(() => toReservationView({ ...ROW, status: "weird" }, VEHICLE_NAMES)).toThrow();
   });
 
   test("편도(return_at null)·인원 미입력 → null, 알 수 없는 trip_type → null 라벨 키 · vehicles 에 없는 slug → slug 폴백", async () => {
     const out = await lookupReservation(input, { db: fakeDb({ ...ROW, trip_type: "oneway", return_at: null, passengers: null }, null) });
     if (!out.found) throw new Error("unreachable");
     expect(out.view).toMatchObject({ tripType: "oneway", tripTypeKey: "reservationCheck.tripType.oneway", returnAtKst: null, passengers: null, vehicleLabel: "bus45" });
-    const weird = toReservationView({ ...ROW, trip_type: null }, VEHICLE_NAME);
+    const weird = toReservationView({ ...ROW, trip_type: null }, VEHICLE_NAMES);
     expect(weird.tripType).toBeNull();
     expect(weird.tripTypeKey).toBeNull();
   });
 
   test("마스킹 — +82 휴대전화만 010-****-NNNN, 그 밖(해외 E.164·+82 유선·형식 불명·국내 표기 원문)은 정확히 '***' (리뷰 M-1, fail-closed)", () => {
-    const masked = (phone: string) => toReservationView({ ...ROW, phone }, VEHICLE_NAME).maskedPhone;
+    const masked = (phone: string) => toReservationView({ ...ROW, phone }, VEHICLE_NAMES).maskedPhone;
     expect(masked("+821012345678")).toBe("010-****-5678");
     expect(masked("+82 10 1234 5678")).toBe("010-****-5678");
     expect(masked("+821112345678")).toBe("011-****-5678");
@@ -558,7 +567,7 @@ describe("3. lookupReservation — 부재와 불일치는 같은 결과, 일치�
     }
   });
 
-  test("일치 시에만 vehicleNameKo 를 부른다(1회, slug 로) — 실패 경로는 DB 호출 1회로 동일", async () => {
+  test("일치 시에만 vehicleNames 를 부른다(1회, slug 로) — 실패 경로는 DB 호출 1회로 동일", async () => {
     const hit = fakeDb(ROW);
     await lookupReservation(input, { db: hit });
     expect(hit.veh).toHaveBeenCalledTimes(1);
@@ -635,15 +644,18 @@ describe("4. supabaseReservationCheckDb — select 화이트리스트", () => {
     await expect(real.supabaseReservationCheckDb(client as never).findByPublicCode(CODE)).rejects.not.toThrow(new RegExp(RAW_NAME));
   });
 
-  test("vehicles — select name_ko 만 · where slug · 없음 → null", async () => {
-    const client = fakeClient({ vehicle: { data: { name_ko: VEHICLE_NAME }, error: null } });
+  // P7-4: 영문 화면은 vehicles.name_en 을 보인다 — 한 번의 select 로 ko·en 을 함께 읽는다(일치했을 때만 · 조회 횟수는 그대로 1회).
+  test("vehicles — select name_ko,name_en 만 · where slug · 없음 → null · name_en 이 문자열이 아니면 빈 문자열(뷰가 name_ko 로 폴백)", async () => {
+    const client = fakeClient({ vehicle: { data: { name_ko: VEHICLE_NAME, name_en: "45-seat Coach" }, error: null } });
     const port = real.supabaseReservationCheckDb(client as never);
-    expect(await port.vehicleNameKo("bus45")).toBe(VEHICLE_NAME);
+    expect(await port.vehicleNames("bus45")).toEqual(VEHICLE_NAMES);
     const [c] = client.calls;
     expect(c.table).toBe("vehicles");
-    expect(c.select).toBe("name_ko");
+    expect(c.select).toBe("name_ko,name_en");
     expect(c.eq).toEqual([["slug", "bus45"]]);
-    expect(await real.supabaseReservationCheckDb(fakeClient() as never).vehicleNameKo("bus45")).toBeNull();
+    expect(await real.supabaseReservationCheckDb(fakeClient() as never).vehicleNames("bus45")).toBeNull();
+    const noEn = fakeClient({ vehicle: { data: { name_ko: VEHICLE_NAME, name_en: null }, error: null } });
+    expect(await real.supabaseReservationCheckDb(noEn as never).vehicleNames("bus45")).toEqual({ ko: VEHICLE_NAME, en: "" });
   });
 
   test("정적 — db.ts 는 server-only · 화이트리스트 상수를 lookup.ts 에서 import(문자열 재작성 0) · 비교 로직 0", () => {
@@ -1081,7 +1093,9 @@ describe("8. 컴포넌트·페이지 정적", () => {
     expect(src).toMatch(/role="alert"/);
     expect(src).toMatch(/aria-invalid=/);
     expect(src).toMatch(/disabled=\{[^}]*pending/);
-    expect(src).not.toMatch(/type="hidden"/); // 토큰·Turnstile 없음 — 숨은 값이 없다
+    // 토큰·Turnstile 없음 — 숨은 값은 화면 로케일 한 칸뿐(P7-4: 결과 카드의 지명·차종 언어 · 조회 조건과 무관 · formDataToCheckLocale)
+    expect(src.match(/type="hidden"/g) ?? []).toHaveLength(1);
+    expect(src).toMatch(/<input type="hidden" name=\{CL\} value=\{locale === "en" \? "en" : "ko"\} \/>/);
     expect(CF).toEqual(CHECK_FORM_FIELDS);
     expect(CG).toEqual(CHECK_GUARD_FORM_FIELDS);
     expect(CG.website).toBe(HONEYPOT_FIELD);

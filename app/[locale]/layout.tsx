@@ -5,6 +5,7 @@ import { setRequestLocale } from "next-intl/server";
 import { SiteAnalytics } from "@/components/analytics/SiteAnalytics";
 import { loadMessages } from "@/i18n/messages";
 import { routing } from "@/i18n/routing";
+import { shareMetadata } from "@/lib/share-meta";
 import { siteOrigin, siteVerification } from "@/lib/site-url";
 
 export function generateStaticParams() {
@@ -32,6 +33,10 @@ export function generateStaticParams() {
  *    getTranslations 대신 순수 함수 loadMessages 로 읽는다 — ICU 보간 없는 두 문자열이라 요청 설정을 거칠 이유가 없다.
  *    (dev 에서 가벼운 페이지의 메타가 <head> 대신 스트리밍 경계로 나가는 것은 이 함수가 아니라 페이지의 hreflang 해석 때문이다 —
  *    P2-6 보고서 ⑥-3. 정적 생성은 allReady 를 기다리므로 빌드 산출물에서는 <head> 에 들어간다.)
+ *
+ * 4. 공유 미리보기(P7-4) — og:type·site_name·locale(ko_KR/en_US) · twitter:card(lib/share-meta.ts). 제목·설명은 각 페이지 메타를
+ *    Next 가 물려주고(그래서 여기서 정하지 않는다), og:image·twitter:image 는 같은 함수가 정적 라우트 `/og.png`(app/og.png/route.tsx)를
+ *    가리킨다(파일 규약 opengraph-image.tsx 를 쓰지 않는 이유 — lib/share-meta.ts 머리말).
  */
 export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {
   const { locale } = await params;
@@ -41,6 +46,7 @@ export async function generateMetadata({ params }: { params: Promise<{ locale: s
     metadataBase: new URL(siteOrigin()),
     title: common.siteName,
     description: common.description,
+    ...shareMetadata(locale, common.siteName),
     ...(verification ? { verification } : {}),
   };
 }

@@ -5,9 +5,12 @@
  * 목업의 단계별 설명문(사장님 확정·알림·결제)은 원장 4단계와 1:1 이 아니라 옮기지 않았다.
  * 아래 고지 3줄은 전부 원장: VERBATIM.bookingNotice · QUOTE_BASIS.line · PAYMENT.line.
  *
- * 로케일 (P2-6): 단계 문구·산정 기준·대금 지급은 원장 한국어 그대로(영문판은 컨트롤러가 따로 확정한다) —
- * en 에서는 단계 목록 위에 컨트롤러 확정 안내를 두고 한국어 블록에 lang="ko" 를 단다. verbatim 은 localizeVerbatim
- * (ko 는 원장 문자열 그 자체, en 은 컨트롤러 확정 영문). 섹션 머리(eyebrow·제목·설명)는 messages home.how.
+ * 로케일 (P2-6 · P7-4 후속 ①): 단계 문구는 en 이면 원장의 영문 단계 GUIDE_SECTIONS.flow.stepsEn(컨트롤러 작성 — /guide 의 한국어
+ * 원문이 정본), 그 밖은 원장 steps 그대로 — 단계 목록에는 lang 을 달지 않는다(en 은 영문이다). 산정 기준·대금 지급은 원장 한국어 그대로라
+ * 그 두 줄에만 lang="ko" 를 달고, 컨트롤러 확정 안내(OfficialKoreanNotice — "아래 한국어가 정본")는 **그 두 줄 바로 위**에 둔다
+ * (영문 단계 위에 두면 안내가 영문을 가리킨다). ko 화면에서는 안내가 렌더되지 않으므로 ko 마크업은 이 후속 전과 같다
+ * (tests/how-it-works.test.ts KO_GOLDEN). verbatim 은 localizeVerbatim(ko 는 원장 문자열 그 자체, en 은 컨트롤러 확정 영문).
+ * 섹션 머리(eyebrow·제목·설명)는 messages home.how.
  */
 import { getLocale, getTranslations } from "next-intl/server";
 
@@ -29,15 +32,15 @@ export async function HowItWorks() {
   const flow = GUIDE_SECTIONS.find(isFlow);
   if (!flow) throw new Error("HowItWorks: GUIDE_SECTIONS 에 flow 절이 없다");
   const lang = koLang(locale);
+  const steps: readonly string[] = locale === "en" ? flow.stepsEn : flow.steps;
 
   return (
     <section className={`${h.section} ${h.toneWhite}`} aria-labelledby="how-h" data-section="how">
       <div className={h.wrap}>
         <SectionHead id="how-h" eyebrow={t("eyebrow")} title={t.rich("title", RICH)} desc={t("desc")} />
 
-        <OfficialKoreanNotice notice={ledgerUi(locale).officialNotice} />
-        <ol className={s.steps} data-testid="how-steps" lang={lang}>
-          {flow.steps.map((step, i) => (
+        <ol className={s.steps} data-testid="how-steps">
+          {steps.map((step, i) => (
             <li key={step} className={s.step}>
               <span className={s.stepNo} aria-hidden="true">
                 {String(i + 1).padStart(2, "0")}
@@ -49,6 +52,7 @@ export async function HowItWorks() {
 
         <div className={s.stepsNotes} data-testid="how-notes">
           <p className={s.stepsNote}>{localizeVerbatim(locale, VERBATIM.bookingNotice)}</p>
+          <OfficialKoreanNotice notice={ledgerUi(locale).officialNotice} />
           <p className={s.stepsMeta} lang={lang}>
             {QUOTE_BASIS.line}
           </p>

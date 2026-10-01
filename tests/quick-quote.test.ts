@@ -397,14 +397,22 @@ describe("4. 렌더 — 모달 열림 조건 · 요약 · 동의 · verbatim · 
   });
 
   test("요약 — 출발→도착 라벨 · 날짜(범위) · 인원 · [수정]", () => {
-    const html = renderForm("1.tok");
-    const summary = html.match(/<dl[^>]*data-testid="quick-quote-summary"[\s\S]*?<\/dl>/)?.[0] ?? "";
-    expect(summary).toContain("인천공항");
-    expect(summary).toContain("서울");
-    expect(summary).toContain("2026-10-01");
-    expect(summary).toContain("2026-10-03");
-    expect(summary).toContain("30");
-    expect(html).toMatch(/<button[^>]*data-testid="quick-quote-edit"/);
+    // P7-4: 요약의 날짜는 공개 화면 공용 틀(lib/public-date.ts · 카탈로그 common.dates) — "10월 1일 (목)", 원문 YYYY-MM-DD 0.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-30T03:00:00.000Z"));
+    try {
+      const html = renderForm("1.tok");
+      const summary = html.match(/<dl[^>]*data-testid="quick-quote-summary"[\s\S]*?<\/dl>/)?.[0] ?? "";
+      expect(summary).toContain("인천공항");
+      expect(summary).toContain("서울");
+      expect(summary).toContain("10월 1일 (목)");
+      expect(summary).toContain("10월 3일 (토)");
+      expect(summary).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+      expect(summary).toContain("30");
+      expect(html).toMatch(/<button[^>]*data-testid="quick-quote-edit"/);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("이름·연락처 칸 · 동의 2종 체크박스는 기본 해제 · 마케팅 체크박스 없음 · verbatim 원문 · 청약철회 고지", () => {
@@ -596,7 +604,7 @@ describe("5. 정적 검사", () => {
     expect(src).toMatch(/aria-modal="true"/);
     expect(src).toMatch(/"Escape"/);
     expect(src).toMatch(/"Tab"/);
-    expect(src).toMatch(/overflow/);
+    expect(src).toMatch(/lockDocumentScroll\(\)/); // 스크롤 잠금 — 문서 루트(P7-4 · lib/scroll-lock.ts)
     const widget = codeOf(WIDGET);
     expect(widget).toMatch(/\.focus\(/);
   });

@@ -35,7 +35,11 @@ export interface AnalyticsOptOutLabels {
 /** 서버 렌더·첫 화면 — 브라우저 신호를 아직 모른다. 아무 신호도 없는 상태로 그린 뒤 마운트에서 실제 값으로 맞춘다. */
 const UNKNOWN: AnalyticsSignals = { optedOut: false, doNotTrack: null, globalPrivacyControl: false };
 
-export function AnalyticsOptOut({ labels }: { labels: AnalyticsOptOutLabels }) {
+/**
+ * `lang`(P7-4) — 버튼·안내의 언어. 영문 화면에서는 이 버튼이 lang="ko" 본문(처리방침 원문) 안에 있어 영문 라벨이 한국어로 읽혔다 —
+ * 페이지가 화면 언어("en")를 넘긴다(ko 화면은 undefined 라 속성이 없다).
+ */
+export function AnalyticsOptOut({ labels, lang }: { labels: AnalyticsOptOutLabels; lang?: string }) {
   const [signals, setSignals] = useState<AnalyticsSignals>(UNKNOWN);
   const [saveFailed, setSaveFailed] = useState(false);
 
@@ -61,7 +65,7 @@ export function AnalyticsOptOut({ labels }: { labels: AnalyticsOptOutLabels }) {
   };
 
   return (
-    <div className={styles.optOut} data-testid="analytics-optout" data-opted-out={refused} data-browser-refused={byBrowser}>
+    <div className={styles.optOut} data-testid="analytics-optout" data-opted-out={refused} data-browser-refused={byBrowser} lang={lang}>
       {byBrowser ? (
         <p className={styles.optOutState}>{labels.browserRefused}</p>
       ) : (

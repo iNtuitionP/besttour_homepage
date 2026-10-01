@@ -327,7 +327,8 @@ describe("5. 방문 통계 거부 버튼", () => {
   test("/privacy — 방문 통계 항목(VISITOR_STATS_TRANSFER)까지 한 표, 그 바로 뒤에 버튼, 나머지 항목은 뒤에", () => {
     const code = codeOf("app/[locale]/(legal)/privacy/page.tsx");
     expect(code).toMatch(/OVERSEAS_TRANSFERS\.indexOf\(VISITOR_STATS_TRANSFER\)/);
-    expect(code).toMatch(/<AnalyticsOptOut\s+labels=\{ui\.labels\.analyticsOptOut\}\s*\/>/);
+    // P7-4: 영문 페이지에서는 한국어 원문(lang="ko") 블록 안의 영문 라벨이라 lang 을 단다 — 그 한 속성만 허용
+    expect(code).toMatch(/<AnalyticsOptOut\s+labels=\{ui\.labels\.analyticsOptOut\}(\s+lang=\{[^}]*\})?\s*\/>/);
     const iFirst = code.indexOf("OVERSEAS_TRANSFERS.slice(0,");
     const iButton = code.indexOf("<AnalyticsOptOut");
     const iRest = code.indexOf("OVERSEAS_TRANSFERS.slice(");

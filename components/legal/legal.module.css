@@ -227,10 +227,11 @@
   border-top: 1px solid var(--border-decorative);
 }
 
+/* 하단 링크 — 누르는 영역 44px(P7-4). 줄이 바뀌면 줄 높이가 곧 44px 라 줄 사이 간격은 0 이다 */
 .nav {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-stack-xs) var(--space-inline-sm);
+  gap: 0 var(--space-inline-sm);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -238,9 +239,25 @@
 }
 
 .navLink {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--size-target-min);
   color: var(--text-link);
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+/* 짧은 이름("홈으로" 36px · "Home" 37px · "한국어" 36px)의 누르는 폭 44px(P7-4 후속 ②) — 절대 위치 투명 상자라 뒤 링크까지의 간격은
+ * 그대로다(예전 min-width 는 상자를 오른쪽으로 키워 간격이 8px 벌어졌다). 세로는 줄 높이(min-height 44px)가 이미 맡는다.
+ * 이웃과 겹치지 않는다 — 넘는 폭은 한쪽 4px 이하, 링크 사이 간격은 16px. */
+.navLink::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, var(--size-target-min));
+  height: 100%;
+  translate: -50% -50%;
 }
 .navLink:focus-visible {
   outline: 3px solid var(--focus-ring);

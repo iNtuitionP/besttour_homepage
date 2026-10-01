@@ -12,6 +12,8 @@
 import Image from "next/image";
 import { useCallback, useEffect, useId, useRef, useState, type MouseEvent } from "react";
 
+import { lockDocumentScroll } from "@/lib/scroll-lock";
+
 import { dismissKey } from "./popup-dismiss";
 import s from "./Popup.module.css";
 
@@ -46,7 +48,8 @@ function remember(key: string): void {
   }
 }
 
-export function Popup({ popup, labels }: { popup: PopupContent; labels: PopupLabels }) {
+/** `lang`(P7-4) — 사장님이 쓴 제목·본문의 언어. 영문 화면에서만 "ko" 가 온다(HomePopup 의 koLang). 버튼 라벨은 화면 언어 그대로다. */
+export function Popup({ popup, labels, lang }: { popup: PopupContent; labels: PopupLabels; lang?: string }) {
   const [open, setOpen] = useState(false);
   const [hideToday, setHideToday] = useState(false);
   const hideTodayRef = useRef(false);
@@ -69,8 +72,7 @@ export function Popup({ popup, labels }: { popup: PopupContent; labels: PopupLab
     if (!open) return;
     const dialog = dialogRef.current;
     restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const unlock = lockDocumentScroll(); // 배경 스크롤 잠금은 문서 루트에(P7-4 · lib/scroll-lock.ts)
 
     const focusables = () => Array.from(dialog?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []);
     (focusables()[0] ?? dialog)?.focus();
@@ -97,7 +99,7 @@ export function Popup({ popup, labels }: { popup: PopupContent; labels: PopupLab
     document.addEventListener("keydown", onKeyDown);
     return () => {
       document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = previousOverflow;
+      unlock();
       restoreFocusRef.current?.focus();
     };
   }, [open, close]);
@@ -123,7 +125,7 @@ export function Popup({ popup, labels }: { popup: PopupContent; labels: PopupLab
           </div>
         ) : null}
 
-        <div className={s.bd}>
+        <div className={s.bd} lang={lang}>
           <h2 id={titleId} className={s.title}>
             {popup.title}
           </h2>

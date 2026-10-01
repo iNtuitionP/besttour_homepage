@@ -24,7 +24,7 @@ import { GalleryGrid, resolvePictures } from "@/components/home/GalleryGrid";
 import { ALBUM_PAGE_SIZE, albumPageOffset, normalizeAlbumPage } from "@/components/pages/albums";
 import { PageHeader } from "@/components/pages/PageHeader";
 import { Link } from "@/i18n/navigation";
-import { ledgerUi } from "@/lib/i18n/ledger-ui";
+import { koLang, ledgerUi } from "@/lib/i18n/ledger-ui";
 import { getAlbumBySlug, getGalleryPage, parseAlbumSlug } from "@/lib/queries";
 import { pageAlternates } from "@/lib/site-url";
 
@@ -111,6 +111,7 @@ export default async function AlbumDetailPage({ params, searchParams }: { params
         eyebrow={tMenu("gallery")}
         title={album.title}
         desc={album.description ?? undefined}
+        contentLang={koLang(locale)}
       />
 
       <section className={`${h.section} ${h.toneLav}`} data-section="album-detail">

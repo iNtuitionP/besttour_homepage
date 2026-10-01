@@ -9,12 +9,20 @@
  * 줄이는 대신(=삭제 금지 위반) 분기점을 올리고 그 아래는 햄버거 패널로 보낸다.
  */
 
+/* 붙는 머리글(P7-4) — app/globals.css 의 overflow-x: clip 으로 body 가 스크롤 상자가 아니게 되어 이제 실제로 화면 위에 붙는다.
+ * 높이는 역할 토큰 --layout-header-h(줄 + 아래 테두리 1px) 하나 — 지도 sticky top · 문서 scroll-padding 이 같은 값을 쓴다. */
 .header {
   position: sticky;
   top: 0;
   z-index: 80;
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border-decorative);
+}
+/* 붙어 있는 머리글 밑으로 앵커 착지점(#quote · #location · 본문 바로가기)과 키보드 포커스가 숨지 않게(WCAG 2.2 SC 2.4.11) —
+ * 문서의 스크롤은 뷰포트(<html>)가 맡으므로 <html> 에 걸고, 이 머리글이 있는 화면에만 건다(:has — 법정 셸·관리자·전역 404 는 그대로).
+ * 틈(간격 토큰)은 포커스 링 몫이다. 관리자 셸의 같은 장치: components/admin/admin.module.css :global(html):has(.shell). */
+:global(html):has(.header) {
+  scroll-padding-top: calc(var(--layout-header-h) + var(--space-stack-xs));
 }
 
 /* ── 본문 바로가기 (키보드 사용자) ─────────────────────────────────────── */
@@ -53,20 +61,22 @@
   display: flex;
   align-items: center;
   gap: var(--space-inline-sm);
-  min-height: 60px;
+  /* 줄 높이 = 머리글 높이 − 아래 테두리 1px(60px · 1280px 이상 76px — 토큰이 폭에 따라 바뀐다) */
+  min-height: calc(var(--layout-header-h) - 1px);
 }
 @media (min-width: 1280px) {
   .inner {
     gap: var(--space-inline-md);
-    min-height: 76px;
   }
 }
 
+/* 누르는 영역 44px(P7-4) — 보이는 로고 크기는 그대로, 링크 상자만 줄 높이 안에서 키운다(60px 줄이라 줄은 그대로다) */
 .brand {
   display: flex;
   align-items: center;
   flex: 0 0 auto;
   min-width: 0;
+  min-height: var(--size-target-min);
 }
 .brand:focus-visible {
   outline: 3px solid var(--focus-ring);
@@ -144,6 +154,10 @@
 /* ── 대표전화 ──────────────────────────────────────────────────────────── */
 .tel {
   margin-left: auto;
+  /* 누르는 영역 44px(P7-4) — 글자 크기는 그대로, 링크 상자만 줄 높이 안에서 키운다 */
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--size-target-min);
   font-size: 16px;
   font-weight: 800;
   letter-spacing: -0.03em;
@@ -235,11 +249,14 @@
 /* ── 모바일 패널 ───────────────────────────────────────────────────────────
  * 헤더 줄(.inner)의 **형제**다(MobileMenu) — 헤더 전체 폭으로 줄 바로 아래에 펼쳐진다(목업 .drawer).
  * 예전에는 줄 안의 flex 항목이라 폭 없이 오른쪽 띠로 렌더됐다(P2-6b). 여기 폭·위치 규칙을 더하지 않는다 — 구조가 폭을 정한다. */
+/* 머리글이 붙어 있으므로(P7-4) 패널은 머리글 아래 남은 높이만 쓰고 그 안에서 스크롤한다 — 휴대폰 주소창이 줄었다 늘었다 하는
+ * 화면에서는 dvh(모르는 브라우저는 앞줄 vh). */
 .panel {
   border-top: 1px solid var(--border-decorative);
   background: var(--bg-surface);
   padding: var(--space-stack-xs) var(--space-page-x) var(--space-stack-md);
-  max-height: calc(100vh - 60px);
+  max-height: calc(100vh - var(--layout-header-h));
+  max-height: calc(100dvh - var(--layout-header-h));
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -284,6 +301,14 @@
   padding: var(--space-stack-xs) 0;
   border-bottom: 1px solid var(--border-decorative);
   text-align: right;
+}
+/* 누르는 영역 44px(P7-4) — 패널 맨 위 언어 전환 링크. 짧은 이름("한국어" 35px)도 폭 44px — 글자는 오른쪽 끝 그대로(flex-end) */
+.panelLocale .localeLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: var(--size-target-min);
+  min-width: var(--size-target-min);
 }
 
 .panelList {

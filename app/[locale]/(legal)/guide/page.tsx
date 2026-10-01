@@ -17,7 +17,7 @@ import { LegalPageHeader } from "@/components/legal/LegalPageHeader";
 import { LegalRecordList, LegalTable } from "@/components/legal/LegalTable";
 import { OfficialKoreanNotice } from "@/components/legal/OfficialKoreanNotice";
 import { WithdrawalRestrictionText } from "@/components/legal/WithdrawalRestrictionText";
-import { consultPhone } from "@/lib/contact-phone";
+import { consultPhone, localPhone } from "@/lib/contact-phone";
 import { koLang, ledgerUi } from "@/lib/i18n/ledger-ui";
 import {
   CANCELLATION,
@@ -96,9 +96,14 @@ function SectionBody({ section, locale }: { section: Section; locale: string }) 
     case "minors":
       return <LegalParagraph text={MINORS.line} />;
     case "contact": {
-      // 예약·상담 전화는 로케일 표기(en +82 — 해외 방문자가 국가번호를 알 수 있게). 나머지는 원장 값 그대로.
+      // 예약·상담 전화는 로케일 표기(en +82 — 해외 방문자가 국가번호를 알 수 있게). 휴대전화·팩스도 en 은 +82 표기(P7-4 — localPhone,
+      // 원장 값은 그대로 · 표시만). 메일·주소는 원장 값 그대로.
+      const phoneField = (f: string) => f === "mobile" || f === "fax";
       const rec = Object.fromEntries(
-        section.fields.map((f) => [f, f === "consultTel" ? consultPhone(locale).display : COMPANY[f]]),
+        section.fields.map((f) => [
+          f,
+          f === "consultTel" ? consultPhone(locale).display : phoneField(f) ? localPhone(COMPANY[f], locale).display : COMPANY[f],
+        ]),
       );
       return <LegalRecordList labels={LEGAL_LABELS.contact} records={[rec]} testId="contact" />;
     }

@@ -17,6 +17,8 @@
 import { Link, usePathname } from "@/i18n/navigation";
 import type { MenuItem } from "@/lib/legacy-menu-map";
 
+import { navCurrent } from "./nav-current";
+
 export type NavClasses = {
   list: string;
   link: string;
@@ -63,17 +65,17 @@ export default function Nav({ items, labels, classes, ariaLabel, onNavigate }: N
             );
           }
 
-          // 홈 안의 구역으로 가는 항목(P3-8 견적요청 `/#quote`)은 홈에 있다고 "현재 페이지" 가 되지 않는다 — 홈 자체가 메뉴 항목이 아니다.
-          const base = item.href.split("#")[0];
-          const isCurrent = pathname === base && !(base === "/" && item.href.includes("#"));
-          const className = isCurrent && classes.current ? `${classes.link} ${classes.current}` : classes.link;
+          // 현재 표시(P7-4): 해시 항목(`/about#location` · `/#quote`)은 켜지 않는다 — 같은 페이지의 구역이다. 하위 페이지(공지 상세 ·
+          // 앨범)에서는 상위 메뉴가 aria-current="true" 로 켜진다. 규칙은 ./nav-current.ts 하나(tests/uiux-polish.test.ts §6).
+          const current = navCurrent(pathname, item.href);
+          const className = current && classes.current ? `${classes.link} ${classes.current}` : classes.link;
 
           return (
             <li key={item.key}>
               <Link
                 className={className}
                 href={item.href}
-                aria-current={isCurrent ? "page" : undefined}
+                aria-current={current}
                 onClick={onNavigate}
               >
                 {labels[item.key]}

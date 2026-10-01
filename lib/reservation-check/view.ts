@@ -5,9 +5,11 @@
  * 아래 두 상수(RESERVATION_VIEW_KEYS_EXHAUSTIVE · RESERVATION_VIEW_HAS_NO_RAW_PII)가 `keyof` 로 잠근다: 원문 키를 추가하면 컴파일이 깨진다.
  *
  * 일시는 UTC 인스턴트(timestamptz ISO 문자열) → KST 벽시계 `YYYY-MM-DD HH:mm`. 서버 TZ 와 무관하게 lib/kst.ts 와 같은 고정 +09:00 계산이다.
- * 장소 라벨은 lib/codes.ts locationLabelKo(표시 전용), 차량 라벨은 vehicles.name_ko(없으면 slug 폴백). 금액·가격 필드 0.
+ * (화면의 보이는 날짜는 카드가 lib/public-date.ts 로 바꿔 보인다 — 뷰는 KST 벽시계 원문을 그대로 실어 나른다. 문자 통지(lib/notify)도 이 원문을 쓴다.)
+ * 장소 라벨은 lib/codes.ts locationLabel(code, locale)(표시 전용 — en 은 영문 지명), 차량 라벨은 vehicles.name_ko · name_en
+ * (en 은 name_en, 비면 name_ko, 차량 행이 없으면 slug 폴백 — P7-4). 금액·가격 필드 0.
  */
-import { isLocationCode, locationLabelKo } from "../codes";
+import { isLocationCode, locationLabel } from "../codes";
 import { toKstDateString } from "../kst";
 import { maskName, maskStoredPhone } from "../mask";
 import type { ReservationCheckRow } from "./lookup";
@@ -117,9 +119,22 @@ function asTripType(value: string | null): TripType | null {
   return value !== null && (TRIP_TYPES as readonly string[]).includes(value) ? (value as TripType) : null;
 }
 
-/** 표시용 라벨 — canonical code 면 한글 라벨, 아니면 코드 그대로(저장값을 바꾸지 않는다). */
-function labelOf(code: string): string {
-  return isLocationCode(code) ? locationLabelKo(code) : code;
+/** 표시용 라벨 — canonical code 면 로케일 라벨(ko 한글 · en 영문), 아니면 코드 그대로(저장값을 바꾸지 않는다). */
+function labelOf(code: string, locale: string): string {
+  return isLocationCode(code) ? locationLabel(code, locale) : code;
+}
+
+/** vehicles.name_ko · name_en 한 쌍 (P7-4). DB 어댑터(db.ts)가 name_en 이 문자열이 아니면 "" 로 채운다. */
+export interface VehicleNames {
+  ko: string;
+  en: string;
+}
+
+/** 차량 라벨 — en 은 name_en(비면 name_ko), 그 밖은 name_ko. 차량 행이 없으면 slug(저장값) 그대로. */
+function vehicleLabelOf(slug: string, names: VehicleNames | null, locale: string): string {
+  if (names === null) return slug;
+  const pick = locale === "en" && names.en.trim() !== "" ? names.en : names.ko;
+  return pick.trim() !== "" ? pick : slug;
 }
 
 /**
@@ -128,7 +143,7 @@ function labelOf(code: string): string {
  * 한쪽만 조여지고 다른 쪽이 계속 샌다).
  */
 
-export function toReservationView(row: ReservationCheckRow, vehicleNameKo: string | null): ReservationView {
+export function toReservationView(row: ReservationCheckRow, vehicleNames: VehicleNames | null, locale: string = "ko"): ReservationView {
   const status = asStatus(row.status);
   const tripType = asTripType(row.trip_type);
   const intake = asIntake(row.intake);
@@ -141,9 +156,9 @@ export function toReservationView(row: ReservationCheckRow, vehicleNameKo: strin
     intake,
     departAtKst: tripDateText(row.depart_at, intake),
     returnAtKst: row.return_at === null ? null : tripDateText(row.return_at, intake),
-    vehicleLabel: row.vehicle_slug === null ? null : (vehicleNameKo ?? row.vehicle_slug),
-    originLabel: labelOf(row.origin_code),
-    destinationLabel: labelOf(row.destination_code),
+    vehicleLabel: row.vehicle_slug === null ? null : vehicleLabelOf(row.vehicle_slug, vehicleNames, locale),
+    originLabel: labelOf(row.origin_code, locale),
+    destinationLabel: labelOf(row.destination_code, locale),
     busCount: row.bus_count ?? null,
     passengers: row.passengers ?? null,
     maskedName: maskName(row.name),

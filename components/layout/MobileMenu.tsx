@@ -17,11 +17,13 @@
  *   - 패널·햄버거 밖을 누르면 닫힌다 (P2-6b 에 추가 — 예전에는 없었다)
  *   - 배경 스크롤을 잠근다 (패널이 길어 뒤 페이지가 따라 움직이면 방향을 잃는다)
  *   - 링크를 누르면 스스로 닫힌다 (Nav 의 onNavigate · 언어 전환 링크의 onNavigate)
+ *   - 창이 넓어져 햄버거가 숨으면 닫힌다 (P7-4 리뷰 P2-1 — 숨은 메뉴의 잠금이 남지 않게)
  */
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { MenuItem } from "@/lib/legacy-menu-map";
+import { lockDocumentScroll } from "@/lib/scroll-lock";
 
 import LocaleSwitch from "./LocaleSwitch";
 import Nav from "./Nav";
@@ -61,15 +63,24 @@ export default function MobileMenu({ items, itemLabels, labels, call, children }
       if (panelRef.current?.contains(target) || buttonRef.current?.contains(target)) return;
       setOpen(false);
     };
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    // 햄버거가 보이지 않게 되면 닫는다(P7-4 리뷰 P2-1) — ko 는 넓은 화면에서 햄버거·패널을 CSS 로 숨기므로, 연 채 창을 넓히거나 큰 태블릿을
+    // 돌리면 open 만 남아 아래 잠금이 풀리지 않았다(휠·PageDown 이 멈춘다). 분기점은 로케일마다 달라(en 은 넓은 화면에서도 햄버거)
+    // 숫자 대신 버튼이 실제로 보이는지로 본다. 휴대폰 자판이 열려 창 높이만 바뀔 때는 버튼이 그대로 보이니 닫지 않는다.
+    const onResize = () => {
+      const button = buttonRef.current;
+      if (button && getComputedStyle(button).display === "none") setOpen(false);
+    };
+    // 배경 스크롤 잠금은 문서 루트에(P7-4 — body 에 걸면 붙어 있는 머리글이 떨어져 패널째 화면 밖으로 나갔다. lib/scroll-lock.ts)
+    const unlock = lockDocumentScroll();
     document.addEventListener("keydown", onKeyDown);
     document.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("resize", onResize);
 
     return () => {
-      document.body.style.overflow = previousOverflow;
+      unlock();
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("resize", onResize);
     };
   }, [open]);
 

@@ -1,7 +1,16 @@
 {
   "common": {
     "siteName": "베스트투어",
-    "description": "베스트투어 — 전세버스 대절 알선"
+    "description": "베스트투어 — 전세버스 대절 알선",
+    "dates": {
+      "weekdays": ["일", "월", "화", "수", "목", "금", "토"],
+      "months": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"],
+      "day": "{month}월 {day}일 ({weekday})",
+      "dayYear": "{year}년 {month}월 {day}일 ({weekday})",
+      "date": "{year}년 {month}월 {day}일",
+      "time": "{hour}:{minute}",
+      "dateTime": "{date} {time}"
+    }
   },
   "layout": {
     "skipToContent": "본문 바로가기",
@@ -50,6 +59,8 @@
       "slideLabel": "{n} / {total} {title}",
       "prev": "이전 슬라이드",
       "next": "다음 슬라이드",
+      "pause": "자동 넘김 멈춤",
+      "play": "자동 넘김 재생",
       "dotsLabel": "슬라이드 선택",
       "dotLabel": "{n}번 슬라이드 보기 — {title}",
       "slides": {
@@ -65,7 +76,7 @@
           "title": "전국 운행",
           "tag": "전국 운행 · 왕복 / 편도 / 편도·편도",
           "heading": "전국 <em>어디든</em> 갑니다",
-          "body": "서울에서 제주까지 <b>전국</b> 배차합니다. 아래는 운행 지역 예시입니다. 워크숍·현장학습·종교단체·관혼상제까지 일정에 맞춰 운행 구분을 고르실 수 있습니다.",
+          "body": "서울에서 제주까지 <b>전국</b> 배차합니다. 아래는 운행 지역 예시입니다. 워크숍·현장학습·종교단체·관혼상제까지 일정과 인원을 알려 주시면 맞춰 안내해 드립니다.",
           "chips": ["서울", "부산", "대구", "인천", "광주", "대전", "울산", "경기", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주"],
           "chipsOn": 0
         },
@@ -143,7 +154,7 @@
     },
     "fleet": {
       "eyebrow": "차량소개",
-      "title": "보라색버스 <ac>{count}종</ac>, 인원에 맞춰 고르세요",
+      "title": "보라색버스 <ac>{count}종</ac>, 인원에 맞춰 안내합니다",
       "seat": "{n}인승",
       "capacityLabel": "정원",
       "capacity": "최대 <b>{n}명</b>",
@@ -176,7 +187,8 @@
       "eyebrow": "공지사항",
       "title": "고객센터 <ac>소식</ac>",
       "category": { "info": "안내", "notice": "공지", "airport": "공항" },
-      "csTitle": "고객센터"
+      "csTitle": "고객센터",
+      "more": "공지 전체 보기"
     },
     "popup": {
       "close": "닫기",
@@ -294,7 +306,7 @@
       "routeValue": "{origin} → {destination}",
       "tripType": "운행 구분",
       "departAt": "출발 일시",
-      "returnAt": "귀가 일시",
+      "returnAt": "도착 일시",
       "departDate": "출발일",
       "returnDate": "도착일",
       "busCount": "대수",
@@ -353,7 +365,7 @@
         "title": "{brand} 차량소개 · 보험내용",
         "description": "베스트투어 전세버스 차종별 정원과 특징, 차량 보험 안내입니다."
       },
-      "empty": "차량 정보를 준비 중입니다. 견적 신청에서 차종을 선택하실 수 있습니다.",
+      "empty": "차량 정보를 준비 중입니다. 일정과 인원을 알려 주시면 맞는 차량으로 안내해 드립니다.",
       "insurance": {
         "eyebrow": "보험내용"
       }
@@ -422,6 +434,13 @@
     }
   },
   "admin": {
+    "error": {
+      "title": "화면을 불러오지 못했어요",
+      "body": "잠시 뒤 다시 시도해 주세요. 같은 화면이 계속 나오면 관리 홈으로 돌아가 다시 들어와 주세요.",
+      "retry": "다시 시도",
+      "home": "관리 홈으로",
+      "ref": "오류 참조 번호 {digest}"
+    },
     "labels": {
       "purpose": {
         "airport_pickup": "공항픽업",

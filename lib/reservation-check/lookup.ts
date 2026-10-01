@@ -5,13 +5,13 @@
  *   - `where public_code = :code` **1행**만 읽는다. 뒷 4자리 조건을 SQL 에 넣지 않는다 — 부재와 불일치가 같은 경로를 타게 하려고.
  *   - 뒷 4자리 비교는 서버 코드(phoneLast4Matches)에서, `phone` 의 숫자만 남긴 뒤 뒤 4자리를 XOR 누적으로 본다.
  *   - **부재와 불일치는 같은 결과** `{ found:false }` — 같은 리터럴, 같은 return 문. 부재일 때도 더미 비교를 한 번 해 경로 길이를 맞춘다(timing 완화 — 구조만).
- *   - 차량 라벨(vehicles.name_ko)은 **일치했을 때만** 읽는다 — 실패 경로는 DB 호출 1회로 동일하다.
+ *   - 차량 라벨(vehicles.name_ko · name_en — P7-4)은 **일치했을 때만** 한 번 읽는다 — 실패 경로는 DB 호출 1회로 동일하다.
  *   - status = cancelled·done 도 보여 준다(고객 본인 예약이다 — 취소됐다는 사실이 곧 확인 내용).
  *
  * select 화이트리스트(RESERVATION_CHECK_COLUMNS)는 이 파일이 단일 소스다 — db.ts 가 import 해 쓴다. email·message·admin_memo·id 는 읽지 않는다.
  */
 import type { CheckInput } from "./guards";
-import { toReservationView, type ReservationView } from "./view";
+import { toReservationView, type ReservationView, type VehicleNames } from "./view";
 
 /** 0001 reservations 컬럼 중 예약확인이 읽는 것 전부. 여기 없는 컬럼은 서버 메모리에도 올라오지 않는다. */
 export const RESERVATION_CHECK_COLUMNS = [
@@ -60,8 +60,8 @@ export interface ReservationCheckRow {
 export interface ReservationCheckDb {
   /** `where public_code = :code` 1행. 없으면 null. */
   findByPublicCode(publicCode: string): Promise<ReservationCheckRow | null>;
-  /** vehicles.name_ko. 없으면 null(뷰는 slug 로 폴백). */
-  vehicleNameKo(slug: string): Promise<string | null>;
+  /** vehicles.name_ko · name_en(P7-4 — 영문 화면은 name_en). 없으면 null(뷰는 slug 로 폴백). */
+  vehicleNames(slug: string): Promise<VehicleNames | null>;
 }
 
 export type LookupOutcome = { found: true; view: ReservationView } | { found: false };
@@ -83,12 +83,16 @@ export function phoneLast4Matches(phone: string | null, last4: string): boolean 
   return phone !== null && diff === 0;
 }
 
-export async function lookupReservation(input: CheckInput, deps: { db: ReservationCheckDb }): Promise<LookupOutcome> {
+/**
+ * `deps.locale` (P7-4) — 결과 카드의 지명·차종을 고를 화면 언어. 폼의 숨은 칸에서 온다(formData.ts formDataToCheckLocale).
+ * 조회 조건·비교에는 쓰지 않는다 — 부재·불일치 경로는 로케일과 무관하게 같은 결과다.
+ */
+export async function lookupReservation(input: CheckInput, deps: { db: ReservationCheckDb; locale?: string }): Promise<LookupOutcome> {
   const row = await deps.db.findByPublicCode(input.publicCode);
   const matched = phoneLast4Matches(row?.phone ?? null, input.phoneLast4);
   if (row === null || !matched) return { found: false };
 
   // 간편 접수(차종 미정)는 차량 라벨을 읽지 않는다 — 읽을 slug 가 없다.
-  const vehicleNameKo = row.vehicle_slug === null ? null : await deps.db.vehicleNameKo(row.vehicle_slug);
-  return { found: true, view: toReservationView(row, vehicleNameKo) };
+  const vehicleNames = row.vehicle_slug === null ? null : await deps.db.vehicleNames(row.vehicle_slug);
+  return { found: true, view: toReservationView(row, vehicleNames, deps.locale ?? "ko") };
 }

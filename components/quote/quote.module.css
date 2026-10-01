@@ -139,7 +139,7 @@
   min-height: 20px;
   padding: 0 var(--space-inline-xs);
   border-radius: var(--radius-chip);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.02em;
   background: var(--action-primary-bg);
@@ -359,11 +359,12 @@ textarea.control {
 }
 
 /* "자세히 보기 / 접기" 토글(MoreToggle) — 두 카드가 함께 쓴다. 본문은 hidden 속성으로 숨는다(display 를 주지 않는다). */
+/* "자세히 보기" — 누르는 영역 높이 44px(P7-4 · 예전 36px). 글자·밑줄·위치는 그대로 */
 .moreBtn {
   display: inline-flex;
   align-items: center;
   gap: var(--space-inline-xs);
-  min-height: 36px;
+  min-height: var(--size-target-min);
   margin: var(--space-stack-xs) 0 0;
   padding: 0;
   border: 0;

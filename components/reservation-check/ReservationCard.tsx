@@ -5,10 +5,14 @@
  * 상태 배지(new 접수 · confirmed 확정 · cancelled 취소 · done 완료)는 data-status 로 스타일을 가르고 문구는 ko.json 에서 푼다.
  * 법정 문구(원장 VERBATIM.bookingNotice)와 예약·상담 전화(consultPhone — P1-7)는 서버 페이지가 props 로 내린다 — 원장을 클라이언트 번들에
  * 싣지 않는다(P2-3·P3-4 와 같은 규칙). 한글 리터럴 없음 — 문구는 messages/ko.json reservationCheck.card.*.
+ * 날짜(P7-4): 뷰의 KST 벽시계 원문(`YYYY-MM-DD HH:mm` · 간편 접수는 `YYYY-MM-DD`)을 공개 화면 공용 틀로 바꿔 보인다
+ * (lib/public-date.ts · 카탈로그 common.dates — ko "10월 9일 (금) 07:00" · en "Fri, Oct 9, 07:00"). 읽을 수 없으면 원문 그대로.
  */
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 
 import type { ContactPhone } from "@/lib/contact-phone";
+import { intlPhone } from "@/lib/phone-format";
+import { formatPublicDate, publicDateLabels } from "@/lib/public-date";
 import type { ReservationView } from "@/lib/reservation-check/view";
 
 import q from "@/components/quote/quote.module.css";
@@ -27,7 +31,13 @@ export interface ReservationCardProps {
 export function ReservationCard({ view, bookingNotice, tel, onAgain }: ReservationCardProps) {
   const t = useTranslations("reservationCheck");
   const tRoot = useTranslations();
+  const tCommon = useTranslations("common");
+  const locale = useLocale();
   const titleId = "reservation-check-result-title";
+  const dates = publicDateLabels(tCommon.raw("dates"));
+  const now = new Date();
+  /** 일정·접수 시각 — 시각이 있으면 붙인다(간편 접수는 날짜만). 읽을 수 없으면 원문 그대로(줄을 비우지 않는다). */
+  const when = (value: string) => formatPublicDate(value, dates, { style: "schedule", time: true, now }) ?? value;
 
   return (
     <section className={s.result} aria-labelledby={titleId} data-testid="reservation-card" data-status={view.status}>
@@ -52,7 +62,8 @@ export function ReservationCard({ view, bookingNotice, tel, onAgain }: Reservati
         </div>
         <div>
           <dt>{t("card.phone")}</dt>
-          <dd data-testid="reservation-phone">{view.maskedPhone}</dd>
+          {/* 영문 화면은 +82 표기(P7-4 · 가린 그대로 — "010-****-1234" → "+82 10-****-1234") */}
+          <dd data-testid="reservation-phone">{locale === "ko" ? view.maskedPhone : intlPhone(view.maskedPhone)}</dd>
         </div>
         {/* 간편 접수(P3-8)는 차종을 받지 않았다 — 줄을 숨긴다(사장님이 전화로 확인). */}
         {view.vehicleLabel !== null ? (
@@ -74,12 +85,12 @@ export function ReservationCard({ view, bookingNotice, tel, onAgain }: Reservati
         {/* 간편 접수는 날짜만 받는다 — 라벨도 "일시" 가 아니라 "일"(값은 view 가 날짜만 만든다). */}
         <div>
           <dt>{view.intake === "quick" ? t("card.departDate") : t("card.departAt")}</dt>
-          <dd>{view.departAtKst}</dd>
+          <dd>{when(view.departAtKst)}</dd>
         </div>
         {view.returnAtKst ? (
           <div>
             <dt>{view.intake === "quick" ? t("card.returnDate") : t("card.returnAt")}</dt>
-            <dd>{view.returnAtKst}</dd>
+            <dd>{when(view.returnAtKst)}</dd>
           </div>
         ) : null}
         {view.busCount !== null ? (
@@ -96,7 +107,7 @@ export function ReservationCard({ view, bookingNotice, tel, onAgain }: Reservati
         ) : null}
         <div>
           <dt>{t("card.createdAt")}</dt>
-          <dd>{view.createdAtKst}</dd>
+          <dd>{when(view.createdAtKst)}</dd>
         </div>
       </dl>
 

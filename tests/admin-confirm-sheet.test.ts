@@ -1145,7 +1145,12 @@ describe("7. 정적 — 진입 버튼은 시트를 열 뿐이다 · 서버액션
     expect(sheet).toMatch(/import \{ inertBackground \} from "@\/components\/quote\/quick-quote";/);
     expect(sheet).toMatch(/inertBackground\(backdrop, document\.body\)/);
     expect(sheet).toMatch(/closeRef\.current\?\.focus\(\)/);
-    expect(sheet).toMatch(/body\.style\.overflow = "hidden"/);
+    // 배경 스크롤 잠금은 문서 루트에(P7-4 후속 ③ · lib/scroll-lock.ts) — body 에 overflow: hidden 을 걸면 그동안 body 가 스크롤 상자가 되어
+    // 관리자 위 제목줄(sticky · body overflow-x: clip — P5-21)이 떨어진다. 잠그는 방식만 바뀌고 열림·닫힘의 짝은 같다(해제는 정리 함수).
+    expect(sheet).toMatch(/import \{ lockDocumentScroll \} from "@\/lib\/scroll-lock";/);
+    expect(sheet).toMatch(/const unlock = lockDocumentScroll\(\);/);
+    expect(sheet).toMatch(/restoreInert\(\);\s*unlock\(\);/);
+    expect(sheet).not.toMatch(/style\.overflow/);
     expect(sheet).toMatch(/e\.key === "Escape"/);
     expect(sheet).toMatch(/wrapFocus\(/);
     expect(sheet).toMatch(/document\.addEventListener\("keydown"/);

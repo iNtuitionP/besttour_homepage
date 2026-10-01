@@ -450,6 +450,11 @@ export const GUIDE_SECTIONS = [
     key: "flow",
     title: "이용 절차",
     steps: ["견적 신청 (사이트 또는 전화)", "상담 (운행 조건·대금 안내)", "예약 확정 (계약금 10만원)", "운행 당일"],
+    // 영문 홈 '이용 방법' 단계(P7-4 후속, 2026-10-01 · 컨트롤러 작성 · 독립 리뷰 서명). 위 steps 와 같은 순서·같은 뜻 —
+    // 영문 화면은 이것을 보이고, /guide 의 한국어 원문(lang="ko")이 정본이다. 위 steps 를 바꾸면 이것도 함께 바꾼다.
+    // 첫 줄은 "사이트 또는 전화" 를 그대로 옮긴 "website or phone" 이다("online" 은 채팅·메일까지 넓게 읽힌다 — 리뷰 P2-5).
+    // 계약금 숫자는 PAYMENT.depositKrw 와 같아야 한다 — tests/how-it-works.test.ts 가 두 문장 모두 잠근다.
+    stepsEn: ["Request a quote (website or phone)", "Consultation (trip details and pricing)", "Booking confirmed (KRW 100,000 deposit)", "Travel day"],
   },
   { key: "quoteBasis", title: "견적 산정 기준", from: QUOTE_BASIS },
   { key: "payment", title: "대금 지급", from: PAYMENT },

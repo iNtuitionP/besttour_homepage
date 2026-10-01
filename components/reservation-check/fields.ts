@@ -5,7 +5,7 @@
  * 값은 여기 다시 적되 **타입은 `typeof`(type-only import)로 잠근다** — 키가 빠지거나 값이 다르면 tsc 가 막고,
  * tests/reservation-check.test.ts 가 런타임 toEqual 로 한 번 더 대조한다. 폼의 모든 `name=` 은 CF.* / CG.* 만 쓴다.
  */
-import type { CHECK_FORM_FIELDS, CHECK_GUARD_FORM_FIELDS } from "@/lib/reservation-check/formData";
+import type { CHECK_FORM_FIELDS, CHECK_GUARD_FORM_FIELDS, CHECK_LOCALE_FIELD } from "@/lib/reservation-check/formData";
 
 export const CF: typeof CHECK_FORM_FIELDS = {
   publicCode: "publicCode",
@@ -15,3 +15,6 @@ export const CF: typeof CHECK_FORM_FIELDS = {
 export const CG: typeof CHECK_GUARD_FORM_FIELDS = {
   website: "website",
 };
+
+/** 화면 로케일 숨은 칸(P7-4) — 결과 카드의 지명·차종을 화면 언어로. */
+export const CL: typeof CHECK_LOCALE_FIELD = "locale";

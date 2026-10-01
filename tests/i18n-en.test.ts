@@ -433,7 +433,8 @@ const LEDGER_ON_EN: ReadonlyArray<{ file: string; refs: readonly string[]; scree
   { file: "components/home/Hero.tsx", screen: "/en 간편 견적 모달의 개인정보 수집·이용 고지 본문", notice: true, refs: ["PRIVACY_NOTICE"] },
   // P1-7: 청약철회 제한 문장이 약관 제8조 발췌(withdrawal.ts — 삭제)에서 원장 WITHDRAWAL.notice 로 바뀌었다. 체크박스 라벨은 원장 확정 영문(consentLabelEn).
   { file: "components/quote/WithdrawalNotice.tsx", screen: "/en 간편 견적 모달의 신청 전 확인 사항 · 청약철회 제한 고지", notice: true, refs: ["CANCELLATION", "PAYMENT", "QUOTE_BASIS", "WITHDRAWAL"] },
-  { file: "components/home/HowItWorks.tsx", screen: "/en 이용 방법 4단계 · 산정 기준 · 대금 지급", notice: true, refs: ["GUIDE_SECTIONS", "PAYMENT", "QUOTE_BASIS"] },
+  // P7-4 후속 ①: 4단계는 원장 영문(GUIDE_SECTIONS.flow.stepsEn — 컨트롤러 작성)이라 영문으로 보인다. 한국어로 남는 것은 산정 기준 · 대금 지급 두 줄.
+  { file: "components/home/HowItWorks.tsx", screen: "/en 이용 방법 — 산정 기준 · 대금 지급 두 줄(4단계는 원장 stepsEn 영문)", notice: true, refs: ["GUIDE_SECTIONS", "PAYMENT", "QUOTE_BASIS"] },
   { file: "components/home/RecentFeed.tsx", screen: "/en 접수 현황 공개 고지(행이 있을 때만)", notice: true, refs: ["PRIVACY_NOTICE"] },
   { file: "components/home/TrustBar.tsx", screen: "/en 신뢰 지표 — 통신판매업 신고번호 · 법인 상호", notice: false, refs: ["COMPANY.legalName", "COMPANY.mailOrderNo"] },
   // P1-7: 계좌는 COMPANY.bankAccount 에서 PAYMENT.accountLine(관계사 명의)으로 옮겼다.

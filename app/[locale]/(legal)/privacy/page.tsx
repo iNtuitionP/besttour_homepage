@@ -17,7 +17,10 @@ import { LegalPageHeader } from "@/components/legal/LegalPageHeader";
 import { AnalyticsOptOut } from "@/components/legal/AnalyticsOptOut";
 import { LegalRecordList } from "@/components/legal/LegalTable";
 import { OfficialKoreanNotice } from "@/components/legal/OfficialKoreanNotice";
+import { localPhone } from "@/lib/contact-phone";
 import { koLang, ledgerUi } from "@/lib/i18n/ledger-ui";
+import { publicDateLabelsFor } from "@/lib/i18n/public-dates";
+import { formatPublicDate } from "@/lib/public-date";
 import {
   COMPANY,
   LEGAL_LABELS,
@@ -45,7 +48,7 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
 
 type Section = (typeof PRIVACY_POLICY_SECTIONS)[number];
 
-function SectionBody({ section, ui }: { section: Section; ui: ReturnType<typeof ledgerUi> }) {
+function SectionBody({ section, ui, locale }: { section: Section; ui: ReturnType<typeof ledgerUi>; locale: string }) {
   if ("body" in section) return <LegalParagraph text={section.body} />;
   switch (section.key) {
     case "purpose":
@@ -66,7 +69,8 @@ function SectionBody({ section, ui }: { section: Section; ui: ReturnType<typeof 
       return (
         <>
           <LegalRecordList labels={LEGAL_LABELS.overseas} records={OVERSEAS_TRANSFERS.slice(0, cut)} titleKey="recipient" testId="overseas" />
-          <AnalyticsOptOut labels={ui.labels.analyticsOptOut} />
+          {/* 버튼 라벨은 화면 언어다(P7-4) — 둘러싼 본문이 en 화면에서 lang="ko" 라 버튼에 화면 언어를 다시 단다(ko 화면은 속성 없음) */}
+          <AnalyticsOptOut labels={ui.labels.analyticsOptOut} lang={koLang(locale) ? locale : undefined} />
           <LegalRecordList labels={LEGAL_LABELS.overseas} records={OVERSEAS_TRANSFERS.slice(cut)} titleKey="recipient" testId="overseas-rest" />
         </>
       );
@@ -74,7 +78,14 @@ function SectionBody({ section, ui }: { section: Section; ui: ReturnType<typeof 
     case "publicFeed":
       return <LegalParagraph text={PRIVACY_NOTICE.publicFeedNotice} />;
     case "officer":
-      return <LegalRecordList labels={LEGAL_LABELS.officer} records={[COMPANY.privacyOfficer]} testId="officer" />;
+      // 연락처는 en 에서 +82 표기(P7-4 — localPhone · 원장 값은 그대로, 표시만)
+      return (
+        <LegalRecordList
+          labels={LEGAL_LABELS.officer}
+          records={[{ ...COMPANY.privacyOfficer, phone: localPhone(COMPANY.privacyOfficer.phone, locale).display }]}
+          testId="officer"
+        />
+      );
   }
 }
 
@@ -88,13 +99,14 @@ export default async function PrivacyPage({ params }: { params: Params }) {
       <LegalPageHeader
         title={ui.pages.privacy}
         effectiveDate={LEGAL_PAGES.privacy.effectiveDate}
+        effectiveDateText={formatPublicDate(LEGAL_PAGES.privacy.effectiveDate, publicDateLabelsFor(locale), { style: "posted" })}
         effectiveDateLabel={ui.labels.effectiveDate}
       />
       <OfficialKoreanNotice notice={ui.officialNotice} />
       <div data-testid="privacy-sections" lang={koLang(locale)}>
         {PRIVACY_POLICY_SECTIONS.map((s) => (
           <LegalSection key={s.key} id={s.key} title={s.title}>
-            <SectionBody section={s} ui={ui} />
+            <SectionBody section={s} ui={ui} locale={locale} />
           </LegalSection>
         ))}
       </div>

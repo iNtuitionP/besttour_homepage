@@ -1,7 +1,14 @@
+/*
+ * 가로 넘침 자르기 — clip (P7-4 · 브리프 §1). hidden 은 body 를 "스크롤하지 않는 스크롤 상자" 로 만들어 그 안의 position: sticky
+ * (공개 머리글 · 대표 노선 지도)가 화면에 붙지 못했다(UIUX 감사 실측: scrollY 1500 에서 머리글 top −1500). clip 은 똑같이 자르되
+ * 스크롤 상자를 만들지 않는다. 관리자 셸이 P5-21 부터 같은 방식이다(components/admin/admin.module.css :global(body):has(.shell)).
+ * 앞줄의 hidden 은 clip 을 모르는 옛 브라우저용 폴백이다 — 모르는 값의 선언은 버려지고 hidden 이 남는다(그때는 예전처럼 흘러갈 뿐이다).
+ */
 html,
 body {
   max-width: 100vw;
   overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /*

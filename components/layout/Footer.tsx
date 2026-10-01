@@ -18,6 +18,8 @@
  * 로케일 (P2-6): 라벨·배지·링크 제목·대표자·verbatim 은 ledgerUi(locale) · localizeVerbatim(ko 는 원장 그대로).
  * 사업자 정보의 **값**(상호·주소·계좌·보호책임자·관계사 고지)은 원장 한국어 그대로다 — 영문판은 컨트롤러가 따로 확정한다.
  * en 에서는 그 블록 위에 컨트롤러 확정 안내를 두고, 한국어 값에 lang="ko" 를 단다(ko 화면은 둘 다 내지 않는다).
+ * 전화번호 (P7-4): 휴대전화·팩스·보호책임자 연락처는 en 에서 +82 표기(localPhone — 원장 값은 그대로, 표시만). 대표전화 1566 은
+ * 국제 표기가 없는 전국 대표번호라 그대로다(lib/contact-phone.ts intlPhone).
  */
 
 import Image from "next/image";
@@ -25,7 +27,7 @@ import { getLocale, getTranslations } from "next-intl/server";
 
 import { OfficialKoreanNotice } from "@/components/legal/OfficialKoreanNotice";
 import { Link } from "@/i18n/navigation";
-import { consultPhone } from "@/lib/contact-phone";
+import { consultPhone, localPhone } from "@/lib/contact-phone";
 import { koLang, ledgerUi, localizeVerbatim } from "@/lib/i18n/ledger-ui";
 import { COMPANY, LEGAL_LINKS, PAYMENT, RELATED_COMPANY, VERBATIM } from "@/lib/legal/disclosures";
 import { LEGACY_MENU, MENU_BY_GROUP } from "@/lib/legacy-menu-map";
@@ -88,8 +90,8 @@ export default async function Footer() {
     { label: labels.headOffice, value: COMPANY.address, ko: true },
     { label: labels.branch, value: COMPANY.branchAddress, ko: true },
     { label: contactLabels.tel, value: COMPANY.tel },
-    { label: contactLabels.mobile, value: COMPANY.mobile },
-    { label: contactLabels.fax, value: COMPANY.fax },
+    { label: contactLabels.mobile, value: localPhone(COMPANY.mobile, locale).display },
+    { label: contactLabels.fax, value: localPhone(COMPANY.fax, locale).display },
     { label: contactLabels.email, value: COMPANY.email, href: `mailto:${COMPANY.email}` },
     // 입금 계좌 — 관계사 명의(P1-7 · A-5). 원장 문안이 "입금 계좌 :" 라벨과 예금주(관계사)를 스스로 담으므로 라벨을 따로 붙이지 않는다.
     { value: PAYMENT.accountLine, ko: true },
@@ -97,7 +99,7 @@ export default async function Footer() {
 
   const officer: Fact[] = [
     { label: labels.privacyOfficer, value: COMPANY.privacyOfficer.name, strong: true, ko: true },
-    { label: ui.labels.officer.phone, value: COMPANY.privacyOfficer.phone },
+    { label: ui.labels.officer.phone, value: localPhone(COMPANY.privacyOfficer.phone, locale).display },
   ];
 
   const related: Fact[] = [

@@ -144,7 +144,8 @@
   min-height: 54px;
   font-size: 16px;
 }
+/* 작은 버튼(차량 카드의 견적 신청하기) — 높이 44px(P7-4 · 목업 40px 에서 누르는 영역 최소로 — 보고서 ④). 글자는 그대로 작다 */
 .btnSm {
-  min-height: 40px;
+  min-height: var(--size-target-min);
   font-size: 13.5px;
 }

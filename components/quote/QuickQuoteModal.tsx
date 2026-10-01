@@ -31,7 +31,9 @@ import { requestQuoteFormToken } from "@/actions/quote-form-token";
 import { submitReservation } from "@/actions/reservation";
 import { Link } from "@/i18n/navigation";
 import type { ContactPhone } from "@/lib/contact-phone";
+import { formatPublicDate, publicDateLabels } from "@/lib/public-date";
 import type { SubmitResult } from "@/lib/reservations/submitResult";
+import { lockDocumentScroll } from "@/lib/scroll-lock";
 
 import { ConsentBlock, type ConsentText } from "./ConsentBlock";
 import { ErrorText } from "./FieldBits";
@@ -161,15 +163,8 @@ function ModalShell({ onClose, onEdit, onWidgetErrors, onSubmitted, ...common }:
     };
   }, []);
 
-  // 배경 스크롤 잠금 — 닫히면 원래 값으로.
-  useEffect(() => {
-    const body = document.body;
-    const prev = body.style.overflow;
-    body.style.overflow = "hidden";
-    return () => {
-      body.style.overflow = prev;
-    };
-  }, []);
+  // 배경 스크롤 잠금 — 닫히면 원래 값으로. 문서 루트에 건다(P7-4 · lib/scroll-lock.ts — body 에 걸면 잠기지 않고 붙어 있는 머리글이 떨어진다).
+  useEffect(() => lockDocumentScroll(), []);
 
   // 열릴 때 첫 입력 칸(이름)으로 포커스. 완료 화면으로 바뀌면 그 제목으로.
   useEffect(() => {
@@ -279,8 +274,13 @@ export function QuickQuoteForm({
 }: QuickQuoteFormProps) {
   const t = useTranslations("quote.modal");
   const tRoot = useTranslations();
+  const tCommon = useTranslations("common");
   const idPrefix = useId();
   const id = (k: string) => `${idPrefix}-${k}`;
+  // 요약의 운행일(P7-4) — 위젯 칸의 KST 날짜(YYYY-MM-DD)를 공개 화면 공용 틀로("10월 11일 (일)" · "Sun, Oct 11"). 읽을 수 없으면 원문 그대로.
+  const dates = publicDateLabels(tCommon.raw("dates"));
+  const now = new Date();
+  const day = (value: string) => formatPublicDate(value, dates, { style: "schedule", now }) ?? value;
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -393,7 +393,7 @@ export function QuickQuoteForm({
           </div>
           <div>
             <dt>{t("summaryDates")}</dt>
-            <dd>{span.kind === "single" ? t("dateSingle", { date: span.date }) : t("dateRange", { from: span.from, to: span.to })}</dd>
+            <dd>{span.kind === "single" ? t("dateSingle", { date: day(span.date) }) : t("dateRange", { from: day(span.from), to: day(span.to) })}</dd>
           </div>
           <div>
             <dt>{t("summaryPax")}</dt>

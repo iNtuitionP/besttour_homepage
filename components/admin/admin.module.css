@@ -15,11 +15,12 @@
 
 /* ── 셸 — 메뉴 (P5-20 · 시안 docs/handoff/2026-09-27-admin-ux 셸 · components/admin/AdminTabs.tsx) ───────────
  * 한 벌의 마크업을 폭에 따라 보여 준다: ≥1024px 왼쪽 사이드바 248px · <1024px 위 제목줄 56px + 아래 탭 바 4개(56px + safe area).
- * 사이드바는 position:fixed 다 — html·body 의 overflow-x:hidden(app/globals.css) 때문에 sticky 는 달라붙지 않는다(body 가 스크롤하지 않는
+ * 사이드바는 position:fixed 다 — 만들 때(P5-20) html·body 가 overflow-x:hidden 이라 sticky 가 달라붙지 않았다(body 가 스크롤하지 않는
  * 스크롤 상자가 된다). 그래서 격자의 첫 칸을 비워 자리를 잡고, 사이드바를 그 자리에 고정해 둔다(간격 px 없이 — 격자 칸이 곧 자리다).
  * 위 제목줄(<1024px)은 P5-21 부터 **sticky** 다 — 셸이 있는 문서의 body 만 `overflow-x: clip`(스크롤 상자를 만들지 않는 자르기)으로 바꿔
- * sticky 가 뷰포트에 붙는다(아래 :global(body):has(.shell)). 전역 규칙(app/globals.css)을 clip 으로 바꾸는 길은 공개 사이트 전/후 비교에서
- * 회귀가 나와 쓰지 않았다(공개 헤더·지도가 새로 달라붙어 겹친다 — P5-21 보고서 ④). 로그인 화면·공개 사이트는 그대로다.
+ * sticky 가 뷰포트에 붙게 했다(아래 :global(body):has(.shell)). 그때는 공개 머리글·지도가 새로 달라붙어 겹치는 회귀 때문에 전역을 바꾸지
+ * 않았지만(P5-21 보고서 ④), P7-4 에서 공개 쪽 높이를 토큰(--layout-header-h)으로 맞추고 전역 규칙(app/globals.css)도 clip 으로 바꿨다.
+ * 그래서 아래 규칙은 지금 전역과 같은 값을 다시 거는 셈이다 — 지우지 않고 두는 것은 셸의 sticky 가 전역 규칙에 기대지 않게 하려는 것이다.
  * 이동은 늘 화면 아래 탭 바가 맡는다(fixed). 탭 바가 본문 끝을 가리지 않게 본문 끝에 탭 바 높이만큼 빈 자리(.tabbarSpacer)를 두고,
  * 스크롤 도중에도 가리지 않게 문서의 아래 scroll-padding 을 같은 높이로 둔다(포커스·실패 배너 — 리뷰 P1-1 · 아래 :global(html)).
  * 위도 같다 — 붙어 있는 제목줄 밑으로 포커스가 숨지 않게 위 scroll-padding 을 제목줄 높이 + 틈으로 둔다.

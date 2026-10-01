@@ -38,13 +38,15 @@ const SLIDES = [
 const AIRPORT_CODE: LocationCode = "ICN";
 
 export async function Hero() {
-  const [t, locale] = await Promise.all([getTranslations("home.hero"), getLocale()]);
+  const [t, tMeta, locale] = await Promise.all([getTranslations("home.hero"), getTranslations("home.meta"), getLocale()]);
+  const ui = ledgerUi(locale);
 
+  // 슬라이드 제목은 전부 h2(P7-4 · 브리프 §3) — 예전에는 1번 슬라이드 제목이 h1 이라 2·3번이 보이는 동안(대부분의 시간) 페이지에 h1 이 없었다.
+  // 페이지 h1 은 아래 섹션 맨 앞에 하나(화면에서만 숨김) — 문구는 홈 메타 제목과 같은 확정 카피(home.meta.title)라 새 문구가 없다.
   const slides: HeroSlide[] = SLIDES.map(({ key, image }, i) => {
     const title = t(`slides.${key}.title`);
     const chips = t.raw(`slides.${key}.chips`) as string[];
     const chipsOn = Number(t.raw(`slides.${key}.chipsOn`)) || 0;
-    const Heading = i === 0 ? "h1" : "h2";
     return {
       key,
       image,
@@ -53,7 +55,7 @@ export async function Hero() {
       content: (
         <>
           <p className={key === "airport" ? s.tag : s.tagLine}>{t(`slides.${key}.tag`)}</p>
-          <Heading className={s.heading}>{t.rich(`slides.${key}.heading`, RICH)}</Heading>
+          <h2 className={s.heading}>{t.rich(`slides.${key}.heading`, RICH)}</h2>
           <p className={s.body}>{t.rich(`slides.${key}.body`, RICH)}</p>
           {chips.length > 0 ? (
             <ul className={s.chips}>
@@ -77,11 +79,11 @@ export async function Hero() {
     { label: t("widget.groupCities"), options: LOCATION_CODES.filter((c) => !regionSet.has(c)).map(option) },
   ];
 
-  const ui = ledgerUi(locale);
   const bookingNotice = localizeVerbatim(locale, VERBATIM.bookingNotice);
 
   return (
     <section className={s.hero} aria-label={t("sectionLabel")} data-section="hero">
+      <h1 className={s.srOnly}>{tMeta("title", { brand: ui.brand })}</h1>
       <div className={`${h.wrap} ${s.grid}`}>
         <HeroCarousel
           slides={slides}
@@ -92,6 +94,8 @@ export async function Hero() {
             prev: t("prev"),
             next: t("next"),
             dots: t("dotsLabel"),
+            pause: t("pause"),
+            play: t("play"),
           }}
         />
         <QuoteWidget

@@ -52,6 +52,10 @@
 }
 
 .tel {
+  /* 누르는 영역 44px(P7-4) — 글자는 그대로 */
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--size-target-min);
   font-size: 30px;
   font-weight: 800;
   letter-spacing: -0.045em;
@@ -77,10 +81,11 @@
   color: var(--text-brand);
 }
 
+/* 메뉴 링크 — 한 줄이 곧 누르는 영역(44px · P7-4). 줄 사이 간격은 링크 상자가 갖는다(목업보다 줄 간격이 넓다 — 보고서 ④) */
 .menuList {
   display: grid;
   justify-items: start;
-  gap: var(--space-stack-xs);
+  gap: 0;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -88,6 +93,11 @@
 
 .menuLink,
 .menuDisabled {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--size-target-min);
+  /* 짧은 이름("갤러리" 36px)도 누르는 상자는 44px — 세로 목록이고 글자는 왼쪽 그대로라 보이는 자리는 바뀌지 않는다 */
+  min-width: var(--size-target-min);
   font-size: 14px;
   line-height: 1.6;
   word-break: keep-all;
@@ -133,7 +143,7 @@
   align-items: center;
   padding: 0 var(--space-inline-xs);
   border-radius: var(--radius-chip);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
   line-height: 1.8;
@@ -172,7 +182,10 @@
   color: var(--text-primary);
 }
 
+/* 이메일 링크 — 사업자 정보 문장 줄 안의 인라인 링크. 위아래 안쪽 여백으로 누르는 상자만 48px 로 키운다(인라인 요소의 세로 여백은
+ * 줄 높이를 바꾸지 않는다 — 글줄은 그대로다 · 위아래 줄은 누를 것이 없는 글자뿐이다 · P7-4) */
 .factLink {
+  padding-block: var(--space-stack-sm);
   color: var(--text-link);
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -201,14 +214,16 @@
 /* ── 법정 링크 ─────────────────────────────────────────────────────────── */
 .legalNav {
   margin-top: var(--space-stack-md);
-  padding-top: var(--space-stack-sm);
+  /* 링크 상자가 44px 라(P7-4) 위 여백을 한 단계 줄여 글자와 선 사이 거리를 예전과 비슷하게 둔다 */
+  padding-top: var(--space-stack-xs);
   border-top: 1px solid var(--border-decorative);
 }
 
+/* 법정 링크 — 누르는 영역 44px(P7-4). 줄이 바뀌면 줄 높이가 곧 44px 라 줄 사이 간격은 0 이다 */
 .legalLinks {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-stack-xs) var(--space-inline-sm);
+  gap: 0 var(--space-inline-sm);
   list-style: none;
   margin: 0;
   padding: 0;
@@ -216,6 +231,9 @@
 }
 
 .legalLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--size-target-min);
   color: var(--text-link);
   font-weight: 700;
   text-decoration: underline;
