@@ -1,0 +1,290 @@
+"use client";
+/**
+ * 공지 등록·수정 폼 (P5-5). 등록 화면과 수정 화면이 같은 컴포넌트를 쓴다 — 폼이 둘로 갈리면 검증도 둘로 갈린다.
+ * 구조는 components/admin/PopupForm.tsx 와 같다(P5-4 가 세운 패턴).
+ *
+ * 클라이언트인 이유: 결과를 같은 자리에서 보여 주고(role="status"), 처리 중에 버튼을 잠그고, 저장 뒤 화면을 다시 읽기 위해서다.
+ * props 에 개인정보가 없다(공지는 콘텐츠 표다). 필드 이름은 lib/admin/noticeInput.ts 의 단일 상수에서 온다.
+ * 문구는 전부 props(messages/ko.json `admin.notices.*`)이고, 카테고리 라벨은 `home.notice.category` 카탈로그에서 내려온다 —
+ * **저장되는 것은 언제나 코드**다(CLAUDE.md §3).
+ *
+ * 검증은 서버가 한다. 여기서 막지 않는 이유: 이 컴포넌트를 거치지 않고 액션을 직접 부를 수 있기 때문이다(ADR-3).
+ *
+ * **삭제는 비활성화 다음이다.** 공개 상세 URL(/notices/{id})이 문자로 나갔을 수 있다 —
+ * 노출을 끄면 같은 id 로 언제든 되살릴 수 있지만(링크가 다시 살아난다), 삭제하면 serial id 가 재사용되지 않아 그 링크는 영구히 죽는다.
+ * 그래서 삭제 버튼은 **무장 체크박스를 켠 뒤에야** 눌리고, 누르면 한 번 더 묻는다. 기본 도구는 노출 중지다.
+ *
+ * **저장 전 확인(P6-12 · known-defects D4).** 서버가 제목·본문에서 확인이 필요한 표현을 찾으면 저장하지 않고
+ * `copyWarning` 을 돌려준다. 그러면 저장 버튼 아래에 CopyWarningPanel 이 무엇이·왜 문제인지 보이고,
+ * **그대로 저장하기**(submit + data-copy-ack)를 누르면 같은 폼에 확인 키를 붙여 다시 보낸다 — 막지 않는다.
+ *
+ * **결과 알림(P5-20).** 성공은 레이아웃의 토스트(3초 · components/admin/AdminToast.tsx), 실패는 저장 버튼 바로 아래 배너(role=alert —
+ * 저절로 닫히지 않고 다음 저장 때 걷힌다). 삭제 뒤에는 목록으로 옮겨 가도 토스트가 남는다. 판정은 feedback.ts.
+ */
+import { useRouter } from "next/navigation";
+import { useRef, useState, useTransition, type FormEvent } from "react";
+
+import { createNotice, deleteNotice, updateNotice } from "@/actions/admin/notice";
+import { COPY_ACK_FIELD, type CopyWarning } from "@/lib/admin/copyWarning";
+import {
+  NOTICE_BODY_MAX,
+  NOTICE_FIELDS,
+  NOTICE_TITLE_MAX,
+  type NoticeActionCode,
+  type NoticeActionResult,
+  type NoticeField,
+} from "@/lib/admin/noticeInput";
+
+import s from "./admin.module.css";
+import { AdminBanner } from "./AdminBanner";
+import { useAdminToast } from "./AdminToast";
+import { CopyWarningPanel, isCopyAckSubmitter, mergeAck, type CopyWarningLabels } from "./CopyWarningPanel";
+import { feedbackKind } from "./feedback";
+
+export interface NoticeFormValues {
+  title: string;
+  body: string;
+  category: string;
+  publishedAt: string;
+  active: boolean;
+}
+
+export interface NoticeCategoryOption {
+  code: string;
+  label: string;
+}
+
+export interface NoticeFormLabels {
+  field: Record<"title" | "body" | "category" | "publishedAt" | "active", string>;
+  hint: Record<"title" | "body" | "category" | "publishedAt" | "active", string>;
+  submit: string;
+  processing: string;
+  delete: string;
+  deleteArm: string;
+  deleteConfirm: string;
+  results: Record<NoticeActionCode, string>;
+  copyWarning: CopyWarningLabels;
+}
+
+export function NoticeForm({
+  mode,
+  id,
+  initial,
+  categories,
+  labels,
+  listHref,
+}: {
+  mode: "create" | "edit";
+  id?: number;
+  initial: NoticeFormValues;
+  categories: readonly NoticeCategoryOption[];
+  labels: NoticeFormLabels;
+  listHref: string;
+}) {
+  const router = useRouter();
+  const toast = useAdminToast();
+  const formRef = useRef<HTMLFormElement>(null);
+  const [pending, startTransition] = useTransition();
+  const [banner, setBanner] = useState("");
+  const [invalid, setInvalid] = useState<Partial<Record<NoticeField, true>>>({});
+  const [armed, setArmed] = useState(false);
+  const [warnings, setWarnings] = useState<CopyWarning[]>([]);
+  /** 저장이 경고로 멈춘 횟수 — 같은 경고가 다시 와도 패널이 다시 보이는 자리로 온다(재리뷰 P2-R1 · CopyWarningPanel attempt). */
+  const [warningRound, setWarningRound] = useState(0);
+  const [ack, setAck] = useState<string[]>([]);
+
+  const mark = (field: NoticeField): "true" | undefined => (invalid[field] ? "true" : undefined);
+
+  /** 성공은 토스트, 실패는 이 자리 배너(저장 전 확인은 패널이 말한다 — feedback.ts). */
+  const report = (result: NoticeActionResult) => {
+    const kind = feedbackKind(result);
+    if (kind === "toast") toast.show({ text: labels.results[result.code] });
+    setBanner(kind === "banner" ? labels.results[result.code] : "");
+  };
+
+  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    // 경고 패널의 "그대로 저장하기"로 보낸 제출에만 확인 키를 붙인다. 일반 저장은 언제나 다시 대조된다.
+    if (isCopyAckSubmitter((event.nativeEvent as SubmitEvent).submitter)) {
+      for (const key of ack) formData.append(COPY_ACK_FIELD, key);
+    }
+    setBanner("");
+    setInvalid({});
+    startTransition(async () => {
+      const result = mode === "create" ? await createNotice(formData) : await updateNotice(formData);
+      report(result);
+      setInvalid(result.fieldErrors ?? {});
+      if (result.code === "copyWarning") {
+        const held = result.copyWarnings ?? [];
+        setWarnings(held);
+        setWarningRound((n) => n + 1);
+        setAck((prev) => mergeAck(prev, held));
+        return;
+      }
+      setWarnings([]);
+      setAck([]);
+      if (!result.changed) return;
+      if (mode === "create") formRef.current?.reset();
+      router.refresh();
+    });
+  };
+
+  const onDelete = () => {
+    if (id === undefined || !armed) return;
+    if (!window.confirm(labels.deleteConfirm)) return;
+    setBanner("");
+    startTransition(async () => {
+      const result = await deleteNotice(id);
+      report(result);
+      if (result.changed) router.push(listHref);
+    });
+  };
+
+  return (
+    <form ref={formRef} className={s.popupForm} onSubmit={onSubmit} data-testid="admin-notice-form">
+      {mode === "edit" && id !== undefined ? <input type="hidden" name={NOTICE_FIELDS.id} value={id} readOnly /> : null}
+
+      <div className={s.field}>
+        <label className={s.label} htmlFor="notice-title">
+          {labels.field.title}
+        </label>
+        <p className={s.hint} id="notice-title-hint">
+          {labels.hint.title}
+        </p>
+        <input
+          id="notice-title"
+          className={s.input}
+          name={NOTICE_FIELDS.title}
+          type="text"
+          defaultValue={initial.title}
+          maxLength={NOTICE_TITLE_MAX}
+          required
+          disabled={pending}
+          aria-describedby="notice-title-hint"
+          aria-invalid={mark("title")}
+        />
+      </div>
+
+      <div className={s.field}>
+        <label className={s.label} htmlFor="notice-category">
+          {labels.field.category}
+        </label>
+        <p className={s.hint} id="notice-category-hint">
+          {labels.hint.category}
+        </p>
+        <select
+          id="notice-category"
+          className={s.input}
+          name={NOTICE_FIELDS.category}
+          defaultValue={initial.category}
+          disabled={pending}
+          aria-describedby="notice-category-hint"
+          aria-invalid={mark("category")}
+        >
+          {categories.map((c) => (
+            <option key={c.code} value={c.code}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className={s.field}>
+        <label className={s.label} htmlFor="notice-published">
+          {labels.field.publishedAt}
+        </label>
+        <p className={s.hint} id="notice-published-hint">
+          {labels.hint.publishedAt}
+        </p>
+        <input
+          id="notice-published"
+          className={s.input}
+          name={NOTICE_FIELDS.publishedAt}
+          type="date"
+          defaultValue={initial.publishedAt}
+          required
+          disabled={pending}
+          aria-describedby="notice-published-hint"
+          aria-invalid={mark("publishedAt")}
+        />
+      </div>
+
+      <div className={s.field}>
+        <label className={s.label} htmlFor="notice-body">
+          {labels.field.body}
+        </label>
+        <p className={s.hint} id="notice-body-hint">
+          {labels.hint.body}
+        </p>
+        <textarea
+          id="notice-body"
+          className={s.textarea}
+          name={NOTICE_FIELDS.body}
+          rows={12}
+          defaultValue={initial.body}
+          maxLength={NOTICE_BODY_MAX}
+          required
+          disabled={pending}
+          aria-describedby="notice-body-hint"
+          aria-invalid={mark("body")}
+        />
+      </div>
+
+      <div className={s.field}>
+        <div className={s.checkRow}>
+          <input
+            id="notice-active"
+            name={NOTICE_FIELDS.active}
+            type="checkbox"
+            defaultChecked={initial.active}
+            disabled={pending}
+            aria-describedby="notice-active-hint"
+          />
+          <label className={s.label} htmlFor="notice-active">
+            {labels.field.active}
+          </label>
+        </div>
+        <p className={s.hint} id="notice-active-hint">
+          {labels.hint.active}
+        </p>
+      </div>
+
+      <div className={s.formActions}>
+        <button type="submit" className={s.btnPrimary} disabled={pending} data-testid="admin-notice-submit">
+          {pending ? labels.processing : labels.submit}
+        </button>
+      </div>
+
+      <AdminBanner text={banner} testId="admin-notice-banner" />
+
+      <CopyWarningPanel warnings={warnings} labels={labels.copyWarning} pending={pending} idPrefix="notice" attempt={warningRound} />
+
+      {mode === "edit" && id !== undefined ? (
+        <div className={s.dangerZone} data-testid="admin-notice-danger">
+          <div className={s.checkRow}>
+            <input
+              id="notice-delete-arm"
+              type="checkbox"
+              checked={armed}
+              disabled={pending}
+              onChange={(e) => setArmed(e.currentTarget.checked)}
+            />
+            <label className={s.label} htmlFor="notice-delete-arm">
+              {labels.deleteArm}
+            </label>
+          </div>
+          <button
+            type="button"
+            className={s.btnSecondary}
+            disabled={pending || !armed}
+            onClick={onDelete}
+            data-testid="admin-notice-delete"
+          >
+            {labels.delete}
+          </button>
+        </div>
+      ) : null}
+    </form>
+  );
+}

@@ -1,0 +1,273 @@
+/*
+ * 공개 서브페이지 공통 (P6-3) — 브레드크럼·페이지 헤더·빈 상태·문서형 블록·공지 링크.
+ * 새 디자인을 발명하지 않는다: 섹션 밴드·헤드·버튼은 components/home/home.module.css, 카드·목록·칩은 Sections.module.css,
+ * 회사 정보 표는 components/legal/legal.module.css 를 그대로 쓰고, 여기에는 그 셋에 없는 것만 둔다.
+ * 색·간격·라운드·고도는 styles/semantic.css 의 역할 토큰만 — HEX·rgba·원시 토큰·간격 px 리터럴 0건(tests/layout.test.ts §4).
+ * px 는 타이포·선 두께·포커스 링 오프셋에만 남는다.
+ */
+
+/* ── 페이지 헤더 (브레드크럼 + eyebrow + h1) ─────────────────────────── */
+.pageHead {
+  padding: var(--space-stack-lg) 0 var(--space-stack-xl);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-decorative);
+}
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  margin: 0 0 var(--space-stack-md);
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.crumbs li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  min-width: 0;
+}
+.crumbs li + li::before {
+  content: "/";
+  color: var(--icon-default);
+}
+/* 빵부스러기 링크 — 상자는 원래(목업) 그대로라 글자·간격이 바뀌지 않는다. 누르는 영역 44×44(P7-4)는 아래 ::after 가 맡는다. */
+.crumbLink {
+  position: relative;
+  color: var(--text-link);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+/* 누르는 영역(P7-4 후속 ②) — 글자보다 작으면 44×44 까지 넓힌 투명 상자. 절대 위치라 배치에 끼지 않는다
+ * (예전 min-width·좌우 안쪽 여백은 링크 상자를 키워 "홈" 뒤 "/" 까지 간격이 16px 벌어졌다 — 컨트롤러 r2 검토).
+ * 이웃 링크와 겹치지 않게: 가장 가까운 두 링크("홈"·"갤러리") 사이는 간격 8 + "/" + 간격 8 ≈ 20px 뿐이라 둘 다 가운데로 넓히면
+ * (44 − 11) / 2 + (44 − 34) / 2 ≈ 21.5px 로 1px 겹친다(겹친 곳은 뒤 링크가 먹는다). 그래서 링크는 왼쪽 끝을 붙인 채 **오른쪽**
+ * (누를 것이 없는 "/"·현재 위치 쪽)으로 넓히고, 맨 앞 "홈"만 가운데로 넓힌다(왼쪽은 페이지 여백 쪽). 위아래로 넘는 12px 는
+ * 페이지 머리의 위 여백(32px)·아래 간격(24px) 안이다. */
+.crumbLink::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: max(100%, var(--size-target-min));
+  height: max(100%, var(--size-target-min));
+  translate: 0 -50%;
+}
+/* 맨 앞 "홈"은 가운데로 넓히되, 페이지 왼쪽 여백(--space-page-x)보다 더 왼쪽으로는 가지 않는다 — 375px 의 여백은 16px 인데 "홈"(11px)을
+ * 가운데로 넓히면 16.5px 가 나가 0.5px 가 화면 밖으로 잘린다(그때는 왼쪽 끝을 여백 끝에 붙인다). */
+.crumbs li:first-child .crumbLink::after {
+  left: max(calc(50% - var(--size-target-min) / 2), calc(-1 * var(--space-page-x)));
+  translate: 0 -50%;
+}
+.crumbLink:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}
+.crumbCurrent {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* 해시 앵커(#location) 착지점 — 붙어 있는 머리글의 높이는 문서의 scroll-padding 이 뺀다(P7-4 · Header.module.css :global(html):has(.header)).
+ * 여기서 다시 빼면 두 번 내려 잡는다 — 섹션 자체의 위 여백(--space-section)이 제목과 머리글 사이의 틈이 된다. */
+.anchor {
+  scroll-margin-top: 0;
+}
+
+/* ── 빈 상태 (공지 0건 · 갤러리 준비 중 · 차량 0대) ───────────────────── */
+.empty {
+  padding: var(--space-stack-lg) var(--space-inline-md);
+  text-align: center;
+  background: var(--bg-surface);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-surface);
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+.emptyAction {
+  margin: var(--space-stack-md) 0 0;
+}
+
+/* ── 문서형 블록 (보험 문구 · 주소 · 공지 본문) ──────────────────────── */
+.card {
+  padding: var(--space-stack-md) var(--space-inline-md);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+}
+.cardTitle {
+  margin: 0 0 var(--space-stack-xs);
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.prose {
+  max-width: 72ch;
+}
+.prose p {
+  margin: 0;
+  font-size: 15.5px;
+  line-height: 1.85;
+  color: var(--text-primary);
+  white-space: pre-line;
+}
+.prose p + p {
+  margin-top: var(--space-stack-sm);
+}
+.lead {
+  margin: 0 0 var(--space-stack-sm);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+.muted {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-inline-sm);
+  margin: var(--space-stack-md) 0 0;
+}
+
+/* ── 공지 목록 링크 · 상세 머리 ──────────────────────────────────────── */
+/* 누르는 영역 44px(P7-4) — 보이는 줄은 그대로: 위아래 안쪽 여백으로 상자를 키우고 같은 만큼 바깥 여백을 뺀다(홈 공지와 같은 방식) */
+.noticeLink {
+  padding-block: calc((var(--size-target-min) - 1lh) / 2);
+  margin-block: calc((1lh - var(--size-target-min)) / 2);
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--border-decorative);
+  text-underline-offset: 3px;
+}
+.noticeLink:hover {
+  color: var(--text-link);
+  text-decoration-color: currentColor;
+}
+.noticeLink:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}
+.articleHead {
+  margin: 0 0 var(--space-stack-md);
+  padding-bottom: var(--space-stack-sm);
+  border-bottom: 1px solid var(--border-decorative);
+}
+.articleMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-inline-sm);
+  margin: 0 0 var(--space-stack-xs);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.articleTitle {
+  margin: 0;
+  font-size: clamp(22px, 3vw, 30px);
+  font-weight: 800;
+  line-height: 1.35;
+  letter-spacing: -0.03em;
+}
+.articleFoot {
+  margin: var(--space-stack-lg) 0 0;
+  padding-top: var(--space-stack-sm);
+  border-top: 1px solid var(--border-decorative);
+}
+
+/* ── 앨범 카드 (P6-3b /gallery 색인) ──────────────────────────────────
+   그리드 브레이크포인트는 갤러리 타일(Sections.module.css .gal)과 같은 1 → 2 → 4 열이다.
+   타일과 달리 첫 칸을 넓히지 않는다: 앨범은 서로 대등해서 하나만 커지면 순서가 중요해 보인다. */
+.albumGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-stack-md);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+@media (min-width: 640px) {
+  .albumGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (min-width: 1024px) {
+  .albumGrid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+.albumItem {
+  min-width: 0;
+}
+.albumLink {
+  display: grid;
+  gap: var(--space-stack-xs);
+  color: inherit;
+  text-decoration: none;
+}
+.albumLink:hover .albumTitle {
+  color: var(--text-link);
+}
+.albumLink:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-surface);
+}
+.albumThumb {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: var(--radius-surface);
+  background: var(--bg-inverse);
+}
+.albumImg {
+  object-fit: cover;
+}
+.albumPending {
+  position: relative;
+  z-index: 1;
+  padding: 0 var(--space-inline-sm);
+  font-size: 13.5px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--text-secondary-on-inverse);
+}
+.albumTitle {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.4;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+.albumDesc {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+/* ── 앨범 상세의 페이지 넘김 ─────────────────────────────────────────── */
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-inline-sm);
+  margin: var(--space-stack-lg) 0 0;
+}
+.pagerLabel {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+}

@@ -8,17 +8,21 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "check:pricing": "bash scripts/check-no-pricing.sh"
+    "check:pricing": "bash scripts/check-no-pricing.sh",
+    "check:admin": "bash scripts/check-admin-no-service-role.sh",
+    "check:admin-gate": "node scripts/check-admin-gate.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.5",
     "@supabase/supabase-js": "^2.112.4",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.3",
+    "@vercel/analytics": "^2.0.1",
     "next": "15.5.24",
     "next-intl": "^4.14.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "server-only": "^0.0.1",
     "solapi": "^6.0.1",
     "zod": "^4.5.4"
   },

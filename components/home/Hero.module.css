@@ -1,0 +1,489 @@
+/*
+ * 히어로 — 5초 캐러셀 + 견적 위젯 (목업 variant-08 §HERO .hero/.car/.slide/.quote).
+ * 색·간격·라운드·고도는 역할 토큰만, 간격 px 0건(home.module.css 헤더 참조).
+ * 어두운 사진 위 글자는 *-on-inverse 토큰, 강조는 --accent-on-inverse(어두운 면 위 골드 7.66:1).
+ */
+
+.hero {
+  background: var(--bg-subtle);
+  padding: var(--space-stack-md) 0 var(--space-stack-lg);
+}
+
+.grid {
+  display: grid;
+  gap: var(--space-stack-md);
+}
+.grid > * {
+  min-width: 0;
+}
+@media (min-width: 1024px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr) minmax(376px, 392px);
+    gap: var(--space-stack-lg);
+    align-items: start;
+  }
+}
+
+/* ── 캐러셀 ───────────────────────────────────────────────────────────── */
+.car {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+  background: var(--bg-inverse);
+  color: var(--text-on-inverse);
+}
+.car:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.stage {
+  display: grid;
+}
+
+.slide {
+  grid-area: 1 / 1;
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 400px;
+  padding: var(--space-stack-lg) var(--space-inline-md) var(--space-section);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.5s var(--motion-ease),
+    visibility 0.5s;
+}
+@media (min-width: 640px) {
+  .slide {
+    min-height: 440px;
+    padding: var(--space-stack-xl) var(--space-inline-lg) var(--space-section);
+  }
+}
+@media (min-width: 1024px) {
+  .slide {
+    min-height: 472px;
+  }
+}
+.slideOn {
+  opacity: 1;
+  visibility: visible;
+}
+@media (prefers-reduced-motion: reduce) {
+  .slide {
+    transition: none;
+  }
+}
+
+.bg {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+}
+.bgImg {
+  object-fit: cover;
+}
+.bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(96deg, var(--bg-inverse) 0%, var(--overlay-strong) 55%, var(--overlay-soft) 100%);
+}
+
+.tag,
+.tagLine {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  margin: 0;
+  min-height: 28px;
+  padding: 0 var(--space-inline-sm);
+  border-radius: var(--radius-chip);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.tag {
+  background: var(--accent-on-inverse);
+  color: var(--text-primary);
+}
+.tagLine {
+  border: 1.5px solid var(--text-secondary-on-inverse);
+  color: var(--text-on-inverse);
+}
+
+.heading {
+  margin: var(--space-stack-sm) 0 0;
+  color: var(--text-on-inverse);
+  font-size: clamp(25px, 4.3vw, 42px);
+  font-weight: 800;
+  line-height: 1.28;
+  letter-spacing: -0.035em;
+  white-space: pre-line;
+}
+.heading em {
+  font-style: normal;
+  color: var(--accent-on-inverse);
+}
+
+.body {
+  margin: var(--space-stack-sm) 0 0;
+  max-width: 44ch;
+  font-size: clamp(14px, 1.5vw, 16.5px);
+  line-height: 1.7;
+  color: var(--text-secondary-on-inverse);
+}
+.body b {
+  color: var(--text-on-inverse);
+  font-weight: 700;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-inline-xs);
+  margin: var(--space-stack-md) 0 0;
+  padding: 0;
+  max-width: 60ch;
+  list-style: none;
+}
+.chip,
+.chipOn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 var(--space-inline-xs);
+  border: 1px solid var(--text-secondary-on-inverse);
+  border-radius: var(--radius-chip);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-on-inverse);
+}
+.chipOn {
+  border-color: var(--accent-on-inverse);
+  font-weight: 700;
+}
+
+/* ── 컨트롤 줄 (P7-4) ─────────────────────────────────────────────────────
+ * 모든 폭에서 슬라이드 **아래**: [멈춤·재생][점 3개][쪽수] ……… [이전][다음]. 예전에는 640px 이상에서 화살표가 세로 가운데(top: 50%)라
+ * 제목·본문 글자를 덮었다(UIUX 감사 1280·768 · ko·en). 휴대폰(목업 variant-08 의 640px 미만 배치)처럼 아래로 내렸다.
+ * 슬라이드의 아래 여백(--space-section 64px)이 이 줄(44px + 바닥 간격)의 자리다 — 글자와 겹치지 않는다.
+ * 줄의 왼쪽 끝은 슬라이드 글자의 왼쪽 선(24px · 640px 이상 40px)에 맞춘다. 빈 곳은 아래 슬라이드로 클릭이 지나간다. */
+.controls {
+  position: absolute;
+  left: var(--space-inline-md);
+  right: var(--space-inline-sm);
+  bottom: var(--space-stack-xs);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-inline-xs);
+  pointer-events: none;
+}
+.controls > * {
+  pointer-events: auto;
+}
+@media (min-width: 640px) {
+  .controls {
+    left: var(--space-inline-lg);
+    right: var(--space-inline-md);
+    bottom: var(--space-stack-sm);
+  }
+}
+.navGroup {
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+}
+
+/* 멈춤·재생과 화살표 — 44×44(목업의 화살표 모양 그대로).
+ * 이름 주의: 이 파일의 .ctrl 은 견적 위젯의 입력 칸 틀이다(아래) — 같은 CSS 모듈 안에서 이름이 같으면 두 규칙이 한 클래스로 섞인다
+ * (tests/uiux-polish.test.ts §2 가 캐러셀·위젯이 쓰는 클래스가 겹치지 않음을 잠근다). */
+.navBtn {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: var(--size-target-min);
+  height: var(--size-target-min);
+  padding: 0;
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  cursor: pointer;
+  opacity: 0.9;
+  transition: opacity var(--motion-base);
+}
+.navBtn:hover {
+  opacity: 1;
+}
+.navBtn:focus-visible {
+  outline: 3px solid var(--accent-on-inverse);
+  outline-offset: 2px;
+}
+.navBtn svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dots {
+  display: flex;
+  align-items: center;
+}
+/* 점 — 누르는 영역은 44×44(WCAG 2.5.5 · 스펙 §10.1 고연령 손님), 보이는 막대는 예전 그대로 30×5(가운데 ::before) */
+.dot {
+  position: relative;
+  flex: 0 0 auto;
+  width: var(--size-target-min);
+  height: var(--size-target-min);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  cursor: pointer;
+}
+.dot::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 30px;
+  height: 5px;
+  translate: -50% -50%;
+  border-radius: var(--radius-chip);
+  background: var(--text-secondary-on-inverse);
+  opacity: 0.55;
+  transition:
+    opacity var(--motion-base),
+    background-color var(--motion-base);
+}
+.dot:hover::before {
+  opacity: 0.9;
+}
+.dot[aria-current="true"]::before {
+  background: var(--accent-on-inverse);
+  opacity: 1;
+}
+.dot:focus-visible {
+  outline: 3px solid var(--accent-on-inverse);
+  outline-offset: -3px;
+}
+/* 쪽수(1 / 3) — 장식(aria-hidden). 좁은 폰에서는 멈춤 + 점 44px 세 칸 + 화살표가 한 줄을 채워 숨긴다(점이 같은 정보다) */
+.cnt {
+  display: none;
+  margin-left: var(--space-inline-xs);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary-on-inverse);
+  font-variant-numeric: tabular-nums;
+}
+@media (min-width: 480px) {
+  .cnt {
+    display: inline;
+  }
+}
+/* 아주 좁은 화면(360px 미만, 320px 실측 대상): 줄이 넘치지 않게 가장자리 여백을 줄이고 점의 누르는 폭만 36px 로(높이는 44px 그대로) */
+@media (max-width: 359px) {
+  .controls {
+    left: var(--space-inline-xs);
+    right: var(--space-inline-xs);
+  }
+  .dot {
+    width: calc(var(--size-target-min) - var(--space-inline-xs));
+  }
+}
+
+/* 페이지 제목(h1) — 화면에서만 숨긴다(P7-4 · 브리프 §3). 슬라이드 제목은 전부 h2 라 2·3번 슬라이드가 보일 때도 페이지에 h1 이 하나 있다. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── 견적 위젯 (P3-8 — 접수 경로의 입구: 다섯 칸 → 간편 견적 모달) ────── */
+.quote {
+  position: relative;
+  overflow: hidden;
+  /* `/#quote` 로 들어오면 — 붙어 있는 머리글의 높이는 문서의 scroll-padding 이 뺀다(P7-4 · Header.module.css :global(html):has(.header)).
+   * 여기는 머리글과 위젯 사이의 작은 틈만(두 번 빼지 않는다). */
+  scroll-margin-top: var(--space-stack-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--elevation-raised);
+}
+
+.quoteHd {
+  padding: var(--space-stack-md) var(--space-inline-md) var(--space-stack-sm);
+  border-bottom: 1px solid var(--border-decorative);
+}
+.quoteTitle {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+.quoteSub {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.quoteForm {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-stack-sm);
+  padding: var(--space-stack-md) var(--space-inline-md) var(--space-stack-sm);
+}
+.field {
+  display: grid;
+  /* P7-3: 칸 안의 열이 내용(날짜 입력의 고유 폭)만큼 늘지 않게 묶는다. 묶기 전에는 날짜 칸이 카드 밖으로 넘쳤다
+   * (실측 — 375px: 옛 글꼴 22px · Pretendard 30px, 1280px: Pretendard 6px). 아래 날짜 칸 여백과 함께 고친다. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-stack-xs);
+  min-width: 0;
+}
+/* 인원 칸은 두 열을 다 쓴다(다섯 칸 = 2 · 2 · 1) */
+.fieldWide {
+  grid-column: 1 / -1;
+}
+.field[data-invalid="true"] .ctrl {
+  border-color: var(--border-strong);
+  border-width: 2.5px;
+}
+.fieldErr {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--text-brand);
+}
+.fieldLabel {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+}
+.ctrl {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: var(--bg-page);
+  border: 1.5px solid var(--border-decorative);
+  border-radius: var(--radius-control);
+  transition: border-color var(--motion-base);
+}
+.ctrl:hover {
+  border-color: var(--border-subtle);
+}
+.ctrl:focus-within {
+  border-color: var(--border-strong);
+}
+.ctrl select,
+.ctrl input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 var(--space-inline-md) 0 var(--space-inline-sm);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 700;
+  outline: none;
+}
+.ctrl input {
+  padding-right: var(--space-inline-sm);
+}
+/* 날짜 칸 — 달력 아이콘 앞뒤 여백을 줄여 좁은 열(375px 에서 137px)에서도 날짜가 아이콘에 잘리지 않게 한다(P7-3).
+ * 왼쪽 여백은 다른 칸과 같게 둬 글자 시작선이 맞는다. */
+.ctrl input[type="date"] {
+  padding-right: var(--space-inline-xs);
+}
+.ctrl input[type="date"]::-webkit-calendar-picker-indicator {
+  margin-inline-start: 0;
+}
+/* 아주 좁은 화면(360px 미만): 두 열이면 날짜 칸이 109px 라 "2026-10-15"(14.5px 굵게 ≈82px)가 달력 아이콘 자리와 겹쳐 잘렸다
+ * (320px 실측 — 연도 앞 두 자리가 밀려 "26-10-15" 로 보였다 · P7-3 독립 리뷰 P2-11). 그 폭에서만 날짜 두 칸을 한 줄씩 넓게 쓴다 —
+ * 출발지·도착지는 두 열 그대로. :has() 를 모르는 브라우저는 이전 배치(두 열)로 남는다. */
+@media (max-width: 359px) {
+  .field:has(input[type="date"]) {
+    grid-column: 1 / -1;
+  }
+}
+/* 360–374px: 두 열은 지키고 날짜 칸 안쪽 여백만 줄인다 — 빈 칸의 자리표시("yyyy-mm-dd" 등, 14.5px 굵게 ≈89px)가 129px 칸에서
+ * 달력 아이콘에 잘렸다(360px 실측). 왼쪽 12 · 오른쪽 4 — 간격 토큰에서 계산한 값(px 리터럴 금지 규약). */
+@media (min-width: 360px) and (max-width: 374px) {
+  .ctrl input[type="date"] {
+    padding-left: calc(var(--space-inline-sm) - var(--space-inline-xs) / 2);
+    padding-right: calc(var(--space-inline-xs) / 2);
+  }
+}
+.ctrlSelect::after {
+  content: "";
+  position: absolute;
+  right: var(--space-inline-sm);
+  width: 7px;
+  height: 7px;
+  pointer-events: none;
+  border-right: 2px solid var(--icon-default);
+  border-bottom: 2px solid var(--icon-default);
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.quoteAir {
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  margin: 0 var(--space-inline-md);
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+  color: var(--text-brand);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.55;
+}
+.quoteAir svg {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.quoteFoot {
+  display: grid;
+  gap: var(--space-stack-xs);
+  padding: var(--space-stack-sm) var(--space-inline-md) var(--space-stack-md);
+}
+.quoteNote {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+  color: var(--text-secondary);
+}

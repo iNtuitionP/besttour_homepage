@@ -1,0 +1,157 @@
+import { describe, expect, test } from "vitest";
+import { isAirport, PURPOSES, REGIONS } from "@/lib/codes";
+import { quickReservationSchema } from "@/lib/types";
+import { loadDotEnvLocal } from "./helpers/load-env-local";
+
+loadDotEnvLocal();
+
+describe("codes", () => {
+  test("REGIONS has exactly 17 entries", () => {
+    expect(REGIONS).toHaveLength(17);
+  });
+
+  test("PURPOSES has exactly 10 entries", () => {
+    expect(PURPOSES).toHaveLength(10);
+  });
+
+  test("isAirport identifies ICN only", () => {
+    expect(isAirport("ICN")).toBe(true);
+    expect(isAirport("SEL")).toBe(false);
+  });
+});
+
+// P3-8: 공개 접수는 홈 간편 견적 하나다 — 옛 위저드 스키마(ReservationInput) 대신 quickReservationSchema(now). 상세 규칙은 tests/reservation-input.test.ts.
+describe("quickReservationSchema (간편 견적)", () => {
+  const ReservationInput = quickReservationSchema(new Date("2026-08-31T03:00:00.000Z"));
+  const validInput = {
+    name: "홍길동",
+    phone: "010-1234-5678",
+    originCode: "SEL" as const,
+    destinationCode: "BSN" as const,
+    departDate: "2026-09-01",
+    returnDate: "2026-09-01",
+    passengers: 30,
+    locale: "ko" as const,
+    turnstileToken: "test-turnstile-token",
+    // 0003(P1-3): 필수 동의는 literal(true). 동의 필드 자체의 계약은 tests/consent.test.ts 가 단언한다.
+    privacyConsent: true as const,
+    // 0021(P1-7): 청약철회 제한 확인도 literal(true). 계약은 tests/withdrawal-consent.test.ts.
+    withdrawalConsent: true as const,
+  };
+
+  test("accepts a valid reservation input", () => {
+    const result = ReservationInput.safeParse(validInput);
+    expect(result.success).toBe(true);
+  });
+
+  test("rejects an invalid phone number", () => {
+    const result = ReservationInput.safeParse({ ...validInput, phone: "123" });
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects passengers over 900 and a missing passenger count", () => {
+    expect(ReservationInput.safeParse({ ...validInput, passengers: 901 }).success).toBe(false);
+    expect(ReservationInput.safeParse({ ...validInput, passengers: undefined }).success).toBe(false);
+  });
+
+  test("rejects a departure date that carries a time or a UTC suffix — dates only (KST calendar)", () => {
+    for (const departDate of ["2026-09-01T08:00", "2026-09-01Z", "2026-09-01T00:00:00Z"]) {
+      expect(ReservationInput.safeParse({ ...validInput, departDate }).success, departDate).toBe(false);
+    }
+  });
+
+  test("rejects when the honeypot field is filled in", () => {
+    const result = ReservationInput.safeParse({
+      ...validInput,
+      website: "http://spam.example",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  // REVIEW-FIX M6 (2026-09-12): 예전 테스트 "requires phone or phoneIntl when locale is 'en'" 은 phoneIntl 을 넣지 않아
+  // phone 필드의 required 위반으로 실패했고, 그래서 green 이었다 — refine 이 죽은 코드라는 사실을 드러내지 못했다.
+  // 지금 계약: phone XOR phoneIntl, 로케일 무관. 상세 케이스 표는 tests/review-fix.test.ts.
+  test("accepts phoneIntl alone (no phone) — regardless of locale", () => {
+    for (const locale of ["en", "ko"] as const) {
+      const result = ReservationInput.safeParse({
+        ...validInput,
+        locale,
+        phone: undefined,
+        phoneIntl: "+821012345678",
+      });
+      expect(result.success, locale).toBe(true);
+    }
+  });
+
+  test("rejects when neither phone nor phoneIntl is given", () => {
+    const result = ReservationInput.safeParse({ ...validInput, phone: undefined });
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error.issues[0].path).toEqual(["phone"]);
+  });
+
+  test("rejects when both phone and phoneIntl are given", () => {
+    const result = ReservationInput.safeParse({ ...validInput, phoneIntl: "+821012345678" });
+    expect(result.success).toBe(false);
+  });
+
+  // REVIEW-FIX M5 (2026-09-12): 장소 코드는 LOCATION_CODES(도시 ∪ 시도). 도시 코드로도 접수된다.
+  test("accepts a city code (TYG) as destination — showcase route prefill reaches intake", () => {
+    const result = ReservationInput.safeParse({ ...validInput, destinationCode: "TYG" });
+    expect(result.success).toBe(true);
+  });
+
+  test("rejects an unknown location code (XXX)", () => {
+    const result = ReservationInput.safeParse({ ...validInput, originCode: "XXX" });
+    expect(result.success).toBe(false);
+  });
+});
+
+// =============================================================================
+// DB 스모크 테스트 — 환경변수가 있으면 반드시 실행한다(없다고 전부 skip 금지).
+// =============================================================================
+const hasServiceRole = Boolean(
+  process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.NEXT_PUBLIC_SUPABASE_URL,
+);
+
+/**
+ * CI 전용 가드: REQUIRE_DB_TESTS=1인데 접속 정보가 없으면 DB 스모크를
+ * 조용히 skip하는 대신 명시적으로 실패시킨다. CI(db-test job)는 이 값을
+ * 항상 1로 설정한다 — `supabase start` + `supabase status -o env` 로 env를
+ * 주입하는 과정이 어딘가에서 깨지면 스모크가 skip되어 CI가 그냥 통과해
+ * 버리는 사고를 막기 위함이다. 로컬 개발자 실행(`npm test`)에서는
+ * REQUIRE_DB_TESTS가 없으므로 기존처럼 조용히 skip된다.
+ */
+const requireDbTests = process.env.REQUIRE_DB_TESTS === "1";
+
+if (requireDbTests && !hasServiceRole) {
+  describe("DB smoke — REQUIRE_DB_TESTS guard", () => {
+    test("REQUIRE_DB_TESTS=1인데 SUPABASE_SERVICE_ROLE_KEY/NEXT_PUBLIC_SUPABASE_URL이 없음", () => {
+      throw new Error(
+        "REQUIRE_DB_TESTS=1이 설정되었지만 SUPABASE_SERVICE_ROLE_KEY 또는 " +
+          "NEXT_PUBLIC_SUPABASE_URL이 비어 있습니다. DB 스모크가 조용히 skip되는 " +
+          "것을 막기 위한 가드입니다 — CI라면 db-test job의 `supabase status -o env` " +
+          "env 주입 단계가 깨졌을 가능성이 높습니다.",
+      );
+    });
+  });
+}
+
+describe.skipIf(!hasServiceRole)("DB smoke (requires SUPABASE_SERVICE_ROLE_KEY)", () => {
+  const restRoot = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1`;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY as string;
+  const headers = {
+    apikey: serviceRoleKey,
+    Authorization: `Bearer ${serviceRoleKey}`,
+  };
+
+  test("vehicles has 5 seeded rows", async () => {
+    const res = await fetch(`${restRoot}/vehicles?select=slug`, { headers });
+    expect(res.ok).toBe(true);
+    const rows = (await res.json()) as unknown[];
+    expect(rows).toHaveLength(5);
+  });
+
+  // showcase_routes 스모크는 0002(places FK + 16행 시드) 이후 상태를 단언하는
+  // tests/places.test.ts 로 이관했다. 0001 시점의 "5행·price_from 전부 NULL" 단언은
+  // 0002 적용과 동시에 거짓이 되므로 여기 두지 않는다.
+});

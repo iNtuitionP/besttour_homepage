@@ -1,0 +1,143 @@
+/*
+ * 홈 팝업 — "오늘 하루 보지 않기" 모달 (목업 variant-08 .ov/.modal/.pop__*).
+ * 색·간격·라운드·고도는 역할 토큰만, 간격 px 0건(home.module.css 헤더 참조).
+ * z-index 120 — 헤더(80)·플로팅 문의(70) 위.
+ */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-inline-sm);
+  background: var(--overlay-medium);
+  overflow-y: auto;
+}
+
+.modal {
+  position: relative;
+  width: 100%;
+  max-width: 432px;
+  margin: auto;
+  overflow: hidden;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--elevation-overlay);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+/* 닫기 X — 누르는 영역 44×44(P7-4 · 목업 34px 에서 키움 — 보고서 ④) */
+.x {
+  position: absolute;
+  right: var(--space-inline-xs);
+  top: var(--space-stack-xs);
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: var(--size-target-min);
+  height: var(--size-target-min);
+  padding: 0;
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.x:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.x svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.ph {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: var(--bg-inverse);
+}
+.phImg {
+  object-fit: cover;
+}
+
+.bd {
+  padding: var(--space-stack-md) var(--space-inline-md);
+}
+.title {
+  margin: 0;
+  /* 사진이 없는 팝업에서는 X(44px + 오른쪽 8px)가 제목 줄 위에 온다 — 그만큼 비켜 선다 */
+  padding-right: calc(var(--size-target-min) + var(--space-inline-xs));
+  font-size: 21px;
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: -0.03em;
+}
+.body {
+  margin: var(--space-stack-sm) 0 0;
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--text-secondary);
+  white-space: pre-line;
+}
+
+.ft {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-inline-sm);
+  /* 위아래 여백은 8px — 안의 두 조작이 44px 라 띠의 높이는 예전(16 + 약 32 + 16)과 비슷하다(P7-4) */
+  padding: var(--space-stack-xs) var(--space-inline-md);
+  background: var(--bg-page);
+  border-top: 1px solid var(--border-decorative);
+}
+/* "오늘 하루 보지 않기" — 라벨 줄 전체가 누르는 영역(44px · P7-4) */
+.chk {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  min-height: var(--size-target-min);
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.chk input {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: var(--action-primary-bg);
+  cursor: pointer;
+}
+.chk input:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+/* "닫기" 글자 버튼 — 누르는 영역 44px(P7-4) */
+.txt {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--size-target-min);
+  padding: 0 var(--space-inline-sm);
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.txt:hover {
+  color: var(--text-brand);
+}
+.txt:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}

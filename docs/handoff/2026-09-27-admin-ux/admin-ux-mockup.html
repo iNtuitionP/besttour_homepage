@@ -1,0 +1,1007 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>베스트투어 관리 — 개선 시안 (ADMIN-UX 2026-09-27)</title>
+<meta name="description" content="관리자 UIUX 개선 시안: 관리 홈 · 접수 목록 · 접수 상세 (데스크톱·휴대폰 반응형). 모든 데이터는 예시입니다.">
+<!--
+  ADMIN-UX 시안 (연구·제안용, 구현 아님). 자체 포함 — 외부 스크립트·스타일·글꼴 없음.
+  · 화면 전환: #home · #list · #detail (주소 뒤에 붙이면 바로 열린다)
+  · 색은 styles/tokens.css 값을 그대로 옮기고, 컴포넌트는 styles/semantic.css 의 역할 토큰 이름만 쓴다.
+    "제안" 표시가 붙은 토큰은 semantic.css 에 새로 넣자는 것이다(브랜드 원시색만 참조 — 새 색 없음).
+  · 글꼴은 P7-3 과 같은 스택(Pretendard 가 없으면 시스템 한글 글꼴로 떨어진다).
+  · 이름·번호·접수번호는 전부 가짜다(예시고객 · 010-0000-00xx · EX…).
+-->
+<style>
+/* ── 원시 토큰 (styles/tokens.css 그대로) ───────────────────────────── */
+:root{
+  --brand-950:#220D26; --brand-900:#35123A; --brand-800:#501859; --brand-700:#6F1C7C; --brand-600:#8D319B;
+  --brand-500:#AC4FBA; --brand-300:#C99FD0; --brand-200:#E4CFE7; --brand-100:#F4EAF6; --brand-50:#FBF8FC;
+  --gold:#C8A359; --gold-deep:#8A6B2E; --gray:#7B7A7A; --gray-text:#6C6B6B; --white:#FFFFFF;
+  --s1:8px; --s2:16px; --s3:24px; --s4:32px; --s5:40px; --s6:48px; --s7:64px;
+  --r:8px; --r-s:6px; --r-xs:4px;
+  --sh-1:0 1px 2px rgba(111,28,124,.05),0 6px 18px rgba(111,28,124,.07);
+  --sh-2:0 2px 6px rgba(111,28,124,.08),0 14px 34px rgba(111,28,124,.12);
+  --brand-a56:rgba(111,28,124,.56);
+  --ease:cubic-bezier(.25,.7,.35,1);
+}
+/* ── 역할 토큰 (styles/semantic.css 이름 그대로) ────────────────────── */
+:root{
+  --bg-page:var(--brand-50); --bg-surface:var(--white); --bg-subtle:var(--brand-100); --bg-inverse:var(--brand-950);
+  --text-primary:var(--brand-950); --text-secondary:var(--gray-text); --text-muted:var(--gray-text);
+  --text-link:var(--brand-700); --text-brand:var(--brand-700); --text-on-inverse:var(--white);
+  --border-subtle:var(--gray); --border-decorative:var(--brand-200); --border-strong:var(--brand-700);
+  --action-primary-bg:var(--brand-700); --action-primary-fg:var(--white); --action-primary-bg-hover:var(--brand-800);
+  --action-secondary-bg:var(--white); --action-secondary-fg:var(--brand-700); --action-secondary-border:var(--brand-700);
+  --action-secondary-bg-hover:var(--brand-100);
+  --icon-default:var(--gray); --icon-brand:var(--brand-700);
+  --accent-decorative:var(--gold); --accent-decorative-strong:var(--gold-deep);
+  --focus-ring:var(--brand-700);
+  --overlay-medium:var(--brand-a56);
+  --space-inline-xs:var(--s1); --space-inline-sm:var(--s2); --space-inline-md:var(--s3);
+  --space-stack-xs:var(--s1); --space-stack-sm:var(--s2); --space-stack-md:var(--s3); --space-stack-lg:var(--s4);
+  --space-page-x:var(--s2);
+  --radius-chip:var(--r-xs); --radius-control:var(--r-s); --radius-surface:var(--r);
+  --elevation-raised:var(--sh-1); --elevation-overlay:var(--sh-2);
+  --motion-base:.22s var(--ease);
+
+  /* ── 제안: 상태 역할 토큰 (브랜드 원시색만 참조 · 새 색 없음) ───────────
+     새 접수 = 골드 면 + 짙은 글자 7.66:1 (골드 경계는 흰 바탕 2.38:1 이라 gold-deep 4.97:1 테두리를 두른다)
+     급함(오래 기다림·발송 실패) = 가장 짙은 보라 면 + 흰 글자 18.2:1
+     확정 = 옅은 보라 면 + 보라 글자 8.41:1 · 완료/취소 = 흰 면 + 회색 글자 5.31:1 */
+  --status-attention-bg:var(--gold); --status-attention-fg:var(--brand-950); --status-attention-border:var(--gold-deep);
+  --status-urgent-bg:var(--brand-950); --status-urgent-fg:var(--white);
+  --status-confirmed-bg:var(--brand-100); --status-confirmed-fg:var(--brand-700); --status-confirmed-border:var(--brand-200);
+  --status-closed-fg:var(--gray-text); --status-closed-border:var(--gray);
+  /* 제안: 되돌릴 수 없는 동작의 최종 버튼(확인 시트 안에서만) — 보라(긍정)와 구분되는 가장 짙은 면 */
+  --action-destructive-bg:var(--brand-950); --action-destructive-fg:var(--white);
+}
+@media (min-width:768px){ :root{ --space-page-x:var(--s4); } }
+
+/* ── 기본 ─────────────────────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--bg-page); color:var(--text-primary);
+  font-family:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,system-ui,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  font-size:16px; line-height:1.55; letter-spacing:-.01em;
+  word-break:keep-all; overflow-wrap:anywhere; -webkit-font-smoothing:antialiased;
+}
+[hidden]{display:none!important}
+a{color:inherit;text-decoration:none}
+button,input,select,textarea{font:inherit;color:inherit;letter-spacing:inherit}
+h1,h2,h3,p,ul,ol,dl,dd{margin:0}
+ul,ol{padding:0;list-style:none}
+svg.i{width:20px;height:20px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+:focus-visible{outline:2px solid var(--focus-ring);outline-offset:2px;border-radius:var(--radius-chip)}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.skip{position:absolute;left:8px;top:-60px;z-index:100;padding:10px 14px;background:var(--bg-surface);border:2px solid var(--border-strong);border-radius:var(--radius-control);font-weight:700}
+.skip:focus{top:8px}
+.num{font-variant-numeric:tabular-nums}
+.muted{color:var(--text-secondary)}
+
+/* ── 셸: 데스크톱 = 왼쪽 사이드바 · 휴대폰 = 위 제목줄 + 아래 탭 바 ─────── */
+.app{min-height:100vh}
+@media (min-width:1024px){
+  .app{display:grid;grid-template-columns:248px minmax(0,1fr);
+    background:linear-gradient(90deg,var(--bg-surface) 0 247px,var(--border-decorative) 247px 248px,transparent 248px)}
+}
+
+.sidebar{display:none}
+@media (min-width:1024px){
+  .sidebar{
+    display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow-y:auto;
+    background:var(--bg-surface);border-right:1px solid var(--border-decorative);padding:20px 12px 16px;
+  }
+}
+.brand{display:flex;align-items:center;gap:10px;padding:4px 10px 18px}
+.mark{
+  width:32px;height:32px;border-radius:var(--radius-control);display:grid;place-items:center;flex:none;
+  background:var(--action-primary-bg);color:var(--action-primary-fg);font-weight:800;font-size:15px;position:relative;
+}
+.mark::after{content:"";position:absolute;right:-3px;top:-3px;width:10px;height:10px;border-radius:50%;background:var(--accent-decorative);border:2px solid var(--bg-surface)}
+.brand-name{font-weight:800;font-size:16px;line-height:1.2}
+.brand-name small{display:block;font-size:12px;font-weight:600;color:var(--text-secondary)}
+.nav-group{margin-top:14px}
+.nav-label{padding:6px 12px;font-size:12.5px;font-weight:700;color:var(--text-secondary)}
+.nav-item{
+  display:flex;align-items:center;gap:12px;min-height:44px;padding:0 12px;border-radius:var(--radius-control);
+  font-size:15px;font-weight:600;color:var(--text-primary);position:relative;
+}
+.nav-item svg.i{color:var(--icon-default)}
+.nav-item:hover{background:var(--bg-subtle)}
+.nav-item[aria-current="page"]{background:var(--bg-subtle);color:var(--text-brand);font-weight:800}
+.nav-item[aria-current="page"] svg.i{color:var(--icon-brand)}
+.nav-item[aria-current="page"]::before{content:"";position:absolute;left:-12px;top:8px;bottom:8px;width:4px;border-radius:0 4px 4px 0;background:var(--border-strong)}
+.nav-count{
+  margin-left:auto;min-width:24px;height:22px;padding:0 7px;border-radius:999px;display:inline-grid;place-items:center;
+  background:var(--status-attention-bg);color:var(--status-attention-fg);border:1px solid var(--status-attention-border);
+  font-size:12.5px;font-weight:800;
+}
+.side-foot{margin-top:auto;padding:14px 12px 0;border-top:1px solid var(--border-decorative);display:grid;gap:6px;font-size:13.5px}
+.side-foot .who{color:var(--text-secondary)}
+.side-foot a,.side-foot button{display:flex;align-items:center;gap:8px;min-height:44px;background:none;border:0;padding:0;cursor:pointer;font-weight:700;color:var(--text-link)}
+
+/* 휴대폰 위 제목줄 (화면마다 하나) */
+.m-top{
+  position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:4px;height:56px;padding:0 8px 0 12px;
+  background:var(--bg-surface);border-bottom:1px solid var(--border-decorative);
+}
+.m-top h1,.m-top .m-title{font-size:18px;font-weight:800;line-height:1.2;flex:1;min-width:0}
+.m-top .brand-inline{display:flex;align-items:center;gap:10px;flex:1;min-width:0;font-weight:800;font-size:17px}
+.m-top .brand-inline .mark{width:28px;height:28px;font-size:13px}
+@media (min-width:1024px){ .m-top{display:none} }
+.icon-btn{
+  width:44px;height:44px;display:grid;place-items:center;border-radius:var(--radius-control);border:0;background:none;cursor:pointer;color:var(--icon-brand);flex:none;
+}
+.icon-btn:hover{background:var(--bg-subtle)}
+
+/* 휴대폰 아래 탭 바 — 4개 · 라벨 한글 5자 이내 · 건수 배지는 '접수' 하나만 */
+.tabbar{
+  position:fixed;left:0;right:0;bottom:0;z-index:30;display:grid;grid-template-columns:repeat(4,1fr);
+  height:calc(62px + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);
+  background:var(--bg-surface);border-top:1px solid var(--border-decorative);
+}
+@media (min-width:1024px){ .tabbar{display:none} }
+body[data-screen="detail"] .tabbar{display:none}
+.tab{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:56px;position:relative;
+  font-size:12.5px;font-weight:700;color:var(--text-secondary);
+}
+.tab svg.i{width:24px;height:24px}
+.tab[aria-current="page"]{color:var(--text-brand)}
+.tab[aria-current="page"]::before{content:"";position:absolute;top:0;left:28%;right:28%;height:3px;border-radius:0 0 3px 3px;background:var(--border-strong)}
+.tab .tab-count{
+  position:absolute;top:6px;left:calc(50% + 6px);min-width:20px;height:18px;padding:0 5px;border-radius:999px;
+  background:var(--status-attention-bg);color:var(--status-attention-fg);border:1px solid var(--status-attention-border);
+  font-size:11px;font-weight:800;display:grid;place-items:center;line-height:1;
+}
+
+/* ── 화면 공통 ──────────────────────────────────────────────────────── */
+.body{padding:20px var(--space-page-x) calc(96px + env(safe-area-inset-bottom))}
+@media (min-width:1024px){ .body{padding:32px 40px 64px;max-width:1240px} }
+.page-head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:24px}
+.eyebrow{font-size:14px;font-weight:700;color:var(--text-secondary)}
+.page-title{font-size:22px;font-weight:800;line-height:1.3;margin-top:2px}
+@media (min-width:1024px){ .page-title{font-size:28px} }
+.lede{margin-top:6px;font-size:16px;color:var(--text-primary)}
+.lede strong{color:var(--text-brand)}
+@media (max-width:1023.98px){ .d-desktop{display:none!important} }
+@media (min-width:1024px){ .d-mobile{display:none!important} }
+
+.card{background:var(--bg-surface);border:1px solid var(--border-decorative);border-radius:var(--radius-surface);box-shadow:var(--elevation-raised)}
+.card-pad{padding:18px}
+@media (min-width:1024px){ .card-pad{padding:22px 24px} }
+.sec{margin-top:28px}
+.sec-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.sec-title{font-size:18px;font-weight:800;line-height:1.3}
+.sec-title .count{color:var(--text-brand)}
+.sec-link{display:inline-flex;align-items:center;gap:2px;min-height:44px;font-size:15px;font-weight:700;color:var(--text-link)}
+.sec-link svg.i{width:18px;height:18px}
+
+/* 버튼 */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:0 18px;border-radius:var(--radius-control);
+  font-size:16px;font-weight:800;border:1px solid transparent;cursor:pointer;white-space:nowrap;transition:background var(--motion-base)
+}
+.btn-primary{background:var(--action-primary-bg);color:var(--action-primary-fg)}
+.btn-primary:hover{background:var(--action-primary-bg-hover)}
+.btn-secondary{background:var(--action-secondary-bg);color:var(--action-secondary-fg);border-color:var(--action-secondary-border)}
+.btn-secondary:hover{background:var(--action-secondary-bg-hover)}
+.btn-destructive{background:var(--action-destructive-bg);color:var(--action-destructive-fg)}
+.btn-text{min-height:44px;padding:0 4px;background:none;border:0;color:var(--text-link);font-weight:700;font-size:15px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.btn-block{width:100%}
+
+/* 상태 배지 — 글자 + 모양(점·!·✓·실선·점선)로 구분, 색에만 기대지 않는다 */
+.badge{
+  display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px;border-radius:var(--radius-chip);border:1px solid transparent;
+  font-size:13px;font-weight:800;line-height:1;white-space:nowrap;
+}
+.badge svg.i{width:14px;height:14px;stroke-width:2.6}
+.badge .dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+.b-new{background:var(--status-attention-bg);color:var(--status-attention-fg);border-color:var(--status-attention-border)}
+.b-urgent{background:var(--status-urgent-bg);color:var(--status-urgent-fg)}
+.b-confirmed{background:var(--status-confirmed-bg);color:var(--status-confirmed-fg);border-color:var(--status-confirmed-border)}
+.b-done{background:var(--bg-surface);color:var(--status-closed-fg);border-color:var(--status-closed-border)}
+.b-cancelled{background:var(--bg-surface);color:var(--status-closed-fg);border:1px dashed var(--status-closed-border)}
+.chip-quick{
+  display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 8px;border-radius:var(--radius-chip);white-space:nowrap;
+  border:1px solid var(--border-strong);color:var(--text-brand);background:var(--bg-surface);font-size:13px;font-weight:700;line-height:1;
+}
+.chip-quick svg.i{width:14px;height:14px}
+
+/* ── 관리 홈 ────────────────────────────────────────────────────────── */
+.todo-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media (min-width:1024px){ .todo-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:16px} }
+.todo{
+  display:flex;flex-direction:column;gap:4px;min-height:118px;padding:14px 14px 14px 16px;position:relative;
+  background:var(--bg-surface);border:1px solid var(--border-decorative);border-left-width:5px;border-radius:var(--radius-surface);box-shadow:var(--elevation-raised);
+}
+.todo:hover{border-color:var(--border-strong)}
+.todo .t-label{display:flex;align-items:center;gap:6px;font-size:14.5px;font-weight:800}
+.todo .t-value{font-size:28px;font-weight:800;line-height:1.15;margin-top:2px}
+.todo .t-value small{font-size:16px;font-weight:700;margin-left:2px}
+.todo .t-sub{font-size:13.5px;color:var(--text-secondary);line-height:1.45}
+.todo.t-attn{border-left-color:var(--status-attention-border)}
+.todo.t-attn .t-label .dot{width:9px;height:9px;border-radius:50%;background:var(--status-attention-bg);border:1px solid var(--status-attention-border)}
+.todo.t-urgent{border-left-color:var(--status-urgent-bg)}
+.todo.t-urgent .t-label svg.i{color:var(--status-urgent-bg);width:18px;height:18px}
+.todo.t-ok{border-left-color:var(--brand-300)}
+.todo.t-ok .t-value{font-size:22px;display:flex;align-items:center;gap:6px;color:var(--text-brand)}
+.todo.t-ok .t-value svg.i{width:22px;height:22px;stroke-width:2.6}
+.todo.t-plain{border-left-color:var(--border-decorative)}
+.todo .t-arrow{position:absolute;right:10px;top:12px;color:var(--icon-default)}
+.todo .t-arrow svg.i{width:18px;height:18px}
+
+.home-cols{display:grid;gap:0}
+@media (min-width:1024px){ .home-cols{grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:28px} }
+
+/* 접수 행 — 휴대폰에서는 카드, 넓은 목록에서는 표 모양 (한 벌의 마크업) */
+.inq-list{display:grid;gap:10px}
+.inq{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 56px;align-items:stretch;
+  background:var(--bg-surface);border:1px solid var(--border-decorative);border-radius:var(--radius-surface);box-shadow:var(--elevation-raised)}
+.inq:hover{border-color:var(--brand-300)}
+.inq.is-urgent{border-left:4px solid var(--status-urgent-bg)}
+.inq-link{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"status ago" "who who" "trip trip" "meta meta";gap:4px 8px;padding:14px 4px 14px 16px;min-width:0}
+.inq-status{grid-area:status;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.inq-ago{grid-area:ago;font-size:13.5px;font-weight:700;color:var(--text-secondary);align-self:center;white-space:nowrap}
+.inq-ago.late{color:var(--status-urgent-bg)}
+.inq-who{grid-area:who;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;margin-top:4px}
+.inq-who strong{font-size:17px;font-weight:800}
+.inq-who .tail{font-size:14px;color:var(--text-secondary)}
+.inq-trip{grid-area:trip;font-size:15.5px;font-weight:700}
+.inq-trip .muted{font-weight:600}
+.inq-meta{grid-area:meta;font-size:14.5px;color:var(--text-secondary)}
+.inq-meta b{color:var(--text-primary);font-weight:700}
+.inq-when,.inq-bus{display:inline}
+.call{display:grid;place-items:center;border-left:1px solid var(--border-decorative);color:var(--icon-brand)}
+.call span{width:44px;height:44px;display:grid;place-items:center;border-radius:50%;background:var(--bg-subtle)}
+.call:hover span{background:var(--brand-200)}
+.call svg.i{width:22px;height:22px}
+.group-head{display:flex;align-items:center;gap:8px;margin:18px 2px 8px;font-size:14px;font-weight:800;color:var(--text-secondary)}
+.group-head.urgent{color:var(--status-urgent-bg)}
+.group-head svg.i{width:16px;height:16px}
+
+/* 넓은 목록(접수 화면 ≥1024px) — 표 모양 */
+.inq-head{display:none}
+@media (min-width:1024px){
+  .table-mode .inq-head{
+    display:grid;grid-template-columns:minmax(0,1fr) 56px;padding:0 0 8px;font-size:13px;font-weight:800;color:var(--text-secondary);
+  }
+  .table-mode .inq-head > div,.table-mode .inq-link{
+    grid-template-columns:128px minmax(150px,1.2fr) minmax(170px,1.35fr) minmax(150px,1.1fr) minmax(150px,1.1fr) 82px;
+    grid-template-areas:none;align-items:center;gap:0 16px;
+  }
+  .table-mode .inq-head > div{display:grid;padding:0 4px 0 17px}
+  .table-mode .inq-list{gap:0;background:var(--bg-surface);border:1px solid var(--border-decorative);border-radius:var(--radius-surface);box-shadow:var(--elevation-raised);overflow:hidden}
+  .table-mode .inq{border:0;border-radius:0;box-shadow:none;border-top:1px solid var(--border-decorative)}
+  .table-mode .inq:first-child{border-top:0}
+  .table-mode .inq.is-urgent{border-left:4px solid var(--status-urgent-bg)}
+  .table-mode .inq:hover{background:var(--brand-50)}
+  .table-mode .inq-link{min-height:68px;padding:10px 4px 10px 16px}
+  .table-mode .inq-status,.table-mode .inq-who,.table-mode .inq-trip,.table-mode .inq-when,.table-mode .inq-bus,.table-mode .inq-ago{grid-area:auto;margin:0}
+  .table-mode .inq-who{flex-direction:column;align-items:flex-start;gap:0}
+  .table-mode .inq-who strong{font-size:16px}
+  .table-mode .inq-meta{display:contents}
+  .table-mode .inq-when,.table-mode .inq-bus{display:flex;flex-direction:column;font-size:15px}
+  .table-mode .inq-trip{font-size:15px}
+  .table-mode .inq-sep{display:none}
+  .table-mode .inq-ago{text-align:left}
+  .table-mode .group-head{margin:0;padding:10px 16px;background:var(--bg-subtle);border-top:1px solid var(--border-decorative)}
+  .table-mode .group-head:first-child{border-top:0}
+}
+
+/* 다가오는 운행 */
+.trip-day{padding:14px 18px;border-top:1px solid var(--border-decorative)}
+.trip-day:first-child{border-top:0}
+.trip-day h3{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:15px;font-weight:800}
+.trip-day h3 .muted{font-size:13.5px;font-weight:700}
+.trip{display:grid;grid-template-columns:56px minmax(0,1fr);gap:10px;margin-top:10px;align-items:start}
+.trip time{font-size:16px;font-weight:800;color:var(--text-brand)}
+.trip p{font-size:15px;font-weight:700}
+.trip .muted{font-size:14px;font-weight:500}
+.trip .badge{margin-top:6px}
+
+/* 홈페이지 점검 */
+.check-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:center;padding:12px 18px;border-top:1px solid var(--border-decorative)}
+.check-row:first-child{border-top:0}
+.check-row svg.i{color:var(--icon-default)}
+.check-row p{font-size:15px;font-weight:700}
+.check-row .muted{display:block;font-size:13.5px;font-weight:500}
+.check-row a{font-size:14.5px;font-weight:800;color:var(--text-link);min-height:44px;display:inline-flex;align-items:center}
+.check-row.warn svg.i{color:var(--accent-decorative-strong)}
+.mini-stat{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;padding:14px 18px;font-size:15px;font-weight:700}
+
+/* ── 접수 목록 ─────────────────────────────────────────────────────── */
+.search{position:relative;flex:1 1 320px;max-width:420px}
+.search input{
+  width:100%;height:48px;padding:0 14px 0 44px;border:1px solid var(--border-subtle);border-radius:var(--radius-control);background:var(--bg-surface);font-size:16px
+}
+.search input::placeholder{color:var(--text-muted)}
+.search svg.i{position:absolute;left:14px;top:14px;color:var(--icon-default)}
+.search-note{margin-top:6px;font-size:13px;color:var(--text-secondary)}
+.status-tabs{display:flex;gap:4px;margin:4px 0 0;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--border-decorative)}
+.status-tabs::-webkit-scrollbar{display:none}
+.stab{
+  flex:none;display:inline-flex;align-items:center;gap:7px;min-height:48px;padding:0 12px;border:0;background:none;cursor:pointer;
+  font-size:15.5px;font-weight:700;color:var(--text-secondary);border-bottom:3px solid transparent;margin-bottom:-1px;
+}
+.stab[aria-pressed="true"]{color:var(--text-brand);font-weight:800;border-bottom-color:var(--border-strong)}
+.stab .n{min-width:24px;height:22px;padding:0 7px;border-radius:999px;display:inline-grid;place-items:center;font-size:13px;font-weight:800;background:var(--bg-subtle);color:var(--text-brand)}
+.stab .n.attn{background:var(--status-attention-bg);color:var(--status-attention-fg);border:1px solid var(--status-attention-border)}
+.list-hint{margin:12px 2px 0;font-size:13.5px;color:var(--text-secondary)}
+.more-row{display:flex;flex-direction:column;align-items:center;gap:6px;margin-top:16px}
+.privacy-note{font-size:13px;color:var(--text-secondary);text-align:center}
+
+/* ── 접수 상세 ─────────────────────────────────────────────────────── */
+.back{display:inline-flex;align-items:center;gap:4px;min-height:44px;font-size:15px;font-weight:700;color:var(--text-link);margin:-8px 0 8px}
+.d-head .d-badges{display:flex;flex-wrap:wrap;gap:6px}
+.d-head h1{font-size:24px;font-weight:800;line-height:1.3;margin-top:8px}
+@media (min-width:1024px){ .d-head h1{font-size:30px} }
+.d-head .meta{margin-top:4px;font-size:14.5px;color:var(--text-secondary)}
+.d-cols{display:grid;gap:16px;margin-top:18px}
+@media (min-width:1024px){ .d-cols{grid-template-columns:minmax(0,1fr) 340px;gap:24px;align-items:start} }
+.d-side{display:grid;gap:16px}
+@media (min-width:1024px){ .d-side{position:sticky;top:24px;order:2} .d-main{order:1} }
+.d-main{display:grid;gap:16px}
+.card-title{display:flex;align-items:center;gap:8px;font-size:16.5px;font-weight:800;margin-bottom:12px}
+.card-title .aside{margin-left:auto;font-size:13.5px;font-weight:700;color:var(--text-secondary)}
+.route-big{font-size:22px;font-weight:800;line-height:1.3;display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.route-big svg.i{color:var(--icon-default)}
+.kv{display:grid;grid-template-columns:96px minmax(0,1fr);gap:10px 12px;margin-top:14px;font-size:15.5px}
+@media (min-width:1024px){ .kv{grid-template-columns:120px minmax(0,1fr) 120px minmax(0,1fr)} }
+.kv dt{color:var(--text-secondary);font-weight:600}
+.kv dd{font-weight:700}
+.kv dd.undecided{color:var(--text-secondary);font-weight:600;display:flex;align-items:center;gap:6px}
+.kv dd.undecided svg.i{width:16px;height:16px;color:var(--text-brand)}
+.contact-num{font-size:22px;font-weight:800;letter-spacing:0;margin:2px 0 12px}
+.btn-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.first-time{margin-top:12px;font-size:13.5px;color:var(--text-secondary);display:flex;gap:6px;align-items:center}
+.first-time svg.i{width:16px;height:16px}
+.hint{font-size:13.5px;color:var(--text-secondary);line-height:1.5}
+.divider{height:1px;background:var(--border-decorative);margin:14px 0}
+
+.checklist{display:grid;gap:2px}
+.checklist label{display:flex;align-items:center;gap:12px;min-height:48px;padding:4px 6px;border-radius:var(--radius-control);cursor:pointer;font-size:15.5px;font-weight:600}
+.checklist label:hover{background:var(--bg-subtle)}
+.checklist input{width:22px;height:22px;accent-color:var(--action-primary-bg);flex:none}
+.checklist input:checked + span{color:var(--text-secondary);text-decoration:line-through}
+.progress{font-size:13.5px;font-weight:800;color:var(--text-brand)}
+.memo textarea{width:100%;min-height:104px;padding:12px;border:1px solid var(--border-subtle);border-radius:var(--radius-control);font-size:16px;line-height:1.55;resize:vertical;background:var(--bg-surface)}
+.memo-foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-top:8px}
+.timeline{display:grid;gap:0}
+.tl{display:grid;grid-template-columns:52px 20px minmax(0,1fr);gap:8px;align-items:start;padding:8px 0}
+.tl time{font-size:14px;font-weight:700;color:var(--text-secondary)}
+.tl .tl-dot{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;background:var(--status-confirmed-bg);color:var(--status-confirmed-fg);margin-top:1px}
+.tl .tl-dot svg.i{width:12px;height:12px;stroke-width:3}
+.tl.next .tl-dot{background:var(--bg-surface);border:1px dashed var(--border-subtle)}
+.tl p{font-size:15px;font-weight:700}
+.tl .muted{display:block;font-size:13.5px;font-weight:500}
+details.records summary{display:flex;align-items:center;justify-content:space-between;min-height:48px;cursor:pointer;font-size:16px;font-weight:800;list-style:none}
+details.records summary::-webkit-details-marker{display:none}
+details.records summary::after{content:"펼치기";font-size:13.5px;font-weight:700;color:var(--text-link)}
+details.records[open] summary::after{content:"접기"}
+details.records .kv{margin-top:4px}
+.danger-link{color:var(--text-primary)}
+.danger-link svg.i{color:var(--text-primary)}
+.cancel-zone{margin-top:8px;text-align:center}
+
+/* 휴대폰 상세 — 아래 고정 행동 바 [전화] [확정하기] */
+.actionbar{
+  position:fixed;left:0;right:0;bottom:0;z-index:30;display:grid;grid-template-columns:1fr 2fr;gap:10px;
+  padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:var(--bg-surface);border-top:1px solid var(--border-decorative);
+}
+@media (min-width:1024px){ .actionbar{display:none} }
+
+/* ── 확인 시트 · 토스트 ─────────────────────────────────────────────── */
+.scrim{position:fixed;inset:0;z-index:50;background:var(--overlay-medium);display:flex;align-items:flex-end;justify-content:center}
+@media (min-width:1024px){ .scrim{align-items:center} }
+.sheet{
+  width:100%;max-width:520px;background:var(--bg-surface);border-radius:var(--radius-surface) var(--radius-surface) 0 0;
+  padding:22px 20px calc(18px + env(safe-area-inset-bottom));box-shadow:var(--elevation-overlay);max-height:92vh;overflow-y:auto;
+}
+@media (min-width:1024px){ .sheet{border-radius:var(--radius-surface);padding:26px 26px 22px} }
+.sheet h2{font-size:20px;font-weight:800;line-height:1.35}
+.sheet .sum{margin-top:12px;padding:12px 14px;border-radius:var(--radius-control);background:var(--bg-subtle);font-size:15px;font-weight:700}
+.sheet .sum .muted{display:block;font-weight:500;font-size:14px}
+.sheet p.body-t{margin-top:12px;font-size:15.5px}
+.sheet .warn{margin-top:12px;display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:var(--radius-control);border:1px solid var(--status-attention-border);background:var(--bg-surface);font-size:15px;font-weight:700}
+.sheet .warn svg.i{color:var(--accent-decorative-strong);margin-top:1px}
+.reasons{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.reasons input{position:absolute;opacity:0;pointer-events:none}
+.reasons label{display:inline-flex;align-items:center;min-height:44px;padding:0 14px;border:1px solid var(--border-subtle);border-radius:999px;font-size:15px;font-weight:700;cursor:pointer}
+.reasons input:checked + label{border-color:var(--border-strong);background:var(--bg-subtle);color:var(--text-brand);box-shadow:inset 0 0 0 1px var(--border-strong)}
+.reasons input:focus-visible + label{outline:2px solid var(--focus-ring);outline-offset:2px}
+.sheet-actions{display:grid;grid-template-columns:1fr 1.6fr;gap:10px;margin-top:20px}
+.toast{
+  position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));z-index:60;transform:translateX(-50%);
+  width:calc(100% - 24px);max-width:480px;display:flex;align-items:center;gap:12px;padding:14px 14px 14px 16px;border-radius:var(--radius-surface);
+  background:var(--bg-inverse);color:var(--text-on-inverse);box-shadow:var(--elevation-overlay);font-size:15px;font-weight:700
+}
+@media (min-width:1024px){ .toast{bottom:28px} }
+.toast svg.i{color:var(--accent-decorative);flex:none}
+.toast span{flex:1}
+.toast a{color:var(--text-on-inverse);text-decoration:underline;text-underline-offset:3px;font-weight:800;min-height:44px;display:inline-flex;align-items:center;white-space:nowrap}
+@media (prefers-reduced-motion:reduce){ *{transition:none!important;animation:none!important} }
+</style>
+</head>
+<body data-screen="home">
+<a class="skip" href="#main">본문으로 건너뛰기</a>
+
+<!-- 아이콘 (선 아이콘 · 라벨이 늘 함께 붙는다) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M4 14h4l2 3h4l2-3h4"/></symbol>
+  <symbol id="i-web" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M7 6.5h.01M10 6.5h.01"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M6.6 3.5h2.6l1.5 4-2 1.3a11 11 0 0 0 6.5 6.5l1.3-2 4 1.5v2.6a2 2 0 0 1-2.2 2A16.5 16.5 0 0 1 4.6 5.7a2 2 0 0 1 2-2.2z"/></symbol>
+  <symbol id="i-msg" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.3"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h15M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-notice" viewBox="0 0 24 24"><path d="M4 9v6h3l7 4V5L7 9z"/><path d="M17.5 9.5a3.5 3.5 0 0 1 0 5"/></symbol>
+  <symbol id="i-popup" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><rect x="7" y="8" width="10" height="8" rx="1"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 17-5-5-9 8"/></symbol>
+  <symbol id="i-route" viewBox="0 0 24 24"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8.5 18H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.5"/></symbol>
+  <symbol id="i-sms" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 10h8"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
+  <symbol id="i-bus" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="15" rx="2"/><path d="M4 11h16M7 21v-3M17 21v-3"/><path d="M7.5 14.5h.01M16.5 14.5h.01"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+</svg>
+
+<div class="app">
+  <!-- 데스크톱 사이드바 -->
+  <aside class="sidebar" aria-label="관리 메뉴">
+    <div class="brand"><span class="mark" aria-hidden="true">B</span><span class="brand-name">베스트투어<small>관리</small></span></div>
+    <nav aria-label="관리 메뉴">
+      <ul>
+        <li><a class="nav-item" href="#home" data-nav="home"><svg class="i"><use href="#i-home"/></svg>홈</a></li>
+        <li><a class="nav-item" href="#list" data-nav="list"><svg class="i"><use href="#i-inbox"/></svg>접수<span class="nav-count" aria-label="새 접수 4건">4</span></a></li>
+      </ul>
+      <div class="nav-group">
+        <p class="nav-label">홈페이지</p>
+        <ul>
+          <li><a class="nav-item" href="#" data-out><svg class="i"><use href="#i-notice"/></svg>공지</a></li>
+          <li><a class="nav-item" href="#" data-out><svg class="i"><use href="#i-popup"/></svg>팝업</a></li>
+          <li><a class="nav-item" href="#" data-out><svg class="i"><use href="#i-image"/></svg>갤러리</a></li>
+          <li><a class="nav-item" href="#" data-out><svg class="i"><use href="#i-route"/></svg>대표 노선</a></li>
+        </ul>
+      </div>
+      <div class="nav-group">
+        <p class="nav-label">기록</p>
+        <ul>
+          <li><a class="nav-item" href="#" data-out><svg class="i"><use href="#i-sms"/></svg>문자 기록</a></li>
+          <li><a class="nav-item" href="#" data-out><svg class="i"><use href="#i-chart"/></svg>통계</a></li>
+        </ul>
+      </div>
+    </nav>
+    <div class="side-foot">
+      <span class="who">사장님 계정으로 로그인 중</span>
+      <a href="#" data-out><svg class="i"><use href="#i-ext"/></svg>홈페이지 보기</a>
+      <button type="button" data-out>로그아웃</button>
+    </div>
+  </aside>
+
+  <div class="main-col">
+    <main id="main">
+
+<!-- ════════════════════════ 관리 홈 ════════════════════════ -->
+<section class="screen" id="home" aria-labelledby="home-title">
+  <header class="m-top">
+    <span class="brand-inline"><span class="mark" aria-hidden="true">B</span>베스트투어 관리</span>
+    <a class="icon-btn" href="#" data-out aria-label="홈페이지 새 창으로 보기"><svg class="i"><use href="#i-ext"/></svg></a>
+    <button type="button" class="icon-btn" data-out aria-label="내 계정 · 로그아웃"><svg class="i"><use href="#i-user"/></svg></button>
+  </header>
+  <div class="body">
+    <div class="page-head">
+      <div>
+        <p class="eyebrow">9월 27일 일요일</p>
+        <h2 class="page-title" id="home-title">오늘 확인할 일</h2>
+        <p class="lede">새 접수 <strong>4건</strong>이 기다리고 있어요. 그중 1건은 3일째예요.</p>
+      </div>
+      <a class="btn btn-primary d-desktop" href="#list">새 접수 확인하기</a>
+    </div>
+
+    <div class="todo-grid">
+      <a class="todo t-attn" href="#list">
+        <span class="t-label"><span class="dot" aria-hidden="true"></span>새 접수</span>
+        <span class="t-value num">4<small>건</small></span>
+        <span class="t-sub">간편 2 · 상세 2</span>
+        <span class="t-arrow" aria-hidden="true"><svg class="i"><use href="#i-right"/></svg></span>
+      </a>
+      <a class="todo t-urgent" href="#list">
+        <span class="t-label"><svg class="i" aria-hidden="true"><use href="#i-alert"/></svg>답이 늦은 접수</span>
+        <span class="t-value num">1<small>건</small></span>
+        <span class="t-sub">72시간 넘게 기다리는 중</span>
+        <span class="t-arrow" aria-hidden="true"><svg class="i"><use href="#i-right"/></svg></span>
+      </a>
+      <a class="todo t-ok" href="#" data-out>
+        <span class="t-label">문자 발송</span>
+        <span class="t-value"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>이상 없음</span>
+        <span class="t-sub">최근 7일 실패 0건</span>
+        <span class="t-arrow" aria-hidden="true"><svg class="i"><use href="#i-right"/></svg></span>
+      </a>
+      <a class="todo t-plain" href="#" data-out>
+        <span class="t-label">이번 주 운행</span>
+        <span class="t-value num">2<small>건</small></span>
+        <span class="t-sub">9/30(수) · 10/2(금)</span>
+        <span class="t-arrow" aria-hidden="true"><svg class="i"><use href="#i-right"/></svg></span>
+      </a>
+    </div>
+
+    <div class="home-cols">
+      <div>
+        <div class="sec">
+          <div class="sec-head">
+            <h2 class="sec-title">새 접수 <span class="count num">4</span></h2>
+            <a class="sec-link" href="#list">전체 보기<svg class="i" aria-hidden="true"><use href="#i-right"/></svg></a>
+          </div>
+          <ul class="inq-list" aria-label="새 접수">
+            <li class="inq is-urgent">
+              <a class="inq-link" href="#" data-out>
+                <span class="inq-status"><span class="badge b-urgent"><svg class="i" aria-hidden="true"><use href="#i-alert"/></svg>3일째 대기</span></span>
+                <span class="inq-ago late">3일 전</span>
+                <span class="inq-who"><strong>예시고객라</strong><span class="tail num">010-****-0004</span></span>
+                <span class="inq-trip">대전 → 전주 <span class="muted">편도</span></span>
+                <span class="inq-meta"><b>10/5(월) 09:00</b> · 25인승 1대 · 20명</span>
+              </a>
+              <a class="call" href="tel:01000000004" aria-label="예시고객라 님에게 전화 걸기"><span><svg class="i"><use href="#i-phone"/></svg></span></a>
+            </li>
+            <li class="inq">
+              <a class="inq-link" href="#detail">
+                <span class="inq-status"><span class="badge b-new"><span class="dot" aria-hidden="true"></span>새 접수</span><span class="chip-quick"><svg class="i" aria-hidden="true"><use href="#i-phone"/></svg>간편 · 전화 확인</span></span>
+                <span class="inq-ago">25분 전</span>
+                <span class="inq-who"><strong>예시고객가</strong><span class="tail num">010-****-0001</span></span>
+                <span class="inq-trip">서울 → 강릉 <span class="muted">1박 2일</span></span>
+                <span class="inq-meta"><b>10/10(토)~10/11(일)</b> · 차량 미정 · 28명</span>
+              </a>
+              <a class="call" href="tel:01000000001" aria-label="예시고객가 님에게 전화 걸기"><span><svg class="i"><use href="#i-phone"/></svg></span></a>
+            </li>
+            <li class="inq">
+              <a class="inq-link" href="#" data-out>
+                <span class="inq-status"><span class="badge b-new"><span class="dot" aria-hidden="true"></span>새 접수</span></span>
+                <span class="inq-ago">2시간 전</span>
+                <span class="inq-who"><strong>예시고객나</strong><span class="tail num">010-****-0002</span></span>
+                <span class="inq-trip">서울 → 강릉 <span class="muted">왕복</span></span>
+                <span class="inq-meta"><b>10/17(토) 07:00</b> · 45인승 2대 · 80명</span>
+              </a>
+              <a class="call" href="tel:01000000002" aria-label="예시고객나 님에게 전화 걸기"><span><svg class="i"><use href="#i-phone"/></svg></span></a>
+            </li>
+            <li class="inq">
+              <a class="inq-link" href="#" data-out>
+                <span class="inq-status"><span class="badge b-new"><span class="dot" aria-hidden="true"></span>새 접수</span><span class="chip-quick"><svg class="i" aria-hidden="true"><use href="#i-phone"/></svg>간편 · 전화 확인</span></span>
+                <span class="inq-ago">5시간 전</span>
+                <span class="inq-who"><strong>예시고객다</strong><span class="tail num">010-****-0003</span></span>
+                <span class="inq-trip">부산 → 인천공항</span>
+                <span class="inq-meta"><b>10/3(토)</b> · 차량 미정 · 40명</span>
+              </a>
+              <a class="call" href="tel:01000000003" aria-label="예시고객다 님에게 전화 걸기"><span><svg class="i"><use href="#i-phone"/></svg></span></a>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <div>
+        <div class="sec">
+          <div class="sec-head"><h2 class="sec-title">다가오는 운행 <span class="muted" style="font-size:14px;font-weight:700">7일</span></h2></div>
+          <div class="card">
+            <div class="trip-day">
+              <h3>9월 30일 (수) <span class="muted">3일 뒤</span></h3>
+              <div class="trip"><time class="num">14:30</time><div><p>인천공항 → 서울</p><span class="muted">예시고객마 · 28인승 우등리무진 1대 · 22명</span><br><span class="badge b-confirmed"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>확정</span></div></div>
+            </div>
+            <div class="trip-day">
+              <h3>10월 2일 (금) <span class="muted">5일 뒤</span></h3>
+              <div class="trip"><time class="num">07:30</time><div><p>원주 → 부산 <span class="muted">대구 경유</span></p><span class="muted">예시고객아 · 35인승 1대 · 33명</span><br><span class="badge b-confirmed"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>확정</span></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sec">
+          <div class="sec-head"><h2 class="sec-title">홈페이지 점검</h2></div>
+          <div class="card">
+            <div class="check-row"><svg class="i" aria-hidden="true"><use href="#i-popup"/></svg><p>팝업<span class="muted">지금 노출 중인 팝업이 없어요</span></p><a href="#" data-out>만들기</a></div>
+            <div class="check-row"><svg class="i" aria-hidden="true"><use href="#i-notice"/></svg><p>공지<span class="muted">마지막 공지 9월 25일</span></p><a href="#" data-out>공지 쓰기</a></div>
+            <div class="check-row warn"><svg class="i" aria-hidden="true"><use href="#i-route"/></svg><p>대표 노선<span class="muted">16개 중 3개는 금액 없이 노선만 보여요</span></p><a href="#" data-out>확인</a></div>
+          </div>
+          <a class="card mini-stat" href="#" data-out><span>이번 달 접수 <b class="num">8건</b> · 확정 <b class="num">3건</b></span><span class="sec-link">통계<svg class="i" aria-hidden="true"><use href="#i-right"/></svg></span></a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════ 접수 목록 ════════════════════════ -->
+<section class="screen" id="list" aria-labelledby="list-title" hidden>
+  <header class="m-top">
+    <h1 class="m-title">접수</h1>
+  </header>
+  <div class="body">
+    <div class="page-head">
+      <div class="d-desktop">
+        <h2 class="page-title" id="list-title">접수</h2>
+        <p class="lede muted" style="color:var(--text-secondary)">새 접수는 오래 기다린 것부터, 확정은 운행이 가까운 것부터 보여 드려요.</p>
+      </div>
+      <div class="search" role="search">
+        <label class="sr-only" for="q">접수 찾기</label>
+        <svg class="i" aria-hidden="true"><use href="#i-search"/></svg>
+        <input id="q" type="search" placeholder="이름 · 전화번호 뒷자리 · 접수번호" autocomplete="off">
+        <p class="search-note">검색어는 주소창에 남기지 않아요.</p>
+      </div>
+    </div>
+
+    <div class="status-tabs" role="group" aria-label="상태로 보기">
+      <button type="button" class="stab" data-filter="new" aria-pressed="true">새 접수 <span class="n attn num">4</span></button>
+      <button type="button" class="stab" data-filter="confirmed" aria-pressed="false">확정 <span class="n num">2</span></button>
+      <button type="button" class="stab" data-filter="done" aria-pressed="false">운행 완료 <span class="n num">1</span></button>
+      <button type="button" class="stab" data-filter="cancelled" aria-pressed="false">취소 <span class="n num">1</span></button>
+      <button type="button" class="stab" data-filter="all" aria-pressed="false">전체 <span class="n num">8</span></button>
+    </div>
+    <p class="list-hint d-mobile">새 접수는 오래 기다린 것부터 보여 드려요.</p>
+
+    <div class="table-mode" style="margin-top:16px">
+      <div class="inq-head" aria-hidden="true"><div><span>상태</span><span>고객</span><span>운행 구간</span><span>출발</span><span>차량 · 인원</span><span>접수</span></div><span></span></div>
+      <ul class="inq-list" id="rows" aria-label="접수 목록">
+        <li class="group-head urgent" data-g="new"><svg class="i" aria-hidden="true"><use href="#i-alert"/></svg>답이 늦은 접수 · 72시간 넘음</li>
+        <li class="inq is-urgent" data-s="new">
+          <a class="inq-link" href="#" data-out>
+            <span class="inq-status"><span class="badge b-urgent"><svg class="i" aria-hidden="true"><use href="#i-alert"/></svg>3일째 대기</span></span>
+            <span class="inq-who"><strong>예시고객라</strong><span class="tail num">010-****-0004</span></span>
+            <span class="inq-trip">대전 → 전주 <span class="muted">편도</span></span>
+            <span class="inq-meta"><span class="inq-when"><b>10/5(월)</b> <span>09:00</span></span><span class="inq-sep"> · </span><span class="inq-bus"><span>25인승 1대</span><span class="inq-sep"> · </span><span class="muted">20명</span></span></span>
+            <span class="inq-ago late">3일 전</span>
+          </a>
+          <a class="call" href="tel:01000000004" aria-label="예시고객라 님에게 전화 걸기"><span><svg class="i"><use href="#i-phone"/></svg></span></a>
+        </li>
+        <li class="group-head" data-g="new">오늘 · 9월 27일 (일)</li>
+        <li class="inq" data-s="new">
+          <a class="inq-link" href="#detail">
+            <span class="inq-status"><span class="badge b-new"><span class="dot" aria-hidden="true"></span>새 접수</span><span class="chip-quick"><svg class="i" aria-hidden="true"><use href="#i-phone"/></svg>간편</span></span>
+            <span class="inq-who"><strong>예시고객가</strong><span class="tail num">010-****-0001</span></span>
+            <span class="inq-trip">서울 → 강릉 <span class="muted">1박 2일</span></span>
+            <span class="inq-meta"><span class="inq-when"><b>10/10(토)</b> <span class="muted">시각 미정</span></span><span class="inq-sep"> · </span><span class="inq-bus"><span class="muted">차량 미정</span><span class="inq-sep"> · </span><span>28명</span></span></span>
+            <span class="inq-ago">25분 전</span>
+          </a>
+          <a class="call" href="tel:01000000001" aria-label="예시고객가 님에게 전화 걸기"><span><svg class="i"><use href="#i-phone"/></svg></span></a>
+        </li>
+        <li class="inq" data-s="new">
+          <a class="inq-link" href="#" data-out>
+            <span class="inq-status"><span class="badge b-new"><span class="dot" aria-hidden="true"></span>새 접수</span></span>
+            <span class="inq-who"><strong>예시고객나</strong><span class="tail num">010-****-0002</span></span>
+            <span class="inq-trip">서울 → 강릉 <span class="muted">왕복</span></span>
+            <span class="inq-meta"><span class="inq-when"><b>10/17(토)</b> <span>07:00</span></span><span class="inq-sep"> · </span><span class="inq-bus"><span>45인승 2대</span><span class="inq-sep"> · </span><span class="muted">80명</span></span></span>
+            <span class="inq-ago">2시간 전</span>
+          </a>
+          <a class="call" href="tel:01000000002" aria-label="예시고객나 님에게 전화 걸기"><span><svg class="i"><use href="#i-phone"/></svg></span></a>
+        </li>
+        <li class="inq" data-s="new">
+          <a class="inq-link" href="#" data-out>
+            <span class="inq-status"><span class="badge b-new"><span class="dot" aria-hidden="true"></span>새 접수</span><span class="chip-quick"><svg class="i" aria-hidden="true"><use href="#i-phone"/></svg>간편</span></span>
+            <span class="inq-who"><strong>예시고객다</strong><span class="tail num">010-****-0003</span></span>
+            <span class="inq-trip">부산 → 인천공항</span>
+            <span class="inq-meta"><span class="inq-when"><b>10/3(토)</b> <span class="muted">시각 미정</span></span><span class="inq-sep"> · </span><span class="inq-bus"><span class="muted">차량 미정</span><span class="inq-sep"> · </span><span>40명</span></span></span>
+            <span class="inq-ago">5시간 전</span>
+          </a>
+          <a class="call" href="tel:01000000003" aria-label="예시고객다 님에게 전화 걸기"><span><svg class="i"><use href="#i-phone"/></svg></span></a>
+        </li>
+        <li class="group-head" data-g="confirmed" hidden>운행이 가까운 순서</li>
+        <li class="inq" data-s="confirmed" hidden>
+          <a class="inq-link" href="#" data-out>
+            <span class="inq-status"><span class="badge b-confirmed"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>확정</span></span>
+            <span class="inq-who"><strong>예시고객마</strong><span class="tail num">010-****-0005</span></span>
+            <span class="inq-trip">인천공항 → 서울 <span class="muted">편도</span></span>
+            <span class="inq-meta"><span class="inq-when"><b>9/30(수)</b> <span>14:30 · 3일 뒤</span></span><span class="inq-sep"> · </span><span class="inq-bus"><span>28인승 우등리무진 1대</span><span class="inq-sep"> · </span><span class="muted">22명</span></span></span>
+            <span class="inq-ago">2일 전</span>
+          </a>
+          <a class="call" href="tel:01000000005" aria-label="예시고객마 님에게 전화 걸기"><span><svg class="i"><use href="#i-phone"/></svg></span></a>
+        </li>
+        <li class="inq" data-s="confirmed" hidden>
+          <a class="inq-link" href="#" data-out>
+            <span class="inq-status"><span class="badge b-confirmed"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg>확정</span></span>
+            <span class="inq-who"><strong>예시고객아</strong><span class="tail num">010-****-0008</span></span>
+            <span class="inq-trip">원주 → 부산 <span class="muted">대구 경유</span></span>
+            <span class="inq-meta"><span class="inq-when"><b>10/2(금)</b> <span>07:30 · 5일 뒤</span></span><span class="inq-sep"> · </span><span class="inq-bus"><span>35인승 1대</span><span class="inq-sep"> · </span><span class="muted">33명</span></span></span>
+            <span class="inq-ago">1일 전</span>
+          </a>
+          <a class="call" href="tel:01000000008" aria-label="예시고객아 님에게 전화 걸기"><span><svg class="i"><use href="#i-phone"/></svg></span></a>
+        </li>
+        <li class="inq" data-s="done" hidden>
+          <a class="inq-link" href="#" data-out>
+            <span class="inq-status"><span class="badge b-done">운행 완료</span></span>
+            <span class="inq-who"><strong>예시고객바</strong><span class="tail num">010-****-0006</span></span>
+            <span class="inq-trip">서울 → 속초 <span class="muted">왕복</span></span>
+            <span class="inq-meta"><span class="inq-when"><b>9/20(일)</b> <span>08:00</span></span><span class="inq-sep"> · </span><span class="inq-bus"><span>45인승 1대</span><span class="inq-sep"> · </span><span class="muted">43명</span></span></span>
+            <span class="inq-ago">12일 전</span>
+          </a>
+          <a class="call" href="tel:01000000006" aria-label="예시고객바 님에게 전화 걸기"><span><svg class="i"><use href="#i-phone"/></svg></span></a>
+        </li>
+        <li class="inq" data-s="cancelled" hidden>
+          <a class="inq-link" href="#" data-out>
+            <span class="inq-status"><span class="badge b-cancelled"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg>취소</span><span class="chip-quick"><svg class="i" aria-hidden="true"><use href="#i-phone"/></svg>간편</span></span>
+            <span class="inq-who"><strong>예시고객사</strong><span class="tail num">010-****-0007</span></span>
+            <span class="inq-trip">광주 → 부산</span>
+            <span class="inq-meta"><span class="inq-when"><b>10/8(목)</b> <span class="muted">고객 일정 변경</span></span><span class="inq-sep"> · </span><span class="inq-bus"><span class="muted">차량 미정</span><span class="inq-sep"> · </span><span>15명</span></span></span>
+            <span class="inq-ago">6일 전</span>
+          </a>
+          <a class="call" href="tel:01000000007" aria-label="예시고객사 님에게 전화 걸기"><span><svg class="i"><use href="#i-phone"/></svg></span></a>
+        </li>
+      </ul>
+    </div>
+    <div class="more-row">
+      <button type="button" class="btn btn-secondary" data-out>20건 더 보기</button>
+      <p class="privacy-note">목록에서는 전화번호 가운데를 가려요. 전화 버튼을 누르면 바로 연결돼요.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════ 접수 상세 (간편 접수 예시) ════════════════════════ -->
+<section class="screen" id="detail" aria-labelledby="detail-title" hidden>
+  <header class="m-top">
+    <a class="icon-btn" href="#list" aria-label="접수 목록으로"><svg class="i"><use href="#i-left"/></svg></a>
+    <span class="m-title">접수 상세</span>
+    <button type="button" class="icon-btn" data-open="cancel" aria-label="더보기 — 접수 취소"><svg class="i"><use href="#i-more"/></svg></button>
+  </header>
+  <div class="body">
+    <a class="back d-desktop" href="#list"><svg class="i" aria-hidden="true"><use href="#i-left"/></svg>접수 목록</a>
+    <div class="d-head">
+      <div class="d-badges"><span class="badge b-new" id="d-status"><span class="dot" aria-hidden="true"></span>새 접수</span><span class="chip-quick"><svg class="i" aria-hidden="true"><use href="#i-phone"/></svg>간편 접수 · 전화 확인 필요</span></div>
+      <h1 id="detail-title">예시고객가 님</h1>
+      <p class="meta">오늘 09:42 접수 (25분 전) · 홈 간편 견적 · 접수번호 <span class="num">EXQ7M2A1</span></p>
+    </div>
+
+    <div class="d-cols">
+      <div class="d-side">
+        <div class="card card-pad">
+          <p class="card-title"><svg class="i" aria-hidden="true"><use href="#i-user"/></svg>연락</p>
+          <p class="contact-num num">010-0000-0001</p>
+          <div class="btn-row">
+            <a class="btn btn-secondary" href="tel:01000000001"><svg class="i" aria-hidden="true"><use href="#i-phone"/></svg>전화 걸기</a>
+            <a class="btn btn-secondary" href="sms:01000000001"><svg class="i" aria-hidden="true"><use href="#i-msg"/></svg>문자 보내기</a>
+          </div>
+          <p class="first-time"><svg class="i" aria-hidden="true"><use href="#i-user"/></svg>이 번호로 받은 접수는 이번이 처음이에요</p>
+        </div>
+        <div class="card card-pad d-desktop" id="act-card">
+          <p class="card-title">처리</p>
+          <button type="button" class="btn btn-primary btn-block" data-open="confirm" id="confirm-btn-d">확정하기</button>
+          <p class="hint" style="margin-top:8px" id="confirm-hint-d">확정하면 고객에게 확정 안내 문자가 가요.</p>
+          <div class="divider"></div>
+          <button type="button" class="btn-text danger-link" data-open="cancel"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg>이 접수 취소하기</button>
+          <p class="hint">취소하면 고객에게 문자가 가지 않아요. 전화로 알려 주세요.</p>
+        </div>
+      </div>
+
+      <div class="d-main">
+        <div class="card card-pad">
+          <p class="card-title"><svg class="i" aria-hidden="true"><use href="#i-bus"/></svg>운행</p>
+          <p class="route-big">서울 <svg class="i" aria-hidden="true"><use href="#i-arrow"/></svg> 강릉</p>
+          <dl class="kv">
+            <dt>가는 날</dt><dd>10월 10일 (토)</dd>
+            <dt>오는 날</dt><dd>10월 11일 (일)</dd>
+            <dt>기간</dt><dd>1박 2일</dd>
+            <dt>인원</dt><dd>28명</dd>
+            <dt>출발 시각</dt><dd class="undecided"><svg class="i" aria-hidden="true"><use href="#i-phone"/></svg>전화로 확인</dd>
+            <dt>차량</dt><dd class="undecided"><svg class="i" aria-hidden="true"><use href="#i-phone"/></svg>전화로 확인</dd>
+            <dt>왕복·편도</dt><dd class="undecided"><svg class="i" aria-hidden="true"><use href="#i-phone"/></svg>전화로 확인</dd>
+          </dl>
+        </div>
+
+        <div class="card card-pad">
+          <p class="card-title">전화로 확인할 것 <span class="aside progress" id="chk-progress">0/4 확인</span></p>
+          <div class="checklist" id="checklist">
+            <label><input type="checkbox"><span>차량 종류와 대수</span></label>
+            <label><input type="checkbox"><span>출발 시각과 타는 곳</span></label>
+            <label><input type="checkbox"><span>왕복인지 편도인지</span></label>
+            <label><input type="checkbox"><span>여행 목적 (예: 워크숍 · 가족 여행)</span></label>
+          </div>
+          <p class="hint" style="margin-top:6px">확인한 내용은 아래 메모에 적어 두세요. 확정·취소할 때 메모도 함께 저장돼요.</p>
+        </div>
+
+        <div class="card card-pad memo">
+          <p class="card-title"><label for="memo">메모</label><span class="aside">고객에게는 보이지 않아요</span></p>
+          <textarea id="memo" placeholder="예: 45인승 1대 · 7시 강남역 출발 · 워크숍"></textarea>
+          <div class="memo-foot"><span class="hint">요청 사항: 없음 (간편 접수는 요청 칸이 없어요)</span><button type="button" class="btn-text" data-toast="메모를 저장했어요.">메모 저장</button></div>
+        </div>
+
+        <div class="card card-pad">
+          <p class="card-title"><svg class="i" aria-hidden="true"><use href="#i-sms"/></svg>문자 기록</p>
+          <div class="timeline" id="timeline">
+            <div class="tl"><time class="num">09:42</time><span class="tl-dot"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg></span><p>고객 접수 확인 문자<span class="muted">보냈어요</span></p></div>
+            <div class="tl"><time class="num">09:42</time><span class="tl-dot"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg></span><p>사장님 새 접수 알림 문자<span class="muted">보냈어요</span></p></div>
+            <div class="tl next" id="tl-next"><time></time><span class="tl-dot"></span><p class="muted" style="font-weight:600">확정하면 고객에게 확정 안내 문자가 가요</p></div>
+          </div>
+        </div>
+
+        <details class="card card-pad records">
+          <summary>접수 기록 (동의 · 보관)</summary>
+          <dl class="kv">
+            <dt>개인정보 동의</dt><dd class="num">9월 27일 09:42</dd>
+            <dt>청약철회 제한 동의</dt><dd class="num">9월 27일 09:42</dd>
+            <dt>광고성 정보 수신 동의</dt><dd>미동의</dd>
+            <dt>파기 예정</dt><dd class="num">2027년 9월 27일</dd>
+          </dl>
+        </details>
+
+        <div class="cancel-zone d-mobile">
+          <button type="button" class="btn-text danger-link" data-open="cancel"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg>이 접수 취소하기</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="actionbar">
+    <a class="btn btn-secondary" href="tel:01000000001"><svg class="i" aria-hidden="true"><use href="#i-phone"/></svg>전화</a>
+    <button type="button" class="btn btn-primary" data-open="confirm" id="confirm-btn-m">확정하기</button>
+  </div>
+</section>
+
+    </main>
+  </div>
+
+  <!-- 휴대폰 아래 탭 바 -->
+  <nav class="tabbar" aria-label="관리 메뉴">
+    <a class="tab" href="#home" data-nav="home"><svg class="i" aria-hidden="true"><use href="#i-home"/></svg>홈</a>
+    <a class="tab" href="#list" data-nav="list"><svg class="i" aria-hidden="true"><use href="#i-inbox"/></svg>접수<span class="tab-count" aria-label="새 접수 4건">4</span></a>
+    <a class="tab" href="#" data-out><svg class="i" aria-hidden="true"><use href="#i-web"/></svg>홈페이지</a>
+    <a class="tab" href="#" data-out><svg class="i" aria-hidden="true"><use href="#i-chart"/></svg>기록</a>
+  </nav>
+</div>
+
+<!-- 확정 확인 시트 -->
+<div class="scrim" id="confirm" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="confirm-h">
+    <h2 id="confirm-h">예시고객가 님 접수를 확정할까요?</h2>
+    <div class="sum">서울 → 강릉 · 10월 10일 (토) · 28명<span class="muted">간편 접수 — 차량·시각은 통화로 정한 대로</span></div>
+    <div class="warn" id="confirm-warn"><svg class="i" aria-hidden="true"><use href="#i-alert"/></svg><span id="confirm-warn-t">전화로 확인할 것 4개 중 0개를 확인했어요. 통화로 확인하셨나요?</span></div>
+    <p class="body-t">확정하면 <b class="num">010-0000-0001</b>로 확정 안내 문자가 가요. 보낸 문자는 되돌릴 수 없어요.</p>
+    <div class="sheet-actions">
+      <button type="button" class="btn btn-secondary" data-close>닫기</button>
+      <button type="button" class="btn btn-primary" id="do-confirm">확정하고 문자 보내기</button>
+    </div>
+  </div>
+</div>
+
+<!-- 취소 확인 시트 -->
+<div class="scrim" id="cancel" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="cancel-h">
+    <h2 id="cancel-h">예시고객가 님 접수를 취소할까요?</h2>
+    <p class="body-t">취소하면 되돌릴 수 없어요. <b>고객에게 문자가 가지 않으니</b> 전화로 알려 주세요.</p>
+    <fieldset style="border:0;margin:0;padding:0">
+      <legend class="hint" style="margin-top:14px;font-weight:700">사유 (고르면 메모에 함께 남아요)</legend>
+      <div class="reasons">
+        <input type="radio" name="reason" id="r1"><label for="r1">고객 일정 변경</label>
+        <input type="radio" name="reason" id="r2"><label for="r2">차량을 못 구함</label>
+        <input type="radio" name="reason" id="r3"><label for="r3">연락이 안 됨</label>
+        <input type="radio" name="reason" id="r4"><label for="r4">기타</label>
+      </div>
+    </fieldset>
+    <div class="sheet-actions">
+      <button type="button" class="btn btn-secondary" data-close>닫기</button>
+      <button type="button" class="btn btn-destructive" id="do-cancel">접수 취소하기</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden><svg class="i" aria-hidden="true"><use href="#i-check"/></svg><span id="toast-t"></span><a href="#" id="toast-a" hidden>문자 기록</a></div>
+
+<script>
+(function () {
+  var screens = ["home", "list", "detail"];
+  function route() {
+    var h = location.hash.replace("#", "");
+    var id = screens.indexOf(h) >= 0 ? h : "home";
+    document.querySelectorAll(".screen").forEach(function (s) { s.hidden = s.id !== id; });
+    document.body.dataset.screen = id;
+    var navKey = id === "detail" ? "list" : id;
+    document.querySelectorAll("[data-nav]").forEach(function (a) {
+      if (a.dataset.nav === navKey) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+    });
+    window.scrollTo(0, 0);
+  }
+  window.addEventListener("hashchange", route);
+  route();
+
+  // 상태 탭 — 새 접수(기본) · 확정 · 운행 완료 · 취소 · 전체
+  var tabs = document.querySelectorAll(".stab");
+  tabs.forEach(function (t) {
+    t.addEventListener("click", function () {
+      tabs.forEach(function (x) { x.setAttribute("aria-pressed", String(x === t)); });
+      var f = t.dataset.filter;
+      document.querySelectorAll("#rows [data-s]").forEach(function (r) { r.hidden = !(f === "all" || r.dataset.s === f); });
+      document.querySelectorAll("#rows [data-g]").forEach(function (g) { g.hidden = !(g.dataset.g === f); });
+    });
+  });
+
+  // 전화로 확인할 것 — 진행 표시
+  var checks = document.querySelectorAll("#checklist input");
+  function checked() { return Array.prototype.filter.call(checks, function (c) { return c.checked; }).length; }
+  checks.forEach(function (c) {
+    c.addEventListener("change", function () {
+      document.getElementById("chk-progress").textContent = checked() + "/4 확인";
+    });
+  });
+
+  // 토스트 (3초 · 버튼이 있으면 5초)
+  var toast = document.getElementById("toast"), timer;
+  function showToast(text, withLink) {
+    document.getElementById("toast-t").textContent = text;
+    document.getElementById("toast-a").hidden = !withLink;
+    toast.hidden = false;
+    clearTimeout(timer);
+    timer = setTimeout(function () { toast.hidden = true; }, withLink ? 5000 : 3000);
+  }
+  window.__showToast = showToast;
+  document.querySelectorAll("[data-toast]").forEach(function (b) { b.addEventListener("click", function () { showToast(b.dataset.toast, false); }); });
+  document.querySelectorAll("[data-out]").forEach(function (a) {
+    a.addEventListener("click", function (e) { e.preventDefault(); showToast("이 화면은 시안 범위 밖이에요 (관리 홈 · 접수 · 상세만).", false); });
+  });
+
+  // 확인 시트 — 열면 '닫기'에 포커스, Esc·바깥 누르면 닫힘, 포커스는 시트 안에서만 돈다
+  var lastFocus = null;
+  function openSheet(id) {
+    var scrim = document.getElementById(id);
+    if (id === "confirm") {
+      var n = checked();
+      document.getElementById("confirm-warn").hidden = n === 4;
+      document.getElementById("confirm-warn-t").textContent = "전화로 확인할 것 4개 중 " + n + "개를 확인했어요. 통화로 확인하셨나요?";
+    }
+    lastFocus = document.activeElement;
+    scrim.hidden = false;
+    scrim.querySelector("[data-close]").focus();
+  }
+  function closeSheet(scrim) { scrim.hidden = true; if (lastFocus) lastFocus.focus(); }
+  window.__openSheet = openSheet;
+  document.querySelectorAll("[data-open]").forEach(function (b) { b.addEventListener("click", function () { openSheet(b.dataset.open); }); });
+  document.querySelectorAll(".scrim").forEach(function (scrim) {
+    scrim.addEventListener("click", function (e) { if (e.target === scrim) closeSheet(scrim); });
+    scrim.querySelectorAll("[data-close]").forEach(function (b) { b.addEventListener("click", function () { closeSheet(scrim); }); });
+    scrim.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") { closeSheet(scrim); return; }
+      if (e.key !== "Tab") return;
+      var f = scrim.querySelectorAll("button, [href], input, textarea");
+      var first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    });
+  });
+
+  document.getElementById("do-confirm").addEventListener("click", function () {
+    closeSheet(document.getElementById("confirm"));
+    var st = document.getElementById("d-status");
+    st.className = "badge b-confirmed";
+    st.innerHTML = '<svg class="i" aria-hidden="true"><use href="#i-check"/></svg>확정';
+    var next = document.getElementById("tl-next");
+    next.className = "tl";
+    next.innerHTML = '<time class="num">10:08</time><span class="tl-dot"><svg class="i" aria-hidden="true"><use href="#i-check"/></svg></span><p>고객 확정 안내 문자<span class="muted">보내는 중 — 결과가 여기에 표시돼요</span></p>';
+    // 확정 뒤: 바로 '운행 완료'를 내밀지 않는다(운행일 전 완료 처리 실수 방지 — 운행일이 지나면 그때 나타난다).
+    var m = document.getElementById("confirm-btn-m");
+    var sms = document.createElement("a");
+    sms.className = "btn btn-secondary";
+    sms.href = "sms:01000000001";
+    sms.innerHTML = '<svg class="i" aria-hidden="true"><use href="#i-msg"/></svg>문자 보내기';
+    m.replaceWith(sms);
+    var d = document.getElementById("confirm-btn-d");
+    var note = document.createElement("p");
+    note.className = "hint";
+    note.style.cssText = "font-size:15px;font-weight:700;color:var(--text-brand)";
+    note.textContent = "확정했어요 · 10월 10일(토) 운행. 운행일이 지나면 '운행 완료' 버튼이 여기에 나타나요.";
+    d.replaceWith(note);
+    document.getElementById("confirm-hint-d").hidden = true;
+    showToast("확정했어요. 확정 안내 문자를 보내고 있어요.", true);
+  });
+  document.getElementById("do-cancel").addEventListener("click", function () {
+    closeSheet(document.getElementById("cancel"));
+    var st = document.getElementById("d-status");
+    st.className = "badge b-cancelled";
+    st.innerHTML = '<svg class="i" aria-hidden="true"><use href="#i-x"/></svg>취소';
+    showToast("취소했어요. 고객에게 전화로 알려 주세요.", false);
+  });
+})();
+</script>
+</body>
+</html>

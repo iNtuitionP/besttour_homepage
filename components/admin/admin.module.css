@@ -1,0 +1,3505 @@
+/*
+ * 관리자 화면 — 예약 현황 목록·상세 (P5-3). 목업 mockups/admin.html 의 구조(탭 · 표 · 배지 · 상세 정의목록)를 역할 토큰으로 옮겼다.
+ * 목업의 "예상가" 열은 옮기지 않는다 — 가격 표시는 확정 기준(스펙 §12)에서 사라졌다.
+ *
+ * 색은 styles/semantic.css 의 역할 토큰만(HEX·rgba·원시 토큰 금지 — CLAUDE.md §4). 간격·라운드도 역할 토큰만
+ * (tests/layout.test.ts §4 가 components/ 아래 모든 CSS Module 을 검사한다). px 는 치수·타이포·선 두께에만.
+ * 팔레트에 상태색(빨강·초록)이 없다 — P5-20 부터 상태 배지는 브랜드 원시색만 참조하는 --status-* 역할 토큰(골드·가장 짙은 보라·옅은 보라·회색)
+ * 이고, 색만으로 구분하지 않는다: 글자 + 표식(점·!·✓·×·전화) + 선(실선·점선) — 아래 .statusBadge.
+ * **채운 보라(주 버튼 색 — --action-primary-bg 와 그 호버·누름)는 버튼 전용**이다(시안 ⑤-0). 현재 표시·선택된 필터·노출 중 배지는
+ * 옅은 면 + 띠/테두리로 그린다. 검사는 토큰 이름이 아니라 **원시색으로 풀어서** 한다(다른 이름으로 같은 색을 칠해도 잡힌다 — 리뷰 P2-1).
+ * 예외는 현재 표시의 띠(4px 이하 선)와 누를 수 없는 통계 막대(.barFill · 추이의 확정 조각 · 그 범례)뿐 —
+ * tests/admin-status-badge.test.ts 가 사유와 함께 잠근다.
+ * 공통 골격(.main .wrap .pageHead .title .sub .card)은 components/quote/quote.module.css 를 그대로 재사용한다.
+ */
+
+/* ── 셸 — 메뉴 (P5-20 · 시안 docs/handoff/2026-09-27-admin-ux 셸 · components/admin/AdminTabs.tsx) ───────────
+ * 한 벌의 마크업을 폭에 따라 보여 준다: ≥1024px 왼쪽 사이드바 248px · <1024px 위 제목줄 56px + 아래 탭 바 4개(56px + safe area).
+ * 사이드바는 position:fixed 다 — 만들 때(P5-20) html·body 가 overflow-x:hidden 이라 sticky 가 달라붙지 않았다(body 가 스크롤하지 않는
+ * 스크롤 상자가 된다). 그래서 격자의 첫 칸을 비워 자리를 잡고, 사이드바를 그 자리에 고정해 둔다(간격 px 없이 — 격자 칸이 곧 자리다).
+ * 위 제목줄(<1024px)은 P5-21 부터 **sticky** 다 — 셸이 있는 문서의 body 만 `overflow-x: clip`(스크롤 상자를 만들지 않는 자르기)으로 바꿔
+ * sticky 가 뷰포트에 붙게 했다(아래 :global(body):has(.shell)). 그때는 공개 머리글·지도가 새로 달라붙어 겹치는 회귀 때문에 전역을 바꾸지
+ * 않았지만(P5-21 보고서 ④), P7-4 에서 공개 쪽 높이를 토큰(--layout-header-h)으로 맞추고 전역 규칙(app/globals.css)도 clip 으로 바꿨다.
+ * 그래서 아래 규칙은 지금 전역과 같은 값을 다시 거는 셈이다 — 지우지 않고 두는 것은 셸의 sticky 가 전역 규칙에 기대지 않게 하려는 것이다.
+ * 이동은 늘 화면 아래 탭 바가 맡는다(fixed). 탭 바가 본문 끝을 가리지 않게 본문 끝에 탭 바 높이만큼 빈 자리(.tabbarSpacer)를 두고,
+ * 스크롤 도중에도 가리지 않게 문서의 아래 scroll-padding 을 같은 높이로 둔다(포커스·실패 배너 — 리뷰 P1-1 · 아래 :global(html)).
+ * 위도 같다 — 붙어 있는 제목줄 밑으로 포커스가 숨지 않게 위 scroll-padding 을 제목줄 높이 + 틈으로 둔다.
+ * 현재 표시는 **옅은 면 + 띠 + 굵은 글자**다 — 채운 보라(--action-primary-bg)는 버튼 전용이다(시안 ⑤-0 · 제안서 ②-9).
+ */
+.shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  /* 줄은 내용 높이 — 늘리면 짧은 화면에서 남는 높이가 위 제목줄에 나눠 붙는다(375px 실측 56px → 272px) */
+  align-content: start;
+  min-height: 100vh;
+  background: var(--bg-page);
+  /* P5-23 라운드 2(C-15 · B-13) — 관리자 글은 낱말 안에서 꺾이지 않고(keep-all), 문단의 마지막 줄에 낱말 하나만 남기지 않는다
+     (text-wrap: pretty — 지원하는 브라우저에서만 나아지는 점진적 개선. 모르는 브라우저는 예전처럼 꺾는다). 둘 다 상속된다. */
+  word-break: keep-all;
+  text-wrap: pretty;
+}
+.skip {
+  position: absolute;
+  left: var(--space-inline-xs);
+  top: calc(-1 * var(--space-section));
+  z-index: 100;
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  background: var(--bg-surface);
+  border: 2px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.skip:focus {
+  top: var(--space-stack-xs);
+}
+/* 화면에서만 숨긴다(스크린리더는 읽는다) — AdminSkeleton.module.css 와 같은 방식 */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* 사이드바(≥1024px) */
+.sidebar {
+  display: none;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  padding: 0 var(--space-inline-xs) var(--space-stack-sm);
+}
+.brandMark {
+  width: 32px;
+  height: auto;
+  flex: none;
+}
+.brandName {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+.sideNav {
+  display: flex;
+  flex-direction: column;
+}
+.sideList {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+}
+.sideGroup {
+  margin: var(--space-stack-sm) 0 0;
+}
+.sideGroupLabel {
+  padding: 0 var(--space-inline-xs) var(--space-stack-xs);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.sideItem {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  min-height: 44px;
+  padding: 0 var(--space-inline-xs);
+  border-radius: var(--radius-control);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+.sideItem:hover {
+  background: var(--bg-subtle);
+}
+.sideItem:focus-visible,
+.sideLink:focus-visible,
+.tabItem:focus-visible,
+.iconBtn:focus-visible,
+.hubItem:focus-visible,
+.skip:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.sideItem[aria-current] {
+  background: var(--bg-subtle);
+  color: var(--text-brand);
+  font-weight: 800;
+}
+.sideItem[aria-current]::before {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--space-inline-xs));
+  top: var(--space-stack-xs);
+  bottom: var(--space-stack-xs);
+  width: 4px;
+  border-radius: 0 var(--radius-chip) var(--radius-chip) 0;
+  background: var(--border-strong);
+}
+.sideItem[aria-disabled="true"] {
+  color: var(--action-disabled-fg);
+  cursor: not-allowed;
+}
+.sideLabel {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.sideNote {
+  font-size: 12px;
+  font-weight: 600;
+}
+/* 선 아이콘 — 라벨이 늘 함께 붙는 장식(--icon-default 는 보더·아이콘 전용 회색). 현재 항목은 브랜드색 */
+.navIcon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--icon-default);
+}
+.sideItem[aria-current] .navIcon {
+  color: var(--icon-brand);
+}
+/* 새 접수 배지 — 골드(새 접수와 같은 톤 · 시안). 숫자는 aria-hidden, 스크린리더 문장은 .srOnly */
+.navCount {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 var(--space-inline-xs);
+  border: 1px solid var(--status-attention-border);
+  border-radius: 999em;
+  background: var(--status-attention-bg);
+  color: var(--status-attention-fg);
+  font-size: 12.5px;
+  font-weight: 800;
+  line-height: 1;
+}
+.sideFoot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-stack-xs);
+  margin: auto 0 0;
+  padding: var(--space-stack-sm) var(--space-inline-xs) 0;
+  border-top: 1px solid var(--border-decorative);
+}
+.sideWho {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+}
+.sideLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  min-height: 44px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-link);
+  text-decoration: none;
+  border-radius: var(--radius-control);
+}
+.sideLink .navIcon {
+  color: var(--icon-brand);
+}
+/* 로그아웃(P5-11) — form 제출 버튼. 보조 버튼 모양 */
+.signOut {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--space-inline-sm);
+  border: 1px solid var(--action-secondary-border);
+  border-radius: var(--radius-control);
+  background: var(--action-secondary-bg);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--action-secondary-fg);
+  cursor: pointer;
+}
+.signOut:hover,
+.topSignOut:hover {
+  background: var(--action-secondary-bg-hover);
+}
+.signOut:focus-visible,
+.topSignOut:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* 위 제목줄(<1024px) — 브랜드 · 홈페이지 보기 · 로그아웃. 스크롤해도 위에 붙는다(sticky — 탭 바(30)·시트(50)·토스트(60) 아래 층) */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  min-height: 56px;
+  padding: 0 var(--space-inline-xs) 0 var(--space-page-x);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-decorative);
+}
+/* 셸이 있는 문서만 — body 가 스크롤 상자가 되지 않게(overflow-x: hidden 은 스크롤 상자를 만들어 sticky 를 죽인다). clip 은 넘친 것을 똑같이
+ * 자르지만 스크롤 상자를 만들지 않는다. clip 을 모르는 브라우저에서는 이 선언이 빠져 전역의 hidden 이 남는다(제목줄이 예전처럼 흘러갈 뿐이다). */
+:global(body):has(.shell) {
+  overflow-x: clip;
+}
+.topBrand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+.topBrand .brandMark {
+  width: 28px;
+}
+.iconBtn {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: var(--radius-control);
+  color: var(--icon-brand);
+}
+.iconBtn .navIcon {
+  color: var(--icon-brand);
+}
+.iconBtn:hover {
+  background: var(--bg-subtle);
+}
+.topSignOut {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--space-inline-xs);
+  border: 1px solid var(--action-secondary-border);
+  border-radius: var(--radius-control);
+  background: var(--action-secondary-bg);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--action-secondary-fg);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* 본문 자리 — 건너뛰기 링크의 목적지. 포커스 링은 키보드일 때만 */
+.content {
+  min-width: 0;
+}
+.content:focus {
+  outline: none;
+}
+/* 본문 끝 여백 = 탭 바 높이(항목 56px + 위 테두리 1px) + 틈 + safe area — 아래 scroll-padding 과 같은 값이라 마지막 줄도 탭 바 위로 온다 */
+.tabbarSpacer {
+  height: calc(56px + 1px + var(--space-stack-xs) + env(safe-area-inset-bottom));
+}
+/* 스크롤 여백(리뷰 P1-1 · WCAG 2.2 SC 2.4.11) — 문서가 스크롤할 때 아래 탭 바 자리만큼을 "보이는 곳" 에서 뺀다.
+ * 브라우저의 포커스 스크롤(Tab)과 scrollIntoView(실패 배너 — AdminBanner)가 이 여백을 따라 탭 바 **위**에 멈춘다.
+ * 문서의 스크롤은 뷰포트(<html>)가 맡으므로 <html> 에 걸고, 셸이 있는 화면에만 건다(:has(.shell) — 로그인 화면·공개 사이트는 그대로).
+ * 탭 바 높이는 px 로 적는다(항목이 px) — rem 이면 글자 크기 설정에 따라 여백과 바가 어긋난다. 틈(간격 토큰)은 포커스 링 몫이다.
+ * 1024px 이상(탭 바 없음)은 아래 미디어 쿼리에서 되돌린다.
+ * 위 여백(P5-21) = 붙어 있는 위 제목줄 높이(min-height 56px — border-box 라 아래 테두리 포함) + 틈. */
+:global(html):has(.shell) {
+  scroll-padding-top: calc(56px + var(--space-stack-xs));
+  scroll-padding-bottom: calc(56px + 1px + var(--space-stack-xs) + env(safe-area-inset-bottom));
+}
+
+/* 아래 탭 바(<1024px) — 4개 · 56px + safe area. 현재 = 보라 글자·아이콘 + 위 3px 띠 */
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border-decorative);
+}
+.tabbarList {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  list-style: none;
+}
+.tabItem {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 56px;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+.tabItem[aria-current] {
+  color: var(--text-brand);
+}
+.tabItem[aria-current]::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 28%;
+  right: 28%;
+  height: 3px;
+  border-radius: 0 0 var(--radius-chip) var(--radius-chip);
+  background: var(--border-strong);
+}
+.tabItem[aria-disabled="true"] {
+  color: var(--action-disabled-fg);
+}
+.tabIcon {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tabCount {
+  position: absolute;
+  top: var(--space-stack-xs);
+  left: calc(50% + var(--space-inline-xs));
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 var(--space-inline-xs);
+  border: 1px solid var(--status-attention-border);
+  border-radius: 999em;
+  background: var(--status-attention-bg);
+  color: var(--status-attention-fg);
+  /* 관리자 글자는 12px 아래로 내려가지 않는다(P5-23 라운드 2 · 컨트롤러 C-17 — 11px 이었다) */
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+@media (min-width: 1024px) {
+  .shell {
+    grid-template-columns: 248px minmax(0, 1fr);
+  }
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    width: 248px;
+    overflow-y: auto;
+    padding: var(--space-stack-md) var(--space-inline-sm) var(--space-stack-sm);
+    background: var(--bg-surface);
+    border-right: 1px solid var(--border-decorative);
+  }
+  .content {
+    grid-column: 2;
+  }
+  .topbar,
+  .tabbar,
+  .tabbarSpacer {
+    display: none;
+  }
+  :global(html):has(.shell) {
+    scroll-padding-top: auto;
+    scroll-padding-bottom: auto;
+  }
+}
+
+/* ── 허브 화면(/admin/site · /admin/records — P5-20) ─────────────────────────
+ * 휴대폰 탭 바의 '홈페이지' · '기록' 이 오는 곳. 항목마다 한 줄이 전부 링크(44px 넘는 누를 자리)이고, 제목 아래에 지금 상태 한 줄.
+ */
+.hubList {
+  display: flex;
+  flex-direction: column;
+  margin: var(--space-stack-sm) 0 0;
+  list-style: none;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--elevation-raised);
+}
+.hubList > li + li {
+  border-top: 1px solid var(--border-decorative);
+}
+.hubItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-sm);
+  min-height: 64px;
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  border-radius: var(--radius-surface);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+a.hubItem:hover {
+  background: var(--bg-subtle);
+}
+.hubText {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.hubTitle {
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+.hubStatus {
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.hubChevron {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--icon-default);
+}
+
+/* ── 관리 홈 대시보드(/admin — P5-21 · 시안 #home) ───────────────────────────────
+ * 날짜 + 한 줄 요약 · (넓은 화면) 주 버튼 → 배너 → 할 일 카드 4장(휴대폰 2×2 · 1024px 이상 4열 · 카드 전체가 링크) →
+ * 새 접수 미리보기(목록과 같은 행 — 아래 .inq) · 다가오는 운행 · 홈페이지 점검 · 이번 달(1024px 이상 두 칸).
+ * 카드의 왼쪽 5px 선이 톤이다(새 접수 = 골드 테두리 · 급함 = 가장 짙은 보라 · 이상 없음 = 옅은 보라 · 보통 = 장식선) — 무엇인지는 글자가 말한다.
+ */
+/* 버튼 모양의 링크 — .btnPrimary 와 함께 쓴다(면·글자는 그 규칙이) */
+.btnLink {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+.homeHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-stack-sm) var(--space-inline-md);
+  padding: var(--space-stack-lg) 0 var(--space-stack-sm);
+}
+.homeHeadText {
+  flex: 1 1 20rem;
+  min-width: 0;
+}
+.eyebrow {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.lede {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+/* 넓은 화면에서만 — 휴대폰은 카드가 같은 곳으로 간다(시안 d-desktop) */
+.desktopOnly {
+  display: none;
+}
+.todoGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-inline-xs);
+  margin: var(--space-stack-sm) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.todoGrid > li {
+  display: flex;
+  min-width: 0;
+}
+.todo {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-stack-xs) / 2);
+  width: 100%;
+  min-height: 118px;
+  padding: var(--space-stack-sm) var(--space-inline-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-left-width: 5px;
+  border-radius: var(--radius-surface);
+  box-shadow: var(--elevation-raised);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+.todo:hover {
+  border-top-color: var(--border-strong);
+  border-right-color: var(--border-strong);
+  border-bottom-color: var(--border-strong);
+}
+.todo:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.todo[data-tone="attention"] {
+  border-left-color: var(--status-attention-border);
+}
+.todo[data-tone="urgent"] {
+  border-left-color: var(--status-urgent-bg);
+}
+.todo[data-tone="ok"] {
+  border-left-color: var(--status-confirmed-border);
+}
+.todo[data-tone="plain"] {
+  border-left-color: var(--border-decorative);
+}
+/* 카드 이름(P5-23 라운드 3 · 컨트롤러 2) — 오른쪽 위 화살표(.todoArrow: 카드 오른쪽 끝에서 8~26px)가 글자 상자와 겹치는 폭은 9px 뿐이라
+ * 그만큼 + 3px 만 비운다(예전 24px 는 이름 폭을 15px 더 가져가 375 에서 "답이 늦은 접수" 가 꺾였다). 꺾여야 하면 앞에서부터 채운다
+ * (text-wrap: wrap — 셸의 pretty 를 끈다: pretty 는 "접수" 가 혼자 남지 않게 "답이 / 늦은 접수" 로 당겼다. 이름은 "답이 늦은 / 접수" 가 자연스럽다). */
+.todoLabel {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-inline-xs) * 0.75);
+  padding: 0 calc(var(--space-inline-xs) * 1.5) 0 0;
+  font-size: 14.5px;
+  font-weight: 800;
+  line-height: 1.4;
+  text-wrap: wrap;
+}
+/* 좁은 휴대폰(400px 미만 — 카드 두 칸이 각 170px 아래)에서는 이름 글자를 조금 줄여 360px 이상에서 한 줄에 든다 */
+@media (max-width: 399.98px) {
+  .todoLabel {
+    font-size: 14px;
+    letter-spacing: -0.01em;
+  }
+}
+.todoDot {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--status-attention-bg);
+  border: 1px solid var(--status-attention-border);
+}
+.todoIcon,
+.todoArrow,
+.todoOkIcon,
+.secLinkIcon,
+.checkIcon,
+.groupIcon {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.todoIcon {
+  width: 18px;
+  height: 18px;
+  color: var(--icon-default);
+}
+.todo[data-tone="urgent"] .todoIcon {
+  color: var(--status-urgent-bg);
+}
+.todoValue {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-inline-xs) * 0.75);
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+.todoValue[data-kind="ok"],
+.todoValue[data-kind="problem"],
+.todoValue[data-kind="waiting"] {
+  flex-wrap: wrap;
+  font-size: 22px;
+  color: var(--text-brand);
+}
+.todoOkIcon {
+  width: 22px;
+  height: 22px;
+  stroke-width: 2.6;
+}
+/* 카드 덧말은 두세 줄짜리 짧은 글 — 줄 길이를 고르게(balance · 라운드 3): 좁은 카드에서 "…켜지지 않았을 수 / 있어요" 처럼
+ * 마지막 줄에 낱말 하나만 남지 않는다(셸의 pretty 는 여기서 "있어요" 를 남겼다 — 320px 실측) */
+.todoSub {
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  text-wrap: balance;
+}
+/* 카드의 작은 덧줄 — 문자 발송 카드의 사장님 쪽 알림 실패(배너가 아니다 · 컨트롤러 결정 P1-2) */
+.todoMinor {
+  margin-top: calc(var(--space-stack-xs) / 2);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  text-wrap: balance;
+}
+.todoUnknown {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.todoArrow {
+  position: absolute;
+  top: var(--space-stack-sm);
+  right: var(--space-inline-xs);
+  width: 18px;
+  height: 18px;
+  color: var(--icon-default);
+}
+.homeCols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.homeCol {
+  min-width: 0;
+}
+.homeSec {
+  margin: var(--space-stack-md) 0 0;
+}
+/* 절 머리 — 링크(44px 누를 자리)가 있든 없든 같은 높이(P5-23 라운드 2 B-11: 1280 에서 '새 접수'(옆에 [전체 보기])와 '다가오는 운행'(링크 없음)의
+ * 제목이 서로 다른 높이에 섰다). 제목은 이 높이의 가운데 — 두 칸의 제목이 한 줄에 선다. */
+.secHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 var(--space-inline-sm);
+  min-height: 44px;
+  margin: 0 0 var(--space-stack-xs);
+}
+.secTitle {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+.secCount {
+  color: var(--text-brand);
+  font-variant-numeric: tabular-nums;
+}
+.secMuted {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.secLink {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--space-inline-xs) / 4);
+  min-height: 44px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-link);
+  text-decoration: none;
+}
+.secLink:focus-visible,
+.checkLink:focus-visible,
+.inlineLink:focus-visible,
+.bannerLink:focus-visible,
+.miniStat:focus-visible,
+.tripLink:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.secLinkIcon {
+  width: 18px;
+  height: 18px;
+}
+/* 흰 판 하나(다가오는 운행 · 홈페이지 점검 · 미리보기의 빈/모름 한 줄) */
+.panel {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--elevation-raised);
+}
+.panelNote {
+  margin: 0;
+  padding: var(--space-stack-sm) var(--space-inline-sm);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.inlineLink {
+  color: var(--text-link);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+/* 다가오는 운행 — 날짜별 묶음 */
+.tripDay {
+  padding: var(--space-stack-sm) var(--space-inline-sm);
+  border-top: 1px solid var(--border-decorative);
+}
+.tripDay:first-child {
+  border-top: 0;
+}
+.tripDayHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 var(--space-inline-xs);
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+}
+.tripList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.trip {
+  margin: var(--space-stack-xs) 0 0;
+}
+.tripLink {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: var(--space-inline-xs);
+  align-items: start;
+  min-height: 44px;
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+.tripLink:hover .tripRoute {
+  text-decoration: underline;
+}
+.tripTime {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.5;
+  color: var(--text-brand);
+  font-variant-numeric: tabular-nums;
+}
+.tripTime[data-undecided="true"] {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.tripBody {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: calc(var(--space-stack-xs) / 2);
+  min-width: 0;
+}
+.tripRoute {
+  font-size: 15px;
+  font-weight: 700;
+}
+.tripMeta {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+/* 홈페이지 점검 — 한 줄에 그림 · 이름과 지금 상태 · 할 일 링크.
+ * P5-23 라운드 2: 이름이 .checkRow 였는데 폼의 체크 줄(.checkRow — 아래 팝업·공지 폼)과 **같은 이름**이라 CSS 모듈이 두 규칙을 한 클래스로 합쳤다
+ * (폼의 체크 줄에 위 테두리·안쪽 여백이 붙고, 여기는 display 가 flex 로 덮였다). 이름을 나눴다. */
+.checkItem {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: var(--space-inline-xs);
+  align-items: center;
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  border-top: 1px solid var(--border-decorative);
+}
+.checkItem:first-child {
+  border-top: 0;
+}
+.checkIcon {
+  width: 22px;
+  height: 22px;
+  color: var(--icon-default);
+}
+.checkItem[data-warn="true"] .checkIcon {
+  color: var(--accent-decorative-strong);
+}
+.checkText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+}
+.checkName {
+  font-size: 15px;
+  font-weight: 700;
+}
+.checkStatus {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.checkLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 14.5px;
+  font-weight: 800;
+  color: var(--text-link);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.miniStat {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 var(--space-inline-xs);
+  margin: var(--space-stack-sm) 0 0;
+  padding: 0 var(--space-inline-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--elevation-raised);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+@media (min-width: 1024px) {
+  .desktopOnly {
+    display: inline-flex;
+  }
+  .todoGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--space-inline-sm);
+  }
+  .homeCols {
+    grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+    column-gap: var(--space-inline-md);
+  }
+}
+
+/* ── 접수 목록(P5-21 · 시안 #list) — 상태 탭 · 행(카드 / 넓은 목록의 표 모양) · 더 보기 ─────────────────
+ * 탭 줄만 가로로 스크롤한다(페이지는 넘치지 않는다). 현재 탭 = 보라 글자 + 아래 3px 띠(채운 보라 아님). 건수: 새 접수 = 골드 알약(메뉴 배지와 같은 톤) ·
+ * 나머지 = 옅은 알약. 선은 inset 그림자로 그린다(음수 여백 px 없이 — tests/layout.test.ts §4).
+ */
+.statusTabs {
+  /* 위치 기준: 탭 안의 srOnly(absolute)가 이 상자에 담기게 한다 — 없으면 기준이 문서가 되어 스크롤 상자의 잘림도 셸의 clip 도
+     받지 않고 문서 폭을 늘렸다(375 실측 428px). */
+  position: relative;
+  margin: var(--space-stack-sm) 0 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  /* 지금 탭(TabIntoView 의 scrollIntoView)과 키보드 포커스 탭을 가장자리에 붙이지 않고 옅은 띠(아래 마스크 2.5rem)만큼 안쪽에 세운다 —
+     띠 밑에서 흐려지지 않게(P5-23 리뷰 P2-2). 폭은 마스크와 같아야 한다(tests/admin-design-r2.test.ts 가 마스크에서 읽어 대조한다). */
+  scroll-padding-inline: 2.5rem;
+}
+.statusTabs::-webkit-scrollbar {
+  display: none;
+}
+/* 탭 줄이 옆으로 밀릴 수 있을 때 가려진 쪽 끝을 옅게(P5-23 라운드 2 · 컨트롤러 C-16) — "더 있다" 는 표시. 판정은 TabIntoView 가
+ * 스크롤 위치로 data-fade-start · data-fade-end 에 단다. 마스크는 알파만 쓴다(불투명한 역할 토큰이면 어느 것이든 같다 — 새 색이 아니다). */
+.statusTabs[data-fade-end="true"] {
+  mask-image: linear-gradient(to right, var(--text-primary) calc(100% - 2.5rem), transparent);
+}
+.statusTabs[data-fade-start="true"] {
+  mask-image: linear-gradient(to left, var(--text-primary) calc(100% - 2.5rem), transparent);
+}
+.statusTabs[data-fade-start="true"][data-fade-end="true"] {
+  mask-image: linear-gradient(to right, transparent, var(--text-primary) 2.5rem, var(--text-primary) calc(100% - 2.5rem), transparent);
+}
+.statusTabList {
+  display: flex;
+  gap: calc(var(--space-inline-xs) / 2);
+  width: max-content;
+  min-width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  box-shadow: inset 0 -1px 0 var(--border-decorative);
+}
+.statusTabList > li {
+  flex: none;
+}
+.statusTab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  min-height: 48px;
+  padding: 0 calc(var(--space-inline-xs) * 1.5);
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.statusTab:hover {
+  color: var(--text-brand);
+}
+.statusTab:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+/* 현재 탭 — aria-current="true"(한 문서의 "page" 는 사이드바 '접수' 하나 · 리뷰 P2-14) */
+.statusTab[aria-current="true"] {
+  color: var(--text-brand);
+  font-weight: 800;
+  box-shadow: inset 0 -3px 0 var(--border-strong);
+}
+.statusTabCount {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 var(--space-inline-xs);
+  border-radius: 999em;
+  background: var(--bg-subtle);
+  color: var(--text-brand);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.statusTabCount[data-tone="attention"] {
+  background: var(--status-attention-bg);
+  color: var(--status-attention-fg);
+  border: 1px solid var(--status-attention-border);
+}
+.listHint {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.moreRow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-stack-xs);
+  margin: var(--space-stack-sm) 0 0;
+}
+.privacyNote {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+/* 행 — 한 벌의 마크업(components/admin/reservationRow.tsx). 휴대폰 = 카드: 상태·경과 / 이름·가린 번호 / 구간 / 날짜·차량·인원 + 오른쪽 전화 */
+.inqTable {
+  margin: var(--space-stack-sm) 0 0;
+}
+.inqHead {
+  display: none;
+}
+.inqList {
+  display: grid;
+  gap: var(--space-stack-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.inqGroup {
+  margin: 0;
+}
+.groupHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  margin: var(--space-stack-sm) 0 var(--space-stack-xs);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+.inqGroup:first-of-type .groupHead {
+  margin-top: 0;
+}
+.groupHead[data-tone="urgent"] {
+  color: var(--status-urgent-bg);
+}
+/* 묶음 제목 밑 한 줄 — 확정 탭의 '운행일이 지난 확정' 안내 · 다가오는 운행이 없을 때의 문장(수정 라운드 · 리뷰 P1-1) */
+.groupNote {
+  margin: 0 0 var(--space-stack-xs);
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.groupIcon {
+  width: 16px;
+  height: 16px;
+}
+.inq {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 56px;
+  align-items: stretch;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--elevation-raised);
+}
+/* 답이 늦은 접수 — 왼쪽 4px 띠(칸을 밀지 않게 안쪽 그림자로) */
+.inq[data-urgent="true"] {
+  box-shadow: inset 4px 0 0 var(--status-urgent-bg), var(--elevation-raised);
+}
+.inqLink {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "status ago"
+    "who who"
+    "trip trip"
+    "meta meta";
+  gap: calc(var(--space-stack-xs) / 2) var(--space-inline-xs);
+  min-width: 0;
+  padding: var(--space-stack-sm) calc(var(--space-inline-xs) / 2) var(--space-stack-sm) var(--space-inline-sm);
+  border-radius: var(--radius-surface) 0 0 var(--radius-surface);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+.inqLink:hover .inqName {
+  text-decoration: underline;
+}
+.inqLink:focus-visible,
+.call:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.inqStatus {
+  grid-area: status;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: calc(var(--space-inline-xs) * 0.75);
+  min-width: 0;
+}
+.inqAgo {
+  grid-area: ago;
+  align-self: center;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.inqAgo[data-late="true"] {
+  color: var(--status-urgent-bg);
+}
+.inqWho {
+  grid-area: who;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-inline-xs);
+  margin: calc(var(--space-stack-xs) / 2) 0 0;
+  min-width: 0;
+}
+.inqName {
+  font-size: 17px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.inqPhone {
+  font-size: 14px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.inqTrip {
+  grid-area: trip;
+  min-width: 0;
+  font-size: 15.5px;
+  font-weight: 700;
+}
+.inqMuted {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.inqMeta {
+  grid-area: meta;
+  min-width: 0;
+  font-size: 14.5px;
+  color: var(--text-secondary);
+}
+.inqDate {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+/* 카드의 메타 줄 = 조각 줄(.segs · .segsIn · .seg — 날짜·시각 / 차량·인원 두 조각 · 차량과 인원은 붙은 구분점으로 한 조각).
+ * 넓은 목록(표 모양)은 아래 규칙이 칸으로 바꾼다. */
+/* 출발 칸의 둘째 덩어리 — "시각 · 남은 날"(넓은 목록에서 한 줄 · 가운데점 앞은 줄바꿈 없는 공백 · 리뷰 P2-6) */
+.inqTime {
+  font-variant-numeric: tabular-nums;
+}
+.call {
+  display: grid;
+  place-items: center;
+  border-left: 1px solid var(--border-decorative);
+  border-radius: 0 var(--radius-surface) var(--radius-surface) 0;
+  color: var(--icon-brand);
+  text-decoration: none;
+}
+.callCircle {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--bg-subtle);
+}
+.call:hover .callCircle {
+  box-shadow: inset 0 0 0 2px var(--border-strong);
+}
+.callIcon {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 넓은 목록(접수 화면 ≥1024px) — 같은 행을 표 모양 7칸으로: 상태 · 고객 · 운행 구간 · 출발 · 차량·인원 · 접수 · [전화].
+ * 칸은 전부 줄어들 수 있다(minmax(0, …)) — 사이드바(248px)가 본문을 줄여도 가로 스크롤이 없다(옛 min-width 68rem 표를 없앴다). */
+@media (min-width: 1024px) {
+  .inqTable[data-layout="table"] {
+    overflow: hidden;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-decorative);
+    border-radius: var(--radius-surface);
+    box-shadow: var(--elevation-raised);
+  }
+  .inqTable[data-layout="table"] .inqHead {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 56px;
+    align-items: center;
+    padding: var(--space-stack-xs) 0;
+    background: var(--bg-subtle);
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--text-secondary);
+  }
+  .inqHeadCells,
+  .inqTable[data-layout="table"] .inqLink {
+    grid-template-columns: minmax(104px, 0.9fr) minmax(0, 1.2fr) minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1.1fr) minmax(72px, 0.6fr);
+    grid-template-areas: none;
+    column-gap: var(--space-inline-xs);
+  }
+  .inqHeadCells {
+    display: grid;
+    padding: 0 calc(var(--space-inline-xs) / 2) 0 var(--space-inline-sm);
+  }
+  .inqHeadCall {
+    text-align: center;
+  }
+  .inqTable[data-layout="table"] .inqList {
+    gap: 0;
+  }
+  /* 표 모양에서는 줄 사이 선만 — 카드의 그림자는 걷는다(그림자 규약상 inset 빈 그림자로 — tests/layout.test.ts §4) */
+  .inqTable[data-layout="table"] .inq {
+    border: 0;
+    border-top: 1px solid var(--border-decorative);
+    border-radius: 0;
+    box-shadow: inset 0 0 0 0 transparent;
+  }
+  .inqTable[data-layout="table"] .inq[data-urgent="true"] {
+    box-shadow: inset 4px 0 0 var(--status-urgent-bg);
+  }
+  .inqTable[data-layout="table"] .inqLink {
+    align-items: center;
+    min-height: 68px;
+    padding: var(--space-stack-xs) calc(var(--space-inline-xs) / 2) var(--space-stack-xs) var(--space-inline-sm);
+    border-radius: 0;
+  }
+  .inqTable[data-layout="table"] .inqLink:hover {
+    background: var(--bg-page);
+  }
+  .inqTable[data-layout="table"] .inqStatus,
+  .inqTable[data-layout="table"] .inqWho,
+  .inqTable[data-layout="table"] .inqTrip,
+  .inqTable[data-layout="table"] .inqAgo {
+    grid-area: auto;
+    margin: 0;
+  }
+  .inqTable[data-layout="table"] .inqWho {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .inqTable[data-layout="table"] .inqName {
+    font-size: 16px;
+  }
+  .inqTable[data-layout="table"] .inqTrip {
+    font-size: 15px;
+  }
+  /* 표 모양에서는 조각 줄이 칸으로 풀린다 — 바깥·안쪽 상자는 사라지고(contents) 조각의 앞 여백과 구분점은 걷는다(칸이 나눈다) */
+  .inqTable[data-layout="table"] .inqMeta,
+  .inqTable[data-layout="table"] .inqMeta > .segsIn {
+    display: contents;
+  }
+  .inqTable[data-layout="table"] .inqMeta .seg {
+    max-width: none;
+    margin-inline-start: 0;
+  }
+  .inqTable[data-layout="table"] .inqMeta .seg::before {
+    content: none;
+  }
+  .inqTable[data-layout="table"] .inqWhen,
+  .inqTable[data-layout="table"] .inqBus {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    font-size: 15px;
+  }
+  /* 차량·인원 칸은 두 줄(차량 / 인원) — 카드에서 둘을 잇던 붙은 구분점은 걷는다("시각 · 남은 날" 은 한 줄이라 그대로) */
+  .inqTable[data-layout="table"] .inqBus .glue {
+    display: none;
+  }
+  .inqTable[data-layout="table"] .groupHead {
+    margin: 0;
+    padding: var(--space-stack-xs) var(--space-inline-sm);
+    background: var(--bg-subtle);
+    border-top: 1px solid var(--border-decorative);
+  }
+  .inqTable[data-layout="table"] .groupNote {
+    margin: 0;
+    padding: 0 var(--space-inline-sm) var(--space-stack-xs);
+    background: var(--bg-subtle);
+  }
+  .inqTable[data-layout="table"] .call {
+    border-radius: 0;
+  }
+}
+
+/* ── 필터 ───────────────────────────────────────────────────────────────── */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  margin: var(--space-stack-md) 0 0;
+}
+.filterLabel {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.filter {
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999em;
+  font-size: 13.5px;
+  font-weight: 700;
+  text-decoration: none;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+}
+.filter:hover {
+  border-color: var(--border-strong);
+  color: var(--text-brand);
+}
+.filter:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+/* 선택된 필터 — 옅은 면 + 보라 테두리 + 보라 굵은 글자(P5-20). 채운 보라는 버튼 전용이다(시안 ⑤-0).
+ * 갤러리 앨범 필터는 aria-current="page", 나머지 필터는 "true" 를 쓴다 — 둘 다 같은 모양. */
+.filter[aria-current="true"],
+.filter[aria-current="page"] {
+  background: var(--bg-subtle);
+  border-color: var(--border-strong);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+  color: var(--text-brand);
+  font-weight: 800;
+}
+
+/* ── 페이지 폭 ───────────────────────────────────────────────────────────
+ * 목록은 열이 10개라 공개 화면의 1080px 보다 넓어야 한 눈에 들어온다(quote.module.css .wrap 대신 이것을 쓴다).
+ * 그래도 부족한 폭에서는 표가 자기 컨테이너 안에서만 가로로 스크롤한다 — 페이지 자체는 넘치지 않는다.
+ */
+.pageWrap {
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 0 var(--space-page-x);
+}
+
+/* ── 표 ─────────────────────────────────────────────────────────────────── */
+.tableWrap {
+  margin: var(--space-stack-md) 0 0;
+  overflow-x: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--elevation-raised);
+}
+.table {
+  width: 100%;
+  min-width: 68rem;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.table caption {
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  text-align: left;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.th {
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  text-align: left;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border-decorative);
+}
+.td {
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  vertical-align: top;
+  border-bottom: 1px solid var(--border-decorative);
+  line-height: 1.5;
+  /* quote.module.css .main 의 `overflow-wrap: anywhere` 가 여기까지 내려오면 이름·지명이 글자 단위로 쪼개진다
+     ("한지 원", "인천공 항"). 표 셀에서는 단어를 지킨다 — 넘치면 컨테이너가 가로로 스크롤하면 된다. */
+  word-break: keep-all;
+  overflow-wrap: normal;
+}
+.tdNowrap {
+  white-space: nowrap;
+}
+.tdStrong {
+  font-weight: 700;
+}
+.rowLink {
+  color: var(--text-link);
+  font-weight: 700;
+  text-decoration: none;
+}
+.rowLink:hover {
+  text-decoration: underline;
+}
+.rowLink:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.telLink {
+  color: var(--text-primary);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--border-subtle);
+}
+.telLink:hover {
+  color: var(--text-brand);
+}
+
+/* ── 작은 딱지(.badge) — 콘텐츠 상태(노출 중·중지 등) · 발송 상태 · "대표 노선" 표시 ─────────────
+ * 예약 상태는 이것이 아니라 아래 .statusBadge(StatusBadge 컴포넌트)다(P5-20). 글자가 무엇인지 말하고, 테두리 모양이 거든다. */
+.badge {
+  display: inline-block;
+  padding: 0 0.5rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-chip);
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.7;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+}
+
+/* ── 상태 배지 (P5-20 · 시안 ⑤-0 · components/admin/StatusBadge.tsx) ─────────────────────────────
+ * "상태는 해야 할 일로 읽힌다" — 새 접수(골드)와 N일째 대기(가장 짙은 보라 면)가 가장 강하고, 운행 완료(회색 실선)·취소(회색 점선)가 가장 약하다.
+ * 색만으로 구분하지 않는다: 글자 + 표식(점·!·✓·×·전화) + 선(실선·점선). 톤은 --status-* 역할 토큰뿐(브랜드 원시색 — 새 색 없음).
+ */
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  height: 26px;
+  padding: 0 var(--space-inline-xs);
+  border: 1px solid transparent;
+  border-radius: var(--radius-chip);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.statusBadge[data-tone="attention"] {
+  background: var(--status-attention-bg);
+  color: var(--status-attention-fg);
+  border-color: var(--status-attention-border);
+}
+.statusBadge[data-tone="urgent"] {
+  background: var(--status-urgent-bg);
+  color: var(--status-urgent-fg);
+}
+.statusBadge[data-tone="confirmed"] {
+  background: var(--status-confirmed-bg);
+  color: var(--status-confirmed-fg);
+  border-color: var(--status-confirmed-border);
+}
+.statusBadge[data-tone="closed"] {
+  background: var(--bg-surface);
+  color: var(--status-closed-fg);
+  border-color: var(--status-closed-border);
+}
+.statusBadge[data-line="dashed"] {
+  border-style: dashed;
+}
+.statusBadge[data-tone="quick"] {
+  background: var(--bg-surface);
+  color: var(--text-brand);
+  border-color: var(--border-strong);
+  font-weight: 700;
+}
+.badgeDot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: currentColor;
+}
+.badgeIcon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* 배지 둘이 한 줄에 설 때(상세 머리의 상태 + 간편 칩) */
+.badgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-inline-xs);
+}
+
+/* ── 빈 상태 · 페이지 넘김 ───────────────────────────────────────────────── */
+.empty {
+  margin: var(--space-stack-md) 0 0;
+  padding: var(--space-stack-lg) var(--space-inline-sm);
+  text-align: center;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+}
+/* 빈 상태의 다음 행동(P5-20) — "아직 공지가 없어요" + [공지 쓰기]. 기존 폼(같은 화면의 입력칸)으로 가는 링크다 */
+.emptyAction {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin: var(--space-stack-xs) 0 0;
+  padding: 0 var(--space-inline-sm);
+  border: 1px solid var(--action-secondary-border);
+  border-radius: var(--radius-control);
+  background: var(--action-secondary-bg);
+  color: var(--action-secondary-fg);
+  font-weight: 700;
+  text-decoration: none;
+}
+.emptyAction:hover {
+  background: var(--action-secondary-bg-hover);
+}
+.emptyAction:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.pager {
+  display: flex;
+  gap: var(--space-inline-sm);
+  margin: var(--space-stack-md) 0 0;
+}
+.pagerLink {
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+  color: var(--text-brand);
+  background: var(--bg-surface);
+}
+.pagerLink:hover {
+  border-color: var(--border-strong);
+}
+.pagerLink:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* ── 상세 ───────────────────────────────────────────────────────────────── */
+.backLink {
+  display: inline-block;
+  margin: var(--space-stack-md) 0 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-link);
+  text-decoration: none;
+}
+.backLink:hover {
+  text-decoration: underline;
+}
+.backLink:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.section {
+  margin: var(--space-stack-md) 0 0;
+  padding: var(--space-stack-md) var(--space-inline-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--elevation-raised);
+}
+/* 섹션 제목 — 본문(15px)보다 작지 않게(P5-20 · 제안서 ②-21: 13px 이던 제목이 본문보다 작았다). */
+.sectionTitle {
+  margin: 0 0 var(--space-stack-sm);
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.4;
+  color: var(--text-primary);
+}
+.dl {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-stack-xs);
+  margin: 0;
+}
+.row {
+  display: grid;
+  /* 라벨 열은 가장 긴 항목("광고성 정보 수신 동의")이 값 열로 넘치지 않을 만큼 */
+  grid-template-columns: 10.5rem 1fr;
+  gap: var(--space-inline-xs);
+  align-items: baseline;
+}
+.dt {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.dd {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+/* ── 처리 영역 ──────────────────────────────────────────────────────────── */
+/* .section 카드 안에 들어가므로 자기 테두리를 또 두르지 않는다(상자 안의 상자).
+ * P5-19 — 순서는 주 버튼(확정·운행 완료) → 메모 → 구분선 → 취소(글자 버튼). 되돌릴 수 없는 취소를 확정 버튼 옆에
+ * 같은 크기로 두지 않는다(시안 #detail 처리 카드). 성공 뒤 포커스가 이 영역으로 돌아온다(tabindex=-1) — 키보드일 때만 링이 보인다. */
+.actions {
+  margin: 0;
+  border-radius: var(--radius-control);
+}
+.actions:focus {
+  outline: none;
+}
+.actions:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 4px;
+}
+.actionPrimary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.btnPrimary,
+.btnSecondary,
+.btnDestructive {
+  min-height: 2.75rem;
+  padding: 0 var(--space-inline-md);
+  font: inherit;
+  font-weight: 700;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  transition: var(--motion-base);
+}
+.btnPrimary {
+  color: var(--action-primary-fg);
+  background: var(--action-primary-bg);
+  border: 1px solid transparent;
+}
+.btnPrimary:hover:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--action-primary-bg-hover);
+}
+.btnSecondary {
+  color: var(--action-secondary-fg);
+  background: var(--action-secondary-bg);
+  border: 1px solid var(--action-secondary-border);
+}
+.btnSecondary:hover:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--action-secondary-bg-hover);
+}
+/* 되돌릴 수 없는 동작의 최종 버튼 — 확인 시트 안에서만(P5-19). 긍정 동작(보라)과 한눈에 구분되는 가장 짙은 면. */
+.btnDestructive {
+  color: var(--action-destructive-fg);
+  background: var(--action-destructive-bg);
+  border: 1px solid transparent;
+}
+.btnDestructive:hover:not(:disabled):not([aria-disabled="true"]) {
+  background: var(--action-destructive-bg-hover);
+}
+/* 처리 중(P5-21 · components/admin/PendingButton.tsx) — disabled 대신 aria-disabled 라 포커스를 잃지 않는다. 모양은 disabled 와 같다. */
+.btnPrimary:disabled,
+.btnSecondary:disabled,
+.btnDestructive:disabled,
+.btnPrimary[aria-disabled="true"],
+.btnSecondary[aria-disabled="true"],
+.btnDestructive[aria-disabled="true"] {
+  color: var(--action-disabled-fg);
+  background: var(--action-disabled-bg);
+  border-color: var(--action-disabled-border);
+  cursor: not-allowed;
+}
+.btnPrimary:focus-visible,
+.btnSecondary:focus-visible,
+.btnDestructive:focus-visible,
+.btnText:focus-visible,
+.textarea:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+/* 글자 버튼 — 채운 면·테두리 없이 글자와 × 표시만. 누를 자리는 44px 높이를 지킨다. 글자 시작선을 위 줄과 맞추려고 왼쪽 여백만큼 당긴다. */
+.btnText {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  min-height: 2.75rem;
+  margin: 0 0 0 calc(-1 * var(--space-inline-xs));
+  padding: 0 var(--space-inline-xs);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+.btnText:hover:not(:disabled) {
+  color: var(--text-brand);
+  background: var(--bg-subtle);
+}
+.btnText:disabled {
+  color: var(--action-disabled-fg);
+  cursor: not-allowed;
+}
+.btnTextIcon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+.divider {
+  height: 0;
+  margin: var(--space-stack-md) 0 var(--space-stack-xs);
+  border: 0;
+  border-top: 1px solid var(--border-decorative);
+}
+.cancelZone {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+/* 실패·이미 처리됨·상한 초과 안내(role=alert) — 시트 안과 메모 칸 옆. 팔레트에 상태색이 없어 굵은 테두리로 구분한다(.copyWarning 과 같은 규약).
+ * P5-20 — 공지·팝업·갤러리·노선의 실패도 같은 배너다(성공은 토스트 · components/admin/feedback.ts). 저절로 닫히지 않고 다음 동작 때 걷힌다. */
+.banner {
+  margin: var(--space-stack-sm) 0 0;
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  border: 2px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.6;
+  color: var(--text-brand);
+}
+/* 배너 끝의 다음 행동 링크(P5-21 — 관리 홈 "보내지 못한 문자 … [발송 기록 보기]") */
+.bannerLink {
+  color: var(--text-link);
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+/* 표 칸 안의 좁은 배너(목록의 노출 버튼 옆) */
+.bannerInline {
+  flex: 1 1 100%;
+  margin: 0;
+  padding: var(--space-stack-xs);
+  border: 2px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--text-brand);
+  white-space: normal;
+}
+.hint {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+/* 카드의 첫 줄이 안내 문단이면 위 여백을 두지 않는다 — 카드 안쪽 여백만(대표 노선 맨 위 안내 카드가 빈 제목 자리처럼 위가 떴다 · 라운드 3 컨트롤러 4) */
+.section > .hint:first-child {
+  margin-top: 0;
+}
+.memoField {
+  margin: var(--space-stack-md) 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-stack-xs);
+}
+.label {
+  font-size: 14px;
+  font-weight: 700;
+}
+.textarea {
+  width: 100%;
+  padding: var(--space-stack-xs) var(--space-inline-xs);
+  font: inherit;
+  font-size: 16px; /* 16px 미만이면 iOS 가 포커스 시 화면을 확대한다 */
+  line-height: 1.6;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  resize: vertical;
+}
+.textarea:disabled {
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+}
+.notice {
+  min-height: 1.5rem;
+  margin: var(--space-stack-sm) 0 0;
+  font-size: 14px;
+  line-height: 1.6;
+  font-weight: 700;
+  color: var(--text-brand);
+}
+.notice:empty {
+  min-height: 0;
+  margin: 0;
+}
+
+/* ── 접수 상세 재배치 (P5-22 · 시안 docs/handoff/2026-09-27-admin-ux #detail · 제안서 ⑤-3 · app/admin/(protected)/reservations/[id]/page.tsx) ──
+ * 머리(배지 줄 · "{이름} 님" · 한 줄 메타) → 두 열: DOM 은 연락·처리(.detailSide)가 먼저, 본문(.detailMain)이 뒤다.
+ *   <1024px  한 열 — 연락 카드가 맨 위. 처리 카드는 숨고(.processCard) 그 자리를 **아래 고정 행동 바**(.actionBar — [전화] [확정하기])가 맡는다.
+ *            셸의 위 제목줄·아래 탭 바는 이 화면에서만 숨고(.shell:has(.detailPage) — 시안·사용자 결정), 이 화면의 위 제목줄(.detailTop — ← · 접수 상세 · ⋯)이
+ *            그 자리에 붙는다. 스크롤 여백은 행동 바 높이 + 틈이다(포커스·실패 배너가 바 뒤로 숨지 않게 — P5-20 리뷰 P1-1 과 같은 기준).
+ *   ≥1024px  본문 2/3 + 오른쪽 1/3 열(sticky — P5-21 이 셸의 body 를 overflow-x: clip 으로 바꿔 sticky 가 산다 · 높이 720px 이상에서만 —
+ *            수정 라운드 리뷰 P2-4, 절 끝 미디어 쿼리). 오른쪽 열은 DOM 이 먼저지만 격자의 둘째 칸에 선다.
+ *            1024px 에서는 사이드바(248px) 뒤 본문이 712px 이라 오른쪽 열의 최소 폭(17.5rem)을 지키고, 넓어지면 1/3 이 된다.
+ * 누르는 자리: 행동 바·연락 카드의 전화/문자 48px · 체크 줄 48px · 위 제목줄 아이콘 44px. 색은 역할 토큰만.
+ */
+.detailPage {
+  background: var(--bg-page);
+  color: var(--text-primary);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+/* 셸의 위 제목줄(브랜드 · 홈페이지 보기 · 로그아웃)과 아래 탭 바를 이 화면에서만 숨긴다 — 상세는 ← 가 있는 작업 화면이라 아래를 주 동작에 내준다(제안서 ⑥-5) */
+.shell:has(.detailPage) .topbar,
+.shell:has(.detailPage) .tabbar,
+.shell:has(.detailPage) .tabbarSpacer {
+  display: none;
+}
+/* 스크롤 여백 — 위는 이 화면의 제목줄(56px · border-box) + 틈, 아래는 행동 바(버튼 48 + 위아래 틈 8·8 + 위 테두리 1) + 틈 8 + safe area.
+ * 셸의 규칙(:global(html):has(.shell) — 탭 바 높이)보다 뒤에 와서 이긴다(같은 무게). 1024px 이상은 되돌린다. */
+:global(html):has(.detailPage) {
+  scroll-padding-top: calc(56px + var(--space-stack-xs));
+  scroll-padding-bottom: calc(48px + 1px + 3 * var(--space-stack-xs) + env(safe-area-inset-bottom));
+}
+
+/* 휴대폰 위 제목줄 — ← (들어온 목록으로) · 접수 상세 · ⋯(취소 시트). 스크롤해도 위에 붙는다(셸의 제목줄과 같은 층) */
+.detailTop {
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  min-height: 56px;
+  padding: 0 var(--space-inline-xs);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-decorative);
+}
+.detailTopTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+/* 위 제목줄의 ← 링크 · ⋯ 버튼 — 44px(링크·버튼 공용이라 버튼 기본 모양을 걷는다) */
+.detailIconBtn {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--icon-brand);
+  cursor: pointer;
+}
+.detailIconBtn:hover {
+  background: var(--bg-subtle);
+}
+.detailIconBtn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.detailIconBtn[aria-disabled="true"] {
+  color: var(--action-disabled-fg);
+  cursor: not-allowed;
+}
+.detailIcon {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* ⋯ — 굵은 둥근 끝의 점 셋 */
+.moreIcon {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3.2;
+  stroke-linecap: round;
+}
+/* 데스크톱의 "← 접수 목록" — 휴대폰은 위 제목줄의 ← 가 맡는다 */
+.detailBackDesktop {
+  display: none;
+}
+
+/* 머리 */
+.detailHead {
+  padding: var(--space-stack-sm) 0 0;
+}
+.detailTitle {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+}
+.detailMeta {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+/* 두 열 — 좁은 화면은 한 열(칸 최소 폭 0 — 긴 값이 화면을 밀지 않는다) */
+.detailCols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-stack-sm);
+  margin: var(--space-stack-sm) 0 0;
+}
+.detailSide,
+.detailMain {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-stack-sm);
+  align-content: start;
+  min-width: 0;
+}
+
+/* 카드 — 흰 판 하나(제목은 본문보다 작지 않게 17px) */
+.detailCard {
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-stack-sm) var(--space-inline-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--elevation-raised);
+}
+.detailCard:focus {
+  outline: none;
+}
+.detailCard:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.detailCardTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  margin: 0 0 var(--space-stack-sm);
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.4;
+  color: var(--text-primary);
+}
+.detailCardIcon,
+.btnIcon,
+.undecidedIcon,
+.sheetWarnIcon,
+.recordsChevron {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.detailCardIcon {
+  width: 20px;
+  height: 20px;
+  color: var(--icon-default);
+}
+/* 카드 제목 오른쪽 작은 글자(체크 진행 "0/4 확인") */
+.cardAside {
+  margin-left: auto;
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--text-brand);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 연락 — 큰 번호 + [전화 걸기] [문자 보내기](48px · 서버가 그린 tel:·sms:) */
+.contactNum {
+  margin: 0 0 var(--space-stack-sm);
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+}
+/* 자리가 있으면 두 칸, 좁으면 한 줄씩 — 1024px 의 오른쪽 열(280px)에서는 두 칸이면 "문자 보내기" 가 두 줄로 꺾였다(실측).
+ * 칸 최소 폭 8rem 은 아이콘 + 틈 + 글자 + 안쪽 여백(≈123px)보다 넓다. min(100%, …) 은 칸이 카드보다 넓어지지 않게 한다 */
+.contactBtns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+  gap: var(--space-inline-xs);
+}
+.contactBtns > * {
+  min-height: 48px;
+  justify-content: center;
+  gap: var(--space-inline-xs);
+  padding: 0 var(--space-inline-xs);
+}
+.btnIcon {
+  width: 20px;
+  height: 20px;
+}
+.contactMail {
+  margin: var(--space-stack-sm) 0 0;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.contactMailLabel {
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+/* 처리 카드(데스크톱만) — 확정(주 버튼 · 전체 폭 48px) · 안내 · 구분선 · 취소(글자 버튼) · 안내 */
+.processCard {
+  display: none;
+}
+.processCard [data-variant="primary"],
+.mobileProcess [data-variant="primary"] {
+  width: 100%;
+  min-height: 48px;
+}
+.processNote {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+/* 휴대폰 맨 아래 — 취소(확정 버튼과 멀리 · 가운데) · 확정 상태면 그 위에 운행 완료. 1024px 이상은 처리 카드가 맡는다 */
+.mobileProcess {
+  padding: var(--space-stack-xs) 0 0;
+}
+.mobileProcess .cancelZone {
+  align-items: center;
+  text-align: center;
+}
+.mobileProcess .btnText {
+  margin: 0;
+}
+
+/* 운행 — 큰 구간 + 정의 목록(휴대폰 두 칸 · 1280px 이상 네 칸) · 미정 칸은 "전화로 확인"(회색 + 전화 표시) */
+.routeBig {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+.kv {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr);
+  gap: var(--space-stack-xs) var(--space-inline-sm);
+  margin: var(--space-stack-sm) 0 0;
+  font-size: 15.5px;
+  line-height: 1.5;
+}
+.kv dt {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.kv dd {
+  min-width: 0;
+  margin: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.kv .undecided {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-inline-xs) * 0.75);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.undecidedIcon {
+  width: 16px;
+  height: 16px;
+  color: var(--icon-brand);
+}
+.requestText {
+  margin: 0;
+  font-size: 15.5px;
+  line-height: 1.6;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+/* 전화로 확인할 것 — 체크 4개(줄 48px · 라벨이 체크를 감싼다). 체크한 줄은 흐리게 긋는다(시안). 저장하지 않는다 */
+.callChecklist {
+  display: grid;
+  gap: calc(var(--space-stack-xs) / 4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.callCheck {
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-sm);
+  min-height: 48px;
+  padding: calc(var(--space-stack-xs) / 2) calc(var(--space-inline-xs) * 0.75);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  font-size: 15.5px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+.callCheck:hover {
+  background: var(--bg-subtle);
+}
+.callCheckInput {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  margin: 0;
+  accent-color: var(--action-primary-bg);
+}
+.callCheckInput:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.callCheckInput:checked + .callCheckText {
+  color: var(--text-secondary);
+  text-decoration: line-through;
+}
+
+/* 메모 카드 — 칸 · [메모 저장](오른쪽) */
+.detailCard .textarea {
+  min-height: 6.5rem;
+  margin: var(--space-stack-xs) 0 0;
+}
+.memoFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-inline-xs);
+  margin: var(--space-stack-xs) 0 0;
+}
+
+/* 접수 기록(동의 · 보관) — 접힘. 요약 줄이 누르는 자리(48px) · 펼치면 표시가 뒤집힌다 */
+.records {
+  padding-top: var(--space-stack-xs);
+  padding-bottom: var(--space-stack-xs);
+}
+.recordsSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-inline-xs);
+  min-height: 48px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 800;
+  list-style: none;
+}
+.recordsSummary::-webkit-details-marker {
+  display: none;
+}
+.recordsSummary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-control);
+}
+.recordsChevron {
+  width: 20px;
+  height: 20px;
+  color: var(--icon-brand);
+  transition: transform var(--motion-base);
+}
+.records[open] .recordsChevron {
+  transform: rotate(180deg);
+}
+.recordsKv {
+  display: grid;
+  grid-template-columns: minmax(0, 9.5rem) minmax(0, 1fr);
+  gap: var(--space-stack-xs) var(--space-inline-sm);
+  margin: 0 0 var(--space-stack-sm);
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+.recordsKv dt {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.recordsKv dd {
+  margin: 0;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* 휴대폰 아래 고정 행동 바 — [전화] [확정하기](확정 뒤 [전화] [문자 보내기]) · 탭 바와 같은 층(30) · 시트(50)·토스트(60) 아래 */
+.actionBar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: var(--space-inline-xs);
+  padding: var(--space-stack-xs) var(--space-inline-sm) calc(var(--space-stack-xs) + env(safe-area-inset-bottom));
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border-decorative);
+}
+.actionBar:focus {
+  outline: none;
+}
+.actionBar:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -3px;
+}
+.actionBar > * {
+  width: 100%;
+  min-height: 48px;
+  justify-content: center;
+  gap: var(--space-inline-xs);
+  padding: 0 var(--space-inline-xs);
+}
+/* 번호에 숫자가 없어 [전화]를 그리지 못한 줄(검증을 거친 행에서는 생기지 않는다) — 남은 버튼 하나가 바 전체를 쓴다 */
+.actionBar > :only-child {
+  grid-column: 1 / -1;
+}
+/* 본문 끝 여백 = 위 스크롤 여백(바 높이 + 틈 + safe area) — 마지막 줄도 바 위로 온다 */
+.actionBarSpacer {
+  height: calc(48px + 1px + 3 * var(--space-stack-xs) + env(safe-area-inset-bottom));
+}
+
+@media (min-width: 1024px) {
+  .detailPage {
+    padding: 0 0 var(--space-section);
+  }
+  /* 넓은 화면에는 붙은 막대(행동 바 · 위 제목줄)가 없다 — 대신 틈 하나: 키보드 포커스로 스크롤될 때 버튼이 화면 가장자리에 딱 붙어
+   * 초점 테두리가 잘리지 않게(수정 라운드 · 리뷰 P2-4 — 낮은 화면에서 [이 접수 취소하기]가 516–560(화면 560)으로 붙었다) */
+  :global(html):has(.detailPage) {
+    scroll-padding-top: var(--space-stack-md);
+    scroll-padding-bottom: var(--space-stack-md);
+  }
+  .detailTop,
+  .mobileProcess {
+    display: none;
+  }
+  .actionBar,
+  .actionBarSpacer {
+    display: none;
+  }
+  /* 머리(.detailHead)의 위 여백은 휴대폰과 같다 — "← 접수 목록" 과 배지 줄 사이를 시안처럼 한 칸 띄운다 */
+  .detailBackDesktop {
+    display: inline-block;
+  }
+  .detailTitle {
+    font-size: 30px;
+  }
+  .detailCols {
+    grid-template-columns: minmax(0, 2fr) minmax(17.5rem, 1fr);
+    gap: var(--space-stack-md);
+    align-items: start;
+    margin: var(--space-stack-md) 0 0;
+  }
+  .detailSide {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .detailMain {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .detailCard {
+    padding: var(--space-stack-md) var(--space-inline-md);
+  }
+  .records {
+    padding-top: var(--space-stack-xs);
+    padding-bottom: var(--space-stack-xs);
+  }
+  .processCard {
+    display: block;
+  }
+}
+/* 오른쪽 열 sticky 는 열 전체가 화면에 들어가는 높이에서만(수정 라운드 · 리뷰 P2-4). 열은 492~608px(연락 + 처리 카드)이라 더 낮은 화면에서
+ * 붙이면 문서 스크롤을 따라 붙어 아래쪽 버튼([이 접수 취소하기])의 키보드 포커스가 화면 밖에 걸렸다(1024×520 · 1280×560 · 1024×640 실측).
+ * 720px = 가장 높은 열 608px + 위 틈 24px + 초점 테두리·여유. 그보다 낮으면 보통 흐름이라 포커스는 문서 스크롤로 보인다 */
+@media (min-width: 1024px) and (min-height: 720px) {
+  .detailSide {
+    position: sticky;
+    top: var(--space-stack-md);
+  }
+}
+@media (min-width: 1280px) {
+  .kv {
+    grid-template-columns: 7.5rem minmax(0, 1fr) 7.5rem minmax(0, 1fr);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .recordsChevron {
+    transition: none;
+  }
+}
+
+/* ── 확인 시트 · 결과 토스트 (P5-19 · 시안 docs/handoff/2026-09-27-admin-ux #detail) ─────────────────
+ * 휴대폰은 아래에서 올라오는 시트, 1024px 이상은 가운데 대화상자. 딤은 --overlay-medium, 그림자는 고도 토큰만.
+ * 토스트는 어두운 면(--bg-inverse) — 시트(50) 위에 뜬다(60). 자리(role=status)는 늘 있고 비어 있을 때는 누르는 것을 막지 않는다.
+ */
+.sheetBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: var(--overlay-medium);
+}
+.sheet {
+  width: 100%;
+  max-width: 32.5rem;
+  max-height: 92vh;
+  overflow-y: auto;
+  padding: var(--space-stack-md) var(--space-inline-sm) calc(var(--space-stack-sm) + env(safe-area-inset-bottom));
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border-radius: var(--radius-surface) var(--radius-surface) 0 0;
+  box-shadow: var(--elevation-overlay);
+}
+.sheet:focus {
+  outline: none;
+}
+.sheetTitle {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+.sheetSummary {
+  margin: var(--space-stack-sm) 0 0;
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+.sheetSummaryNote {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+/* 확정 시트의 확인 경고(P5-22 · 시안 .warn) — 간편 접수의 "전화로 확인할 것" 을 다 채우지 않았을 때. 실패가 아니라 확인이라 흰 면 + 골드 테두리
+ * (새 접수 톤) · 표시는 골드(장식 — 글자가 뜻을 말한다). 막지 않는다 */
+.sheetWarn {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-inline-xs);
+  margin: var(--space-stack-sm) 0 0;
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  border: 1px solid var(--status-attention-border);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.55;
+}
+.sheetWarnIcon {
+  width: 20px;
+  height: 20px;
+  margin: calc(var(--space-stack-xs) / 4) 0 0;
+  color: var(--accent-decorative-strong);
+}
+.sheetBody {
+  margin: var(--space-stack-sm) 0 0;
+  font-size: 15.5px;
+  line-height: 1.6;
+}
+.sheetBody b {
+  font-weight: 800;
+}
+/* 처리 중 응답이 늦을 때의 안내(리뷰 P2-1) — 자리(role=status)는 늘 있고, 비어 있으면 자리를 차지하지 않는다 */
+.sheetSlow {
+  margin: var(--space-stack-sm) 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.sheetSlow:empty {
+  margin: 0;
+}
+/* 시트 버튼(P5-22 수정 라운드 · 리뷰 반려 P0-1) — 1024px 미만은 세로로 쌓는다: 실행 버튼(data-variant)이 위, [닫기]가 **맨 아래 전체 폭**.
+ * 아래 고정 행동 바의 [확정하기]를 두 번 누르면 두 번째 누름이 그 자리에 뜬 시트의 [닫기]에 떨어진다(예전에는 실행 버튼이 같은 자리였다 —
+ * 확인 없이 확정·고객 문자). 시안(나란히)과 다른 점은 안전을 위한 것이다(보고서). DOM 은 [닫기]가 먼저 그대로다(첫 포커스 · Tab 순서).
+ * 누를 자리는 48px(행동 바와 같은 높이). 1024px 이상은 가운데 대화상자라 행동 바가 없고 예전처럼 나란히(아래 미디어 쿼리) */
+.sheetActions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-inline-xs);
+  margin: var(--space-stack-md) 0 0;
+}
+.sheetActions > button {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 var(--space-inline-xs);
+}
+.sheetActions > [data-variant] {
+  order: -1;
+}
+/* 취소 사유 — 라디오를 칩 모양으로(원은 숨기고 라벨이 누를 자리) */
+.reasonSet {
+  min-width: 0;
+  margin: var(--space-stack-sm) 0 0;
+  padding: 0;
+  border: 0;
+}
+.reasonLegend {
+  padding: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-inline-xs);
+  margin: var(--space-stack-xs) 0 0;
+}
+.reasonItem {
+  position: relative;
+  display: inline-flex;
+}
+.reasonInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.reasonChip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0 var(--space-inline-sm);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999em;
+  background: var(--bg-surface);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.reasonInput:checked + .reasonChip {
+  color: var(--text-brand);
+  background: var(--bg-subtle);
+  border-color: var(--border-strong);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.reasonInput:focus-visible + .reasonChip {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.reasonInput:disabled + .reasonChip {
+  color: var(--action-disabled-fg);
+  cursor: not-allowed;
+}
+
+/* 토스트 자리 — 휴대폰에서는 아래 탭 바(3.5rem = 56px) 위에 뜬다(P5-20). 1024px 이상은 화면 아래(아래 미디어 쿼리). */
+.toastRegion {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(3.5rem + var(--space-stack-sm) + env(safe-area-inset-bottom));
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  padding: 0 var(--space-inline-sm);
+  pointer-events: none;
+}
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  width: 100%;
+  max-width: 30rem;
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  border-radius: var(--radius-surface);
+  background: var(--bg-inverse);
+  color: var(--text-on-inverse);
+  box-shadow: var(--elevation-overlay);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.5;
+  pointer-events: auto;
+}
+.toastIcon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  fill: none;
+  stroke: var(--accent-on-inverse);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.toastText {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.toastLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  color: var(--text-on-inverse);
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+.toastLink:focus-visible {
+  outline: 2px solid var(--text-on-inverse);
+  outline-offset: 2px;
+}
+
+@media (min-width: 1024px) {
+  .sheetBackdrop {
+    align-items: center;
+  }
+  .sheet {
+    padding: var(--space-stack-md) var(--space-inline-md);
+    border-radius: var(--radius-surface);
+  }
+  /* 가운데 대화상자 — 왼쪽 [닫기](보조) · 오른쪽 결과 동사(시안 · P5-19 그대로) */
+  .sheetActions {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  }
+  .sheetActions > button {
+    min-height: 2.75rem;
+  }
+  .sheetActions > [data-variant] {
+    order: 0;
+  }
+  .toastRegion {
+    bottom: calc(var(--space-stack-md) + env(safe-area-inset-bottom));
+  }
+}
+
+
+/* ── 팝업·공지 관리 (P5-4 · P5-5) ────────────────────────────────────────
+ * P5-23 라운드 2(컨트롤러 B-5) — 두 칸(등록 폼 · 목록) 격자(.popupGrid)를 걷었다. **목록이 먼저, 모든 폭에서 한 칸**이고 등록 폼은 그 아래
+ * 자기 카드(.section)다. 두 칸일 때는 1280 에서도 목록 칸이 좁아 제목이 낱말마다 꺾이고 '노출 끄기' 가 두 줄이 됐다(라운드 1 촬영).
+ *
+ * P5-19(ADMIN-UX ②-13)의 교훈은 그대로 지킨다 — 표의 최소 폭(.tablePopups 30rem)이 화면을 밀어 오른쪽 버튼이 `overflow-x:hidden` 에
+ * **가려지는** 일이 없어야 한다. 이제 목록은 1024px 미만에서 행이 카드가 되어(.contentTable — 아래 max-width 규칙) 최소 폭 자체가 없고,
+ * 1024px 이상에서는 한 칸 전체 폭의 스크롤 상자(.tableWrap) 안에 있어 밀릴 칸이 없다.
+ */
+.popupForm {
+  margin: 0;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-stack-xs);
+  margin: 0 0 var(--space-stack-md);
+}
+.input {
+  width: 100%;
+  padding: var(--space-stack-xs) var(--space-inline-xs);
+  font: inherit;
+  font-size: 16px; /* 16px 미만이면 iOS 가 포커스 시 화면을 확대한다 */
+  line-height: 1.6;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+}
+.input:disabled {
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+}
+.input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+/* 잘못된 입력은 색이 아니라 테두리 굵기로 표시한다(팔레트에 상태색이 없다 — 배지와 같은 규약) */
+.input[aria-invalid="true"],
+.textarea[aria-invalid="true"] {
+  border-width: 2px;
+  border-color: var(--border-strong);
+}
+/* 나란히 선 칸 묶음(출발지·도착지 · 시작일·종료일 · 앨범 이름·주소·순서). 묶음 뒤에도 칸 묶음(.field)과 같은 간격 —
+ * 대표 노선 고치기에서 '표시 금액' 이름이 위 선택 칸에 붙어 있었다(P5-23 라운드 2 B-9). 칸 묶음 안에 들어가면 그 묶음의 간격을 쓴다. */
+.dateRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-inline-sm);
+  width: 100%;
+  margin: 0 0 var(--space-stack-md);
+}
+.field .dateRow {
+  margin: 0;
+}
+.dateCol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-stack-xs);
+}
+/* 칸 안의 순서는 어디서나 이름 → 안내 → 입력칸이고 사이는 같은 간격(묶음의 gap) — 안내 문단의 위 여백을 겹쳐 쌓지 않는다(B-9) */
+.field > .hint,
+.dateCol > .hint {
+  margin: 0;
+}
+.checkRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+}
+/* 체크 상자·라디오는 브라우저 기본 색(빨강·파랑) 대신 브랜드 주 행동색(P5-23 라운드 2 B-12 — 역할 토큰) */
+.shell input[type="checkbox"],
+.shell input[type="radio"] {
+  accent-color: var(--action-primary-bg);
+}
+.formActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-inline-sm);
+  margin: var(--space-stack-md) 0 0;
+}
+.rowActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-inline-sm);
+}
+/* 행 안의 버튼·링크 글자는 꺾이지 않는다(P5-23 라운드 2 B-5 — '노출 끄기' 가 두 줄이 됐고, 1024 에서 '공지 / 고치기' 가 갈렸다).
+ * 자리가 모자라면 버튼째 다음 줄로 간다(카드). */
+.rowActions > .btnPrimary,
+.rowActions > .btnSecondary,
+.rowActions > .rowLink {
+  white-space: nowrap;
+}
+.sample {
+  margin: 0;
+}
+/* 팝업 목록은 열이 4개라 예약 목록(.table)만큼 넓을 필요가 없다 */
+.tablePopups {
+  width: 100%;
+  min-width: 30rem;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.tablePopups caption {
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  text-align: left;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+/* 콘텐츠 노출 상태(팝업·공지·노선·사진·앨범) — P5-20: 채운 보라를 걷었다(버튼 전용). 켜져 있음 = 확정과 같은 옅은 보라 면,
+ * 노출 예정 = 보라 테두리, 끝남 = 회색 실선, 중지 = 회색 점선. 글자가 무엇인지 말하고 모양이 거든다. */
+.badge[data-state="live"] {
+  background: var(--status-confirmed-bg);
+  border-color: var(--status-confirmed-border);
+  color: var(--status-confirmed-fg);
+  font-weight: 800;
+}
+.badge[data-state="scheduled"] {
+  border-width: 2px;
+  border-color: var(--border-strong);
+  color: var(--text-brand);
+  font-weight: 800;
+}
+.badge[data-state="ended"] {
+  color: var(--status-closed-fg);
+  border-color: var(--status-closed-border);
+}
+.badge[data-state="off"] {
+  color: var(--status-closed-fg);
+  border-color: var(--status-closed-border);
+  border-style: dashed;
+}
+
+/* ── 공지 관리 (P5-5) ────────────────────────────────────────────────────
+ * 삭제는 되돌릴 수 없고 공개 상세 URL 을 영구히 죽인다. 폼의 다른 버튼과 섞이지 않게 따로 떼어 두고,
+ * 색이 아니라 **위치와 테두리**로 구분한다(팔레트에 상태색이 없다 — 배지·aria-invalid 와 같은 규약).
+ */
+.dangerZone {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-inline-sm);
+  margin: var(--space-stack-md) 0 0;
+  padding: var(--space-stack-sm) var(--space-inline-sm);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+}
+
+/* ── 갤러리 (P6-2) ───────────────────────────────────────────────────────
+ * 업로더는 진행 상태를 **줄마다** 보여 준다. 30장을 한 번에 올리면 어느 장이 실패했는지가 유일하게 중요한 정보라
+ * 전체 진행률 하나로 뭉개지 않는다. 상태는 색이 아니라 배지와 글자로 구분한다(팔레트에 상태색이 없다).
+ * 사진 그리드는 카드 하나가 한 장이다 — 375px 에서 1열, 넓어지면 자동으로 열이 늘어난다(auto-fill).
+ */
+.uploader {
+  margin: 0;
+}
+.uploadList {
+  list-style: none;
+  margin: var(--space-stack-sm) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-stack-xs);
+}
+.uploadItem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  padding: var(--space-stack-xs) var(--space-inline-xs);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  font-size: 14px;
+}
+.uploadItem[data-state="failed"] {
+  border-width: 2px;
+  border-color: var(--border-strong);
+}
+.uploadName {
+  font-weight: 700;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+.uploadMessage {
+  flex: 1 1 100%;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+.photoGrid {
+  list-style: none;
+  margin: var(--space-stack-md) 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: var(--space-inline-sm);
+}
+.photoCard {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-inline-sm);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+  background: var(--bg-surface);
+}
+.photoCard[data-active="false"] {
+  background: var(--bg-subtle);
+}
+.photoThumb {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-stack-xs);
+  margin: 0 0 var(--space-stack-sm);
+}
+.photoImg {
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+}
+/* 파일이 없는 행 — 삭제가 중간에 멈춘 흔적이다. 빈 칸으로 두지 않고 무엇을 하면 되는지 적는다 */
+.photoMissing {
+  margin: 0;
+  padding: var(--space-stack-sm) var(--space-inline-sm);
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.albumList {
+  list-style: none;
+  margin: var(--space-stack-md) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-stack-sm);
+}
+.albumRow {
+  padding: var(--space-inline-sm);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+}
+/* 앨범 줄 머리의 상태 배지(사진 카드와 같은 자리) — 아래 버튼 줄은 저장 · 노출 두 버튼만(P5-23 라운드 2 B-10) */
+.albumState {
+  margin: 0 0 var(--space-stack-xs);
+}
+/* 업로더 맨 위 안내와 첫 칸('넣을 앨범') 사이 — 칸 묶음 사이와 같은 간격(B-10) */
+.uploaderHint {
+  margin: 0 0 var(--space-stack-md);
+}
+/* 사진 고르기(B-10) — 브라우저 기본 파일 칸 대신 버튼 모양의 라벨 + 고른 장수 한 줄. 진짜 입력칸은 보이지 않게 접었을 뿐
+ * 포커스를 받고(Tab) 키보드로 열린다(Enter·Space) — 포커스 링은 바로 뒤의 버튼 모양 라벨에 그린다. */
+.fileInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.pickRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-stack-xs) var(--space-inline-sm);
+}
+.pickButton {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+.fileInput:focus-visible + .pickRow .pickButton {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.pickButton[data-disabled="true"] {
+  color: var(--action-disabled-fg);
+  background: var(--action-disabled-bg);
+  border-color: var(--action-disabled-border);
+  cursor: not-allowed;
+}
+.pickCount {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* ── 발송 내역 (P5-8) ────────────────────────────────────────────────────
+ * 상태 배지 3종과 맨 위 요약. 실패를 눈에 띄게 해야 하는데 팔레트에 경고색이 없다(styles/semantic.css 에 danger 역할 토큰 없음).
+ * 그래서 새 색을 만들지 않는다 — P5-20 부터 실패는 상태 배지 체계의 '급함' 톤(--status-urgent-*: 가장 짙은 브랜드 보라 면)이다.
+ */
+.badge[data-status="pending"] {
+  background: var(--bg-subtle);
+}
+.badge[data-status="sent"] {
+  border-color: var(--border-subtle);
+}
+/* 발송 실패 = '급함' 톤(P5-20 · 시안 ⑤-0 — 조치가 필수인 것: 사장님이 전화로 알려야 한다). 가장 짙은 보라 면 + 흰 글자 18.20:1 */
+.badge[data-status="failed"] {
+  background: var(--status-urgent-bg);
+  border-color: var(--status-urgent-bg);
+  color: var(--status-urgent-fg);
+  font-weight: 800;
+}
+
+.summary {
+  margin: var(--space-stack-md) 0 0;
+  padding: var(--space-stack-sm) var(--space-inline-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-surface);
+}
+.summary[data-ok="false"] {
+  border-width: 2px;
+  border-color: var(--border-strong);
+}
+.summaryTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.summaryOk {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+/* 요약 세 칸(P5-23 라운드 2 · 컨트롤러 B-7) — 이어 쓴 문장 대신 작은 이름 · 큰 숫자 · 작은 기간. 휴대폰에서도 세 칸이 한 줄(숫자가 짧다). */
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-inline-xs);
+  margin: var(--space-stack-sm) 0 0;
+}
+.summaryItem {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-stack-xs) / 2);
+  min-width: 0;
+  padding: var(--space-stack-xs) var(--space-inline-xs);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+}
+.summaryItem[data-alert="true"] {
+  border-color: var(--border-strong);
+  background: var(--bg-surface);
+}
+.summaryLabel {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  /* 좁은 세 칸(375)에서 두 줄이 되면 줄 길이를 고르게 — "보내지 못한 / 알림" 대신 "보내지 / 못한 알림"(점진적 개선) */
+  text-wrap: balance;
+}
+.summaryNum {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.summaryItem[data-alert="true"] .summaryNum {
+  color: var(--text-brand);
+}
+.summaryPeriod {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+/* 600px 미만 — 세 칸을 나란히 두면 칸이 좁아 이름이 세 줄로 갈렸다("발송됨 / · 기록 / 확인 필요"). 한 칸씩 전체 폭 줄로 쌓는다:
+ * 이름은 왼쪽, 숫자와 작은 기간은 오른쪽(P5-23 라운드 3 · 컨트롤러 3). */
+@media (max-width: 599.98px) {
+  .summaryGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .summaryItem {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "label num"
+      "label period";
+    align-items: center;
+    column-gap: var(--space-inline-sm);
+    row-gap: 0;
+  }
+  .summaryLabel {
+    grid-area: label;
+    font-size: 14px;
+  }
+  .summaryNum {
+    grid-area: num;
+    justify-self: end;
+    font-size: 20px;
+  }
+  /* 오른쪽 붙임은 상자째로(justify-self) — 글줄을 오른쪽 정렬하면 줄 머리가 왼쪽 가장자리에 닿지 않아 조각의 구분점이 잘리지 않는다 */
+  .summaryPeriod {
+    grid-area: period;
+    justify-self: end;
+  }
+}
+.summaryNote {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+/* ── 발송 기록 표 ↔ 카드 (P5-23 라운드 2 · 컨트롤러 A-1 · A-2 · B-6) ─────────────────────────────
+ * 한 벌의 표 마크업이다(서버가 한 번 그린다 — 숨긴 사본 없음). 1280px 이상은 표 — 최소 폭(옛 .table 의 68rem)이 없어 옆으로 밀리지 않고,
+ * 알림·오류 칸만 낱말 단위로 꺾인다(번호·접수번호·시각은 한 줄). 그보다 좁으면 행이 카드가 되고 칸마다 작은 라벨(.cellLabel)이 보인다.
+ * 1024~1279px 은 사이드바가 본문을 712px 로 줄여 일곱 칸이 한 줄에 들어가지 않는다(실측) — 카드가 되는 경계가 1280 인 이유다.
+ */
+.notifyTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.cellLabel {
+  display: none;
+}
+.cellValue {
+  display: block;
+}
+/* '대기' 배지 아래 둘째 줄(보내는 중 · 다시 보낼 예정 {시각} · 오래 멈춤 — 확인 필요) */
+.subState {
+  display: block;
+  margin: calc(var(--space-stack-xs) / 2) 0 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+/* '확인 필요' 둘 — 오래 멈춤(보낼 때가 된 지 24시간) · 다시 보내기를 다 씀(리뷰 P1-1) */
+.subState[data-kind="stalled"],
+.subState[data-kind="exhausted"] {
+  color: var(--text-brand);
+  font-weight: 800;
+}
+.errorLabel {
+  cursor: help;
+  text-decoration: underline dotted var(--border-subtle);
+  text-underline-offset: 3px;
+}
+.timeMain {
+  display: block;
+}
+.timeSub {
+  display: block;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+/* 표(1280px 이상) — 칸 사이 여백을 줄이고(바깥 두 칸만 넓게) 상태 칸은 가장 긴 덩어리(배지 · 날짜)만큼만 차지한다(width 1% = 내용에 맞춰 줄어듦).
+ * 남는 폭이 알림 · 오류 칸으로 가서 "메일 · 사장님 접수 알림" · "발송 회사 인증 실패" 가 한 줄에 선다(라운드 2 촬영 실측). */
+@media (min-width: 1280px) {
+  .notifyTable .th,
+  .notifyTable .td {
+    padding-left: var(--space-inline-xs);
+    padding-right: var(--space-inline-xs);
+  }
+  .notifyTable .th:first-child,
+  .notifyTable .td:first-child {
+    padding-left: var(--space-inline-sm);
+  }
+  .notifyTable .th:last-child,
+  .notifyTable .td:last-child {
+    padding-right: var(--space-inline-sm);
+  }
+  .notifyTable td[data-cell="status"] {
+    width: 1%;
+  }
+}
+@media (max-width: 1279.98px) {
+  .notifyWrap {
+    overflow: visible;
+    background: none;
+    border: 0;
+    border-radius: 0;
+    /* 그림자 규약상 inset 빈 그림자로 걷는다(tests/layout.test.ts §4 — none 대신) */
+    box-shadow: inset 0 0 0 0 transparent;
+  }
+  .notifyTable {
+    display: block;
+  }
+  /* 카드 격자 — 휴대폰은 한 줄에 하나, 1024~1279(본문 712px)는 둘(넓은 카드 하나에 빈 자리가 많았다) */
+  .notifyTable tbody {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
+    gap: var(--space-stack-sm);
+  }
+  .notifyTable thead {
+    display: none;
+  }
+  .notifyTable tr {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-stack-xs);
+    min-width: 0;
+    padding: var(--space-stack-sm) var(--space-inline-sm);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-decorative);
+    border-radius: var(--radius-surface);
+    box-shadow: var(--elevation-raised);
+  }
+  .notifyTable td {
+    display: grid;
+    grid-template-columns: 5.5rem minmax(0, 1fr);
+    align-items: baseline;
+    gap: var(--space-inline-xs);
+    padding: 0;
+    border: 0;
+  }
+  .notifyTable td[data-cell="status"],
+  .notifyTable td[data-cell="alert"] {
+    display: block;
+  }
+  .notifyTable td[data-cell="alert"] {
+    font-size: 15px;
+  }
+  .notifyTable td[data-empty="true"] {
+    display: none;
+  }
+  .notifyTable .cellLabel {
+    display: block;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-secondary);
+  }
+  /* 카드에서는 둘째 줄을 배지 옆에 — 자리가 모자라면 아래로 */
+  .notifyTable td[data-cell="status"] .subState {
+    display: inline-block;
+    margin: 0 0 0 var(--space-inline-xs);
+  }
+}
+
+/* ── 조각 줄 (P5-23 라운드 2 C-14 → 라운드 3 컨트롤러 1 · components/admin/segments.tsx) ─────────────
+ * 줄 머리에서 잘려 나가는 구분점(clipped leading separator). 조각마다 앞에 '·'(::before)가 조각 왼쪽 바깥 틈(0.9em)에 걸린다.
+ * 안쪽 상자(.segsIn)는 조각의 앞 여백(0.65em)만큼 왼쪽으로 당겨져 있어 줄 머리 조각의 글자는 바깥 상자의 왼쪽 가장자리에 맞고,
+ * 그 조각의 '·' 는 가장자리 **바깥**에 떨어져 바깥 상자(.segs)가 잘라 낸다(overflow-x: clip — 세로는 그대로). 그래서 구분점은 같은 줄의
+ * 두 조각 사이에만 보인다: 틈 = 조각 사이 빈칸(약 0.25em) + 앞 여백 0.65em = 0.9em = '·' 상자 폭(가운데 정렬).
+ * 줄 머리 정렬은 앞 여백과 당김이 같은 값이라 정확하다(빈칸 폭은 '·' 의 가운데에만 1px 안팎으로 영향).
+ * 조각은 한 덩어리로 움직이고, 한 줄보다 길 때만 그 안에서 낱말 단위로 꺾인다(max-width — 당긴 폭만큼 뺀다).
+ * '·' 는 장식이라 읽지 않는다(content 의 대체 글 "" — 지원하지 않는 브라우저는 앞 선언의 '·' 만 쓴다).
+ */
+.segs {
+  display: block;
+  overflow-x: clip;
+}
+.segsIn {
+  display: block;
+  margin-inline-start: -0.65em;
+}
+.seg {
+  display: inline-block;
+  max-width: calc(100% - 0.65em);
+  margin-inline-start: 0.65em;
+  /* 한 줄보다 긴 낱말(아주 긴 이름)은 조각 안에서 꺾는다 — 바깥 상자의 자르기(clip)에 오른쪽 끝이 소리 없이 잘려 나가지 않게 */
+  overflow-wrap: anywhere;
+}
+.seg::before {
+  content: "·";
+  content: "·" / "";
+  display: inline-block;
+  width: 0.9em;
+  margin-inline-start: -0.9em;
+  text-align: center;
+  color: var(--text-muted);
+}
+/* 구분점 없는 한 덩어리(문장 조각 — sentences()) · 줄바꿈 없는 짧은 덧말(목록 구간 옆 "왕복 · 1박 2일") */
+.unit {
+  display: inline-block;
+  max-width: 100%;
+}
+/* 한 조각 안의 붙은 구분점(glued() — "35인승 관광버스 1대 · 30명") — 조각 사이 구분점과 같은 색·굵기 */
+.glue {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.nowrap {
+  white-space: nowrap;
+}
+
+@media (min-width: 768px) {
+  .dl {
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-stack-sm) var(--space-inline-md);
+  }
+}
+
+/* ── 공지·팝업 목록 표 ↔ 카드 (P5-23 라운드 2 · 컨트롤러 B-5) ─────────────────────────────
+ * 1024px 이상은 표 — 줄의 버튼과 글자가 한가운데 줄에 맞는다. 그보다 좁으면 행이 카드가 된다: 제목(한 줄 전체) · 분류·날짜(기간)·상태(한 줄에 이어서)
+ * · 버튼(한 줄 전체). 섹션 카드 안이라 행마다 상자를 또 두르지 않고 구분선으로 나눈다(상자 안의 상자 금지 — .actions 와 같은 규약).
+ * 옆으로 밀리지 않고(최소 폭 없음) 버튼은 늘 보인다.
+ */
+/* 줄에 버튼이 있는 표(공지·팝업·대표 노선) — 칸마다 세로 가운데. 글자·배지·버튼이 한 줄에 선다(B-8). 발송 기록처럼 여러 줄 칸이 있는 표는 위 맞춤 그대로. */
+.tableMiddle .td {
+  vertical-align: middle;
+}
+/* 표 모양일 때 처리 칸의 [고치기] [노출 끄기] 는 나란히 — 접히면 표가 그 칸을 가장 좁게 잡아 둘이 위아래로 갈렸다(라운드 2 촬영 실측). */
+@media (min-width: 1024px) {
+  .tableMiddle .rowActions {
+    flex-wrap: nowrap;
+  }
+}
+@media (max-width: 1023.98px) {
+  .contentWrap {
+    overflow: visible;
+    background: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: inset 0 0 0 0 transparent;
+    margin: 0;
+  }
+  .contentTable,
+  .contentTable tbody {
+    display: block;
+    min-width: 0;
+  }
+  .contentTable thead {
+    display: none;
+  }
+  .contentTable tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-stack-xs) var(--space-inline-sm);
+    padding: var(--space-stack-sm) 0;
+    border-top: 1px solid var(--border-decorative);
+  }
+  .contentTable tr:first-child {
+    border-top: 0;
+    padding-top: 0;
+  }
+  .contentTable tr:last-child {
+    padding-bottom: 0;
+  }
+  .contentTable .td {
+    display: block;
+    padding: 0;
+    border: 0;
+  }
+  .contentTable td[data-cell="title"],
+  .contentTable td[data-cell="actions"] {
+    flex: 1 1 100%;
+  }
+  .contentTable td[data-cell="title"] {
+    font-size: 16px;
+  }
+  .contentTable td[data-cell="meta"] {
+    font-size: 14px;
+    color: var(--text-secondary);
+  }
+  /* 카드에서만 보이는 칸 이름(대표 노선의 '순서' — 숫자만으로는 뜻을 모른다) */
+  .contentTable .cellLabel {
+    display: inline;
+  }
+}
+
+/* ── 사장님 글 경고 (P6-12 · known-defects D4) ─────────────────────────────
+ * 저장을 멈추고 무엇이 왜 문제인지 보이는 패널. 오류가 아니라 확인 요청이라 빨강이 아니다(팔레트에 상태색도 없다) —
+ * 굵은 테두리와 위치로 구분하고, 폼의 저장 버튼 바로 아래에 둔다.
+ */
+.copyWarning {
+  margin: var(--space-stack-sm) 0 0;
+  padding: var(--space-stack-sm) var(--space-inline-sm);
+  border: 2px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+}
+.copyWarningTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-brand);
+}
+.copyWarningList {
+  margin: var(--space-stack-xs) 0 var(--space-stack-sm);
+  padding-left: 1.2em;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+/* ── 통계 (P5-17 · /admin/stats) ────────────────────────────────────────────
+ * 차트 라이브러리를 쓰지 않는다(CLAUDE.md §4 · 새 패키지 금지). 막대는 전부 CSS 다:
+ * 가로 막대는 트랙 + 채움 두 겹, 추이는 세로 칼럼 안에 세 조각을 쌓은 flex 다.
+ * 색은 semantic.css 의 **역할 토큰만** 쓴다 — 원시 토큰(--brand-700 등)을 직접 쓰지 않는다.
+ * 375px 에서 가로 스크롤이 생기지 않아야 한다: 칼럼은 `flex: 1 1 0` + `min-width: 0` 으로 줄어들고,
+ * 구간 표만 .tableWrap 안에서 가로로 스크롤한다(표는 원래 그렇게 다룬다).
+ */
+.statGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-stack-sm);
+  margin: 0 0 var(--space-stack-md);
+}
+.statCard {
+  padding: var(--space-stack-sm) var(--space-inline-sm);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-surface);
+  background: var(--bg-surface);
+  box-shadow: var(--elevation-raised);
+}
+.statLabel {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.statValue {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--text-brand);
+  overflow-wrap: anywhere;
+}
+.statValue[data-weak="true"] {
+  font-size: 20px;
+  color: var(--text-secondary);
+}
+.statDelta {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.statNote {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.statLink {
+  display: inline-block;
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-link);
+}
+.statLink:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* 가로 막대 — 라벨 · 트랙 · 값 */
+.barList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.barRow {
+  display: grid;
+  grid-template-columns: minmax(5.5rem, 8rem) 1fr auto;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  padding: var(--space-stack-xs) 0;
+  min-width: 0;
+}
+.barLabel {
+  font-size: 14px;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.barTrack {
+  position: relative;
+  height: 14px;
+  min-width: 0;
+  border-radius: var(--radius-chip);
+  background: var(--bg-subtle);
+  overflow: hidden;
+}
+.barFill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-chip);
+  background: var(--action-primary-bg);
+}
+.barRow[data-suppressed="true"] .barFill {
+  background: var(--icon-default);
+}
+.barValue {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.barSub {
+  grid-column: 2 / -1;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* 추이 — 세로 누적 막대 */
+.trendChart {
+  display: flex;
+  align-items: flex-end;
+  height: 160px;
+  padding: var(--space-stack-xs) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.trendCol {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  align-items: flex-end;
+  justify-content: center;
+}
+/* 칼럼 사이 틈은 gap(간격 속성 — 역할 토큰만 허용)이 아니라 **폭**으로 만든다.
+ * 하루 단위는 31칸이라 8px 토큰을 쓰면 틈이 막대보다 넓어진다. 치수는 토큰화 대상이 아니다(tests/layout.test.ts §4 주석). */
+.trendStack {
+  display: flex;
+  flex-direction: column-reverse;
+  width: calc(100% - 2px);
+  min-height: 1px;
+  border-radius: var(--radius-chip) var(--radius-chip) 0 0;
+  overflow: hidden;
+  background: var(--bg-subtle);
+}
+.trendSeg[data-kind="waiting"] {
+  background: var(--accent-decorative-strong);
+}
+.trendSeg[data-kind="confirmed"] {
+  background: var(--action-primary-bg);
+}
+.trendSeg[data-kind="cancelled"] {
+  background: var(--icon-default);
+}
+/* 3건 미만이라 상태를 나누지 않은 버킷 — **회색 빗금**. 예전에는 확정 조각과 같은 보라라 색으로 둘을 가를 수 없었다(리뷰 P2-1).
+ * 색이 다르고(회색) 무늬(빗금)라는 색 밖의 단서가 있다 — 취소(회색 면)와도 무늬로 갈린다. 범례 견본도 **같은 규칙**이다(어긋날 수 없게). */
+.trendSeg[data-kind="unsplit"],
+.legendSwatch[data-kind="unsplit"] {
+  background: repeating-linear-gradient(135deg, var(--icon-default) 0 2px, var(--bg-surface) 2px 5px);
+}
+.trendAxis {
+  display: flex;
+  justify-content: space-between;
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-inline-sm);
+  margin: var(--space-stack-xs) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+}
+.legendSwatch {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-chip);
+}
+.legendSwatch[data-kind="waiting"] {
+  background: var(--accent-decorative-strong);
+}
+.legendSwatch[data-kind="confirmed"] {
+  background: var(--action-primary-bg);
+}
+.legendSwatch[data-kind="cancelled"] {
+  background: var(--icon-default);
+}
+
+/* 칸이 적은 표 — `.table` 의 `min-width: 68rem` 은 열 열 개짜리 예약 목록을 위한 값이다(그 표는 좁은 화면에서
+ * 가로로 스크롤하는 것이 맞다). 통계의 구간 표는 칸이 셋뿐이라 그 하한을 풀어 **375px 에 그대로 들어가게** 한다. */
+.tableNarrow {
+  min-width: 0;
+}
+
+/* 구간 표의 "대표 노선" 배지 — 좁은 화면에서는 줄을 바꿔 표가 가로로 넘치지 않게 한다(ADMIN-STATS-RESEARCH ④ "375px 에서 2줄로 접힘").
+ * 표 자체는 .tableWrap 이 감싸므로 페이지에는 가로 스크롤이 생기지 않지만, 배지까지 한 줄에 두면 표 안에서 잘려 보인다. */
+.segBadge {
+  display: block;
+  width: fit-content;
+  margin-top: var(--space-stack-xs);
+}
+
+.subBlock {
+  margin: 0 0 var(--space-stack-md);
+}
+.subBlock:last-child {
+  margin-bottom: 0;
+}
+.subTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+@media (min-width: 640px) {
+  .statGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .barRow {
+    grid-template-columns: minmax(7rem, 10rem) 1fr auto;
+  }
+  .segBadge {
+    display: inline-block;
+    margin-top: 0;
+    margin-left: var(--space-inline-xs);
+  }
+}
+
+@media (min-width: 1024px) {
+  .statGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .statGrid[data-cols="2"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

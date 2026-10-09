@@ -1,0 +1,386 @@
+/*
+ * 공개 헤더 — CSS Modules.
+ * 색·간격·라운드·고도는 styles/semantic.css 의 역할 토큰만 쓴다(HEX·rgba·원시 토큰 금지).
+ * px 리터럴은 "치수"(로고·버튼·아이콘 크기)와 타이포·선 두께에만 남는다 — 간격에는 한 건도 없다.
+ * tests/layout.test.ts §4 가 components/**\/*.module.css 전체에 이 규약을 강제한다.
+ *
+ * 데스크톱 메뉴 분기점이 1280px 인 이유: 옛 메뉴 10개를 한 항목도 지우지 않고 한 줄에 놓으면
+ * 라벨 길이 합이 1024px 폭에 들어가지 않는다("차량소개 · 보험내용" 처럼 긴 항목이 있다).
+ * 줄이는 대신(=삭제 금지 위반) 분기점을 올리고 그 아래는 햄버거 패널로 보낸다.
+ */
+
+/* 붙는 머리글(P7-4) — app/globals.css 의 overflow-x: clip 으로 body 가 스크롤 상자가 아니게 되어 이제 실제로 화면 위에 붙는다.
+ * 높이는 역할 토큰 --layout-header-h(줄 + 아래 테두리 1px) 하나 — 지도 sticky top · 문서 scroll-padding 이 같은 값을 쓴다. */
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 80;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-decorative);
+}
+/* 붙어 있는 머리글 밑으로 앵커 착지점(#quote · #location · 본문 바로가기)과 키보드 포커스가 숨지 않게(WCAG 2.2 SC 2.4.11) —
+ * 문서의 스크롤은 뷰포트(<html>)가 맡으므로 <html> 에 걸고, 이 머리글이 있는 화면에만 건다(:has — 법정 셸·관리자·전역 404 는 그대로).
+ * 틈(간격 토큰)은 포커스 링 몫이다. 관리자 셸의 같은 장치: components/admin/admin.module.css :global(html):has(.shell). */
+:global(html):has(.header) {
+  scroll-padding-top: calc(var(--layout-header-h) + var(--space-stack-xs));
+}
+
+/* ── 본문 바로가기 (키보드 사용자) ─────────────────────────────────────── */
+.skip {
+  position: absolute;
+  z-index: 1;
+  top: var(--space-stack-xs);
+  left: var(--space-page-x);
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  background: var(--action-primary-bg);
+  color: var(--action-primary-fg);
+  border-radius: var(--radius-control);
+  font-size: 14px;
+  font-weight: 700;
+}
+.skip:focus-visible {
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* ── 바 ────────────────────────────────────────────────────────────────── */
+.inner {
+  width: 100%;
+  max-width: var(--layout-maxw);
+  margin: 0 auto;
+  padding: 0 var(--space-page-x);
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-sm);
+  /* 줄 높이 = 머리글 높이 − 아래 테두리 1px(60px · 1280px 이상 76px — 토큰이 폭에 따라 바뀐다) */
+  min-height: calc(var(--layout-header-h) - 1px);
+}
+@media (min-width: 1280px) {
+  .inner {
+    gap: var(--space-inline-md);
+  }
+}
+
+/* 누르는 영역 44px(P7-4) — 보이는 로고 크기는 그대로, 링크 상자만 줄 높이 안에서 키운다(60px 줄이라 줄은 그대로다) */
+.brand {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-width: 0;
+  min-height: var(--size-target-min);
+}
+.brand:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-control);
+}
+
+.logo {
+  display: block;
+  width: 132px;
+  height: 26px;
+  object-fit: contain;
+}
+@media (min-width: 768px) {
+  .logo {
+    width: 165px;
+    height: 32px;
+  }
+}
+
+/* ── 데스크톱 메뉴 ─────────────────────────────────────────────────────── */
+.nav {
+  display: none;
+}
+@media (min-width: 1280px) {
+  .nav {
+    display: block;
+    min-width: 0;
+  }
+}
+
+.navList {
+  display: flex;
+  align-items: center;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.navLink,
+.navDisabled {
+  display: block;
+  padding: var(--space-stack-xs) var(--space-inline-xs);
+  border-radius: var(--radius-control);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.navLink {
+  color: var(--text-primary);
+  transition: color var(--motion-base), background-color var(--motion-base);
+}
+.navLink:hover {
+  color: var(--text-brand);
+  background: var(--bg-subtle);
+}
+.navLink:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.navLinkCurrent {
+  color: var(--text-brand);
+  background: var(--bg-subtle);
+}
+
+/* 아직 없는 페이지 — 링크가 아니라 비활성 텍스트. 메뉴에서 지우지는 않는다. */
+.navDisabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+/* ── 대표전화 ──────────────────────────────────────────────────────────── */
+.tel {
+  margin-left: auto;
+  /* 누르는 영역 44px(P7-4) — 글자 크기는 그대로, 링크 상자만 줄 높이 안에서 키운다 */
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--size-target-min);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+.tel:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}
+@media (min-width: 768px) {
+  .tel {
+    font-size: 20px;
+  }
+}
+/* 좁은 폰(<420px) — 예약·상담 전화(P1-7)는 예전 헤더 번호(9자)보다 길다(국문 13자 · 영문 +82 표기 16자).
+ * 375px 실측에서 영문 줄이 로고 132 + 전화 147 + 햄버거 44 + 간격 32 = 355px 로 내용 폭 343px 를 12px 넘어 햄버거가 오른쪽 여백을 먹었다
+ * (360px 에서는 국문도 2px 넘는다). 번호를 줄이거나 숨기지 않고 줄 간격과 글자 크기만 한 단계 내린다. */
+@media (max-width: 419px) {
+  .inner {
+    gap: var(--space-inline-xs);
+  }
+  .tel {
+    font-size: 14px;
+  }
+}
+
+/* ── 언어 전환 (P2-6b) ─────────────────────────────────────────────────────
+ * 작은 텍스트 링크 하나. 데스크톱(≥1280px)은 줄 오른쪽 끝, 그 아래 폭은 모바일 패널 맨 위(.panelLocale).
+ * 1280px 미만의 줄에 두지 않는 이유: 375px 줄은 로고 132 + 전화 + 햄버거 44 로 이미 차 있다(가로 스크롤이 생긴다). */
+.localeDesktop {
+  display: none;
+  flex: 0 0 auto;
+}
+@media (min-width: 1280px) {
+  .localeDesktop {
+    display: block;
+  }
+}
+
+.localeLink {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-link);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+.localeLink:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}
+
+/* ── 햄버거 ────────────────────────────────────────────────────────────── */
+.burger {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border-decorative);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.burger:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+@media (min-width: 1280px) {
+  .burger {
+    display: none;
+  }
+}
+
+.burgerIcon {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* ── 모바일 패널 ───────────────────────────────────────────────────────────
+ * 헤더 줄(.inner)의 **형제**다(MobileMenu) — 헤더 전체 폭으로 줄 바로 아래에 펼쳐진다(목업 .drawer).
+ * 예전에는 줄 안의 flex 항목이라 폭 없이 오른쪽 띠로 렌더됐다(P2-6b). 여기 폭·위치 규칙을 더하지 않는다 — 구조가 폭을 정한다. */
+/* 머리글이 붙어 있으므로(P7-4) 패널은 머리글 아래 남은 높이만 쓰고 그 안에서 스크롤한다 — 휴대폰 주소창이 줄었다 늘었다 하는
+ * 화면에서는 dvh(모르는 브라우저는 앞줄 vh). */
+.panel {
+  border-top: 1px solid var(--border-decorative);
+  background: var(--bg-surface);
+  padding: var(--space-stack-xs) var(--space-page-x) var(--space-stack-md);
+  max-height: calc(100vh - var(--layout-header-h));
+  max-height: calc(100dvh - var(--layout-header-h));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.panel[hidden] {
+  display: none;
+}
+@media (min-width: 1280px) {
+  .panel {
+    display: none;
+  }
+}
+
+/* ── 영문 화면은 데스크톱에서도 햄버거 패널 (P2-6b 실측) ───────────────────────
+ * 영문 메뉴 10개는 라벨이 길어 한 줄에 901px 가 든다(국문 765px). 헤더 줄은 --layout-maxw(1280px)에서 더 넓어지지 않으므로
+ * 로고·전화·언어 전환을 뺀 메뉴 칸이 어느 폭에서도 831px 를 넘지 못한다 — 1280·1440px 실측 모두 마지막 항목이 대표전화 밑으로 겹쳤다
+ * (언어 전환이 없던 P2-6 에서도 6px 모자랐다). 항목을 지우거나 라벨을 줄이지 않고(삭제 금지 · 번역 유지) 영문만 패널을 쓴다.
+ * 국문 화면의 분기점(1280px)은 그대로다. 언어 전환은 데스크톱 줄 오른쪽에 남는다. <html lang> 은 로케일 레이아웃이 정한다. */
+@media (min-width: 1280px) {
+  :global(html[lang="en"]) .nav {
+    display: none;
+  }
+  :global(html[lang="en"]) .burger {
+    display: grid;
+  }
+  :global(html[lang="en"]) .panel:not([hidden]) {
+    display: block;
+  }
+  /* 넓은 화면에서 패널 목록이 헤더 줄의 내용 폭과 같은 선에 서게 한다 */
+  :global(html[lang="en"]) .panel > * {
+    max-width: calc(var(--layout-maxw) - 2 * var(--space-page-x));
+    margin-inline: auto;
+  }
+  /* 데스크톱에서는 줄 오른쪽에 언어 전환이 이미 있다 — 패널 맨 위의 같은 링크는 겹치므로 숨긴다 */
+  :global(html[lang="en"]) .panelLocale {
+    display: none;
+  }
+}
+
+/* 패널 맨 위 — 언어 전환 링크 한 줄 */
+.panelLocale {
+  margin: 0;
+  padding: var(--space-stack-xs) 0;
+  border-bottom: 1px solid var(--border-decorative);
+  text-align: right;
+}
+/* 누르는 영역 44px(P7-4) — 패널 맨 위 언어 전환 링크. 짧은 이름("한국어" 35px)도 폭 44px — 글자는 오른쪽 끝 그대로(flex-end) */
+.panelLocale .localeLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: var(--size-target-min);
+  min-width: var(--size-target-min);
+}
+
+.panelList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.panelLink,
+.panelDisabled {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-inline-sm);
+  padding: var(--space-stack-sm) 0;
+  border-bottom: 1px solid var(--border-decorative);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  word-break: keep-all;
+}
+
+.panelLink {
+  color: var(--text-primary);
+}
+.panelLink::after {
+  content: "›";
+  color: var(--text-brand);
+  font-size: 20px;
+  line-height: 1;
+}
+.panelLink:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.panelLinkCurrent {
+  color: var(--text-brand);
+}
+
+.panelDisabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+/* 패널 맨 아래 — 예약·상담 전화 버튼 (P1-7 · 목업 variant-08 .drawer .btn--primary.btn--block) */
+.panelCall {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  column-gap: var(--space-inline-xs);
+  min-height: 48px;
+  margin: var(--space-stack-md) 0 0;
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  border-radius: var(--radius-control);
+  background: var(--action-primary-bg);
+  color: var(--action-primary-fg);
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  word-break: keep-all;
+}
+.panelCallNumber {
+  white-space: nowrap;
+}
+.panelCall:hover {
+  background: var(--action-primary-bg-hover);
+}
+.panelCall:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}

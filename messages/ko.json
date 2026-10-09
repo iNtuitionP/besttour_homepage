@@ -1,0 +1,1344 @@
+{
+  "common": {
+    "siteName": "베스트투어",
+    "description": "베스트투어 — 전세버스 대절 알선",
+    "dates": {
+      "weekdays": ["일", "월", "화", "수", "목", "금", "토"],
+      "months": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"],
+      "day": "{month}월 {day}일 ({weekday})",
+      "dayYear": "{year}년 {month}월 {day}일 ({weekday})",
+      "date": "{year}년 {month}월 {day}일",
+      "time": "{hour}:{minute}",
+      "dateTime": "{date} {time}"
+    }
+  },
+  "layout": {
+    "skipToContent": "본문 바로가기",
+    "primaryNav": "주요 메뉴",
+    "mobileNav": "모바일 메뉴",
+    "footerNav": "푸터 메뉴",
+    "menuOpen": "메뉴 열기",
+    "menuClose": "메뉴 닫기",
+    "menuHeading": "메뉴",
+    "supportHeading": "고객센터",
+    "contactChannels": "문의 채널",
+    "kakaoChannel": "카카오톡 채널 상담",
+    "naverChannel": "네이버 톡톡 상담",
+    "menu": {
+      "about": "회사소개 · 인사말",
+      "location": "찾아오시는 길",
+      "fleet": "차량소개 · 보험내용",
+      "fares": "차량운임료",
+      "quote": "견적요청",
+      "reservationCheck": "예약확인",
+      "notices": "공지사항",
+      "guide": "이용안내",
+      "gallery": "갤러리",
+      "blog": "네이버 블로그"
+    }
+  },
+  "errors": {
+    "notFoundTitle": "페이지를 찾을 수 없습니다",
+    "notFoundBody": "주소가 바뀌었거나 없는 페이지입니다. 주소를 다시 확인하시거나 홈으로 이동해 주세요.",
+    "errorTitle": "일시적인 오류가 발생했습니다",
+    "errorBody": "잠시 후 다시 시도해 주세요. 문제가 계속되면 전화로 문의해 주세요.",
+    "errorRef": "오류 참조 번호 {digest}",
+    "retry": "다시 시도",
+    "home": "홈으로"
+  },
+  "home": {
+    "meta": {
+      "title": "{brand} — 전세버스 대절 · 공항 픽업·샌딩 (송영 전문)",
+      "description": "전세버스 대절 · 공항 픽업·샌딩 (송영 전문). 대표 노선 예시 견적, 전국 운행."
+    },
+    "hero": {
+      "sectionLabel": "베스트투어 소개 및 견적 신청",
+      "carouselLabel": "베스트투어 주요 안내",
+      "carouselRole": "캐러셀",
+      "slideRole": "슬라이드",
+      "slideLabel": "{n} / {total} {title}",
+      "prev": "이전 슬라이드",
+      "next": "다음 슬라이드",
+      "pause": "자동 넘김 멈춤",
+      "play": "자동 넘김 재생",
+      "dotsLabel": "슬라이드 선택",
+      "dotLabel": "{n}번 슬라이드 보기 — {title}",
+      "slides": {
+        "airport": {
+          "title": "인천공항 픽업·샌딩",
+          "tag": "공항 픽업·샌딩 (송영 전문)",
+          "heading": "인천공항 갈 때, 올 때 —\n<em>공항 노선, 자신 있게</em>\n모십니다",
+          "body": "인천공항 출발·도착 일정은 <b>공항 픽업·샌딩 (송영 전문)</b>으로 모십니다.",
+          "chips": ["인천공항 픽업", "인천공항 샌딩", "새벽·심야 배차", "수하물 적재 여유", "인솔자 동승 가능"],
+          "chipsOn": 2
+        },
+        "nationwide": {
+          "title": "전국 운행",
+          "tag": "전국 운행 · 왕복 / 편도 / 편도·편도",
+          "heading": "전국 <em>어디든</em> 갑니다",
+          "body": "서울에서 제주까지 <b>전국</b> 배차합니다. 아래는 운행 지역 예시입니다. 워크숍·현장학습·종교단체·관혼상제까지 일정과 인원을 알려 주시면 맞춰 안내해 드립니다.",
+          "chips": ["서울", "부산", "대구", "인천", "광주", "대전", "울산", "경기", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주"],
+          "chipsOn": 0
+        },
+        "trust": {
+          "title": "외국인 투어 전문과 신뢰",
+          "tag": "외국인 의전·관광 전문",
+          "heading": "외국인 투어\n운행 기준",
+          "body": "<b>정식 등록 알선업체</b>로 차량 보험에 가입되어 있으며, 원하시는 경우 보험 서류를 받아 보실 수 있습니다. 배차는 대표가 직접 확인합니다.",
+          "chips": [],
+          "chipsOn": 0
+        }
+      },
+      "widget": {
+        "label": "견적 신청 위젯",
+        "title": "견적 신청",
+        "sub": "일정과 인원을 남겨 주시면 사장님이 확인 후 연락드립니다",
+        "origin": "출발지",
+        "dest": "도착지",
+        "date": "출발일",
+        "returnDate": "도착일",
+        "pax": "탑승 인원",
+        "groupAirport": "★ 공항 노선 (전문)",
+        "groupRegions": "전국 시도",
+        "groupCities": "대표 노선 도시",
+        "airNote": "<b>공항 픽업·샌딩 (송영 전문)</b> 노선입니다.",
+        "cta": "견적 신청하기",
+        "note": "온라인 결제는 없습니다.",
+        "errors": {
+          "origin": "출발지를 골라 주세요.",
+          "dest": "도착지를 골라 주세요.",
+          "departDate": "출발일을 골라 주세요.",
+          "departPast": "출발일은 오늘 이후로 골라 주세요.",
+          "returnDate": "도착일을 골라 주세요.",
+          "returnBefore": "도착일은 출발일과 같거나 뒤여야 합니다.",
+          "pax": "탑승 인원을 1~900명 사이 숫자로 입력해 주세요."
+        }
+      }
+    },
+    "routes": {
+      "eyebrow": "대표 노선",
+      "title": "대표 노선, <ac>미리 보는 견적</ac>",
+      "desc": "많이 찾으시는 노선의 예시 견적입니다. <b>인천공항 노선</b>은 공항 픽업·샌딩 (송영 전문)으로 운행합니다."
+    },
+    "krmap": {
+      "section": "대표 노선",
+      "mapTitle": "대한민국 대표 노선 지도",
+      "legendAirport": "골드 표시 = 공항 픽업·샌딩 (송영 전문) 노선",
+      "descEmpty": "대한민국 지도입니다. 표시할 대표 노선이 없습니다.",
+      "desc": "대표 노선 {count}개의 출발지와 도착지를 대한민국 지도 위에 핀과 곡선으로 표시했습니다. 노선별 내용은 이어지는 목록에 전부 있습니다.",
+      "listLabel": "대표 노선 예시 견적",
+      "airport": "공항 픽업·샌딩 (송영 전문)",
+      "cta": "우리 일정으로 견적 신청하기",
+      "empty": "지금은 보여 드릴 대표 노선이 없습니다. 견적은 상담으로 안내드립니다.",
+      "moreHint": "나머지 {count}개 노선은 지도의 선에 마우스를 올리거나 탭해 보세요.",
+      "showAll": "노선 전체 보기 ({count}개)",
+      "showLess": "노선 접기"
+    },
+    "trust": {
+      "label": "회사 신뢰 정보",
+      "registered": "정식 등록 알선업체",
+      "airport": "공항 픽업·샌딩 (송영 전문)",
+      "airportSub": "새벽·심야 배차 · 수하물 적재 여유",
+      "since": "{year}년부터",
+      "intake": "24시간 접수",
+      "intakeSub": "상담은 확인 후 회신"
+    },
+    "services": {
+      "label": "베스트투어 강점",
+      "items": ["공항 픽업·샌딩 (송영 전문)", "DVD · 노래방 시스템", "냉장고 · 정수기", "차량 보험 가입", "전국 운행"]
+    },
+    "how": {
+      "eyebrow": "이용 방법",
+      "title": "신청부터 결제까지, 단 <ac>네 단계</ac>",
+      "desc": "복잡한 절차는 저희가 대신합니다. 고객님은 출발지·도착지와 날짜, 인원만 알려 주시면 됩니다. 온라인 결제는 없습니다."
+    },
+    "fleet": {
+      "eyebrow": "차량소개",
+      "title": "보라색버스 <ac>{count}종</ac>, 인원에 맞춰 안내합니다",
+      "seat": "{n}인승",
+      "capacityLabel": "정원",
+      "capacity": "최대 <b>{n}명</b>",
+      "cta": "견적 신청하기",
+      "disc": "차종별 정원·옵션은 배차 차량에 따라 일부 다를 수 있습니다. 주차료와 VAT 10% 포함 여부는 견적서에 별도 표기됩니다.",
+      "lines": {
+        "bus45": "단체 워크숍·현장학습·종교단체 이동에 쓰이는 대형 차량.",
+        "bus35": "중형 단체에 알맞은 크기. 친목회·가족여행·통근 운행까지 폭넓게 운용합니다.",
+        "limo28": "넓은 좌석 간격의 우등 시트. 외국인 의전·관광, 관혼상제 등 격이 필요한 일정에 추천합니다.",
+        "bus25": "소규모 단체의 합리적인 선택. 대학MT·워크숍 등 20명 안팎 일정에 적합합니다.",
+        "bus16": "공항 픽업·샌딩과 소규모 이동에 적합. 골목길 진입이 편해 도심 일정에 강합니다."
+      }
+    },
+    "company": {
+      "eyebrow": "회사소개",
+      "lead": "저희 베스트투어 홈페이지를 찾아주셔서 진심으로 감사합니다.",
+      "body": [
+        "베스트투어는 완벽한 차량관리와 안전운전의 생활화로 \"고객의 안전하고 행복한 여행\"을 경영의 최우선 목표로 삼고 있습니다.",
+        "인생의 쉼표가 되는 여행, 그 동반자로써 오늘도 노력하는 BEST TOUR 가 되겠습니다."
+      ],
+      "signaturePrefix": "CEO"
+    },
+    "gallery": {
+      "eyebrow": "갤러리",
+      "title": "보라색버스가 다녀온 <ac>자리들</ac>",
+      "desc": "전국 어디든 갑니다. 갤러리 게시판에서 더 많은 운행 사진을 보실 수 있습니다.",
+      "more": "갤러리 전체 보기"
+    },
+    "notice": {
+      "eyebrow": "공지사항",
+      "title": "고객센터 <ac>소식</ac>",
+      "category": { "info": "안내", "notice": "공지", "airport": "공항" },
+      "csTitle": "고객센터",
+      "more": "공지 전체 보기"
+    },
+    "popup": {
+      "close": "닫기",
+      "closeAria": "팝업 닫기",
+      "hideToday": "오늘 하루 보지 않기"
+    },
+    "recentFeed": {
+      "eyebrow": "최근 견적현황",
+      "title": "최근 <ac>견적 받은</ac> 분들",
+      "listLabel": "최근 견적 접수 내역",
+      "statusNew": "접수",
+      "statusConfirmed": "확정",
+      "itemLabel": "{name} · {vehicle} · {date}",
+      "itemLabelNoVehicle": "{name} · {date}"
+    }
+  },
+  "reservation": {
+    "errors": {
+      "validation": "입력하신 내용을 다시 확인해 주세요.",
+      "bot": "잠시 후 다시 시도해 주세요.",
+      "turnstile": "보안 확인에 실패했습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.",
+      "ratelimit": "짧은 시간에 여러 번 접수하셨습니다. 잠시 후 다시 시도하시거나 {tel} 로 전화 주세요.",
+      "infra": "일시적인 오류로 접수하지 못했습니다. 잠시 후 다시 시도하시거나 급하시면 {tel} 로 전화 주세요.",
+      "server": "일시적인 오류로 접수하지 못했습니다. 잠시 후 다시 시도하시거나 급하시면 {tel} 로 전화 주세요."
+    }
+  },
+  "quote": {
+    "modal": {
+      "title": "이 내용으로 견적 신청하기",
+      "close": "닫기",
+      "summaryLabel": "신청 내용",
+      "summaryRoute": "구간",
+      "summaryDates": "운행일",
+      "summaryPax": "인원",
+      "routeValue": "{origin} → {destination}",
+      "dateSingle": "{date} (당일)",
+      "dateRange": "{from} ~ {to}",
+      "paxValue": "{n}명",
+      "summaryHint": "차량 종류·출발 시각 등은 사장님이 전화로 확인합니다.",
+      "edit": "수정",
+      "widgetFix": "[수정]을 눌러 출발지·도착지·날짜·인원을 다시 확인해 주세요.",
+      "nameLabel": "성함",
+      "phoneLabel": "연락처(휴대폰)",
+      "phoneHint": "010-0000-0000 형식으로 입력해 주세요. 해외 번호는 +국가번호부터 입력해 주세요.",
+      "security": "보안 확인",
+      "notReadyTitle": "접수 준비 중입니다",
+      "notReadyBody": "지금은 온라인 접수를 받을 수 없습니다. 전화 {tel} 로 문의해 주시면 바로 안내드립니다.",
+      "call": "전화 걸기",
+      "consentRequired": "필수 동의 두 가지에 체크하셔야 신청할 수 있습니다.",
+      "submit": "견적 신청하기",
+      "submitting": "신청 중…",
+      "errors": {
+        "name": "성함을 입력해 주세요. (30자 이내)",
+        "phone": "휴대폰 번호를 010-0000-0000 형식으로 입력해 주세요.",
+        "phoneIntl": "해외 번호는 +국가번호와 숫자만으로 입력해 주세요.",
+        "consent": "필수 동의에 체크해 주세요."
+      },
+      "done": {
+        "title": "견적 신청이 접수되었습니다",
+        "codeLabel": "접수번호",
+        "codeHint": "이 번호와 휴대폰 뒷 4자리로 예약확인 메뉴에서 조회하실 수 있습니다.",
+        "noCode": "접수 내용을 확인한 뒤 연락드리겠습니다.",
+        "sub": "온라인 결제는 진행하지 않습니다. 확정 전까지는 어떤 비용도 청구되지 않습니다. 급하시면 {tel} 로 전화 주셔도 됩니다.",
+        "check": "예약 확인",
+        "call": "전화 걸기",
+        "close": "닫기"
+      }
+    },
+    "notice": {
+      "title": "신청 전 확인 사항",
+      "cancelTitle": "취소·환불 기준"
+    },
+    "consent": {
+      "purpose": "수집 목적",
+      "items": "수집 항목",
+      "retention": "보유 기간",
+      "full": "개인정보 처리방침 전문 보기",
+      "newTab": "(새 탭)"
+    },
+    "more": {
+      "show": "자세히 보기",
+      "hide": "접기"
+    }
+  },
+  "reservationCheck": {
+    "meta": {
+      "title": "예약확인 — {brand}",
+      "description": "문자로 받으신 접수번호와 휴대폰 번호 뒷 4자리로 전세버스 예약 접수 상태를 확인합니다."
+    },
+    "eyebrow": "예약확인",
+    "title": "예약 접수 확인",
+    "sub": "접수 완료 문자로 받으신 접수번호와 휴대폰 번호 뒷 4자리를 입력해 주세요. 접수 상태와 운행 일정을 확인하실 수 있습니다.",
+    "form": {
+      "required": "필수",
+      "codeLabel": "접수번호",
+      "codeHint": "문자로 받으신 영문·숫자 8자리입니다. 대소문자는 구분하지 않습니다.",
+      "codePlaceholder": "8자리 접수번호",
+      "phoneLast4Label": "휴대폰 번호 뒷 4자리",
+      "phoneLast4Hint": "접수하실 때 입력하신 휴대폰 번호의 마지막 4자리 숫자입니다.",
+      "submit": "예약 조회하기",
+      "submitting": "조회 중…",
+      "errorSummary": "확인해 주세요",
+      "codeError": "접수번호 8자리를 정확히 입력해 주세요.",
+      "phoneLast4Error": "휴대폰 번호 뒷 4자리를 숫자로 입력해 주세요.",
+      "help": "접수번호를 찾지 못하시면 전화로 확인해 드립니다."
+    },
+    "card": {
+      "title": "접수 내역",
+      "code": "접수번호",
+      "status": "접수 상태",
+      "name": "예약자",
+      "phone": "휴대폰",
+      "vehicle": "차량",
+      "route": "운행 구간",
+      "routeValue": "{origin} → {destination}",
+      "tripType": "운행 구분",
+      "departAt": "출발 일시",
+      "returnAt": "도착 일시",
+      "departDate": "출발일",
+      "returnDate": "도착일",
+      "busCount": "대수",
+      "busCountValue": "{n}대",
+      "passengers": "탑승 인원",
+      "passengersValue": "{n}명",
+      "createdAt": "접수 일시",
+      "help": "예약 변경·취소는 {tel} 로 전화 주시면 도와드립니다.",
+      "call": "전화 걸기",
+      "again": "다른 예약 조회"
+    },
+    "status": {
+      "new": "접수",
+      "confirmed": "확정",
+      "cancelled": "취소",
+      "done": "완료"
+    },
+    "tripType": {
+      "round": "왕복",
+      "oneway": "편도",
+      "oneway_oneway": "편도·편도"
+    },
+    "errors": {
+      "validation": "입력하신 내용을 다시 확인해 주세요.",
+      "not_found": "입력하신 접수번호와 휴대폰 뒷자리에 해당하는 예약을 찾지 못했습니다. 문자로 받으신 접수번호를 다시 확인해 주세요.",
+      "ratelimit": "짧은 시간에 여러 번 조회하셨습니다. 잠시 후 다시 시도하시거나 {tel} 로 전화 주세요.",
+      "infra": "일시적인 오류로 조회하지 못했습니다. 잠시 후 다시 시도하시거나 급하시면 {tel} 로 전화 주세요.",
+      "server": "일시적인 오류로 조회하지 못했습니다. 잠시 후 다시 시도하시거나 급하시면 {tel} 로 전화 주세요."
+    }
+  },
+  "pages": {
+    "common": {
+      "breadcrumb": "현재 위치",
+      "home": "홈"
+    },
+    "about": {
+      "meta": {
+        "title": "{brand} 회사소개 · 인사말",
+        "description": "베스트투어의 인사말과 사업자 정보, 본사 찾아오시는 길을 안내합니다."
+      },
+      "more": [
+        "가족 같은 직원의 안전을 기반으로 소중한 고객에게 감동과 미소를 주는 서비스를 제공하여 직원과 고객이 모두 행복해 질 수 있는 베스트투어가 되겠습니다.",
+        "저희는 \"고객이 행복한 미소를 지으며 버스에서 내릴 때, 가장 큰 보람을 느낍니다\"."
+      ],
+      "facts": {
+        "since": "개업"
+      },
+      "location": {
+        "desc": "본사 주소입니다. 지도 서비스에서 길찾기를 이용하실 수 있습니다.",
+        "kakao": "카카오맵에서 보기",
+        "naver": "네이버 지도에서 보기"
+      }
+    },
+    "fleet": {
+      "meta": {
+        "title": "{brand} 차량소개 · 보험내용",
+        "description": "베스트투어 전세버스 차종별 정원과 특징, 차량 보험 안내입니다."
+      },
+      "empty": "차량 정보를 준비 중입니다. 일정과 인원을 알려 주시면 맞는 차량으로 안내해 드립니다.",
+      "insurance": {
+        "eyebrow": "보험내용"
+      }
+    },
+    "fares": {
+      "meta": {
+        "title": "{brand} 차량운임료",
+        "description": "전세버스 견적은 차종·탑승 인원·운행 거리·시간·일수를 기준으로 상담을 거쳐 확정됩니다. 산정 기준과 대표 노선 예시를 안내합니다."
+      },
+      "eyebrow": "견적 안내",
+      "intro": "차량운임료는 미리 정해 둔 금액이 아니라 일정마다 산정합니다. 아래 기준으로 상담을 거쳐 견적을 확정해 드립니다.",
+      "basis": {
+        "eyebrow": "산정 기준",
+        "desc": "견적에 반영하는 항목입니다. 계약금과 잔금 안내는 아래 고지를 확인해 주세요."
+      },
+      "routes": {
+        "title": "많이 찾으시는 노선의 예시",
+        "desc": "예시 견적은 참고용입니다. 일정·인원·차종에 따라 달라지므로 정확한 견적은 상담으로 안내드립니다."
+      },
+      "cta": {
+        "title": "우리 일정으로 견적 받기",
+        "desc": "출발지·도착지·일정·인원을 남겨 주시면 확인 후 연락드립니다.",
+        "call": "전화 상담"
+      }
+    },
+    "notices": {
+      "meta": {
+        "title": "{brand} 공지사항",
+        "description": "베스트투어의 공지사항과 운행 안내를 모았습니다."
+      },
+      "empty": "등록된 공지가 없습니다.",
+      "listLabel": "공지 목록",
+      "detail": {
+        "meta": {
+          "title": "{title} — 공지사항 | {brand}",
+          "description": "베스트투어 공지사항입니다."
+        },
+        "publishedAt": "게시일",
+        "back": "목록으로"
+      }
+    },
+    "gallery": {
+      "meta": {
+        "title": "{brand} 갤러리",
+        "description": "베스트투어가 다녀온 운행 현장 사진입니다."
+      },
+      "empty": "갤러리를 준비 중입니다. 운행 사진이 올라오면 이곳에서 보실 수 있습니다.",
+      "albumsTitle": "앨범",
+      "albumsLabel": "앨범 목록",
+      "albumPending": "사진 준비 중",
+      "allTitle": "전체 사진",
+      "detail": {
+        "meta": {
+          "title": "{title} — 갤러리 | {brand}",
+          "description": "베스트투어가 다녀온 운행 현장 사진입니다."
+        },
+        "empty": "이 앨범에는 아직 사진이 없습니다.",
+        "back": "갤러리로",
+        "pager": {
+          "label": "사진 페이지 넘김",
+          "prev": "이전",
+          "next": "다음",
+          "page": "{page} 페이지"
+        }
+      }
+    }
+  },
+  "admin": {
+    "error": {
+      "title": "화면을 불러오지 못했어요",
+      "body": "잠시 뒤 다시 시도해 주세요. 같은 화면이 계속 나오면 관리 홈으로 돌아가 다시 들어와 주세요.",
+      "retry": "다시 시도",
+      "home": "관리 홈으로",
+      "ref": "오류 참조 번호 {digest}"
+    },
+    "labels": {
+      "purpose": {
+        "airport_pickup": "공항픽업",
+        "family": "가족 여행",
+        "ceremony": "관혼상제",
+        "workshop": "워크숍",
+        "social": "친목회",
+        "religious": "종교단체",
+        "univ_mt": "대학MT",
+        "field_trip": "현장학습",
+        "foreign_vip": "외국인 의전·관광",
+        "etc": "기타"
+      },
+      "contact": {
+        "mobile": "핸드폰",
+        "phone": "전화",
+        "fax": "팩스"
+      },
+      "payment": {
+        "cash": "현금",
+        "card": "카드",
+        "tax_invoice": "세금계산서 발행"
+      },
+      "quickBadge": "간편 접수"
+    },
+    "home": {
+      "title": "오늘 확인할 일",
+      "lede": {
+        "unknown": "지금은 새 접수 수를 불러오지 못했어요. 접수 화면에서 확인해 주세요.",
+        "none": "새 접수가 없어요. 새로 들어오면 여기에 보여요.",
+        "waiting": "새 접수 {n}건이 기다리고 있어요.",
+        "overdue": "새 접수 {n}건이 기다리고 있어요. 그중 {m}건은 72시간이 넘었어요."
+      },
+      "reservationsLink": "새 접수 확인하기",
+      "cardsLabel": "오늘 할 일",
+      "unknown": "지금은 불러오지 못했어요",
+      "count": "{n}건",
+      "card": {
+        "new": "새 접수",
+        "newSplit": "간편 {quick} · 상세 {wizard}",
+        "newNone": "기다리는 새 접수가 없어요",
+        "overdue": "답이 늦은 접수",
+        "overdueSub": "72시간 넘게 대기",
+        "overdueNone": "72시간 넘게 기다린 접수가 없어요",
+        "notify": "문자 발송",
+        "notifyOk": "이상 없음",
+        "notifyOkSub": "최근 {days}일 고객 문자 실패 0건",
+        "notifyProblem": "확인 필요",
+        "notifyProblemSub": "최근 {days}일 고객 문자 실패 {n}건",
+        "notifyOwner": "사장님 알림 실패 {n}건 — 발송 기록에서 확인",
+        "notifyOwnerUnknown": "사장님 알림 실패 수는 지금 불러오지 못했어요",
+        "notifyWaiting": "대기 중 {n}건",
+        "notifyWaitingSub": "문자 발송이 아직 켜지지 않았을 수 있어요",
+        "notifyOverdueSub": "보내지 못한 문자는 다음 발송 때 다시 보내요",
+        "notifyWaitingMinor": "고객 문자 대기 중 {n}건",
+        "trips": "이번 주 운행",
+        "tripsNone": "7일 안에 출발하는 확정 접수가 없어요",
+        "tripsMore": "외 {n}일"
+      },
+      "banner": "최근 {days}일 동안 고객에게 보내지 못한 문자가 {n}건 있어요 — 고객에게 전화로 직접 알려 주세요.",
+      "bannerLink": "발송 기록 보기",
+      "queue": {
+        "title": "새 접수",
+        "all": "전체 보기",
+        "none": "지금 기다리는 새 접수가 없어요."
+      },
+      "trips": {
+        "title": "다가오는 운행",
+        "range": "7일",
+        "none": "7일 안에 출발하는 확정 접수가 없어요.",
+        "more": "7일 안의 확정 {n}건 가운데 앞의 {shown}건만 보여요.",
+        "all": "확정 목록 보기"
+      },
+      "check": {
+        "title": "홈페이지 점검",
+        "popups": "팝업",
+        "notices": "공지",
+        "routes": "대표 노선",
+        "popupsMake": "팝업 만들기",
+        "popupsView": "팝업 보기",
+        "noticesWrite": "공지 쓰기",
+        "routesCheck": "노선 확인하기",
+        "routesView": "노선 보기"
+      },
+      "month": {
+        "line": "이번 달 접수 {intake}건 · 확정 {confirmed}건",
+        "link": "통계 보기",
+        "unknown": "이번 달 숫자를 지금은 불러오지 못했어요"
+      }
+    },
+    "dates": {
+      "weekdays": ["일", "월", "화", "수", "목", "금", "토"],
+      "short": "{month}/{day}({weekday})",
+      "range": "{from}~{to}",
+      "day": "{month}월 {day}일 ({weekday})",
+      "dayYear": "{year}년 {month}월 {day}일 ({weekday})",
+      "md": "{month}월 {day}일",
+      "mdYear": "{year}년 {month}월 {day}일",
+      "month": "{month}월",
+      "monthYear": "{year}년 {month}월",
+      "full": "{month}월 {day}일 {weekday}요일",
+      "time": "{hour}:{minute}",
+      "dateTime": "{date} {time}",
+      "period": "{from} ~ {to}"
+    },
+    "login": {
+      "title": "관리자 로그인",
+      "sub": "등록된 관리자 주소로 로그인 링크를 보내 드려요. 받은 링크는 이 브라우저에서 열어 주세요.",
+      "emailLabel": "메일 주소",
+      "submit": "로그인 링크 받기",
+      "submitting": "보내는 중…",
+      "sent": "로그인 링크를 보냈어요. 메일함을 확인해 주세요. 등록되지 않은 주소에는 링크가 가지 않아요.",
+      "closed": "관리자 로그인이 아직 설정되지 않았어요.",
+      "unavailable": "지금은 로그인 요청을 받을 수 없어요. 잠시 뒤 다시 시도해 주세요.",
+      "invalid": "메일 주소 형식을 확인해 주세요.",
+      "ratelimit": "짧은 시간에 여러 번 시도했어요. 잠시 뒤 다시 시도해 주세요.",
+      "infra": "지금은 로그인 요청을 처리할 수 없어요. 잠시 뒤 다시 시도해 주세요.",
+      "callbackFailed": "로그인 링크가 만료됐거나 이미 쓴 링크예요. 링크를 다시 받아 주세요."
+    },
+    "tabs": {
+      "navLabel": "관리 메뉴",
+      "home": "홈",
+      "reservations": "접수",
+      "notices": "공지",
+      "popups": "팝업",
+      "gallery": "갤러리",
+      "routes": "대표 노선",
+      "notifications": "발송 기록",
+      "stats": "통계",
+      "site": "홈페이지",
+      "records": "기록",
+      "comingSoon": "준비 중",
+      "brand": "베스트투어 관리",
+      "account": "관리자 계정으로 로그인 중",
+      "siteLink": "홈페이지 보기",
+      "newWindow": "새 창",
+      "skip": "본문으로 건너뛰기",
+      "newCount": "새 접수 {n}건"
+    },
+    "session": {
+      "signOut": "로그아웃"
+    },
+    "hub": {
+      "site": {
+        "title": "홈페이지",
+        "sub": "방문자에게 보이는 공지·팝업·사진·대표 노선을 고쳐요.",
+        "listLabel": "홈페이지 관리 메뉴"
+      },
+      "records": {
+        "title": "기록",
+        "sub": "문자가 잘 나갔는지, 접수가 얼마나 들어왔는지 봐요.",
+        "listLabel": "기록 메뉴"
+      },
+      "unknown": "지금은 상태를 불러오지 못했어요",
+      "notices": {
+        "live": "노출 중 {n}건 · 마지막 게시일 {date}",
+        "noneLive": "지금 노출 중인 공지가 없어요",
+        "empty": "아직 올린 공지가 없어요"
+      },
+      "popups": {
+        "live": "지금 노출 중 {n}개",
+        "noneLive": "지금 노출 중인 팝업이 없어요"
+      },
+      "gallery": {
+        "count": "사진 {n}장",
+        "empty": "아직 올린 사진이 없어요"
+      },
+      "routes": {
+        "live": "{total}개 중 {live}개 노출 중",
+        "noPrice": "{total}개 중 {live}개 노출 중 · {n}개는 금액 없이 노선만 보여요"
+      },
+      "stats": "기간별 접수·확정 숫자를 봐요"
+    },
+    "reservations": {
+      "title": "접수",
+      "sub": "들어온 접수를 확인하고 확정해요. 확정하면 고객에게 확정 안내 문자가 가요.",
+      "listLabel": "접수 목록",
+      "filterLabel": "상태로 보기",
+      "filter": {
+        "all": "전체",
+        "new": "새 접수",
+        "confirmed": "확정",
+        "done": "운행 완료",
+        "cancelled": "취소"
+      },
+      "status": {
+        "new": "새 접수",
+        "confirmed": "확정",
+        "done": "운행 완료",
+        "cancelled": "취소",
+        "waiting": "{days}일째 대기",
+        "overdue": "답이 늦은 접수"
+      },
+      "col": {
+        "status": "상태",
+        "customer": "고객",
+        "route": "운행 구간",
+        "depart": "출발",
+        "vehicle": "차량 · 인원",
+        "received": "접수",
+        "call": "전화"
+      },
+      "tabCount": "{n}건",
+      "hint": {
+        "new": "오래 기다린 접수부터 보여 드려요.",
+        "confirmed": "다가오는 운행을 출발이 가까운 순서로 보여 드려요.",
+        "recent": "최근에 들어온 접수부터 보여 드려요."
+      },
+      "group": {
+        "overdue": "답이 늦은 접수 · 72시간 넘음",
+        "waiting": "72시간 안에 들어온 접수",
+        "upcoming": "다가오는 운행"
+      },
+      "past": {
+        "title": "운행일이 지난 확정 {n}건",
+        "hint": "운행이 끝났으면 상세에서 운행 완료로 바꿔 주세요.",
+        "recent": "가장 최근 {n}건만 보여요.",
+        "unknown": "운행일이 지난 확정을 지금은 불러오지 못했어요."
+      },
+      "upcomingEmpty": "다가오는 확정 운행이 없어요.",
+      "stay": "{nights}박 {days}일",
+      "routeValue": "{origin} → {destination}",
+      "timeUndecided": "시각 미정",
+      "vehicleUndecided": "차량 미정",
+      "busValue": "{vehicle} {buses}대",
+      "paxValue": "{n}명",
+      "elapsed": {
+        "justNow": "방금",
+        "minutes": "{n}분 전",
+        "hours": "{n}시간 전",
+        "days": "{n}일 전"
+      },
+      "relative": {
+        "today": "오늘",
+        "tomorrow": "내일",
+        "after": "{n}일 뒤",
+        "before": "{n}일 지남"
+      },
+      "callAria": "{name} 님에게 전화 걸기",
+      "quickChip": "간편",
+      "more": "{n}건 더 보기",
+      "moreLoading": "불러오는 중…",
+      "limitNote": "목록은 한 번에 {n}건까지 보여 드려요.",
+      "privacyNote": "목록에서는 전화번호 가운데를 가려요. 전화 버튼을 누르면 바로 연결돼요.",
+      "emptyNew": "새 접수가 없어요. 새로 들어오면 여기에 보여요.",
+      "empty": "이 상태의 접수가 없어요.",
+      "emptyAll": "아직 들어온 접수가 없어요.",
+      "clearFilter": "전체 보기"
+    },
+    "detail": {
+      "title": "접수 상세",
+      "titleName": "{name} 님",
+      "back": "← 접수 목록",
+      "backAria": "접수 목록으로",
+      "notFound": "이 접수를 찾을 수 없어요. 목록에서 다시 골라 주세요.",
+      "sectionTrip": "운행",
+      "sectionOptions": "접수 조건",
+      "sectionAdmin": "처리",
+      "records": "접수 기록 (동의 · 보관)",
+      "meta": {
+        "received": "{when} 접수 ({ago})",
+        "today": "오늘 {time}",
+        "date": "{month}월 {day}일 {time}",
+        "year": "{year}년 {month}월 {day}일 {time}",
+        "intakeQuick": "홈 간편 견적",
+        "code": "접수번호 {code}"
+      },
+      "contact": {
+        "title": "연락",
+        "call": "전화 걸기",
+        "sms": "문자 보내기"
+      },
+      "bar": {
+        "label": "연락 · 처리",
+        "call": "전화",
+        "sms": "문자 보내기"
+      },
+      "trip": {
+        "go": "가는 날",
+        "back": "오는 날",
+        "stay": "기간",
+        "pax": "인원",
+        "time": "출발 시각",
+        "tripType": "왕복·편도",
+        "undecided": "전화로 확인"
+      },
+      "checklist": {
+        "title": "전화로 확인할 것",
+        "progress": "{n}/{total} 확인",
+        "items": ["차량 종류와 대수", "출발 시각과 타는 곳", "왕복인지 편도인지", "여행 목적 (예: 워크숍 · 가족 여행)"],
+        "note": "체크는 저장되지 않아요. 화면을 새로 열면 처음으로 돌아가요.",
+        "memoHint": "확인한 내용은 아래 메모에 적어 두세요."
+      },
+      "process": {
+        "done": "운행 완료로 바꾼 접수예요. 더 처리할 일이 없어요.",
+        "cancelled": "취소한 접수예요. 더 처리할 일이 없어요.",
+        "moreCancel": "더보기 — 접수 취소"
+      },
+      "field": {
+        "createdAt": "접수 일시",
+        "confirmedAt": "확정 일시",
+        "email": "메일 주소",
+        "purpose": "여행 구분",
+        "vehicle": "차량",
+        "waypoints": "경유지",
+        "contactMethod": "견적 확인 방법",
+        "paymentMethod": "계산 방법",
+        "parking": "주차료",
+        "vat": "부가세(VAT)",
+        "message": "요청 사항",
+        "privacyConsentAt": "개인정보 동의",
+        "marketingConsentAt": "광고성 정보 수신 동의",
+        "withdrawalConsentAt": "청약철회 제한 동의",
+        "retentionUntil": "파기 예정"
+      },
+      "value": {
+        "none": "—",
+        "included": "포함 조건",
+        "excluded": "미포함 조건",
+        "notConsented": "미동의",
+        "noWithdrawalRecord": "기록 없음(동의 기록 도입 전 접수)",
+        "intakeQuick": "간편 접수 · 전화 확인 필요",
+        "intakeWizard": "상세 접수"
+      },
+      "confirm": "확정하기",
+      "cancel": "이 접수 취소하기",
+      "complete": "운행 완료로 바꾸기",
+      "confirmHint": "확정하면 고객에게 확정 안내 문자가 가요.",
+      "cancelHint": "취소하면 고객에게 문자가 가지 않아요. 전화로 알려 주세요.",
+      "completeHint": "운행이 끝난 뒤에 눌러 주세요. 고객에게 문자는 가지 않아요.",
+      "memoLabel": "관리자 메모",
+      "memoHint": "고객에게는 보이지 않아요. 고친 메모는 확정·취소·운행 완료를 누를 때 함께 저장돼요. 다 지울 때는 '메모 저장'을 눌러 주세요.",
+      "memoSave": "메모 저장",
+      "memoPlaceholder": "예: 45인승 1대 · 7시 강남역 출발 · 워크숍",
+      "processing": "처리 중…",
+      "toastLink": "발송 기록 보기",
+      "sheet": {
+        "close": "닫기",
+        "quickNote": "간편 접수 — 차량·시각은 통화로 정한 대로",
+        "slow": "응답이 늦어지고 있어요. 닫아도 괜찮아요 — 결과가 오면 이 화면에 알려 드려요.",
+        "confirmTitle": "{name} 님 접수를 확정할까요?",
+        "confirmTitleNoName": "이 접수를 확정할까요?",
+        "confirmBody": "확정하면 고객에게 확정 안내 문자가 가요. 보낸 문자는 되돌릴 수 없어요.",
+        "confirmSubmit": "확정하고 문자 보내기",
+        "cancelTitle": "{name} 님 접수를 취소할까요?",
+        "cancelTitleNoName": "이 접수를 취소할까요?",
+        "cancelBody": "취소하면 되돌릴 수 없어요. <b>고객에게 문자가 가지 않으니</b> 전화로 알려 주세요.",
+        "cancelSubmit": "접수 취소하기",
+        "reasonLegend": "취소 사유 (선택)",
+        "reasonHint": "고른 사유는 메모에 함께 남아요",
+        "reason": {
+          "schedule": "고객 일정 변경",
+          "vehicle": "차량을 못 구함",
+          "unreachable": "연락이 안 됨",
+          "other": "기타"
+        },
+        "reasonLine": "취소 사유: {reason}",
+        "completeTitle": "{name} 님 운행을 완료로 바꿀까요?",
+        "completeTitleNoName": "이 운행을 완료로 바꿀까요?",
+        "completeBody": "완료로 바꾸면 되돌릴 수 없어요. 고객에게 문자는 가지 않아요.",
+        "completeSubmit": "완료로 바꾸기",
+        "memoTooLong": "메모가 {max}자를 넘어요(지금 {count}자). 메모를 줄인 뒤 다시 눌러 주세요.",
+        "memoTooLongWithReason": "취소 사유를 덧붙이면 메모가 {max}자를 넘어요(지금 {count}자). 메모를 줄인 뒤 다시 눌러 주세요.",
+        "checkWarning": "전화로 확인할 것 {total}개 중 {n}개를 확인했어요. 통화로 확인하셨나요?"
+      },
+      "result": {
+        "confirmed": "확정했어요. 확정 안내 문자를 보내고 있어요.",
+        "cancelled": "취소했어요. 고객에게 전화로 알려 주세요.",
+        "completed": "운행 완료로 바꿨어요.",
+        "memoUpdated": "메모를 저장했어요.",
+        "alreadyHandled": "이미 처리된 접수예요. 화면을 새로 불러왔어요.",
+        "failed": "처리하지 못했어요. 잠시 뒤 다시 눌러 주세요."
+      }
+    },
+    "popups": {
+      "title": "팝업",
+      "sub": "홈 화면에 뜨는 안내 창을 만들고, 보여 줄 기간을 정해요.",
+      "new": "팝업 만들기",
+      "edit": "팝업 고치기",
+      "back": "← 팝업 목록",
+      "notFound": "이 팝업을 찾을 수 없어요. 목록에서 다시 골라 주세요.",
+      "listLabel": "팝업 목록",
+      "empty": "지금 등록된 팝업이 없어요.",
+      "emptyAction": "팝업 만들기",
+      "notice": "노출을 켠 팝업은 기간 안에 방문자에게 바로 보여요. 방문자가 \"오늘 하루 보지 않기\"를 누르면 그 방문자에게는 하루 동안 다시 뜨지 않아요.",
+      "field": {
+        "title": "제목",
+        "body": "문구",
+        "imagePath": "사진 주소 (선택)",
+        "startsAt": "시작일",
+        "endsAt": "종료일",
+        "period": "노출 기간",
+        "active": "노출"
+      },
+      "hint": {
+        "title": "한 줄로 짧게 적어 주세요.",
+        "body": "줄바꿈이 그대로 보여요.",
+        "imagePath": "비워 두면 글만 있는 팝업이 돼요. 예: /hero/bus-02.jpg",
+        "period": "시작일과 종료일 당일을 포함해요. 한국 날짜 기준이에요.",
+        "active": "끄면 기간 안이어도 방문자에게 보이지 않아요."
+      },
+      "col": {
+        "title": "제목",
+        "period": "노출 기간",
+        "state": "상태",
+        "actions": "처리"
+      },
+      "state": {
+        "live": "노출 중",
+        "scheduled": "노출 예정",
+        "ended": "기간 종료",
+        "off": "중지"
+      },
+      "periodValue": "{start} ~ {end}",
+      "create": "팝업 저장하기",
+      "save": "팝업 저장하기",
+      "delete": "팝업 삭제하기",
+      "deleteArm": "삭제할게요 (되돌릴 수 없어요)",
+      "deleteConfirm": "이 팝업을 삭제할까요? 되돌릴 수 없어요.",
+      "turnOn": "노출 켜기",
+      "turnOff": "노출 끄기",
+      "editLink": "팝업 고치기",
+      "processing": "처리 중…",
+      "sample": {
+        "title": "미리보기",
+        "show": "미리보기 열기",
+        "hide": "미리보기 닫기",
+        "note": "저장된 내용이 홈 화면에 이렇게 보여요. 방문자에게는 화면에 들어온 뒤 잠시 뒤에 나타나요."
+      },
+      "result": {
+        "created": "새 팝업을 저장했어요. 홈 화면에 바로 반영돼요.",
+        "updated": "팝업을 저장했어요.",
+        "deleted": "팝업을 삭제했어요.",
+        "activated": "팝업 노출을 다시 켰어요.",
+        "deactivated": "팝업 노출을 껐어요.",
+        "notFound": "이 팝업을 찾을 수 없어요. 목록을 새로 불러와 주세요.",
+        "validation": "입력한 내용을 확인해 주세요.",
+        "failed": "처리하지 못했어요. 잠시 뒤 다시 시도해 주세요.",
+        "copyWarning": "아직 저장하지 않았어요. 아래 안내를 확인해 주세요."
+      }
+    },
+    "notices": {
+      "title": "공지",
+      "sub": "홈페이지 공지사항을 올리고 고쳐요. 내릴 때는 삭제보다 노출 끄기를 먼저 써 주세요.",
+      "new": "공지 쓰기",
+      "edit": "공지 고치기",
+      "back": "← 공지 목록",
+      "notFound": "이 공지를 찾을 수 없어요. 목록에서 다시 골라 주세요.",
+      "listLabel": "공지 목록",
+      "empty": "아직 올린 공지가 없어요.",
+      "emptyAction": "공지 쓰기",
+      "publishedValue": "게시일 {date}",
+      "field": {
+        "title": "제목",
+        "body": "내용",
+        "category": "분류",
+        "publishedAt": "게시일",
+        "active": "노출"
+      },
+      "hint": {
+        "title": "목록에 그대로 보이는 한 줄이에요.",
+        "body": "줄바꿈이 그대로 보여요. 빈 줄로 나누면 문단이 돼요. 표나 색 같은 꾸미기는 들어가지 않아요.",
+        "category": "목록과 상세에 붙는 딱지예요. 홈 공지 영역과 같은 분류를 써요.",
+        "publishedAt": "목록에 보이는 날짜예요. 한국 날짜 기준이고, 오늘보다 뒤로 적어도 보일지 말지는 '노출' 칸이 정해요.",
+        "active": "끄면 방문자 화면에서 감춰져요. 다시 켜면 같은 주소로 그대로 돌아와요."
+      },
+      "col": {
+        "title": "제목",
+        "category": "분류",
+        "publishedAt": "게시일",
+        "state": "상태",
+        "actions": "처리"
+      },
+      "state": {
+        "live": "노출 중",
+        "off": "중지"
+      },
+      "publicLinkLabel": "방문자에게 보이는 주소",
+      "publicLinkNote": "이 주소가 문자나 메신저로 나갔을 수 있어요. 노출을 끄면 잠시 감춰질 뿐 다시 켜면 같은 주소로 돌아오지만, 삭제하면 이 주소는 영영 열리지 않아요.",
+      "create": "공지 저장하기",
+      "save": "공지 저장하기",
+      "delete": "공지 삭제하기",
+      "deleteArm": "삭제할게요 (되돌릴 수 없어요)",
+      "deleteConfirm": "이 공지를 삭제할까요? 되돌릴 수 없고, 나갔던 주소도 열리지 않아요.",
+      "turnOn": "노출 켜기",
+      "turnOff": "노출 끄기",
+      "editLink": "공지 고치기",
+      "processing": "처리 중…",
+      "result": {
+        "created": "새 공지를 저장했어요.",
+        "updated": "공지를 저장했어요.",
+        "deleted": "공지를 삭제했어요.",
+        "activated": "공지 노출을 다시 켰어요.",
+        "deactivated": "공지 노출을 껐어요.",
+        "notFound": "이 공지를 찾을 수 없어요. 목록을 새로 불러와 주세요.",
+        "validation": "입력한 내용을 확인해 주세요.",
+        "failed": "처리하지 못했어요. 잠시 뒤 다시 시도해 주세요.",
+        "copyWarning": "아직 저장하지 않았어요. 아래 안내를 확인해 주세요."
+      }
+    },
+    "routes": {
+      "title": "대표 노선",
+      "sub": "홈 지도에 보이는 대표 노선의 예시 금액과 순서를 고쳐요.",
+      "edit": "노선 고치기",
+      "back": "← 노선 목록",
+      "notFound": "이 노선을 찾을 수 없어요. 목록에서 다시 골라 주세요.",
+      "listLabel": "대표 노선 목록",
+      "empty": "보여 드릴 노선이 없어요.",
+      "fixedNote": "대표 노선은 지도의 핀과 짝을 이루도록 정해져 있어서 새로 만들거나 지울 수 없어요. 값만 고치면 돼요.",
+      "routeValue": "{origin} → {destination}",
+      "noPrice": "금액 없음",
+      "noSort": "—",
+      "field": {
+        "originCode": "출발지",
+        "destinationCode": "도착지",
+        "priceFrom": "표시 금액 (원)",
+        "sort": "순서",
+        "active": "노출"
+      },
+      "hint": {
+        "originCode": "지도에 핀이 있는 곳만 고를 수 있어요.",
+        "destinationCode": "출발지와 같은 곳은 고를 수 없어요.",
+        "priceFrom": "원 단위로 숫자만 적어 주세요. 예: 400000 → 홈에 40만원으로 보여요. 비워 두면 금액을 감추고 노선과 핀만 보여요.",
+        "sort": "작은 번호가 앞에 와요. 비워 두면 뒤로 밀려요.",
+        "active": "끄면 이 노선이 홈 지도와 목록에서 빠져요."
+      },
+      "col": {
+        "route": "노선",
+        "price": "표시 금액",
+        "sort": "순서",
+        "state": "상태",
+        "actions": "처리"
+      },
+      "state": {
+        "live": "노출 중",
+        "off": "중지"
+      },
+      "homeLookLabel": "홈에서 이렇게 보여요",
+      "homeLookNote": "저장된 값 기준이에요. 금액이 비어 있으면 홈은 금액만 감추고 노선과 핀은 그대로 보여 드려요.",
+      "homeLookNoPrice": "금액을 감추고 노선과 핀만 보여요",
+      "homeLookOn": "홈 지도와 목록에 보여요",
+      "homeLookOff": "홈에서 빠져 있어요",
+      "save": "노선 저장하기",
+      "turnOn": "노출 켜기",
+      "turnOff": "노출 끄기",
+      "editLink": "노선 고치기",
+      "processing": "처리 중…",
+      "result": {
+        "updated": "노선을 저장했어요.",
+        "activated": "노선 노출을 다시 켰어요.",
+        "deactivated": "노선 노출을 껐어요.",
+        "notFound": "이 노선을 찾을 수 없어요. 목록을 새로 불러와 주세요.",
+        "duplicate": "같은 출발지·도착지 노선이 이미 있어요. 다른 조합으로 바꿔 주세요.",
+        "validation": "입력한 내용을 확인해 주세요.",
+        "failed": "처리하지 못했어요. 잠시 뒤 다시 시도해 주세요."
+      }
+    },
+    "gallery": {
+      "title": "갤러리",
+      "sub": "운행 사진을 올리고 앨범으로 묶어요. 사진은 이 화면에서 바로 올라가고, 큰 사진은 자동으로 줄여서 홈에 써요.",
+      "listLabel": "사진 목록",
+      "empty": "아직 올린 사진이 없어요.",
+      "emptyFiltered": "고른 앨범에 사진이 없어요.",
+      "clearFilter": "모든 사진 보기",
+      "emptyAction": "사진 올리기",
+      "uploadTitle": "사진 올리기",
+      "upload": "사진 고르기",
+      "uploadHint": "한 번에 30장까지, 한 장에 20MB까지 올릴 수 있어요. jpg, png, webp, heic 파일을 받아요. 원본은 따로 보관하고 홈에는 줄인 사진만 보여요.",
+      "pickNone": "아직 고른 사진이 없어요",
+      "pickCount": "{n}장을 골랐어요",
+      "uploadRunning": "올리는 중… ({done} / {total})",
+      "uploadDone": "{ok}장을 올렸어요.",
+      "uploadFailedAll": "사진을 올리지 못했어요. 이유는 목록에서 사진마다 확인해 주세요.",
+      "uploadFailedSome": "{n}장은 올리지 못했어요. 이유는 목록에서 확인해 주세요.",
+      "uploadTarget": "넣을 앨범",
+      "usage": "사진 {count}장 · 약 {size}",
+      "usageHint": "보관해 둔 원본 파일 크기를 합한 값이에요.",
+      "albumSection": "앨범",
+      "albumLabel": "앨범",
+      "albumAll": "전체",
+      "albumNone": "미분류",
+      "albumNew": "새 앨범 만들기",
+      "albumListLabel": "앨범 목록",
+      "albumEmpty": "만든 앨범이 없어요. 앨범 없이도 사진은 올라가고, 나중에 옮길 수 있어요.",
+      "albumTitle": "앨범 이름",
+      "albumSlug": "앨범 주소 (영문)",
+      "albumSlugHint": "영문 소문자·숫자·하이픈만 쓸 수 있어요. 예: bus-45",
+      "albumSort": "순서",
+      "albumActive": "노출",
+      "albumCreate": "앨범 만들기",
+      "albumSave": "앨범 저장하기",
+      "albumDelete": "앨범 삭제",
+      "albumDeleteArm": "삭제할게요 (되돌릴 수 없어요)",
+      "albumDeleteNote": "앨범을 지워도 사진은 지워지지 않아요. 그 앨범에 있던 사진은 '미분류'로 남아요. 노출을 꺼 둔 앨범이었다면 그 안의 사진도 노출이 함께 꺼져요.",
+      "albumDeleteConfirm": "이 앨범을 지울까요? 사진은 지워지지 않고 미분류로 남아요. 노출을 꺼 둔 앨범이었다면 그 안의 사진도 노출이 함께 꺼져요.",
+      "caption": "설명",
+      "captionHint": "비워 둬도 돼요. 사진 아래에 한 줄로 보여요.",
+      "sort": "순서",
+      "save": "사진 정보 저장하기",
+      "delete": "사진 삭제",
+      "deleteArm": "삭제할게요 (되돌릴 수 없어요)",
+      "deleteConfirm": "이 사진을 지울까요? 원본까지 함께 지워지고 되돌릴 수 없어요.",
+      "turnOn": "노출 켜기",
+      "turnOff": "노출 끄기",
+      "processing": "처리 중…",
+      "heicHelp": "아이폰 사진(HEIC)은 이 브라우저가 열지 못해 올리지 못했어요. 아이폰에서 설정 → 카메라 → 포맷 → '높은 호환성'으로 바꾼 뒤 찍은 사진은 그대로 올라가요. 이미 찍은 사진은 사진 앱에서 공유 → '파일에 저장'으로 내보내면 돼요.",
+      "missingFile": "이 사진의 파일을 찾지 못했어요. 삭제하고 다시 올려 주세요.",
+      "state": {
+        "live": "노출 중",
+        "off": "중지"
+      },
+      "status": {
+        "waiting": "대기",
+        "working": "올리는 중",
+        "done": "완료",
+        "failed": "실패"
+      },
+      "reject": {
+        "count": "한 번에 30장까지만 올릴 수 있어서 이 사진은 빼 두었어요.",
+        "size": "20MB가 넘어서 올리지 못했어요.",
+        "type": "받을 수 없는 형식이에요. jpg, png, webp, heic 파일만 올려 주세요.",
+        "empty": "파일이 비어 있어요.",
+        "decode": "사진을 열지 못했어요.",
+        "encode": "사진을 홈에 쓸 형식으로 바꾸지 못했어요.",
+        "upload": "올리는 중에 끊겼어요. 다시 시도해 주세요.",
+        "record": "목록에 넣지 못해서 올라간 파일을 되돌렸어요. 다시 시도해 주세요.",
+        "needsCheck": "올라갔는지 확인하지 못했어요. 화면을 새로고침해 보고, 이 사진이 목록에 없으면 다시 올려 주세요."
+      },
+      "result": {
+        "recorded": "사진을 올렸어요.",
+        "updated": "사진 정보를 저장했어요.",
+        "deleted": "사진을 삭제했어요.",
+        "activated": "사진 노출을 다시 켰어요.",
+        "deactivated": "사진 노출을 껐어요.",
+        "albumCreated": "앨범을 만들었어요.",
+        "albumUpdated": "앨범을 저장했어요.",
+        "albumActivated": "앨범 노출을 다시 켰어요.",
+        "albumDeactivated": "앨범 노출을 껐어요.",
+        "albumDeleted": "앨범을 삭제했어요. 사진은 미분류로 남아 있어요.",
+        "notFound": "이 사진을 찾을 수 없어요. 목록을 새로 불러와 주세요.",
+        "validation": "입력한 내용을 확인해 주세요.",
+        "failed": "처리하지 못했어요. 잠시 뒤 다시 시도해 주세요.",
+        "fileFailed": "사진 파일을 지우지 못해서 목록에 그대로 두었어요. 노출은 껐으니 잠시 뒤 다시 삭제해 주세요.",
+        "copyWarning": "아직 저장하지 않았어요. 아래 안내를 확인해 주세요."
+      }
+    },
+    "copyWarning": {
+      "title": "저장하기 전에 한 번 봐 주세요",
+      "lead": "아래 표현은 홈페이지에 올리면 문제가 될 수 있어서 아직 저장하지 않았어요. 고쳐서 다시 저장하거나, 그대로 올려도 괜찮으면 아래 버튼을 눌러 주세요.",
+      "confirm": "그대로 저장하기",
+      "item": "{field} ‘{text}’ — {reason}",
+      "field": {
+        "title": "제목",
+        "body": "내용",
+        "caption": "사진 설명",
+        "albumTitle": "앨범 이름"
+      },
+      "kind": {
+        "license": "전세버스는 등록제예요. ‘등록’으로 적어 주세요.",
+        "rival": "다른 전세버스 회사의 상호예요. 옮겨 적으면 상표 문제가 될 수 있어요.",
+        "internal": "손님이 알 필요가 없는 내부 운영 사정이에요. 가격 흥정의 빌미가 될 수 있어요.",
+        "unproven": "근거 자료를 요구받을 수 있는 주장이에요(표시광고법 제5조). 자료가 없으면 빼 주세요.",
+        "comparative": "다른 곳과 비교하거나 가장 좋다고 말하는 표현이에요. 근거 자료를 요구받을 수 있어요(표시광고법 제5조)."
+      }
+    },
+    "notifications": {
+      "title": "발송 기록",
+      "sub": "접수·확정 문자가 실제로 나갔는지 볼 수 있어요. 보기만 하는 화면이라 여기서 다시 보내지는 않아요.",
+      "listLabel": "발송 기록 목록",
+      "empty": "해당하는 기록이 없어요.",
+      "clearFilter": "모든 기록 보기",
+      "maskNote": "받는 번호는 일부만 보여 드려요. 어느 접수인지는 접수번호로 확인해 주세요.",
+      "filterStatusLabel": "상태로 보기",
+      "filterChannelLabel": "종류로 보기",
+      "filterPeriodLabel": "기간으로 보기",
+      "filterStatus": {
+        "all": "전체",
+        "pending": "대기",
+        "sent": "발송",
+        "failed": "실패"
+      },
+      "filterChannel": {
+        "all": "전체",
+        "sms": "문자",
+        "alimtalk": "알림톡",
+        "email": "메일"
+      },
+      "filterPeriod": {
+        "all": "전체",
+        "24h": "최근 24시간",
+        "7d": "최근 7일",
+        "30d": "최근 30일"
+      },
+      "status": {
+        "pending": "대기",
+        "sent": "발송",
+        "failed": "실패"
+      },
+      "recordState": {
+        "sentUnconfirmed": "발송됨 · 기록 확인 필요",
+        "duplicateSuppressed": "중복이라 보내지 않음(이미 보냄)"
+      },
+      "channel": {
+        "sms": "문자",
+        "alimtalk": "알림톡",
+        "email": "메일"
+      },
+      "template": {
+        "created": {
+          "owner": {
+            "sms": "사장님 접수 알림",
+            "email": "사장님 접수 알림",
+            "failure": {
+              "email": "사장님 접수 통지 실패 알림"
+            }
+          },
+          "customer": {
+            "sms": "고객 접수 확인"
+          }
+        },
+        "confirmed": {
+          "owner": {
+            "failure": {
+              "email": "사장님 확정 통지 실패 알림"
+            }
+          },
+          "customer": {
+            "sms": "고객 확정 안내"
+          }
+        }
+      },
+      "col": {
+        "status": "상태",
+        "alert": "알림",
+        "to": "받는 번호",
+        "code": "접수번호",
+        "attempts": "시도",
+        "lastError": "오류",
+        "time": "기록 시각"
+      },
+      "updatedLine": "갱신 {time}",
+      "attemptsValue": "{n}회",
+      "none": "—",
+      "pending": {
+        "sending": "보내는 중",
+        "retry": "다시 보낼 예정 {time}",
+        "due": "보낼 차례 · 다음 발송 때 나가요",
+        "stalled": "오래 멈춤 — 확인 필요",
+        "exhausted": "다시 보내기를 다 씀 — 확인 필요"
+      },
+      "error": {
+        "timeout": "응답 시간 초과",
+        "network": "발송 회사 연결 실패",
+        "auth": "발송 회사 인증 실패",
+        "tooMany": "요청이 너무 많음",
+        "rejectedRequest": "요청을 받지 않음",
+        "providerDown": "발송 회사 장애",
+        "providerRejected": "발송 회사가 거절",
+        "badResponse": "응답을 읽지 못함",
+        "recipient": "받는 번호 확인 필요",
+        "channel": "지원하지 않는 발송 방식",
+        "noSender": "발송 수단 없음",
+        "alimtalk": "알림톡 준비 안 됨",
+        "varsLoad": "접수 정보 읽기 실패",
+        "notFound": "접수를 찾지 못함",
+        "template": "문안 만들기 실패",
+        "unknownTemplate": "모르는 문안 종류",
+        "internal": "내부 점검 오류",
+        "threw": "발송 중 오류",
+        "duplicate": "이미 보낸 알림",
+        "leaseExpired": "여러 번 시도 후 멈춤",
+        "sentUnmarked": "기록 저장 지연",
+        "other": "기타 오류"
+      },
+      "summary": {
+        "title": "발송 상태",
+        "failed": "보내지 못한 알림 {n}건 (전체 기간)",
+        "stuck": "다시 보내기를 다 쓴 알림 {n}건 (최근 24시간 안에 마지막 시도)",
+        "ok": "이상 없음 — 지금까지 보내지 못한 알림이 없어요",
+        "note": "보내지 못한 것이 고객에게 가는 문자라면 사장님이 전화로 직접 안내해 주셔야 해요. 다시 보내는 기능은 아직 없어요.",
+        "sentUnconfirmed": "발송됨 · 기록 확인 필요 {n}건 (전체 기간)",
+        "sentUnconfirmedNote": "문자 회사가 받은 건이에요. 저장만 늦어지고 있고, 시스템이 자동으로 다시 기록해요.",
+        "grid": {
+          "failed": "보내지 못한 알림",
+          "stuck": "다시 보내기를 다 쓴 알림",
+          "stuckNote": "마지막 시도 · 최근 {hours}시간",
+          "sentUnconfirmed": "기록 확인 필요",
+          "sentUnconfirmedNote": "발송됨 · 전체 기간"
+        },
+        "count": "{n}건",
+        "periodAll": "전체 기간"
+      },
+      "prev": "← 이전",
+      "next": "다음 →",
+      "pageLabel": "목록 넘기기"
+    },
+    "stats": {
+      "title": "홈페이지 견적 접수 통계",
+      "sub": "홈페이지로 들어온 견적 신청만 센 숫자예요. 전화로 받은 예약은 들어 있지 않아요.",
+      "periodLabel": "조회 기간",
+      "period": {
+        "thisMonth": "이번 달",
+        "lastMonth": "지난 달",
+        "last3Months": "최근 3개월",
+        "last12Months": "최근 12개월"
+      },
+      "rangeNote": "{from} ~ {to} · 한국 시각(자정~자정) 기준으로 세요.",
+      "cohortNote": "취소·운행 완료는 취소한 날이 아니라 그 예약이 들어온 날로 세요(취소 시각을 따로 적어 두지 않아요).",
+      "empty": "이 기간에는 들어온 견적 신청이 없어요. 다른 기간을 골라 보세요.",
+      "denied": "통계를 볼 권한이 없어요. 로그아웃한 뒤 다시 로그인해 주세요.",
+      "suppressed": "3건 미만",
+      "suppressedNote": "1~2건인 항목은 건수를 가리고 «기타»로 묶어요. 가릴 항목이 하나뿐이면 가장 작은 항목 하나를 더 묶어요.",
+      "suppressedLimit": "이 화면은 사장님만 보는 내부 자료예요. 소수 항목을 묶어 보여 드리지만 완전히 가려지는 것은 아니에요 — 묶인 합이 작거나 기간을 바꿔 가며 비교하면 되짚을 수 있어요. 캡처해서 밖으로 전달하지 말고, 필요하면 필요한 숫자만 옮겨 적어 주세요.",
+      "axisTotalNote": "이 구역의 항목 합계는 위의 «견적 접수» 건수와 다를 수 있어요. ①건수를 가린 항목은 합에 더할 수 없고, ②«많이 찾는 구간»은 상위 10개까지만 보여 주기 때문이에요.",
+      "other": "기타(소수 항목)",
+      "undecided": "미정(간편 접수 — 전화 확인)",
+      "unit": "{n}건",
+      "overview": {
+        "title": "한눈에 보기",
+        "intake": "견적 접수",
+        "intakeNote": "이 기간에 홈페이지로 들어온 견적 신청 건수예요.",
+        "prevUp": "직전 같은 기간보다 {n}건 많아요",
+        "prevDown": "직전 같은 기간보다 {n}건 적어요",
+        "prevSame": "직전 같은 기간과 같아요",
+        "prevNone": "이 기간은 직전 기간과 비교하지 않아요. 1년이 지난 접수는 보관 기간이 끝나 지워지기 때문에 비교가 어긋나요.",
+        "confirmed": "확정 · 확정률",
+        "confirmedValue": "{total}건 중 {n}건 · {pct}%",
+        "confirmedNote": "한 번이라도 확정한 건을 세요(확정한 뒤 취소된 건도 들어가요). 이 기간 접수 중 아직 처리하지 않은 건이 {n}건 있어요.",
+        "response": "확정까지 걸린 시간",
+        "responseNote": "접수된 때부터 확정 버튼을 누를 때까지 걸린 시간의 가운데 값이에요. 빠를수록 다른 업체로 가는 손님이 줄어요.",
+        "responseHours": "{n}시간",
+        "responseDays": "{n}일",
+        "responseFew": "표본 부족",
+        "responseFewNote": "이 기간에 확정된 건이 3건이 안 돼서 가운데 값을 내지 않아요.",
+        "purgeWarning": "이 기간의 앞쪽은 보관 기간이 끝나 가요. 확정하지 않은 문의는 1년 뒤 지워지고 확정한 건은 더 오래 남기 때문에, 오래된 구간일수록 이 비율이 실제보다 높게 보일 수 있어요."
+      },
+      "attention": {
+        "title": "지금 확인할 것",
+        "periodFree": "이 두 가지는 고른 기간과 상관없이 «지금» 상태예요.",
+        "backlogNote": "아직 확정도 취소도 하지 않은 견적 신청 전부예요.",
+        "backlogOver": "그중 {hours}시간 넘게 기다리는 접수가 {n}건 있어요.",
+        "backlogClear": "{hours}시간 넘게 기다리는 접수는 없어요.",
+        "backlogLink": "새 접수 보기",
+        "notify": "문자 발송 문제",
+        "notifyNote": "최근 {days}일 동안 보내지 못한 문자예요. 확정 문자가 가지 않았으면 전화로 따로 안내해 주세요.",
+        "notifyFailed": "발송 실패 {n}건",
+        "notifyStuck": "{hours}시간 넘게 보내지 못하고 있는 건 {n}건",
+        "notifySentUnconfirmed": "발송됨 · 기록 확인 필요 {n}건",
+        "notifySentUnconfirmedNote": "문자 회사가 받았지만 저장이 늦어진 건이에요. 실패로 세지 않고, 시스템이 자동으로 다시 기록해요.",
+        "notifyLink": "발송 기록 보기",
+        "ok": "문제 없음"
+      },
+      "trend": {
+        "title": "접수 추이",
+        "note": "접수된 날로 묶고, 지금 상태별로 쌓아 보여 줘요. 신청이 없던 날은 0으로 둬요.",
+        "unitDay": "하루 단위",
+        "unitWeek": "주 단위(월요일 시작)",
+        "unitMonth": "달 단위",
+        "waiting": "새 접수",
+        "confirmed": "확정 · 운행 완료",
+        "cancelled": "취소",
+        "unsplit": "3건 미만(상태 구분 없음)",
+        "unsplitNote": "새 접수·확정·취소 중 3건이 안 되는 것이 있는 날은 상태를 나누지 않고 총건수만 보여 줘요. 예를 들어 하루에 세 건이 있어도 각각 새 접수·확정·취소 한 건씩이면 나누지 않아요 — 나누면 그분들의 상태가 그대로 드러나기 때문이에요.",
+        "bucketLabel": "{bucket} · 모두 {n}건",
+        "bucketLabelUnsplit": "{bucket} · 모두 {n}건(상태 구분 없음)"
+      },
+      "inquiry": {
+        "title": "어떤 문의가 들어오나",
+        "purposes": "여행 구분별",
+        "purposesNote": "어떤 일정의 문의가 많은지 봐요. 홈페이지 문구와 광고 방향을 정할 때 써요.",
+        "vehicles": "차량별",
+        "vehiclesNote": "어떤 차급 문의가 많은지 봐요. 협력사에 무엇을 미리 확보해 둘지 정할 때 써요.",
+        "buses": "버스 {n}대",
+        "segments": "많이 찾는 구간",
+        "segmentsNote": "출발지-도착지 쌍을 많은 순으로 최대 10개까지 보여 줘요. 홈 지도에 걸어 둔 대표 노선과 실제 문의가 맞는지 볼 수 있어요.",
+        "segmentLabel": "{origin} → {destination}",
+        "showcase": "대표 노선",
+        "rank": "순위",
+        "segmentColumn": "구간",
+        "countColumn": "건수"
+      },
+      "lead": {
+        "title": "얼마나 미리 문의하나",
+        "note": "접수한 날부터 운행일까지 남은 날수예요. 급한 문의가 많으면 빠른 응답이, 먼 문의가 많으면 미리 예약해 두라는 안내가 중요해요.",
+        "d0_7": "7일 이내",
+        "d8_30": "8~30일",
+        "d31_90": "31~90일",
+        "d91_plus": "91일 이상"
+      },
+      "visits": {
+        "title": "방문 통계",
+        "note": "홈페이지에 몇 분이 다녀갔는지는 Vercel 화면에서 볼 수 있어요. 이 화면의 숫자는 «신청서를 넣은» 분들만 센 거예요.",
+        "link": "Vercel 에서 보기",
+        "unset": "아직 연결되지 않았어요. 주소가 설정되면 여기에서 바로 열 수 있어요."
+      }
+    },
+    "loading": {
+      "label": "불러오는 중"
+    }
+  }
+}

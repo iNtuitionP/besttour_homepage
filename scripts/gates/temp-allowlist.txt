@@ -1,0 +1,50 @@
+# temp-allowlist.txt — scripts/check-temp-values.sh 허용 목록
+#
+# 형식: 파일경로:줄패턴
+#   - 파일경로 = 저장소 루트 기준 상대경로, 정확히 일치해야 한다 (다른 파일의 같은 패턴은 허용되지 않는다)
+#   - 줄패턴   = 마커가 있는 줄 내용에 대한 ERE (줄 번호가 아니다 — 편집으로 줄이 밀려도 유지된다)
+# 허용 목록에 있는 마커는 "허용된 임시값 N건"으로 따로 세고 CI 를 실패시키지 않는다.
+# 항목마다 바로 위에 등록일·사유·해제 조건을 적는다. 사유 없는 항목은 리뷰에서 반려한다.
+
+# [해제 2026-09-21 · P2-6] i18n/messages.ts 의 shallow 병합 마커는 지웠다 — en.json 이 공개 네임스페이스를 키 하나 빠짐없이
+#   갖게 됐고(마커 문안의 "키를 전부 채우거나" 쪽), tests/i18n-en.test.ts §2 패리티 테스트가 그것을 잠근다. 중첩 병합으로
+#   승격하지 않은 이유는 messages.ts 주석에 있다(빠진 영문 키가 조용히 한국어로 채워지면 아무도 모른다).
+
+# ── P1-1 법정 문구 원장 lib/legal/disclosures.ts ────────────────────────────────────────────
+# 마커 줄 규약: `// [TEMP] CONST.field: 사유` — 패턴은 그 키로 매칭한다(값·사유가 바뀌어도 유지).
+# tests/legal.test.ts 가 원장의 마커 줄과 아래 항목이 1:1 인지 단언한다(항목 추가·삭제는 원장과 함께).
+# 값이 미확정인 필드는 "" 로 두었다 — 지어내지 않는다. 소비자(P1-6·P2-3)는 빈 값을 숨김 폴백으로 처리한다.
+
+# [해제 2026-09-21 · P1-7] 사장님 답변(사용자 경유)으로 다음 일곱 항목의 마커와 허용 항목을 지웠다.
+#   COMPANY.mailOrderIssuer → "고양시 일산동구청"(A-4) · COMPANY.bankHolder → 필드째 삭제, 계좌는 PAYMENT.account(관계사 명의, A-5)
+#   CANCELLATION.basis → 계약금 기준 2단계로 확정(A-1) · PAYMENT.balanceTiming · PRIVACY_NOTICE.retention · PRIVACY_NOTICE.retentionDays ·
+#   DISPUTE.handling → 값 그대로 확정. tests/legal.test.ts §8(마커 ↔ 항목 1:1)과 §5-b(해제 확인)가 잠근다.
+
+# [해제 2026-10-09 · 오픈] 원장의 남은 여덟 항목을 실값으로 채우고 마커와 허용 항목을 지웠다(사용자·사장님 확인 + 컨트롤러 원문 확인).
+#   COMPANY.email → bestour@bestour.co.kr(네이버웍스 개설) · PROCESSORS.Solapi.name → 솔라피(주)(solapi.com 사업자정보 217-81-33791) ·
+#   PROCESSORS.Upstash.location / OVERSEAS_TRANSFERS.Upstash.country → 일본(도쿄 리전 ap-northeast-1) · OVERSEAS_TRANSFERS.Upstash.contact →
+#   privacy@upstash.com(Upstash 처리방침) · LEGAL_PAGES.privacy/terms.effectiveDate → 2026-10-09(오픈일) · TERMS.articles.six.body →
+#   "예약 확정 시 안내" 그대로 확정(사장님). tests/legal.test.ts §8(마커 ↔ 항목 1:1)이 잠근다.
+
+# ── P2-3 공개 셸 ───────────────────────────────────────────────────────────────
+# [등록 2026-09-11 · P2-3] 네이버 블로그 주소 — env NEXT_PUBLIC_NAVER_BLOG_URL, 현재 값 없음.
+# 사유: 옛 사이트 메뉴 "네이버 블로그"의 실제 URL 을 사장님께 아직 받지 못했다(옛 사이트 링크도 깨져 있다).
+#       주소를 지어내지 않는다. env 가 비어 있으면 메뉴 항목 자체를 렌더하지 않으므로 죽은 링크는 배포되지 않는다.
+# 해제 조건: 사장님에게 블로그 주소를 받으면 env 를 채우고 LEGACY_MENU 의 blog.ready 를 true 로 올린 뒤
+#           마커와 이 항목을 지운다.
+lib/legacy-menu-map.ts:\[TEMP\] LEGACY_MENU\.blog\.href:
+
+# ── P6-3 공개 서브페이지 ───────────────────────────────────────────────────────
+# [등록 2026-09-13 · P6-3] /about#location 지도 임베드 보류.
+# 사유: 카카오맵/네이버 지도 임베드는 API 키 발급·약관(로고 표기·트래픽 한도) 확인 전이라 넣지 않았다. 지금은 원장 주소를
+#       인코딩한 검색 URL 외부 링크 2개(키 불필요)만 건다 — 지어낸 값은 없고 "임베드 여부를 아직 결정하지 않았다"는 표시다.
+# 해제 조건: 컨트롤러가 P7 에서 임베드 여부(키·약관)를 결정하면 임베드를 넣거나 링크 유지로 확정하고 마커와 이 항목을 지운다.
+app/[locale]/(site)/about/page.tsx:\[TEMP\] ABOUT\.mapEmbed:
+
+# ── P6-6 카피 실증 정리 ─────────────────────────────────────────────────────────
+# [등록 2026-09-16 · P6-6] 홈 접수 현황 피드의 "최근" 범위 RECENT_WINDOW_DAYS = 30.
+# 사유: 감사 R-1 — 쿼리에 기간 조건이 없어 몇 달 전 접수가 "방금"으로 표시됐다. 카피를 "최근"으로 낮추고 쿼리에
+#       그 범위를 실제로 걸었다. 30 일은 사장님이 준 값이 아니라 "최근"이 가리킬 수 있는 가장 짧은 상식적
+#       단위(한 달)로 정한 잠정값이다 — 지어낸 수치가 아니라 카피를 참으로 만드는 최소 범위.
+# 해제 조건: 사장님이 이 섹션에 보여 줄 기간을 확인해 주면 상수를 교체하고 마커와 이 항목을 지운다.
+lib/queries/recent.ts:\[TEMP\] RECENT_WINDOW_DAYS:

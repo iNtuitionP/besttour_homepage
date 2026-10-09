@@ -1,5 +1,20 @@
 # 베스트투어 UIUX 시안 제작 구현 계획
 
+> # ⛔ 폐기된 플랜 — 여기서 구현하지 마라 (2026-09-15 표시)
+>
+> 이 문서는 **2026-08-07 시안 6개(variant-01~06)를 만들기 위한 플랜**이고, 그 단계는 끝났다.
+> 확정 기준은 `mockups/soul.md` §11(2026-08-31 승격)과 `docs/superpowers/plans/2026-09-06-bestour-implementation-v4.md` 이며,
+> 이 문서는 **기록 보존용**으로만 남긴다. 아래 내용을 지시로 읽지 마라.
+>
+> **특히 이 문서는 실증 불가 수치의 발원지다.** `:78` 의 `"운행 13년 · 누적 견적 4,800+ · 차량 5종"` 과
+> `:27` 의 `"신뢰는 숫자로 — 스탯 블록(운행 연차, 누적 견적 건수)"` 은 **CLAUDE.md §3 절대 규칙 위반**이다.
+> 사장님이 근거를 제시한 적이 없는 값이고, 표시광고법 §5 는 광고주에게 실증책임을 지운다.
+> 원문을 지우지 않는 이유는 **어디서 새어 나왔는지가 기록으로 남아야** 하기 때문이다(2026-09-06 결정 메모 §14).
+> 실제 사이트에서는 전량 제거됐고 `tests/pages.test.ts` 의 `UNPROVEN` 목록이 재발을 막는다.
+>
+> 이 문서의 시안 지시(딥퍼플 `#3B1F5C` 팔레트, 실시간 가격 계산, 예상가 노출)는 **전부 뒤집혔다**:
+> 팔레트는 브랜드 실측값(MAIN `#6F1C7C`)으로, 가격은 **전면 제거**로 확정됐다. CLAUDE.md §3·§4 를 보라.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 베스트투어 홈페이지 리디자인의 클라이언트 컨펌용 홈 화면 시안 6개 + 비교 갤러리를 정적 HTML로 제작한다.

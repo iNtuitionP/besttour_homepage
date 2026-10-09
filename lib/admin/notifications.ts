@@ -1,0 +1,572 @@
+/**
+ * 관리자 발송 내역 읽기 — SSR 세션 + RLS (플랜 v4 P5-8 · ADR-2·ADR-3).
+ *
+ * 왜 이 모듈이 있는가
+ * ---------------------------------------------------------------------------
+ * 문자가 실패하면 `notifications_log` 에 `failed` 로 남고(0005 mark_notification_failed), 5회째 claim 뒤 죽은 행은
+ * 회수기(0007)가 `failed/lease_expired_after_max_attempts` 로 닫는다. 기록은 완벽한데 **읽는 사람이 없었다.**
+ * 손님에게 확정 문자가 가지 않았는데 아무도 모르는 상태가 구조상 가능했다 — 이 모듈과 그 위의 화면이 그 구멍을 막는다.
+ *
+ * 읽기 전용이다
+ * ---------------------------------------------------------------------------
+ * 0009 는 이 표에 **select 정책 하나**만 줬다(`notifications_log_admin_select`). 상태 전이는 0005·0007 의 security definer
+ * 함수 몫이다 — 관리자가 status 를 직접 고칠 수 있으면 "보내지 않은 것을 보냈다고 적는" 경로가 열린다.
+ * 그래서 이 파일에는 insert·update·delete·rpc 가 하나도 없고, 재발송도 만들지 않았다(P4-2 발송기가 아직 없다).
+ *
+ * 서비스 롤을 쓰지 않는다(ADR-2). 조회는 `createSsrClient(cookies())`(anon 키 + 관리자 쿠키 세션)로 하고 정책이 DB 에서
+ * 한 번 더 거른다 — 화면에서 requireAdmin() 을 빠뜨려도 0행이 온다. 캐시하지 않는다(ADR-3): 호출부가 unstable_cache 로
+ * 감싸지 않는다. lib/admin/reservations.ts 와 같은 규약이고 `check:admin` 게이트가 기계로 지킨다.
+ *
+ * 수신처는 이 모듈 밖으로 나가지 않는다
+ * ---------------------------------------------------------------------------
+ * 예약 목록(lib/admin/reservations.ts)은 마스킹하지 않는다 — 사장님이 전화를 걸어야 하기 때문이다. 발송 내역은 다르다:
+ * 여기서 걸 전화는 없고, 어느 예약인지는 **접수번호**로 안다. 그래서 `to_phone` 을 읽되 반환 타입에는 마스킹된
+ * `toMasked` 만 둔다 — 원문을 담을 필드가 없으니 화면이 실수로 그릴 수도, dev 가 props 로 직렬화할 수도 없다
+ * (P3-5 리뷰 N-2: 개발 모드는 서버 컴포넌트 props 를 HTML 에 싣는다).
+ *
+ * select 는 화이트리스트다(`select('*')` 금지). `provider_message_id` 와 0001 의 낡은 `error` 컬럼은 읽지 않는다.
+ * 접수번호는 임베드가 아니라 **두 번째 질의**로 가져온다 — 임베드는 예약 쪽 정책에 걸리면 통지 행 자체를 조용히
+ * 떨어뜨릴 수 있는데, 발송 실패를 보여 주려고 만든 화면에서 행이 사라지는 것이 가장 나쁘다.
+ *
+ * 페이지네이션은 limit + 1 (count 쿼리 금지 — lib/admin/reservations.ts 선례). 요약만 count 를 쓴다(아래).
+ */
+import "server-only";
+
+import { cookies } from "next/headers";
+
+import { maskEmailAddress, maskStoredPhone } from "../mask";
+import {
+  ALL_TEMPLATE_KEYS,
+  DUPLICATE_SENT_ERROR,
+  MAX_ATTEMPTS,
+  SENT_UNMARKED_PREFIX,
+  notificationRecordState,
+  type NotificationRecordState,
+} from "../notify/outbox";
+import { createSsrClient } from "../supabase/ssr";
+import type { NotifyChannel, NotifyEvent, OutboxStatus } from "../types";
+
+/** URL 의 `?cursor=` 파서는 예약 목록과 같은 것을 쓴다 — 화면 둘이 다른 규칙으로 움직일 이유가 없다. */
+export { parseCursor } from "./reservations";
+
+/** 세션(쿠키) 클라이언트. 서비스 롤 클라이언트는 이 파일에 들어오지 않는다. */
+export type AdminNotificationsClient = ReturnType<typeof createSsrClient>;
+
+export const NOTIFICATIONS_TABLE = "notifications_log";
+const RESERVATIONS_TABLE = "reservations";
+
+export const ADMIN_NOTIFICATIONS_PATH = "/admin/notifications";
+
+export const DEFAULT_NOTIFICATION_PAGE_SIZE = 20;
+export const MAX_NOTIFICATION_PAGE_SIZE = 100;
+
+// =============================================================================
+// 필터
+// =============================================================================
+
+/** 0005 의 status CHECK 그대로. `pending` 은 "아직 보낼 것"(백오프 대기 포함), `failed` 는 종착이다. */
+export const NOTIFICATION_STATUSES = ["pending", "sent", "failed"] as const;
+export type NotificationStatus = (typeof NOTIFICATION_STATUSES)[number];
+
+/** 0005 의 channel CHECK 그대로. */
+export const NOTIFICATION_CHANNELS = ["sms", "alimtalk", "email"] as const;
+
+export const STATUS_FILTERS = ["all", ...NOTIFICATION_STATUSES] as const;
+export type StatusFilter = (typeof STATUS_FILTERS)[number];
+
+export const CHANNEL_FILTERS = ["all", ...NOTIFICATION_CHANNELS] as const;
+export type ChannelFilter = (typeof CHANNEL_FILTERS)[number];
+
+/** 기간 필터 — created_at 기준. `all` 은 조건 없음. */
+export const PERIOD_FILTERS = ["all", "24h", "7d", "30d"] as const;
+export type PeriodFilter = (typeof PERIOD_FILTERS)[number];
+
+export const PERIOD_HOURS: Record<PeriodFilter, number | null> = {
+  all: null,
+  "24h": 24,
+  "7d": 24 * 7,
+  "30d": 24 * 30,
+};
+
+/**
+ * 파서는 관대하다(모르는 값이면 전체) — 주소창에 오타가 났다고 관리자 화면이 500 이 되면 안 된다.
+ * 아래 쿼리 함수는 반대로 엄격하다: 목록 밖의 값을 받으면 DB 를 부르지 않고 throw 한다.
+ */
+const parseFrom = <T extends string>(allowed: readonly T[], raw: unknown): T =>
+  typeof raw === "string" && (allowed as readonly string[]).includes(raw) ? (raw as T) : allowed[0];
+
+export const parseNotificationStatusFilter = (raw: unknown): StatusFilter => parseFrom(STATUS_FILTERS, raw);
+export const parseChannelFilter = (raw: unknown): ChannelFilter => parseFrom(CHANNEL_FILTERS, raw);
+export const parsePeriodFilter = (raw: unknown): PeriodFilter => parseFrom(PERIOD_FILTERS, raw);
+
+// =============================================================================
+// 화이트리스트
+// =============================================================================
+
+/**
+ * 목록이 읽는 컬럼. `to_phone` 은 **마스킹해서 버리려고** 읽는다 — 아래 toRow 가 원문을 반환 타입 밖에 둔다.
+ * 읽지 않는 것: `provider_message_id`(제공자 쪽 식별자, 사장님에게 뜻이 없다) · 0001 의 낡은 `error` 컬럼
+ * (0005 이후 쓰는 것은 `last_error` 다).
+ */
+export const NOTIFICATION_LIST_COLUMNS = [
+  "id",
+  "reservation_id",
+  "event",
+  "channel",
+  "template",
+  "status",
+  "attempts",
+  "last_error",
+  "next_attempt_at",
+  "created_at",
+  "updated_at",
+  "to_phone",
+] as const;
+
+/** PostgREST select 문자열 = 화이트리스트 join. 임베드·별칭 없음. */
+export const NOTIFICATION_LIST_SELECT: string = NOTIFICATION_LIST_COLUMNS.join(",");
+
+/** 접수번호 조회용 — 예약에서 딱 두 컬럼. 이름·전화번호는 읽지 않는다. */
+export const RESERVATION_CODE_SELECT = "id,public_code";
+
+/** 요약 집계가 읽는 컬럼. head 집계라 실제 행은 오지 않는다. */
+const COUNT_COLUMN = "id";
+
+// =============================================================================
+// 행 모양
+// =============================================================================
+
+export interface NotificationListRow {
+  id: number;
+  /** 예약이 파기됐거나 예약 없는 통지면 null. 행을 감추지는 않는다. */
+  reservationId: string | null;
+  /** reservations.public_code. 못 찾으면 null(파기된 예약) — 그래도 통지 행은 남는다. */
+  publicCode: string | null;
+  event: NotifyEvent;
+  channel: NotifyChannel;
+  /** outbox.ts TEMPLATE_KEYS 의 키. 화면이 라벨로 바꿔 그린다. */
+  template: string;
+  status: OutboxStatus;
+  attempts: number;
+  lastError: string | null;
+  /**
+   * 기록 상태 표식(P4-7 수정 라운드 3) — `sentUnconfirmed`(발송됨 · 기록 확인 필요) · `duplicateSuppressed`(중복 억제) · null.
+   * 화면은 표식이 있으면 status 배지 대신 이것을 그린다("대기"·"실패" 로 오해하지 않게).
+   */
+  recordState: NotificationRecordState;
+  /** 다음 시도 시각(ISO UTC). claim 중이면 lease 만료 시각이다. */
+  nextAttemptAt: string;
+  createdAt: string;
+  updatedAt: string;
+  /** 마스킹된 수신처. 원문은 이 모듈 밖으로 나가지 않는다. */
+  toMasked: string;
+}
+
+/** DB 행 — 이 모듈 밖으로 나가지 않는다. */
+interface DbRow {
+  id: number;
+  reservation_id: string | null;
+  event: NotifyEvent;
+  channel: NotifyChannel;
+  template: string;
+  status: OutboxStatus;
+  attempts: number;
+  last_error: string | null;
+  next_attempt_at: string;
+  created_at: string;
+  updated_at: string;
+  to_phone: string;
+}
+
+// =============================================================================
+// 마스킹 — fail-closed
+// =============================================================================
+
+/**
+ * 수신처를 가린다 — 채널만 보고 lib/mask.ts 의 공용 변환에 넘긴다. **판정을 여기서 다시 구현하지 않는다**:
+ * 같은 개인정보 변환의 사본이 둘이면 한쪽만 조여지고 다른 쪽이 계속 샌다(예약확인 화면이 같은 함수를 쓴다).
+ *   - 전화(sms·alimtalk): `maskStoredPhone` — 저장형 E.164 의 `+82` 휴대전화만 `010-****-8585`, 그 밖은 전부 `***`
+ *     (해외 번호·유선·국내 표기 원문·형식 불명. fail-closed — 짐작해서 일부를 내보내면 그것이 곧 유출이다).
+ *     사장님 번호 env 가 국내 표기(`010-…`)로 들어와 있으면 그 행은 `***` 로 보인다 — 어느 행인지는 채널·문자 종류가 말해 준다.
+ *   - 메일(email): `maskEmailAddress` — 로컬 파트를 통째로 가리고 도메인만(`***@naver.com`).
+ */
+export function maskRecipient(channel: NotifyChannel, raw: string): string {
+  const value = raw ?? "";
+  return channel === "email" ? maskEmailAddress(value) : maskStoredPhone(value);
+}
+
+function toRow(r: DbRow, codes: Map<string, string>): NotificationListRow {
+  return {
+    id: r.id,
+    reservationId: r.reservation_id,
+    publicCode: r.reservation_id === null ? null : (codes.get(r.reservation_id) ?? null),
+    event: r.event,
+    channel: r.channel,
+    template: r.template,
+    status: r.status,
+    attempts: r.attempts,
+    lastError: r.last_error,
+    recordState: notificationRecordState(r.status, r.last_error),
+    nextAttemptAt: r.next_attempt_at,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    toMasked: maskRecipient(r.channel, r.to_phone),
+  };
+}
+
+// =============================================================================
+// 목록
+// =============================================================================
+
+export interface NotificationListParams {
+  status?: StatusFilter;
+  channel?: ChannelFilter;
+  period?: PeriodFilter;
+  /** offset. 0 이상의 정수. */
+  cursor?: number;
+  limit?: number;
+  /** 기간 필터의 기준 시각. 테스트 주입용 — 운영은 생략(호출 시점). */
+  now?: Date;
+}
+
+export interface NotificationListPage {
+  items: NotificationListRow[];
+  hasMore: boolean;
+  nextCursor: number | null;
+}
+
+const EMPTY_PAGE: NotificationListPage = { items: [], hasMore: false, nextCursor: null };
+
+async function sessionClient(): Promise<AdminNotificationsClient> {
+  return createSsrClient(await cookies());
+}
+
+/** 오류 문구에 행 내용을 싣지 않는다 — code·message 만(details·hint 제외, lib/admin/reservations.ts 와 같은 규약). */
+function fail(op: string, error: { code?: string | null; message: string }): never {
+  throw new Error(`adminNotifications.${op}: [${error.code ?? "?"}] ${error.message}`);
+}
+
+/** PostgREST 는 행 수를 넘긴 Range 요청에 416 + PGRST103 을 준다 — 오래된 cursor 는 오류가 아니라 빈 페이지다. */
+function isRangeNotSatisfiable(error: { code?: string | null; message?: string | null }): boolean {
+  return error.code === "PGRST103" || /range not satisfiable/i.test(error.message ?? "");
+}
+
+function since(period: PeriodFilter, now: Date): string | null {
+  const hours = PERIOD_HOURS[period];
+  return hours === null ? null : new Date(now.getTime() - hours * 60 * 60 * 1000).toISOString();
+}
+
+function assertParams(params: NotificationListParams): Required<Pick<NotificationListParams, "status" | "channel" | "period" | "cursor" | "limit">> {
+  const { status = "all", channel = "all", period = "all", cursor = 0, limit = DEFAULT_NOTIFICATION_PAGE_SIZE } = params;
+  if (!(STATUS_FILTERS as readonly unknown[]).includes(status)) throw new Error("listNotifications: 알 수 없는 status 필터다");
+  if (!(CHANNEL_FILTERS as readonly unknown[]).includes(channel)) throw new Error("listNotifications: 알 수 없는 channel 필터다");
+  if (!(PERIOD_FILTERS as readonly unknown[]).includes(period)) throw new Error("listNotifications: 알 수 없는 period 필터다");
+  if (!Number.isInteger(cursor) || cursor < 0) throw new Error("listNotifications: cursor 는 0 이상의 정수여야 한다");
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_NOTIFICATION_PAGE_SIZE) {
+    throw new Error(`listNotifications: limit 은 1 이상 ${MAX_NOTIFICATION_PAGE_SIZE} 이하의 정수여야 한다`);
+  }
+  return { status, channel, period, cursor, limit };
+}
+
+/**
+ * 목록 한 페이지 — 최신순(created_at desc, 동률은 id desc), `cursor` 부터 `limit` 건.
+ * hasMore 는 limit + 1 건을 읽어 판정한다. `client` 는 테스트 주입용 — 운영 호출부는 넘기지 않는다.
+ */
+export async function listNotifications(
+  params: NotificationListParams,
+  client?: AdminNotificationsClient,
+): Promise<NotificationListPage> {
+  const { status, channel, period, cursor, limit } = assertParams(params);
+  const now = params.now ?? new Date();
+
+  const db = client ?? (await sessionClient());
+  let query = db.from(NOTIFICATIONS_TABLE).select(NOTIFICATION_LIST_SELECT);
+  if (status !== "all") query = query.eq("status", status);
+  if (channel !== "all") query = query.eq("channel", channel);
+  const from = since(period, now);
+  if (from !== null) query = query.gte("created_at", from);
+
+  // range 는 양끝 포함이다 — (cursor, cursor + limit) 은 limit + 1 건.
+  const { data, error } = await query
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .range(cursor, cursor + limit)
+    .overrideTypes<DbRow[], { merge: false }>();
+
+  if (error) {
+    if (isRangeNotSatisfiable(error)) return EMPTY_PAGE;
+    fail("listNotifications", error);
+  }
+  const rows = data ?? [];
+  const hasMore = rows.length > limit;
+  const page = rows.slice(0, limit);
+  const codes = await publicCodes(page, db);
+
+  return { items: page.map((r) => toRow(r, codes)), hasMore, nextCursor: hasMore ? cursor + limit : null };
+}
+
+/**
+ * 통지 행들이 가리키는 예약의 접수번호. 임베드가 아니라 두 번째 질의다(모듈 헤더 참조).
+ * 가리키는 예약이 하나도 없으면 DB 를 부르지 않는다. 못 찾은 예약(파기됨)은 지도에 없을 뿐, 통지 행은 남는다.
+ */
+async function publicCodes(rows: readonly DbRow[], db: AdminNotificationsClient): Promise<Map<string, string>> {
+  const ids = [...new Set(rows.map((r) => r.reservation_id).filter((id): id is string => id !== null))];
+  if (ids.length === 0) return new Map();
+
+  const { data, error } = await db
+    .from(RESERVATIONS_TABLE)
+    .select(RESERVATION_CODE_SELECT)
+    .in("id", ids)
+    .overrideTypes<{ id: string; public_code: string }[], { merge: false }>();
+  if (error) fail("publicCodes", error);
+  return new Map((data ?? []).map((r) => [r.id, r.public_code]));
+}
+
+// =============================================================================
+// 요약 — 화면 맨 위의 "이상 없음 / 실패 N건"
+// =============================================================================
+
+/**
+ * `stuck` 집계의 창 — **마지막 시도(updated_at)** 기준(P5-23 재검토 P2-A). `pending` 인 채 attempts 를 다 쓴 행은 다섯 번째 claim 뒤 기록 없이
+ * 멈춘 것이고, 회수기(0007)가 **다음 발송 실행**(즉시 발송 · 하루 1회 크론)에 `failed` 로 바꾼다 — 그러면 첫 번째 숫자(failed, 기간 제한 없음)가 잡는다.
+ * 다섯 번째 claim 이 updated_at 을 찍으므로, 이 창은 "회수를 기다리는" 행(하루 1회 크론이면 길어야 하루)을 센다.
+ * 예전 창은 created_at 이었다 — 하루 1회 크론에서 다섯 번째 claim 은 흔히 만든 지 이틀이 넘은 뒤라, 같은 화면의 행은 "다시 보내기를 다 씀" 인데
+ * 요약 칸은 0 이었다. 회수가 하루 넘게 늦으면(크론을 놓침) 그 행은 요약에서 빠지지만 목록에는 그대로 보이고, 작은 줄이 창을 그대로 말한다
+ * ("마지막 시도 · 최근 24시간").
+ */
+export const SUMMARY_WINDOW_HOURS = 24;
+
+export interface NotificationSummary {
+  /**
+   * status = 'failed' 전체 건수(기간 제한 없음). 종착한 실패 — 손님이 못 받은 문자다.
+   * **중복 억제 행(`failed/duplicate_sent`)은 빼고 센다**(P4-7 수정 라운드 3 · 리뷰 P2-8) — 같은 통지가 이미 sent 로 기록된 행이다.
+   */
+  failed: number;
+  /**
+   * status = 'pending' 이면서 attempts >= MAX_ATTEMPTS 이고 **마지막 시도(updated_at)가 최근 24시간 안**인 건수 — 더 시도되지 않는 행
+   * (화면: "다시 보내기를 다 쓴 알림" · 작은 줄 "마지막 시도 · 최근 24시간" · 행 둘째 줄 "다시 보내기를 다 씀").
+   * 격리 행(보냈지만 기록 못 함)은 빼고 센다 — 아래 sentUnconfirmed 가 따로 센다.
+   */
+  stuck: number;
+  /**
+   * **발송됨 · 기록 확인 필요**(P4-7 수정 라운드 3 · 리뷰 P1-B) — pending + `sent_unmarked:` 표식(기간 제한 없음).
+   * 제공자는 받았는데 DB 기록을 못 해 격리된 행이다. 손님은 받았다 — "실패" 가 아니다. 워커가 실행마다 기록을 다시 시도한다(자가 복구).
+   */
+  sentUnconfirmed: number;
+  windowHours: number;
+  /** 셋 다 0. 화면은 이때만 "이상 없음" 을 그린다. */
+  ok: boolean;
+}
+
+/** 목록 행의 기록 상태 표식 — lib/notify/outbox.ts 의 판정을 그대로 쓴다(판정을 두 벌 두지 않는다). */
+export { notificationRecordState, type NotificationRecordState } from "../notify/outbox";
+
+export interface NotificationSummaryParams {
+  now?: Date;
+}
+
+/** head 집계 응답 — 실제 행은 오지 않고 count 만 온다. */
+interface CountResponse {
+  count: number | null;
+  error: { code?: string | null; message: string } | null;
+}
+
+/** count 가 오지 않으면 0 으로 갈음하지 않고 throw 한다 — 모르는 것을 "이상 없음" 으로 보고하는 것이 이 화면의 유일한 실패 방식이다. */
+function readCount(op: string, res: CountResponse): number {
+  if (res.error) fail(op, res.error);
+  if (typeof res.count !== "number") throw new Error(`adminNotifications.${op}: count 를 받지 못했다 — 0 으로 갈음하지 않는다`);
+  return res.count;
+}
+
+/**
+ * 화면 맨 위 요약. **집계값이므로 실증불가 수치가 아니다**(CLAUDE.md §3) — DB 가 지금 세어 준 숫자다.
+ * 개인정보는 하나도 오지 않는다(head 집계라 행 자체가 오지 않는다).
+ *
+ * 세 집계는 서로 기다릴 이유가 없어 **동시에** 보낸다(P5-18 — 직렬이면 왕복 세 번, 동시면 한 번 분량).
+ * 오류 판정은 예전 순서 그대로다: 셋을 다 받은 뒤 failed → stuck → sentUnconfirmed 순으로 읽어 첫 오류를 던진다.
+ * 집계 셋이 같은 순간을 세지 않는 것은 예전과 같다(원래도 원자적이지 않았다 — 오히려 창이 좁아진다).
+ */
+export async function getNotificationSummary(
+  params: NotificationSummaryParams = {},
+  client?: AdminNotificationsClient,
+): Promise<NotificationSummary> {
+  const now = params.now ?? new Date();
+  const db = client ?? (await sessionClient());
+
+  // last_error 가 null 인 행도 세야 한다 — `neq`·`not.like` 만 쓰면 SQL 의 NULL 비교가 그 행들을 떨어뜨린다. 그래서 `is.null` 과 or 로 묶는다.
+  const failedQuery = db
+    .from(NOTIFICATIONS_TABLE)
+    .select(COUNT_COLUMN, { count: "exact", head: true })
+    .eq("status", "failed")
+    .or(`last_error.is.null,last_error.neq.${DUPLICATE_SENT_ERROR}`);
+
+  const stuckSince = new Date(now.getTime() - SUMMARY_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
+  const stuckQuery = db
+    .from(NOTIFICATIONS_TABLE)
+    .select(COUNT_COLUMN, { count: "exact", head: true })
+    .eq("status", "pending")
+    .gte("attempts", MAX_ATTEMPTS)
+    .gte("updated_at", stuckSince)
+    .or(`last_error.is.null,last_error.not.like.${SENT_UNMARKED_PREFIX}*`);
+
+  const unconfirmedQuery = db
+    .from(NOTIFICATIONS_TABLE)
+    .select(COUNT_COLUMN, { count: "exact", head: true })
+    .eq("status", "pending")
+    .like("last_error", `${SENT_UNMARKED_PREFIX}%`);
+
+  const [failedRes, stuckRes, unconfirmedRes] = await Promise.all([failedQuery, stuckQuery, unconfirmedQuery]);
+  const failed = readCount("summary.failed", failedRes as CountResponse);
+  const stuck = readCount("summary.stuck", stuckRes as CountResponse);
+  const sentUnconfirmed = readCount("summary.sentUnconfirmed", unconfirmedRes as CountResponse);
+
+  return { failed, stuck, sentUnconfirmed, windowHours: SUMMARY_WINDOW_HOURS, ok: failed === 0 && stuck === 0 && sentUnconfirmed === 0 };
+}
+
+// =============================================================================
+// 관리 홈 발송 경보 — 최근 7일 · 받는 사람별 (P5-21 수정 라운드 · 컨트롤러 결정 P1-2)
+// =============================================================================
+
+/**
+ * 관리 홈 배너·'문자 발송' 카드의 기간. 위 요약(실패는 기간 없음)을 그대로 쓰면 한 번 뜬 경보가 사라지지 않았다 —
+ * 실패 행을 바꾸는 관리자 동작이 없고 파기 배치가 예약과 함께 지울 때까지(확정 건은 5년) 남기 때문이다(리뷰 P1-2).
+ * 발송 기록 화면의 기간 필터 '7d'(created_at 기준 — PERIOD_HOURS)와 **같은 창**이다: 카드·배너는 그 걸러 본 목록으로 이어진다.
+ */
+export const HOME_ALERT_WINDOW_DAYS = 7;
+
+/** 카드·배너가 이어지는 곳 — 발송 기록의 '실패 · 최근 7일' 목록(주소에는 상태·기간뿐 — 개인정보 0). */
+export const HOME_ALERT_LIST_HREF = `${ADMIN_NOTIFICATIONS_PATH}?status=failed&period=7d`;
+
+/**
+ * '대기 중' 카드가 이어지는 곳 — 발송 기록의 '대기 · 최근 7일' 목록(P5-22 수정 라운드 · 리뷰 P2-1: 카드 숫자 = 이어지는 목록).
+ * 그 목록은 카드가 센 것(고객 문자 · 한 번도 시도 안 함 · 10분 넘음)의 **상위 집합**이다 — 사장님 쪽 대기와 다시 보낼 차례를 기다리는
+ * 것도 보인다(매뉴얼 1장에 적었다). 실패와 대기가 함께면 카드는 실패를 말하므로 실패 목록으로 간다(배너도 늘 실패 목록).
+ */
+export const HOME_WAITING_LIST_HREF = `${ADMIN_NOTIFICATIONS_PATH}?status=pending&period=7d`;
+
+export type TemplateAudience = "customer" | "owner";
+
+/**
+ * 문안 키의 받는 사람 — 키 모양은 lib/notify/outbox.ts 가 정한다: 예약 통지 `${event}.${audience}.${channel}` ·
+ * 발송 실패 알림 `${event}.owner.failure.email`. 둘째 칸이 받는 사람이다. 모르는 모양이면 null.
+ */
+export function templateAudience(key: string): TemplateAudience | null {
+  const audience = key.split(".")[1];
+  return audience === "customer" || audience === "owner" ? audience : null;
+}
+
+/** 문안 키의 채널 — 마지막 칸. */
+function templateChannel(key: string): string {
+  return key.split(".").at(-1) ?? "";
+}
+
+/**
+ * 고객에게 가는 **문자**(SMS · 알림톡) 문안 키 — 아웃박스가 받아들이는 키 전부(ALL_TEMPLATE_KEYS)에서 가른다. 목록을 손으로 적지 않는다:
+ * 아웃박스에 고객 문안이 늘면 여기에 저절로 들어온다. 홈 배너는 이 수로만 뜬다 — "고객에게 전화로 알려 주세요" 가 참인 경우다.
+ */
+export const CUSTOMER_MESSAGE_TEMPLATE_KEYS: readonly string[] = ALL_TEMPLATE_KEYS.filter(
+  (k) => templateAudience(k) === "customer" && (templateChannel(k) === "sms" || templateChannel(k) === "alimtalk"),
+);
+
+/** 사장님께 가는 알림 문안 키(접수 알림 문자·메일 · 발송 실패 알림 메일) — 홈 카드의 작은 줄로만 보인다(배너가 아니다). */
+export const OWNER_TEMPLATE_KEYS: readonly string[] = ALL_TEMPLATE_KEYS.filter((k) => templateAudience(k) === "owner");
+
+/**
+ * '대기 중' 의 기준 시간(P5-22 · P5-21 재검토 신규 P2-1) — 고객 문자가 **만든 지 이만큼 지나도록 한 번도 시도되지 않았으면** 오래 대기 중이다.
+ * 즉시 발송(lib/notify/inline.ts)이 켜져 있으면 접수·확정 응답 뒤 몇 초 안에 첫 시도가 끝난다(마감 INLINE_DEADLINE_MS = 40초 · claim 이 attempts 를 올린다).
+ * 10분은 그보다 넉넉히 길다 — 콜드 스타트·느린 응답으로 헛경보를 내지 않는다. 그 뒤에도 attempts = 0 이면 발송기가 그 행을 집지 않은 것이다:
+ * 문자 제공자 설정이 없거나(sender 가 없으면 claim 하지 않는다 — worker.ts) 즉시 발송이 꺼져 하루 1회 크론만 도는 경우다.
+ * 관리자 코드는 env 를 읽지 않는다(lib/notify/deps.ts 만 읽는다 — 경계) — 그래서 설정이 아니라 **데이터**로 판단한다.
+ */
+export const HOME_WAITING_MINUTES = 10;
+
+export interface HomeSendAlerts {
+  /** 최근 7일 고객 문자 실패(중복 억제 행 제외) — 배너·카드의 '확인 필요' 를 정한다. 모르면 함수가 던진다(배너의 근거다). */
+  customerFailed: number;
+  /** 같은 7일의 사장님 쪽 알림 실패 — 카드의 작은 줄. **모르면 null**(리뷰 P2-2 — 고객 실패 수·배너를 끌어내리지 않는다). */
+  ownerFailed: number | null;
+  /**
+   * 같은 7일의 고객 문자 중 **오래 대기 중**인 것(P5-22) — status='pending' · attempts = 0(한 번도 시도되지 않음) · 만든 지 HOME_WAITING_MINUTES 넘음.
+   * 0 보다 크면 카드는 "이상 없음" 이 아니라 "대기 중 n건 — 문자 발송이 아직 켜지지 않았을 수 있어요" 다(실패가 아니라 배너는 없다).
+   * **모르면 null**(리뷰 P2-2) — 카드는 실패가 없을 때 "이상 없음" 이라 하지 않고 모름이 된다(문자가 쌓이는 중일 수 있다).
+   */
+  customerWaiting: number | null;
+  /**
+   * 같은 7일의 고객 문자 중 **보낼 때가 지난 재시도**(P5-23 리뷰 P1-1) — status='pending' · 1 ≤ attempts < MAX_ATTEMPTS · 격리 행 아님 ·
+   * next_attempt_at(다음 시도 시각, 집힌 채 멈췄으면 lease 끝)이 HOME_WAITING_MINUTES 넘게 지남. 발송 기록 둘째 줄의 "보낼 차례" · "오래 멈춤" 과 같은 규칙이다.
+   * 예전에는 "곧 발송이나 실패로 바뀐다" 며 세지 않았다 — 크론이 하루 1회라 그 '곧' 이 하루까지 가고, 그동안 카드는 "이상 없음" 이었다.
+   * 발송은 켜져 있으므로(한 번 이상 시도했다) 카드 덧말은 "다음 발송 때 다시 보내요" 다. **모르면 null.**
+   */
+  customerOverdue: number | null;
+  windowDays: number;
+}
+
+/** 부가 집계(사장님 실패 · 대기) — 거부됐거나 오류·빈 count 면 null(모름). 0 으로 갈음하지 않는다. */
+function countOrNull(res: PromiseSettledResult<unknown>): number | null {
+  if (res.status !== "fulfilled") return null;
+  const value = res.value as CountResponse;
+  return value.error || typeof value.count !== "number" ? null : value.count;
+}
+
+/**
+ * 관리 홈 발송 경보 — status='failed'(중복 억제 `duplicate_sent` 는 뺀다 — 손님은 이미 받았다) · created_at ≥ 지금 − 7일 ·
+ * 받는 사람별 head 집계 둘(행은 오지 않는다 — 개인정보 0) + (P5-22) 오래 대기 중인 고객 문자 head 집계 하나 + (P5-23 리뷰 P1-1) 보낼 때가 지난
+ * 재시도 head 집계 하나 — 넷은 동시에 나간다.
+ * 시도를 다 쓴 대기(stuck)는 실패로 세지 않는다: 회수기(0007)가 다음 실행에 failed 로 바꾸면
+ * 그때 여기에 잡히고, 카드·배너가 이어지는 '실패 · 7일' 목록과 같은 수가 된다(두 숫자를 만들지 않는다).
+ * 문안 키가 아웃박스 밖인 행(옛 행·손으로 넣은 행)은 받는 사람을 알 수 없어 여기서 세지 않는다 — 발송 기록 화면에는 그대로 보인다.
+ * 모르는 것은 0 이 아니다 — 고객 실패 수의 오류·빈 count 는 던진다(화면은 그 카드만 "불러오지 못했어요" · 배너 없음).
+ * 넷은 **서로를 끌어내리지 않는다**(P5-22 수정 라운드 · 리뷰 P2-2): allSettled 로 기다려, 사장님 실패·대기 집계가 실패하면 그 칸만 null 이다 —
+ * 부가 신호(대기)가 가장 급한 신호(보내지 못한 고객 문자 · 배너)를 지우지 않게.
+ */
+export async function getHomeSendAlerts(params: NotificationSummaryParams = {}, client?: AdminNotificationsClient): Promise<HomeSendAlerts> {
+  const now = params.now ?? new Date();
+  const db = client ?? (await sessionClient());
+  const since = new Date(now.getTime() - HOME_ALERT_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
+
+  const failedFor = (keys: readonly string[]) =>
+    db
+      .from(NOTIFICATIONS_TABLE)
+      .select(COUNT_COLUMN, { count: "exact", head: true })
+      .eq("status", "failed")
+      .or(`last_error.is.null,last_error.neq.${DUPLICATE_SENT_ERROR}`)
+      .gte("created_at", since)
+      .in("template", [...keys]);
+
+  const customerQuery = failedFor(CUSTOMER_MESSAGE_TEMPLATE_KEYS);
+  const ownerQuery = failedFor(OWNER_TEMPLATE_KEYS);
+  // 오래 대기 중인 고객 문자(P5-22) — 한 번도 시도되지 않았고(attempts = 0) 만든 지 HOME_WAITING_MINUTES 넘은 pending. 같은 7일 창.
+  // attempts = 0 이면 last_error 도 없다(격리 표식 `sent_unmarked:` 은 보낸 뒤라 attempts ≥ 1) — 따로 거르지 않는다.
+  const waitingBefore = new Date(now.getTime() - HOME_WAITING_MINUTES * 60 * 1000).toISOString();
+  const waitingQuery = db
+    .from(NOTIFICATIONS_TABLE)
+    .select(COUNT_COLUMN, { count: "exact", head: true })
+    .eq("status", "pending")
+    .eq("attempts", 0)
+    .gte("created_at", since)
+    .lt("created_at", waitingBefore)
+    .in("template", [...CUSTOMER_MESSAGE_TEMPLATE_KEYS]);
+  // 보낼 때가 지난 재시도(P5-23 리뷰 P1-1) — 한 번 이상 시도했고(1 ≤ attempts < MAX) 다음 시도 시각(또는 집힌 채 멈춘 lease 끝)이 기준 시간 넘게 지났다.
+  // 발송 기록 둘째 줄(lib/admin/notificationDisplay.ts pendingSubState)의 "보낼 차례" · "오래 멈춤" 과 같은 규칙 · 같은 7일 창.
+  // 격리 행(보냈지만 기록 못 함 — next_attempt_at 이 먼 미래라 어차피 걸리지 않는다)은 이름으로도 뺀다. 시도를 다 쓴 행은 다음 실행에 실패로 닫혀 실패 수가 센다.
+  const overdueQuery = db
+    .from(NOTIFICATIONS_TABLE)
+    .select(COUNT_COLUMN, { count: "exact", head: true })
+    .eq("status", "pending")
+    .gte("attempts", 1)
+    .lt("attempts", MAX_ATTEMPTS)
+    .gte("created_at", since)
+    .lt("next_attempt_at", waitingBefore)
+    .or(`last_error.is.null,last_error.not.like.${SENT_UNMARKED_PREFIX}*`)
+    .in("template", [...CUSTOMER_MESSAGE_TEMPLATE_KEYS]);
+
+  const [customerRes, ownerRes, waitingRes, overdueRes] = await Promise.allSettled([customerQuery, ownerQuery, waitingQuery, overdueQuery]);
+  if (customerRes.status !== "fulfilled") throw customerRes.reason;
+  return {
+    customerFailed: readCount("homeAlerts.customer", customerRes.value as CountResponse),
+    ownerFailed: countOrNull(ownerRes),
+    customerWaiting: countOrNull(waitingRes),
+    customerOverdue: countOrNull(overdueRes),
+    windowDays: HOME_ALERT_WINDOW_DAYS,
+  };
+}
