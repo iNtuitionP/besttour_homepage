@@ -631,7 +631,7 @@ describe("6. navCurrent — 메뉴 현재 표시 규칙", () => {
     ["/notices", "/notices", "page"],
     ["/gallery/ux-autumn-trip", "/gallery", "true"],
     ["/noticesx", "/notices", undefined],
-    ["/fleet", "/fares", undefined],
+    ["/fleet", "/gallery", undefined],
     ["/reservation/check", "/reservation/check", "page"],
   ] as const)("%s · %s → %s", ([pathname, href, want]) => {
     expect(navCurrent(pathname, href)).toBe(want);

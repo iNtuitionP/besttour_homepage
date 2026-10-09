@@ -40,7 +40,8 @@ export interface KrMapProps {
   /** SVG title/desc id 접두사. */
   id?: string;
   /**
-   * 카드 칸을 지도 높이에 맞춰 접을지(P2-9). 기본 true(홈). /fares 는 false — 카드 전부 펼침, 안내 줄·토글 없음
+   * 카드 칸을 지도 높이에 맞춰 접을지(P2-9). 기본 true(홈). false — 카드 전부 펼침, 안내 줄·토글 없음
+   * (쓰던 곳은 /fares 였고 P7-6 에서 페이지째 지웠다. 지금 false 를 넘기는 화면은 없다 — 홈 동작을 건드리지 않으려 prop 은 남긴다)
    * (컨트롤러 결정 2026-09-27). 지도 선 hover/탭 말풍선은 어느 쪽이든 동작한다.
    */
   collapse?: boolean;

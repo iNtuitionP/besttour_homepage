@@ -25,10 +25,8 @@
     "kakaoChannel": "Chat with us on the KakaoTalk channel",
     "naverChannel": "Chat with us on Naver TalkTalk",
     "menu": {
-      "about": "About Us · Greeting",
-      "location": "How to Find Us",
+      "about": "About Us",
       "fleet": "Vehicles · Insurance",
-      "fares": "Fares",
       "quote": "Request a Quote",
       "reservationCheck": "Check Booking",
       "notices": "Notices",
@@ -355,6 +353,7 @@
         "since": "Opened"
       },
       "location": {
+        "title": "How to Find Us",
         "desc": "This is our head office address. You can get directions from a map service.",
         "kakao": "View on Kakao Map",
         "naver": "View on Naver Map"
@@ -368,27 +367,6 @@
       "empty": "Vehicle information is being prepared. Tell us your dates and group size, and we will suggest a suitable vehicle.",
       "insurance": {
         "eyebrow": "Insurance"
-      }
-    },
-    "fares": {
-      "meta": {
-        "title": "{brand} Fares",
-        "description": "Charter bus quotes are finalized through consultation, based on vehicle type, passengers, distance, hours and number of days. See how quotes are calculated and sample quotes for popular routes."
-      },
-      "eyebrow": "Quote information",
-      "intro": "Fares are not set in advance — they are worked out for each itinerary. We finalize your quote through consultation, based on the criteria below.",
-      "basis": {
-        "eyebrow": "Calculation basis",
-        "desc": "These are the factors reflected in a quote. For the deposit and balance, please see the notice below."
-      },
-      "routes": {
-        "title": "Examples of frequently requested routes",
-        "desc": "Sample quotes are for reference only. They vary with your schedule, group size and vehicle type, so we give you an exact quote through consultation."
-      },
-      "cta": {
-        "title": "Get a quote for your schedule",
-        "desc": "Leave your departure point, destination, schedule and group size, and we will contact you after reviewing them.",
-        "call": "Call us"
       }
     },
     "notices": {

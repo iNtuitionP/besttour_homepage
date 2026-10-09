@@ -48,7 +48,8 @@ export interface RouteExplorerProps {
   copy: RouteExplorerCopy;
   /**
    * true(기본, 홈) — 카드 칸을 지도 높이에 맞춰 접고 안내 줄·토글을 둔다.
-   * false(/fares) — 16장 전부 펼침, 안내 줄·토글·측정 없음. 지도 선 말풍선은 그대로.
+   * false — 16장 전부 펼침, 안내 줄·토글·측정 없음. 지도 선 말풍선은 그대로.
+   *   쓰던 곳은 /fares 였다(P7-6 에서 페이지째 삭제) — 지금 false 를 넘기는 화면은 없다. 홈 동작을 건드리지 않으려 분기를 남긴다.
    */
   collapse?: boolean;
 }

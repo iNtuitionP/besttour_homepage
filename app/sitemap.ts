@@ -23,6 +23,7 @@ import { pageAlternates } from "@/lib/site-url";
  * 제외
  *   - `/notices/[id]`(동적 세그먼트) · `/admin`(로케일 밖·인증 영역)
  *   - `/quote`·`/quote/done` 은 P3-8 에서 **지웠다**(접수는 홈 간편 견적 하나 — 홈 `/` 가 이미 목록에 있다). 옛 주소는 next.config 가 `/#quote` 로 보낸다.
+ *   - `/fares` 는 P7-6(사용자 결정)에서 **지웠다**(대표 노선은 홈 지도 `#routes`). 옛 주소는 next.config 가 `/#routes` 로 보낸다.
  *
  * `lastModified` 는 넣지 않는다. 빌드 시각을 넣으면 배포마다 전 URL 의 갱신일이 바뀌어
  * 검색엔진에 거짓 신호를 준다(무의미한 노이즈). 실제 갱신일을 아는 경로가 생기면 그때 넣는다.
@@ -31,7 +32,6 @@ const STATIC_ROUTES = [
   "/",
   "/about",
   "/fleet",
-  "/fares",
   "/reservation/check",
   "/notices",
   "/gallery",

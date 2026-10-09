@@ -76,7 +76,8 @@ const REDIRECTS: readonly Row[] = [
   { url: "/page/page.php?bo_page=intro8", destination: "/fleet" },
   { url: "/page/page.php?bo_page=intro9", destination: "/fleet" },
   { url: "/page/page.php?bo_page=intro10", destination: "/fleet" },
-  { url: "/page/page.php?bo_page=intro11", destination: "/fares" },
+  // P7-6: /fares 를 지웠다 — 옛 요금표는 홈 대표 노선(#routes)으로 **바로** 보낸다(/fares 를 거치면 두 번 튄다).
+  { url: "/page/page.php?bo_page=intro11", destination: "/#routes" },
   { url: "/page/page.php?bo_page=estimate", destination: "/guide" },
   { url: "/bbs/board.php?bo_table=notice", destination: "/notices" },
   { url: "/bbs/board.php?bo_table=thema1", destination: "/gallery" },
@@ -86,14 +87,27 @@ const REDIRECTS: readonly Row[] = [
   { url: "/bbs/board.php?bo_table=confirm", destination: "/reservation/check" },
 ];
 
-/** P3-8 — 이 사이트가 없앤 경로(위저드). 옛 사이트 URL 표와 계약이 달라(로케일별 목적지 · 쿼리 매칭 없음) 따로 잠근다. */
+/**
+ * 이 사이트가 스스로 없앤 경로. 옛 사이트 URL 표와 계약이 달라(로케일별 목적지 · 쿼리 매칭 없음) 따로 잠근다.
+ *   P3-8 — 위저드(/quote) → 홈 간편 견적 #quote
+ *   P7-6 — 차량운임료(/fares) → 홈 대표 노선 #routes (사용자 결정 2026-10-09 — 404 금지)
+ */
 const RETIRED: readonly { source: string; destination: string }[] = [
   { source: "/quote", destination: "/#quote" },
   { source: "/quote/done", destination: "/#quote" },
   { source: "/en/quote", destination: "/en#quote" },
   { source: "/en/quote/done", destination: "/en#quote" },
+  { source: "/fares", destination: "/#routes" },
+  { source: "/en/fares", destination: "/en#routes" },
 ];
 const RETIRED_SOURCES = new Set(RETIRED.map((r) => r.source));
+
+/** 리다이렉트가 떨어지는 페이지 안 구역 — 그 id 를 렌더하는 소스. 메뉴 항목이 아니어도 목적지가 될 수 있다(P7-6). */
+const ANCHOR_SOURCES: Readonly<Record<string, string>> = {
+  "/#quote": "components/home/QuoteWidget.tsx",
+  "/#routes": "components/home/RoutesSection.tsx",
+  "/about#location": "app/[locale]/(site)/about/page.tsx",
+};
 
 /**
  * 크롤하지 않았지만 인벤토리가 정체를 적어 둔 게시판 2종.
@@ -160,7 +174,8 @@ function destPath(destination: string): string {
 }
 
 const READY_MENU_HREFS = LEGACY_MENU.filter((m) => m.ready && !m.external).map((m) => m.href);
-const ALLOWED_DESTINATIONS = new Set<string>([...READY_MENU_HREFS, "/"]);
+/** 목적지 = 메뉴의 ready 경로 · 홈 · 살아 있는 페이지 안 구역(ANCHOR_SOURCES — 아래 §1 이 id 실재를 단언한다). */
+const ALLOWED_DESTINATIONS = new Set<string>([...READY_MENU_HREFS, "/", ...Object.keys(ANCHOR_SOURCES)]);
 
 /** 라우트 그룹 디렉터리를 훑어 정적 라우트 경로를 모은다(동적 세그먼트 제외). */
 const GROUP_DIRS = ["app/[locale]/(site)", "app/[locale]/(legal)"] as const;
@@ -234,6 +249,20 @@ describe("P7-1 — next.config.ts redirects()", () => {
     for (const entry of await loadRedirects()) {
       expect(ALLOWED_DESTINATIONS.has(entry.destination), entry.destination).toBe(true);
       expect(routeFileExists(destPath(entry.destination)), entry.destination).toBe(true);
+    }
+  });
+
+  test("해시가 붙은 목적지는 그 구역(id)을 실제로 렌더하는 소스가 있다 — 빈 자리로 떨어지지 않는다", async () => {
+    const hashed = (await loadAllRedirects())
+      .map((e) => e.destination)
+      .filter((d) => d.includes("#"))
+      .map((d) => d.replace(/^\/en#/, "/#"));
+    expect(hashed.length).toBeGreaterThanOrEqual(4);
+    for (const dest of new Set(hashed)) {
+      const rel = ANCHOR_SOURCES[dest];
+      expect(rel, `${dest} 의 구역 소스가 ANCHOR_SOURCES 에 없다`).toBeDefined();
+      const id = dest.split("#")[1];
+      expect(readFileSync(path.join(ROOT, rel), "utf8"), `${rel} 에 id="${id}"`).toMatch(new RegExp(`id="${id}"`));
     }
   });
 
@@ -312,8 +341,8 @@ describe("P7-1 — next.config.ts redirects()", () => {
 // =============================================================================
 // 1-b. P3-8 — 없앤 위저드 경로 → 홈 간편 견적 앵커
 // =============================================================================
-describe("P3-8 — /quote · /quote/done (ko·en) → 홈 #quote 영구 리디렉트", () => {
-  test("네 경로가 정확히 그 목적지로, 301 · 쿼리 매칭 없음(프리필·?code= 가 붙어도 같은 규칙)", async () => {
+describe("P3-8 · P7-6 — /quote · /quote/done → 홈 #quote, /fares → 홈 #routes (ko·en) 영구 리디렉트", () => {
+  test("여섯 경로가 정확히 그 목적지로, 301 · 쿼리 매칭 없음(프리필·?code= 가 붙어도 같은 규칙)", async () => {
     const all = await loadAllRedirects();
     const retired = all.filter((e) => RETIRED_SOURCES.has(e.source));
     expect(retired.map((e) => [e.source, e.destination]).sort()).toEqual(RETIRED.map((r) => [r.source, r.destination]).sort());
@@ -325,14 +354,23 @@ describe("P3-8 — /quote · /quote/done (ko·en) → 홈 #quote 영구 리디�
     }
   });
 
-  test("목적지는 홈(ko `/` · en `/en`)의 #quote 이고 홈 page.tsx 가 있다 · 위저드 page.tsx 는 없다", () => {
+  test("목적지는 홈(ko `/` · en `/en`)의 #quote(위저드) · #routes(운임료)이고 홈 page.tsx 가 있다 · 없앤 page.tsx 는 없다", () => {
     for (const r of RETIRED) {
-      expect(r.destination.endsWith("#quote"), r.destination).toBe(true);
+      const want = r.source.replace(/^\/en/, "").startsWith("/fares") ? "#routes" : "#quote";
+      expect(r.destination.endsWith(want), `${r.source} → ${r.destination}`).toBe(true);
       expect(["/", "/en"]).toContain(r.destination.split("#")[0]);
+      // en 경로는 en 홈으로, ko 경로는 ko 홈으로 — 언어가 바뀌지 않는다
+      expect(r.destination.startsWith("/en"), r.source).toBe(r.source.startsWith("/en"));
     }
     expect(routeFileExists("/")).toBe(true);
     expect(routeFileExists("/quote")).toBe(false);
     expect(routeFileExists("/quote/done")).toBe(false);
+    expect(routeFileExists("/fares")).toBe(false);
+  });
+
+  test("홈 대표 노선에 그 앵커(id=\"routes\")가 있다 — /fares 리디렉트가 빈 자리로 떨어지지 않는다", () => {
+    const src = readFileSync(path.join(ROOT, "components/home/RoutesSection.tsx"), "utf8");
+    expect(src).toMatch(/id="routes"/);
   });
 
   test("홈 위젯에 그 앵커(id=\"quote\")가 있다 — 리디렉트가 빈 자리로 떨어지지 않는다", () => {
@@ -431,13 +469,24 @@ describe("P7-2 — app/sitemap.ts", () => {
     expect(dynamic.length, "동적 세그먼트 라우트가 하나는 있어야 이 테스트가 의미 있다").toBeGreaterThan(0);
   });
 
-  test("/admin · /quote/done · 동적 세그먼트는 없다", async () => {
+  test("/admin · /quote/done · /fares(P7-6 — 301 로 홈 #routes) · 동적 세그먼트는 없다", async () => {
     const sitemap = (await import("@/app/sitemap")).default;
     for (const entry of sitemap()) {
       expect(entry.url).not.toContain("/admin");
       expect(entry.url).not.toContain("/quote");
+      expect(entry.url).not.toContain("/fares");
       expect(entry.url).not.toContain("[");
     }
+  });
+
+  test("정적 라우트 9개 × ko·en = 18 — 지운 /fares 가 빠진 정확한 목록 (P7-6)", async () => {
+    const sitemap = (await import("@/app/sitemap")).default;
+    const ko = sitemap()
+      .map((e) => e.url.slice(FALLBACK_ORIGIN.length))
+      .filter((u) => !/^\/en(\/|$)/.test(u))
+      .sort();
+    expect(ko).toEqual(["/", "/about", "/fleet", "/gallery", "/guide", "/notices", "/privacy", "/reservation/check", "/terms"].sort());
+    expect(sitemap()).toHaveLength(18);
   });
 
   test("전부 절대 URL 이고 ko 는 prefix 없음, en 은 `/en` 하나 — `/ko` prefix 는 없다 (as-needed)", async () => {

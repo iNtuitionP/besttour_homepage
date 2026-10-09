@@ -384,9 +384,9 @@ describe("M9 — ci.yml legal-pages-http 잡", () => {
     const iStart = job.search(/npm start|next start/);
     const iRoutes = job.indexOf("/reservation/check");
     expect(iRoutes).toBeGreaterThan(iStart);
-    for (const p of ["/about", "/fleet", "/fares", "/notices", "/gallery", "/reservation/check", "/guide", "/privacy", "/terms"]) {
-      expect(job, `${p} 가 200 단언 목록에 없다`).toContain(p);
-    }
+    // P7-6: /fares 는 지웠다(301 → /#routes, 아래 P3-8·P7-6 테스트가 본다) — 200 목록에 남아 있으면 CI 가 거짓 실패한다.
+    const loop = job.match(/for p in (\/about\b[^;]*); do/)?.[1]?.trim().split(/\s+/) ?? [];
+    expect(loop).toEqual(["/about", "/fleet", "/notices", "/gallery", "/reservation/check", "/guide", "/privacy", "/terms"]);
     expect(job).toMatch(/\/notices\/does-not-exist/);
   });
 
@@ -398,7 +398,8 @@ describe("M9 — ci.yml legal-pages-http 잡", () => {
     expect(iQuick).toBeGreaterThan(iStart);
     expect(job).toMatch(/name="formToken"/);
     expect(job).toMatch(/baked formToken/);
-    for (const p of ["/quote|/#quote", "/quote/done?code=ABCDEFGH|#quote", "/en/quote|/en#quote", "/en/quote/done|/en#quote"]) {
+    // P7-6: 지운 /fares · /en/fares 도 같은 고리에서 301 → 홈 대표 노선(#routes) 을 단언한다.
+    for (const p of ["/quote|/#quote", "/quote/done?code=ABCDEFGH|#quote", "/en/quote|/en#quote", "/en/quote/done|/en#quote", "/fares|/#routes", "/en/fares|/en#routes"]) {
       expect(job, p).toContain(p);
     }
     expect(job).toMatch(/HTTP\/1\.1 301/);

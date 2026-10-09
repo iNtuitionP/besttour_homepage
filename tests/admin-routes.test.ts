@@ -368,11 +368,12 @@ describe("3. 서버액션", () => {
   });
 
   /**
-   * 홈 지도·/fares 는 SSG + ISR(600초)이고, 그 읽기는 fetch 도 unstable_cache 도 아니라 태그로는 지울 수 없다.
+   * 홈 지도는 SSG + ISR(600초)이고, 그 읽기는 fetch 도 unstable_cache 도 아니라 태그로는 지울 수 없다.
    * 2026-09-15 실측(Next 15.5.24 + next-intl as-needed 프로브): 경로 패턴은 전부 무반응이고
-   * `revalidatePath("/", "layout")` 만 홈·/fares·/notices 를 재생성했다. 이 단언이 그 형태를 잠근다.
+   * `revalidatePath("/", "layout")` 만 홈·(당시의) /fares·/notices 를 재생성했다. 이 단언이 그 형태를 잠근다.
+   * P7-6: /fares 는 지웠다 — 대표 노선을 그리는 공개 화면은 이제 홈 지도(#routes) 하나다.
    */
-  test("수정 — 성공하면 홈·/fares 캐시를 루트 layout 으로 비운다", async () => {
+  test("수정 — 성공하면 홈(대표 노선 지도) 캐시를 루트 layout 으로 비운다", async () => {
     const { client } = dbStub({ data: [{ id: 2 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
 

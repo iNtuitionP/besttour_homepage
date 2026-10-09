@@ -16,7 +16,7 @@
  *   - tests/copy-rules.test.ts  — ko.json **전 네임스페이스** · en.json · components/** · app/[locale]/** (전역)
  *   - tests/home.test.ts        — components/home/** + ko.json home.*      (기존 단언 구조 유지)
  *   - tests/pages.test.ts       — 서브페이지 소스 + ko.json pages.*        (기존 단언 구조 유지)
- *                                 + PRICE_LITERALS 는 pages.fares 에만
+ *                                 + PRICE_LITERALS 는 pages.* 에만 (P7-6 전에는 pages.fares — 그 페이지는 지웠다)
  *   - lib/admin/copyCheck.ts    — 관리자 저장 시 경고(OWNER_COPY_RULES). **앱에서 이 파일을 import 하는 유일한 곳**이다.
  *
  * 규약 0 — **`server-only` 를 붙이지 않는다.** 위 세 테스트가 mock 없이 import 한다(붙이면 vitest 에서 import 즉시 throw).
@@ -115,7 +115,7 @@ export const UNPROVEN_CLAIMS: readonly CopyRule[] = [
   ["오랜 경력·세월·노하우 (기간 주장)", /오랜\s*(경력|세월|기간|노하우|시간|전통)/],
   ["수십 년 (기간 주장)", /수십\s*년/],
   // 요금 투명성 — 이 사이트는 요금을 싣지 않는다(스펙 §12 무가격 확정, 사장님 결정).
-  // /fares 가 보여 주는 것은 원장 QUOTE_BASIS 의 산정 기준과 대표 노선 예시뿐이고 금액 셀은 0이다.
+  // /fares(P7-6 에서 삭제)가 보여 주던 것은 원장 QUOTE_BASIS 의 산정 기준과 대표 노선 예시뿐이었고 금액 셀은 0이었다.
   // "요금이 투명하다"는 사이트의 실제와 정면으로 부딪히고, 손님이 요금표를 찾다가 못 찾는다.
   ["투명한 요금·가격·운임 주장", /투명(한|하게|성|합니다)[^\n]{0,8}(요금|가격|운임|견적)/],
   ["요금·가격이 투명하다 주장", /(요금|가격|운임)[^\n]{0,6}투명/],
@@ -209,9 +209,10 @@ export const UNPROVEN_CLAIMS_EN: readonly CopyRule[] = [
   ["tourist counts (관광객 수치)", /\b\d[\d,.]*\s*(?:thousand|million|k)?\s+(?:foreign\s+)?(?:tourists|visitors|travell?ers)\b/i],
 ];
 
-// ── (4) 금액 리터럴 — `pages.fares` 전용 ───────────────────────────────────────
+// ── (4) 금액 리터럴 — 서브페이지 카탈로그 `pages.*` 전용 ──────────────────────────
 // 전역으로 올리지 않는다: 대표 노선 16개 가격은 사장님이 준 정당한 값이고(감사 §5-1),
-// admin 도움말은 금액 입력 예시를 보여 줘야 한다. 무가격 규칙이 걸리는 곳은 /fares 하나다.
+// admin 도움말은 금액 입력 예시를 보여 줘야 한다. 무가격 규칙이 걸리는 곳은 서브페이지(pages.* + 그 소스)다 —
+// 원래 대상이던 /fares(pages.fares)는 P7-6(사용자 결정)에서 페이지째 지웠고, 규칙이 대상 없이 남지 않게 pages.* 로 넓혔다(tests/pages.test.ts §3).
 // **사장님 글에도 걸지 않는다**(아래 (6)) — "행사 기간 요금 안내"는 정당한 공지다.
 export const PRICE_LITERALS: readonly CopyRule[] = [
   ["원 단위 금액", /\d{1,3}(,\d{3})+\s*원/],
@@ -262,7 +263,7 @@ export const COPY_ALLOWLIST: readonly CopyAllowEntry[] = [];
 // 대조하는 것: (1) 금지어 · (2) 실증 불가 · (3) 비교·최상급 — 셋 다.
 // 대조하지 않는 것:
 //   · (3-EN)·(3-EN-b)·(3-EN-c) — 관리자 화면은 한국어 전용이다. 영문 규칙은 en.json 카탈로그 몫이다.
-//   · (4) 금액 — 소스 카피의 무가격 규칙(/fares)이다. "성수기 요금 안내"·"주차료 별도"는 사장님이 쓸 수 있는 사실 안내다.
+//   · (4) 금액 — 소스 카피의 무가격 규칙(서브페이지 pages.* — 예전 /fares)이다. "성수기 요금 안내"·"주차료 별도"는 사장님이 쓸 수 있는 사실 안내다.
 //   · (5) 연락처 — 카탈로그가 원장 보간을 쓰게 하려는 규칙이다. 공지에 회사 전화번호를 적는 것은 정당하다.
 //   · 아래 OWNER_TEXT_EXEMPT 의 두 규칙 — 소스 카피에서만 의미가 있다.
 

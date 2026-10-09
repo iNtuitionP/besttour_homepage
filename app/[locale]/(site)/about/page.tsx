@@ -1,5 +1,7 @@
 /**
  * /about — 회사소개 · 인사말 + #location 찾아오시는 길 (P6-3). 서버 컴포넌트, SSG + ISR(revalidate 600).
+ * P7-6: 메뉴는 "회사소개" 하나로 이 페이지를 가리킨다(찾아오시는 길 메뉴 항목은 사용자 결정으로 지웠다 — 구역은 그대로).
+ * 그래서 페이지 제목은 메뉴 라벨(layout.menu.about), 찾아오시는 길 구역 제목은 이 페이지 카탈로그(pages.about.location.title)다.
  *
  * 인사말은 홈 CompanyIntro(home.company lead·body)를 그대로 재사용하고, 옛 사이트 원문(docs/ops/legacy-content-inventory.md §2 H2)
  * 중 안전한 2문장만 `extra` 로 덧붙인다(ko.json pages.about.more). "한해 70만 명 이상 외국인 관광객"(실증 불가 수치)·
@@ -137,7 +139,7 @@ export default async function AboutPage({ params }: { params: Params }) {
           <SectionHead
             id="location-h"
             eyebrow={footer.headOffice}
-            title={tMenu("location")}
+            title={t("location.title")}
             desc={t("location.desc")}
           />
           <div className={p.card} data-testid="location-card">

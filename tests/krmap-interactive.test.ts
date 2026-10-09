@@ -6,7 +6,7 @@
  *   (2) 컴포넌트는 react-dom/server 의 renderToStaticMarkup 으로 **SSR 결과**(= 하이드레이션 전 첫 화면)를 검사한다.
  * 실제 측정(ResizeObserver)·hover·탭은 브라우저 실측(보고서 §5)으로 확인한다.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -337,9 +337,10 @@ describe("RouteExplorer — 첫 화면(SSR)", () => {
 });
 
 // =============================================================================
-// 6-b. collapse={false} — /fares 는 카드 16장 전부 펼침 (컨트롤러 결정 2026-09-27)
+// 6-b. collapse={false} — 카드 16장 전부 펼침 (컨트롤러 결정 2026-09-27 — 쓰던 곳은 /fares 였다)
+//      P7-6: /fares 를 지워 지금 이 분기를 쓰는 화면은 없다. prop 은 남긴다(홈 경로 동작 무변경 — 기본값 true 그대로).
 // =============================================================================
-describe("RouteExplorer collapse={false} (/fares)", () => {
+describe("RouteExplorer collapse={false} (P7-6 이후 쓰는 화면 없음 — 컴포넌트 계약만)", () => {
   const tips = toRouteTips(ROUTES, "ko");
   const html = renderExplorer(tips, COPY, false);
 
@@ -364,9 +365,10 @@ describe("RouteExplorer collapse={false} (/fares)", () => {
     expect(krMap).toMatch(/collapse\s*=\s*true/);
     expect(krMap).toMatch(/<RouteExplorer[\s\S]*collapse=\{collapse\}/);
   });
-  test("/fares 는 collapse={false} · 홈 RoutesSection 은 넘기지 않는다(기본 접힘)", () => {
-    expect(read("app/[locale]/(site)/fares/page.tsx")).toMatch(/<KrMap\s+routes=\{routes\}[^>]*collapse=\{false\}/);
+  test("홈 RoutesSection 은 collapse 를 넘기지 않는다(기본 접힘) · /fares 페이지는 없다(P7-6)", () => {
+    expect(read("components/home/RoutesSection.tsx")).toMatch(/<KrMap\s+routes=\{routes\}\s*\/>/);
     expect(read("components/home/RoutesSection.tsx")).not.toMatch(/collapse=/);
+    expect(existsSync(path.join(ROOT, "app/[locale]/(site)/fares/page.tsx"))).toBe(false);
   });
 });
 

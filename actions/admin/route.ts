@@ -77,7 +77,7 @@ async function apply(action: RouteAction, id: number, code: RouteActionCode, wri
   if (outcome === "unchanged") return report(action, id, ROUTE_NOT_FOUND);
 
   runAfter(() => {
-    // 공개 화면(홈 지도·/fares)을 실제로 새로 그리게 하는 것은 **이 한 줄뿐**이다 — 근거·실측표는 lib/admin/publicRevalidate.ts.
+    // 공개 화면(홈 지도 — P7-6 에서 /fares 는 지웠다)을 실제로 새로 그리게 하는 것은 **이 한 줄뿐**이다 — 근거·실측표는 lib/admin/publicRevalidate.ts.
     revalidatePath(PUBLIC_CACHE_PATH, PUBLIC_CACHE_SCOPE);
     // 아래 태그는 지금 소비자가 없다(공개 읽기가 unstable_cache 로 감싸여 있지 않다). 누가 감싸는 날을 위한 배선이지 반영 수단이 아니다.
     revalidate(QUERY_TAGS.showcase);
