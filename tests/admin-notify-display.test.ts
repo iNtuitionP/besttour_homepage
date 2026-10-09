@@ -569,7 +569,7 @@ describe("3. '대기' 둘째 줄 — pendingSubState(시간을 본다 · 리뷰 
 
   test("🔴 오래 멈춤의 기준 ≥ 발송 크론의 간격 — 크론이 한 번 돌 시간을 주고 나서야 멈췄다고 말한다(vercel.json)", () => {
     const json = JSON.parse(read("vercel.json")) as { crons: { path: string; schedule: string }[] };
-    const cron = json.crons.find((c) => c.path === "/api/cron/notify");
+    const cron = json.crons.find((c) => c.path.split("?")[0] === "/api/cron/notify"); // 운영은 ?dry=0 이 붙는다(2026-10-09 오픈)
     expect(cron, "통지 크론").toBeDefined();
     // "분 시 * * *" = 하루 한 번(24시간 간격) — 다른 모양이면 간격을 다시 재야 한다
     const m = /^(\d{1,2}) (\d{1,2}) \* \* \*$/.exec(cron!.schedule);

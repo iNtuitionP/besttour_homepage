@@ -2,11 +2,11 @@
   "regions": ["icn1"],
   "crons": [
     {
-      "path": "/api/cron/purge",
+      "path": "/api/cron/purge?dry=0",
       "schedule": "0 19 * * *"
     },
     {
-      "path": "/api/cron/notify",
+      "path": "/api/cron/notify?dry=0",
       "schedule": "0 23 * * *"
     }
   ]

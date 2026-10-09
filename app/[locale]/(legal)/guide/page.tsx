@@ -6,6 +6,7 @@
  * 대금 지급 절에는 입금 계좌(PAYMENT.accountLine)와 관계사 고지(RELATED_COMPANY.note)를 함께 싣는다(R2 — 법정 페이지에는 푸터가 없다).
  * 연락처는 레코드 표 — 빈 필드는 숨긴다.
  * 연락처 첫 줄은 예약·상담 전화(P1-7) — 번호 표기만 로케일을 따른다(en +82). 라벨·나머지 값은 원장 한국어 그대로다.
+ * 사이트의 전화번호는 예약·상담 전화 하나다(P7-5 — 휴대전화 줄은 지웠다).
  *
  * 영문(/en/guide · P2-6): 페이지 제목만 영문(ledgerUi)이고 **본문은 원장 한국어 그대로**다(절 제목·표 머리·verbatim 포함 —
  * 법정 문서 한 벌을 섞지 않는다). 본문 위에 컨트롤러 확정 안내, 본문에 lang="ko". ko 화면은 안내도 lang 도 내지 않는다.
@@ -96,14 +97,17 @@ function SectionBody({ section, locale }: { section: Section; locale: string }) 
     case "minors":
       return <LegalParagraph text={MINORS.line} />;
     case "contact": {
-      // 예약·상담 전화는 로케일 표기(en +82 — 해외 방문자가 국가번호를 알 수 있게). 휴대전화·팩스도 en 은 +82 표기(P7-4 — localPhone,
+      // 예약·상담 전화는 로케일 표기(en +82 — 해외 방문자가 국가번호를 알 수 있게). 팩스도 en 은 +82 표기(P7-4 — localPhone,
       // 원장 값은 그대로 · 표시만). 메일·주소는 원장 값 그대로.
-      const phoneField = (f: string) => f === "mobile" || f === "fax";
+      // P7-5: 원장 COMPANY 에서 지운 필드(휴대전화)는 행을 내지 않는다 — fields 가 그 이름을 아직 담고 있어도 값이 없으면 건너뛴다
+      // (모든 fields 가 COMPANY 의 문자열 필드인지는 tests/legal-pages.test.ts 가 따로 잠근다 — 조용한 누락이 되지 않게).
       const rec = Object.fromEntries(
-        section.fields.map((f) => [
-          f,
-          f === "consultTel" ? consultPhone(locale).display : phoneField(f) ? localPhone(COMPANY[f], locale).display : COMPANY[f],
-        ]),
+        section.fields.flatMap((f: string) => {
+          if (f === "consultTel") return [[f, consultPhone(locale).display]];
+          const v = f in COMPANY ? COMPANY[f as keyof typeof COMPANY] : undefined;
+          if (typeof v !== "string") return [];
+          return [[f, f === "fax" ? localPhone(v, locale).display : v]];
+        }),
       );
       return <LegalRecordList labels={LEGAL_LABELS.contact} records={[rec]} testId="contact" />;
     }

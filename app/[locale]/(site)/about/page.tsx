@@ -68,7 +68,7 @@ export default async function AboutPage({ params }: { params: Params }) {
   const valueLang = koLang(locale);
 
   // 회사 정보 표 — 라벨은 원장 라벨(ledgerUi), 값은 원장 COMPANY. 빈 값 행은 LegalRecordList 가 뺀다.
-  // 전화 줄은 예약·상담 전화(P1-7 — en 은 +82 표기). 대표전화 1566 은 푸터 사업자 정보 한 줄에만 남는다.
+  // 전화 줄은 예약·상담 전화(P1-7 — en 은 +82 표기) — 사이트의 전화번호는 이것 하나다(P7-5 — 휴대전화 줄은 지웠다).
   const factLabels = {
     legalName: footer.operator,
     representative: footer.representative,
@@ -78,7 +78,6 @@ export default async function AboutPage({ params }: { params: Params }) {
     headOffice: footer.headOffice,
     branch: footer.branch,
     consultTel: contact.consultTel,
-    mobile: contact.mobile,
     fax: contact.fax,
     email: contact.email,
   } as const;
@@ -92,8 +91,7 @@ export default async function AboutPage({ params }: { params: Params }) {
     headOffice: COMPANY.address,
     branch: COMPANY.branchAddress,
     consultTel: consultPhone(locale).display,
-    // 휴대전화·팩스 — en 은 +82 표기(P7-4 · localPhone — 원장 값은 그대로, 표시만)
-    mobile: localPhone(COMPANY.mobile, locale).display,
+    // 팩스 — en 은 +82 표기(P7-4 · localPhone — 원장 값은 그대로, 표시만)
     fax: localPhone(COMPANY.fax, locale).display,
     email: COMPANY.email,
   };

@@ -61,10 +61,11 @@ describe("1. 함수 지역 (vercel.json)", () => {
     expect(json.regions).toEqual(["icn1"]);
   });
 
-  test("지역을 바꿔도 크론 계약은 그대로다 — 두 개, 스케줄 불변", () => {
+  // 2026-10-09 오픈: 두 크론을 실제 실행(?dry=0)으로 전환했다(플랜 §8 오픈 게이트). 스케줄은 그대로.
+  test("지역을 바꿔도 크론 계약은 그대로다 — 두 개, 스케줄 불변, 실제 실행(?dry=0)", () => {
     expect(json.crons).toEqual([
-      { path: "/api/cron/purge", schedule: "0 19 * * *" },
-      { path: "/api/cron/notify", schedule: "0 23 * * *" },
+      { path: "/api/cron/purge?dry=0", schedule: "0 19 * * *" },
+      { path: "/api/cron/notify?dry=0", schedule: "0 23 * * *" },
     ]);
   });
 

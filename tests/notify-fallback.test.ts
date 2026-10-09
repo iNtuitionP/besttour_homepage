@@ -592,6 +592,9 @@ describe("4. 문안", () => {
   };
 
   const sha = (s: string): string => createHash("sha256").update(Buffer.from(s, "utf8")).digest("hex");
+  // 기준선(BASELINE) 해시를 뜬 시점(P4-4, P1-7 이전) 고객 문안의 전화번호 — 역사 값이다. P7-5 에서 원장의 COMPANY.tel 필드를 지웠으므로
+  // 해시 대조용으로만 여기 적는다(배포 표면 밖 — tests/contact-phone.test.ts §0 이 표면의 0건을 잠근다).
+  const BASELINE_TEL = "1566-6188";
 
   // P1-7(2026-09-22): 고객 문안 2종의 "문의·변경·취소" 전화가 대표전화(COMPANY.tel)에서 예약·상담 전화(COMPANY.consultTel)로 바뀌었다
   // (사용자 결정 2026-09-21 — 손님에게 전화하라고 안내하는 자리는 전부 010-6362-6188). 지문은 **그 번호만** 되돌려 대조한다 —
@@ -614,11 +617,11 @@ describe("4. 문안", () => {
       if (key === "confirmed.customer.sms") {
         for (const s of [v.sms, v.lms]) for (const l of addedLines) expect(s.split("\n"), `${key} 에 ${l} 줄이 없다`).toContain(l);
       }
-      const asBefore = (s: string) => (customer ? withoutAdded(s).split(COMPANY.consultTel).join(COMPANY.tel) : s);
+      const asBefore = (s: string) => (customer ? withoutAdded(s).split(COMPANY.consultTel).join(BASELINE_TEL) : s);
       if (customer) {
         for (const s of [v.sms, v.lms]) {
           expect(s, `${key} 에 예약·상담 전화가 없다`).toContain(COMPANY.consultTel);
-          expect(s, `${key} 에 대표전화가 남았다`).not.toContain(COMPANY.tel);
+          expect(s, `${key} 에 대표전화가 남았다`).not.toContain(BASELINE_TEL);
         }
       }
       expect(sha(asBefore(v.sms)), `${key}.sms 의 바이트가 바뀌었다`).toBe(BASELINE[key].sms);

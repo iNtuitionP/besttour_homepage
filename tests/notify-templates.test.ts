@@ -36,6 +36,7 @@ import {
   type OwnerVars,
 } from "@/lib/notify/templates";
 
+import { RETIRED_PHONE } from "./helpers/retired-phones";
 import { stripComments } from "./helpers/strip-comments";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
@@ -411,13 +412,14 @@ describe("4. 개인정보 경계", () => {
     expect(noRawPii).toBe(true);
   });
 
-  // P1-7 — 손님에게 전화하라고 안내하는 번호는 예약·상담 전화(COMPANY.consultTel)다. 대표전화(COMPANY.tel)는 문자에 쓰지 않는다.
+  // P1-7 — 손님에게 전화하라고 안내하는 번호는 예약·상담 전화(COMPANY.consultTel)다.
+  // P7-5 — 옛 대표전화 필드(COMPANY.tel)는 원장에서 지웠다. "다른 번호를 쓰지 않는다" 는 뜻은 옛 번호 0건(RETIRED_PHONE)으로 잠근다.
   test("고객 접수 확인 — 접수번호 · 예약확인 경로 · 예약·상담 전화가 있다", () => {
     const text = renderTemplate("created.customer.sms", CUSTOMER).text;
     expect(text).toContain(CUSTOMER.publicCode);
     expect(text).toContain(`${ORIGIN}${RESERVATION_CHECK_PATH}`);
     expect(text).toContain(COMPANY.consultTel);
-    expect(text).not.toContain(COMPANY.tel);
+    expect(text).not.toMatch(RETIRED_PHONE);
   });
 
   test("고객 확정 안내 — 접수번호 · 확정 사실 · 원장 PAYMENT 문안. 결제 문구를 지어내지 않았다", () => {
@@ -425,7 +427,7 @@ describe("4. 개인정보 경계", () => {
     expect(text).toContain(CUSTOMER.publicCode);
     expect(text).toContain(PAYMENT.line);
     expect(text).toContain(COMPANY.consultTel);
-    expect(text).not.toContain(COMPANY.tel);
+    expect(text).not.toMatch(RETIRED_PHONE);
   });
 
   // P1-7 R2 [P1-4] — 약관 제8조: "회사는 이 사실을 견적 신청 화면과 **예약 확정 통지**에 고지합니다."
@@ -533,7 +535,7 @@ describe("6. 원장 단일 출처", () => {
   test("verbatim·대표전화·결제 문안을 다시 타이핑하지 않았다", () => {
     const bare = codeOf(TEMPLATES);
     expect(bare, "verbatim 리터럴").not.toContain(VERBATIM.bookingNotice);
-    expect(bare, "대표전화 리터럴").not.toContain(COMPANY.tel);
+    expect(bare, "옛 전화번호 리터럴(P7-5)").not.toMatch(RETIRED_PHONE);
     expect(bare, "예약·상담 전화 리터럴").not.toContain(COMPANY.consultTel);
     expect(bare, "결제 안내 리터럴").not.toContain(PAYMENT.line);
     expect(bare, "상호 리터럴").not.toContain(COMPANY.legalName);

@@ -59,8 +59,11 @@ export interface LedgerUi {
     effectiveDate: string;
     home: string;
     legalNav: string;
-    /** tel = 대표전화(푸터 사업자 정보 한 줄) · consultTel = 예약·상담 전화(손님에게 안내하는 번호 — P1-7) */
-    contact: { tel: string; consultTel: string; mobile: string; fax: string; email: string };
+    /**
+     * tel = 푸터 사업자 정보의 전화 줄 라벨 · consultTel = 예약·상담 전화(손님에게 안내하는 번호 — P1-7).
+     * 두 자리의 번호는 같은 COMPANY.consultTel 이다(P7-5 — 번호 통일). 휴대전화 라벨은 쓰는 화면이 없어 지웠다.
+     */
+    contact: { tel: string; consultTel: string; fax: string; email: string };
     officer: { phone: string };
     /** /privacy 방문 통계 거부 버튼 — LEGAL_LABELS.analyticsOptOut (P1-7 R2) */
     analyticsOptOut: { optOut: string; optIn: string; storageFailed: string; browserRefused: string };
@@ -102,7 +105,6 @@ export const LEDGER_UI_KO: LedgerUi = {
     contact: {
       tel: LEGAL_LABELS.contact.tel,
       consultTel: LEGAL_LABELS.contact.consultTel,
-      mobile: LEGAL_LABELS.contact.mobile,
       fax: LEGAL_LABELS.contact.fax,
       email: LEGAL_LABELS.contact.email,
     },

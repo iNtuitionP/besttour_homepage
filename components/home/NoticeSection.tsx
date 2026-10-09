@@ -7,8 +7,8 @@
  * `<time dateTime>` 은 notice-date.ts 의 KST 달력 날짜(YYYY-MM-DD) — /notices 와 같은 함수다.
  * 영문 화면(P7-4 · 브리프 §7): 공지 제목은 사장님이 쓴 한국어라 lang="ko"(koLang — ko 화면은 속성을 내지 않는다).
  * 고객센터 카드의 라벨·연락처는 원장에서만 온다 — 라벨은 ledgerUi(locale)(ko 는 LEGAL_LABELS.contact 그대로 — P2-6), 값은 COMPANY.
- * 첫 줄은 예약·상담 전화(P1-7 — lib/contact-phone, en 은 +82 표기). 대표전화 1566 은 이 카드에 두지 않는다(푸터 사업자 정보 한 줄만).
- * 사장님 휴대전화·팩스도 en 은 +82 표기, 링크는 E.164(P7-4 — localPhone · 원장 값은 그대로).
+ * 첫 줄은 예약·상담 전화(P1-7 — lib/contact-phone, en 은 +82 표기) — 사이트의 전화번호는 이것 하나다(P7-5 — 휴대전화 줄은 지웠다).
+ * 팩스도 en 은 +82 표기(P7-4 — localPhone · 원장 값은 그대로).
  */
 import { getLocale, getTranslations } from "next-intl/server";
 
@@ -32,7 +32,6 @@ export async function NoticeSection({ notices }: { notices: readonly Notice[] })
   const categories = t.raw("category") as Record<string, string | undefined>;
   const contact = ledgerUi(locale).labels.contact;
   const phone = consultPhone(locale);
-  const mobile = localPhone(COMPANY.mobile, locale);
   const fax = localPhone(COMPANY.fax, locale);
   const dates = publicDateLabels(tCommon.raw("dates"));
   const lang = koLang(locale);
@@ -75,12 +74,6 @@ export async function NoticeSection({ notices }: { notices: readonly Notice[] })
               <dt>{contact.consultTel}</dt>
               <dd>
                 <a href={phone.href}>{phone.display}</a>
-              </dd>
-            </div>
-            <div>
-              <dt>{contact.mobile}</dt>
-              <dd>
-                <a href={mobile.href}>{mobile.display}</a>
               </dd>
             </div>
             <div>

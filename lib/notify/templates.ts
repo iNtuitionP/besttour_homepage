@@ -261,7 +261,7 @@ function ownerVariants(v: OwnerVars): MessageVariants {
 /**
  * 고객 접수 확인 — 접수번호 + verbatim + 예약확인 안내 + 예약·상담 전화(브리프 Part 1 · P1-7).
  * 예약확인은 접수번호와 휴대폰 뒷 4자리로 조회한다(app/[locale]/(site)/reservation/check). 문구는 그 화면과 같은 말을 쓴다.
- * 전화는 원장 COMPANY.consultTel — 손님에게 "여기로 전화하라" 고 안내하는 번호다(대표전화 1566 은 푸터 사업자 정보에만 남는다).
+ * 전화는 원장 COMPANY.consultTel — 손님에게 "여기로 전화하라" 고 안내하는 번호다(사이트의 전화번호는 이것 하나 — P7-5).
  */
 function createdCustomerVariants(v: CustomerVars): MessageVariants {
   return {

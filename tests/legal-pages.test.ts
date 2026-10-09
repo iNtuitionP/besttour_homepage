@@ -196,7 +196,7 @@ describe("1. 원장 소스 — 새 상수 4종", () => {
     expect((byKey.officer as { from: unknown }).from).toBe(COMPANY.privacyOfficer);
   });
 
-  test("GUIDE_SECTIONS 8절 — flow 는 4단계, contact 는 COMPANY 5개 필드 (P1-7: 첫 줄은 예약·상담 전화)", () => {
+  test("GUIDE_SECTIONS 8절 — flow 는 4단계, contact 는 COMPANY 4개 필드 (P1-7: 첫 줄은 예약·상담 전화 · P7-5: 휴대전화 없음)", () => {
     expect(GUIDE_SECTIONS).toHaveLength(8);
     expect(GUIDE_SECTIONS.map((s) => s.key)).toEqual([
       "flow",
@@ -212,8 +212,8 @@ describe("1. 원장 소스 — 새 상수 4종", () => {
     expect(flow.steps).toHaveLength(4);
     for (const s of flow.steps) expect(s.trim().length).toBeGreaterThan(0);
     const contact = GUIDE_SECTIONS[7] as { fields: readonly string[] };
-    // 대표전화(tel)는 푸터 사업자 정보 한 줄에만 남는다(P1-7 브리프 1-C) — 이용안내 연락처는 예약·상담 전화다.
-    expect(contact.fields).toEqual(["consultTel", "mobile", "fax", "email", "address"]);
+    // 이용안내 연락처의 전화는 예약·상담 전화다(P1-7 브리프 1-C). P7-5 — 사이트의 전화번호는 이것 하나다(휴대전화 필드는 원장에서 지웠다).
+    expect(contact.fields).toEqual(["consultTel", "fax", "email", "address"]);
     for (const f of contact.fields) expect(typeof COMPANY[f as keyof typeof COMPANY], f).toBe("string");
     for (const f of contact.fields) expect(ledger.LEGAL_LABELS.contact, f).toHaveProperty(f);
   });
@@ -428,13 +428,16 @@ describe("3. 페이지·레이아웃·컴포넌트 소스에 한글 리터럴 0�
 
 // ═════════════════════════════════════════════════════════════════════════
 describe("4. 게이트 — 원장 함수 export 0 · 새 TEMP 마커 허용 목록", { timeout: GATE_TIMEOUT_MS }, () => {
-  test("새 TEMP 마커 3건(LEGAL_PAGES 시행일 2 · TERMS 제6조 1)이 원장과 허용 목록에 있다", () => {
+  // 2026-10-09 오픈: 시행일 2건·제6조 1건의 마커를 해제했다(값 확정). 이제 원장에도 허용 목록에도 남아 있으면 안 된다.
+  test("오픈 때 해제한 TEMP 마커 3건(LEGAL_PAGES 시행일 2 · TERMS 제6조 1)이 원장과 허용 목록에 없다 · 시행일 = 2026-10-09", () => {
     const ledgerSrc = read(LEDGER_REL);
     const allow = read(ALLOWLIST_REL);
     for (const key of ["LEGAL_PAGES.privacy.effectiveDate", "LEGAL_PAGES.terms.effectiveDate", "TERMS.articles.six.body"]) {
-      expect(ledgerSrc, key).toContain(`${TEMP_MARKER} ${key}:`);
-      expect(allow, key).toContain(key.replace(/\./g, "\\."));
+      expect(ledgerSrc, key).not.toContain(`${TEMP_MARKER} ${key}:`);
+      expect(allow, key).not.toContain(key.replace(/\./g, "\\."));
     }
+    expect(LEGAL_PAGES.privacy.effectiveDate).toBe("2026-10-09");
+    expect(LEGAL_PAGES.terms.effectiveDate).toBe("2026-10-09");
   });
 
   test("TEMP 상태는 화면 문자열에 없다 — 원장의 마커는 주석에만 있고 페이지 소스에 마커가 없다", () => {

@@ -1,8 +1,9 @@
 /**
  * 공개 푸터 (P2-3 · ADR-1 · ADR-5) — 서버 컴포넌트.
  *
- * 전화 (P1-7): 로고 아래 큰 전화 링크는 예약·상담 전화(lib/contact-phone — ko 010-…, en +82 …). 대표전화 1566(COMPANY.tel)은
- * 사업자 정보 블록(data-testid="footer-company-info")의 "대표전화" 한 줄로만 남는다 — tests/contact-phone.test.ts 가 렌더에서 확인한다.
+ * 전화 (P1-7 · P7-5): 사이트의 전화번호는 예약·상담 전화 하나다(lib/contact-phone — ko 010-…, en +82 …). 로고 아래 큰 전화 링크와
+ * 사업자 정보 블록(data-testid="footer-company-info")의 전화 줄(전자상거래법 §10① — 줄은 남긴다)이 같은 번호다.
+ * 옛 대표전화·휴대전화 줄은 P7-5 에서 지웠다 — tests/contact-phone.test.ts 가 렌더에서 확인한다.
  *
  * 이 파일에는 한글 법정 리터럴이 한 글자도 없다. 상호·대표·등록번호·주소·계좌·보호책임자·
  * 관계사 문구·배지 라벨까지 전부 원장 lib/legal/disclosures.ts 에서 온다. 문구를 고쳐야 하면
@@ -18,8 +19,7 @@
  * 로케일 (P2-6): 라벨·배지·링크 제목·대표자·verbatim 은 ledgerUi(locale) · localizeVerbatim(ko 는 원장 그대로).
  * 사업자 정보의 **값**(상호·주소·계좌·보호책임자·관계사 고지)은 원장 한국어 그대로다 — 영문판은 컨트롤러가 따로 확정한다.
  * en 에서는 그 블록 위에 컨트롤러 확정 안내를 두고, 한국어 값에 lang="ko" 를 단다(ko 화면은 둘 다 내지 않는다).
- * 전화번호 (P7-4): 휴대전화·팩스·보호책임자 연락처는 en 에서 +82 표기(localPhone — 원장 값은 그대로, 표시만). 대표전화 1566 은
- * 국제 표기가 없는 전국 대표번호라 그대로다(lib/contact-phone.ts intlPhone).
+ * 전화번호 (P7-4): 팩스·보호책임자 연락처는 en 에서 +82 표기(localPhone — 원장 값은 그대로, 표시만). 전화 줄은 consultPhone(locale).
  */
 
 import Image from "next/image";
@@ -72,7 +72,7 @@ export default async function Footer() {
   const valueLang = koLang(locale);
   const menuLabels = Object.fromEntries(LEGACY_MENU.map((m) => [m.key, t(`menu.${m.key}`)]));
   const year = new Date().getFullYear();
-  // 로고 아래 큰 전화 링크는 예약·상담 전화(P1-7). 대표전화 1566 은 아래 사업자 정보 블록의 한 줄로만 남는다.
+  // 로고 아래 큰 전화 링크와 사업자 정보의 전화 줄은 같은 예약·상담 전화다(P1-7 · P7-5).
   const phone = consultPhone(locale);
 
   const operator: Fact[] = [
@@ -89,8 +89,7 @@ export default async function Footer() {
   const contact: Fact[] = [
     { label: labels.headOffice, value: COMPANY.address, ko: true },
     { label: labels.branch, value: COMPANY.branchAddress, ko: true },
-    { label: contactLabels.tel, value: COMPANY.tel },
-    { label: contactLabels.mobile, value: localPhone(COMPANY.mobile, locale).display },
+    { label: contactLabels.tel, value: phone.display },
     { label: contactLabels.fax, value: localPhone(COMPANY.fax, locale).display },
     { label: contactLabels.email, value: COMPANY.email, href: `mailto:${COMPANY.email}` },
     // 입금 계좌 — 관계사 명의(P1-7 · A-5). 원장 문안이 "입금 계좌 :" 라벨과 예금주(관계사)를 스스로 담으므로 라벨을 따로 붙이지 않는다.

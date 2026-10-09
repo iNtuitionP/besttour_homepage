@@ -22,15 +22,14 @@ export const COMPANY = {
   mailOrderIssuer: "고양시 일산동구청",
   address: "경기도 고양시 일산동구 동국로 107(식사동)",
   branchAddress: "서울시 마포구 월드컵북로 23길 18",
-  // 대표전화 — 푸터 사업자 정보 블록의 "대표전화" 한 줄로만 쓴다(사용자 2026-09-21 "1566 은 둔다").
-  // 손님에게 "여기로 전화하라" 고 안내하는 자리는 전부 아래 consultTel 이다(tests/contact-phone.test.ts).
-  tel: "1566-6188",
-  // 예약·상담 전화 — 이 홈페이지를 위해 새로 개통한 번호(사용자 2026-09-21). 영문 페이지는 consultTelIntl(해외에서 1566 은 걸리지 않는다).
+  // 전화 — 사이트의 전화번호는 이것 하나다(사용자 2026-10-09 "모든 전화 관련 번호는 010-6362-6188 로 통일").
+  // 그 전의 대표전화 1566-6188 · 휴대폰 010-2048-8585 는 화면에서 뺐다(필드째 삭제 — 다시 들어오면 tests/contact-phone.test.ts 가 막는다).
+  // 사업자 정보의 전화번호(전자상거래법 §10①) · 예약·상담 · 보호책임자 · 문자 발신 모두 이 번호다. 영문 페이지는 consultTelIntl.
   consultTel: "010-6362-6188",
   consultTelIntl: "+82 10-6362-6188",
-  mobile: "010-2048-8585",
+  // 팩스는 전화가 아니라 남긴다(통일 지시 범위 밖 — 사용자에게 보고).
   fax: "0303-3443-5252",
-  email: "bestour2013@naver.com", // [TEMP] COMPANY.email: P0-10 도메인 메일 개설 후 info@bestour.co.kr 로 교체
+  email: "bestour@bestour.co.kr", // 네이버웍스 회사 메일(P0-10 개설 — 사용자 2026-10-09). 관리자 로그인·알림 수신 주소와 같다
   establishedYear: 2013,
   privacyOfficer: { name: "조선영", phone: "010-6362-6188" },
   hostingProvider: "Vercel Inc.",
@@ -162,11 +161,13 @@ export const PRIVACY_NOTICE = {
 
 // ── 처리위탁 (PIPA §26② 실명 공개, 별도 동의 불요) ──────────────────────
 export const PROCESSORS = [
-  { name: "주식회사 누리고(Solapi)", task: "문자·알림톡 발송", location: "대한민국" }, // [TEMP] PROCESSORS.Solapi.name: 법인명 — solapi.com 사업자정보에서 확인 후 교체
+  // 법인명: solapi.com 하단 사업자정보 "솔라피(주)" · 사업자등록번호 217-81-33791 (컨트롤러 확인 2026-10-09)
+  { name: "솔라피(주)", task: "문자·알림톡 발송", location: "대한민국" },
   { name: "Vercel Inc.", task: "웹 호스팅·서버 운영, 방문 통계", location: "미국" },
   // 리전 실측: supabase/.temp/pooler-url = aws-0-ap-northeast-2 → 서울. 국내 저장이므로 국외이전 목록에 두지 않는다.
   { name: "Supabase Inc.", task: "데이터베이스·인증·파일 저장", location: "대한민국(서울 리전)" },
-  { name: "Upstash Inc.", task: "접수 폭주 방지(요청 제한)", location: "" }, // [TEMP] PROCESSORS.Upstash.location: 리전 확인 전
+  // 리전: 운영 Redis DB = ap-northeast-1(Tokyo) — 사용자가 Upstash 콘솔에서 확인(2026-10-09)
+  { name: "Upstash Inc.", task: "접수 폭주 방지(요청 제한)", location: "일본(도쿄 리전)" },
   { name: "Cloudflare Inc.", task: "봇 차단(Turnstile)·DNS", location: "미국" },
 ] as const;
 export const PROCESSORS_SOURCE = "플랜 ADR-10 / 결정 메모 1-C" as const;
@@ -212,8 +213,8 @@ export const OVERSEAS_TRANSFERS = [
   VISITOR_STATS_TRANSFER,
   {
     recipient: "Upstash Inc.",
-    contact: "", // [TEMP] OVERSEAS_TRANSFERS.Upstash.contact: 개인정보 연락처 확인 전 — 지어내지 않는다
-    country: "", // [TEMP] OVERSEAS_TRANSFERS.Upstash.country: 리전 확인 전
+    contact: "privacy@upstash.com", // Upstash 개인정보 처리방침(upstash.com/trust/privacy.pdf)의 문의처 — 컨트롤러 확인 2026-10-09
+    country: "일본", // 운영 Redis DB 리전 ap-northeast-1(Tokyo) — 사용자 확인 2026-10-09
     timingMethod: "서비스 이용 시 네트워크를 통한 상시 전송",
     items: "요청 식별자(IP 해시)",
     purpose: "요청 제한",
@@ -269,8 +270,9 @@ export const LEGAL_LINKS = {
 
 // ── 법정 페이지 메타 (P1-6) ───────────────────────────────────────────────
 export const LEGAL_PAGES = {
-  privacy: { title: "개인정보 처리방침", effectiveDate: "2026-09-21" }, // [TEMP] LEGAL_PAGES.privacy.effectiveDate: 오픈일로 교체 — consent.ts PRIVACY_POLICY_VERSION 이 이 값을 그대로 읽는다(동의 기록 버전 = 표시 시행일, P1-7 R2)
-  terms: { title: "이용약관", effectiveDate: "2026-09-11" }, // [TEMP] LEGAL_PAGES.terms.effectiveDate: 오픈일로 교체(위와 동일)
+  // 시행일 = 오픈일 2026-10-09(사용자 확인). consent.ts PRIVACY_POLICY_VERSION 이 privacy 값을 그대로 읽는다(동의 기록 버전 = 표시 시행일, P1-7 R2)
+  privacy: { title: "개인정보 처리방침", effectiveDate: "2026-10-09" },
+  terms: { title: "이용약관", effectiveDate: "2026-10-09" },
   guide: { title: "이용안내" },
   source: "플랜 P1-6",
 } as const;
@@ -304,8 +306,8 @@ export const LEGAL_LABELS = {
     storageFailed: "설정을 저장하지 못했습니다. 이번 방문 동안에는 이 브라우저에서 방문 통계를 보내지 않습니다.",
     browserRefused: "브라우저의 추적 거부 설정으로 이미 거부 중입니다",
   },
-  // consultTel — 예약·상담 전화(COMPANY.consultTel). tel(대표전화)은 푸터 사업자 정보 한 줄에만 쓴다(P1-7).
-  contact: { tel: "대표전화", consultTel: "예약·상담 전화", mobile: "휴대전화", fax: "팩스", email: "이메일", address: "주소" },
+  // consultTel — 예약·상담 전화(COMPANY.consultTel). tel 은 푸터 사업자 정보의 전화 줄 라벨이다 — 값도 같은 번호(2026-10-09 통일, P7-5).
+  contact: { tel: "전화", consultTel: "예약·상담 전화", fax: "팩스", email: "이메일", address: "주소" },
   // 푸터 사업자 정보 줄의 라벨 (P2-3). 공개 셸은 한글 리터럴을 쓰지 않고 여기서만 가져간다.
   // 관계사 배지 라벨은 RELATED_COMPANY.role 이 이미 갖고 있으므로 중복해서 두지 않는다.
   footer: {
@@ -354,7 +356,7 @@ export const TERMS = {
     {
       no: 6,
       title: "대금 및 계약금",
-      body: "사이트에서는 온라인 결제를 제공하지 않습니다. 예약 확정 시 계약금 10만원을 지급하며, 잔금의 금액·지급 방법·지급 시기는 예약 확정 시 회사가 안내합니다.", // [TEMP] TERMS.articles.six.body: 잔금 시기·지급수단 사장님 확정 후 교체 (PAYMENT.balanceTiming 과 함께)
+      body: "사이트에서는 온라인 결제를 제공하지 않습니다. 예약 확정 시 계약금 10만원을 지급하며, 잔금의 금액·지급 방법·지급 시기는 예약 확정 시 회사가 안내합니다.", // 사장님 확인 2026-10-09: "예약 확정 시 안내" 그대로 유지(PAYMENT.balanceTiming 과 같은 결정)
     },
     {
       no: 7,
@@ -462,7 +464,7 @@ export const GUIDE_SECTIONS = [
   { key: "insurance", title: "차량 보험", from: INSURANCE },
   { key: "dispute", title: "문의 및 분쟁 처리", from: DISPUTE },
   { key: "minors", title: "만 14세 미만 이용 제한", from: MINORS },
-  // 연락처 첫 줄은 예약·상담 전화(P1-7). 대표전화(tel)는 푸터 사업자 정보 한 줄에만 남는다.
-  { key: "contact", title: "연락처", from: COMPANY, fields: ["consultTel", "mobile", "fax", "email", "address"] },
+  // 연락처 첫 줄은 예약·상담 전화(P1-7). 전화번호는 이것 하나다(2026-10-09 통일 — 휴대전화 행 삭제, P7-5).
+  { key: "contact", title: "연락처", from: COMPANY, fields: ["consultTel", "fax", "email", "address"] },
 ] as const;
 export const GUIDE_SECTIONS_SOURCE = "플랜 P6-3 매핑표 / 전자상거래법 §13②" as const;

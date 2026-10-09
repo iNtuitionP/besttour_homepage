@@ -587,7 +587,7 @@ describe("8. FloatingContact — 죽은 버튼 금지 · 네이버 라벨 금지
     expect(css).toContain("env(safe-area-inset-bottom)");
   });
 
-  // P1-7 — 전화 버튼은 예약·상담 전화(원장 COMPANY.consultTel · 영문 consultTelIntl)다. 대표전화 1566 은 푸터 사업자 정보에만 남는다.
+  // P1-7 — 전화 버튼은 예약·상담 전화(원장 COMPANY.consultTel · 영문 consultTelIntl)다 — 사이트의 전화번호는 이것 하나(P7-5).
   test("전화 버튼은 예약·상담 전화(consultPhone(locale))를 E.164 tel: 링크로 건다", () => {
     expect(src).toMatch(/consultPhone\(\s*locale\s*\)/);
     expect(src).toMatch(/href:\s*phone\.display\.trim\(\) === "" \? "" : phone\.href/);

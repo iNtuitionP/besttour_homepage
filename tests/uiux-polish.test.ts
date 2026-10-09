@@ -51,6 +51,7 @@ import { toReservationView, type ReservationView } from "@/lib/reservation-check
 import { shareMetadata } from "@/lib/share-meta";
 import { CL } from "@/components/reservation-check/fields";
 
+import { RETIRED_PHONE } from "./helpers/retired-phones";
 import { stripComments } from "./helpers/strip-comments";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -711,17 +712,16 @@ describe("7-b. 전화 — 영문 화면은 +82 표기(원장 값은 그대로, �
     expect(localPhone(COMPANY.consultTel, "ko").href).toBe(CONSULT_TEL_HREF);
   });
 
-  test("사장님 휴대폰·팩스·보호책임자 번호를 그리는 자리는 localPhone 을 거친다(푸터 · 고객센터 카드 · 회사소개 · 이용안내 · 처리방침)", () => {
+  // P7-5 — 사장님 휴대전화 줄은 지웠다(원장 COMPANY.mobile 없음). 남은 국내 표기 번호는 팩스·보호책임자이고, 전화 줄은 consultPhone 이다.
+  test("팩스·보호책임자 번호를 그리는 자리는 localPhone 을 거친다(푸터 · 고객센터 카드 · 회사소개 · 이용안내 · 처리방침)", () => {
     const footer = codeOf("components/layout/Footer.tsx");
-    expect(footer).toMatch(/localPhone\(\s*COMPANY\.mobile\s*,\s*locale\s*\)/);
     expect(footer).toMatch(/localPhone\(\s*COMPANY\.fax\s*,\s*locale\s*\)/);
     expect(footer).toMatch(/localPhone\(\s*COMPANY\.privacyOfficer\.phone\s*,\s*locale\s*\)/);
-    // 대표전화 1566 한 줄은 그대로(tests/contact-phone.test.ts 가 같은 모양을 잠근다)
-    expect(footer).toMatch(/\{\s*label:\s*contactLabels\.tel,\s*value:\s*COMPANY\.tel\s*\}/);
+    // 사업자 정보의 전화 줄은 예약·상담 전화(tests/contact-phone.test.ts 가 같은 모양을 잠근다)
+    expect(footer).toMatch(/\{\s*label:\s*contactLabels\.tel,\s*value:\s*phone\.display\s*\}/);
     const notice = codeOf("components/home/NoticeSection.tsx");
-    expect(notice).toMatch(/localPhone\(\s*COMPANY\.mobile\s*,\s*locale\s*\)/);
-    expect(notice).not.toMatch(/tel:\$\{COMPANY\.mobile\}/);
-    expect(codeOf("app/[locale]/(site)/about/page.tsx")).toMatch(/localPhone\(\s*COMPANY\.mobile\s*,\s*locale\s*\)/);
+    expect(notice).toMatch(/localPhone\(\s*COMPANY\.fax\s*,\s*locale\s*\)/);
+    expect(codeOf("app/[locale]/(site)/about/page.tsx")).toMatch(/localPhone\(\s*COMPANY\.fax\s*,\s*locale\s*\)/);
     expect(codeOf("app/[locale]/(legal)/guide/page.tsx")).toMatch(/localPhone\(/);
     expect(codeOf("app/[locale]/(legal)/privacy/page.tsx")).toMatch(/localPhone\(\s*COMPANY\.privacyOfficer\.phone\s*,\s*locale\s*\)/);
   });
@@ -1109,14 +1109,15 @@ describe.runIf(Boolean(BASE))("14. 렌더 실측 (GET)", { timeout: 180_000 }, (
     }
   });
 
-  test("/en · /en/about — 사장님 휴대폰·팩스가 +82 표기(lang=ko 법정 원문 밖) · 홈 고객센터의 휴대폰 링크는 E.164", async () => {
+  // P7-5 — 사장님 휴대전화 줄은 지웠다. 전화는 예약·상담 전화(+82) 하나, 팩스는 +82 표기, 옛 번호는 어디에도 없다.
+  test("/en · /en/about — 전화(예약·상담)·팩스가 +82 표기(lang=ko 법정 원문 밖) · 옛 번호 0 · 전화 링크는 E.164", async () => {
     for (const route of ["/en", "/en/about"]) {
       const { html } = await get(route);
-      expect(html, route).toContain(intlPhone(COMPANY.mobile));
+      expect(html, route).toContain(COMPANY.consultTelIntl);
       expect(html, route).toContain(intlPhone(COMPANY.fax));
+      expect(html, route).not.toMatch(RETIRED_PHONE);
       expect(html, route).not.toContain('href="tel:010-');
     }
-    // 휴대폰을 링크로 거는 자리는 홈 고객센터 카드뿐이다(회사소개는 글자만)
-    expect((await get("/en")).html).toContain(`tel:+82${COMPANY.mobile.replace(/\D/g, "").slice(1)}`);
+    expect((await get("/en")).html).toContain(`href="${CONSULT_TEL_HREF}"`);
   });
 });

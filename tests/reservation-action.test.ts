@@ -7,7 +7,7 @@
  *   3. create throw → { ok:false, code:'server' } + structuredLog 1회. throw 가 밖으로 나가지 않는다
  *   4. IP 비노출 — x-forwarded-for: 10.9.8.7 이 결과·로그 어디에도 없다 (Turnstile remoteip 로는 전달됐음을 함께 증명)
  *   5. formDataToRaw — 계약 표 전 필드 변환, checkbox "on" → true, 빈 문자열 → undefined, waypointCodes 배열, website 는 raw 밖·guardFields 안
- *   6. messages/ko.json reservation.errors 6키, ratelimit·infra 문구에 원장 COMPANY.tel
+ *   6. messages/ko.json reservation.errors 6키, ratelimit·infra 문구에 원장 전화 보간 {tel}
  *   7. 정적 — 'use server' 첫 줄, export 는 async function 1개, process.env 는 **검사 범위(actions/**·lib/guard·lib/reservations·lib/ports·lib/log.ts) 안에서**
  *      actions/reservation.ts·lib/guard/deps.ts 뿐(저장소 전체가 아니다 — supabase/*·app/* 등은 범위 밖, P3-3 리뷰 N1). headers()·formDataToRaw() 는 첫 try 안
  *   8. 입력 모양 방어(P3-3-FIX M3) — FormData 가 아닌 인자(null·{}·useActionState prevState)는 validation, headers() reject 는 infra. 어느 쪽도 throw 하지 않는다
@@ -812,8 +812,9 @@ describe("6. messages/ko.json — reservation.errors", () => {
   test("ratelimit·infra 문구는 리터럴이 아니라 원장 보간 {tel} 을 쓴다", () => {
     expect(errors?.ratelimit).toContain("{tel}");
     expect(errors?.infra).toContain("{tel}");
-    expect(errors?.ratelimit).not.toContain(COMPANY.tel);
-    expect(errors?.infra).not.toContain(COMPANY.tel);
+    // P7-5 — 원장의 전화번호는 COMPANY.consultTel 하나다(옛 COMPANY.tel 은 지웠다). 그 번호도 리터럴로 들어 있지 않다.
+    expect(errors?.ratelimit).not.toContain(COMPANY.consultTel);
+    expect(errors?.infra).not.toContain(COMPANY.consultTel);
   });
 
   test("server 는 infra 와 같은 문구, bot 은 validation 과 다른 문구(봇에게 이유를 알리지 않되 사람은 구분되게)", () => {

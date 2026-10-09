@@ -29,6 +29,8 @@ import {
   VERBATIM,
 } from "@/lib/legal/disclosures";
 
+import { RETIRED_PHONE } from "./helpers/retired-phones";
+
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const LEDGER_REL = "lib/legal/disclosures.ts";
 const ALLOWLIST_REL = "scripts/gates/temp-allowlist.txt";
@@ -326,9 +328,9 @@ describe("5-b. P1-7 원장 변경 — 브리프 문안과 바이트 일치", () 
     eq((COMPANY as unknown as Record<string, string>).consultTelIntl, "+82 10-6362-6188");
     eq(COMPANY.privacyOfficer.phone, "010-6362-6188");
     expect(COMPANY.privacyOfficer.name).toBe("조선영");
-    // 그대로 두는 것 — 대표전화(푸터 사업자 정보 한 줄) · 사장님 휴대전화 · 팩스
-    expect(COMPANY.tel).toBe("1566-6188");
-    expect(COMPANY.mobile).toBe("010-2048-8585");
+    // P7-5(사용자 2026-10-09 "모든 전화 관련 번호는 010-6362-6188 로 통일") — 대표전화·휴대전화 필드는 지웠다. 팩스는 전화가 아니라 남는다.
+    expect(Object.keys(COMPANY)).not.toContain("tel");
+    expect(Object.keys(COMPANY)).not.toContain("mobile");
     expect(COMPANY.fax).toBe("0303-3443-5252");
   });
 
@@ -412,13 +414,13 @@ describe("5-b. P1-7 원장 변경 — 브리프 문안과 바이트 일치", () 
   });
 
   // P1-7 R2 [P2-9] — 처리방침에 표시하는 시행일과 동의 기록의 방침 버전은 같은 상수다.
-  test("처리방침 시행일 = 동의 기록 버전 (한 곳에서 읽는다) · 값 2026-09-21 · TEMP 유지", async () => {
+  test("처리방침 시행일 = 동의 기록 버전 (한 곳에서 읽는다) · 값 2026-10-09(오픈일) · TEMP 해제", async () => {
     const { PRIVACY_POLICY_VERSION } = await import("@/lib/reservations/consent");
-    expect(ledger.LEGAL_PAGES.privacy.effectiveDate).toBe("2026-09-21");
+    expect(ledger.LEGAL_PAGES.privacy.effectiveDate).toBe("2026-10-09");
     expect(PRIVACY_POLICY_VERSION).toBe(ledger.LEGAL_PAGES.privacy.effectiveDate);
     const consentSrc = readFileSync(path.join(ROOT, "lib/reservations/consent.ts"), "utf8");
     expect(consentSrc).toMatch(/export const PRIVACY_POLICY_VERSION(?:: string)? = LEGAL_PAGES\.privacy\.effectiveDate;/);
-    expect(ledgerLines.some((l) => l.includes(`${TEMP_MARKER} LEGAL_PAGES.privacy.effectiveDate:`))).toBe(true);
+    expect(ledgerLines.some((l) => l.includes(`${TEMP_MARKER} LEGAL_PAGES.privacy.effectiveDate:`))).toBe(false);
   });
 
   test("값은 그대로, TEMP 마커만 해제 — PAYMENT.balanceTiming · PRIVACY_NOTICE.retention · retentionDays · DISPUTE.handling", () => {
@@ -446,10 +448,15 @@ describe("5-b. P1-7 원장 변경 — 브리프 문안과 바이트 일치", () 
     for (const gone of ["KB국민", "690101-00-050894", "010-2047-8585"]) expect(src.includes(gone), gone).toBe(false);
   });
 
-  test("1566-6188 은 원장에서 COMPANY.tel 한 곳에만 있다 — 안내 문장(분쟁·국외이전 거부)은 예약·상담 전화를 쓴다", () => {
-    const hits = codeLines.filter((l) => l.includes("1566-6188"));
-    expect(hits).toHaveLength(1);
-    expect(hits[0]).toMatch(/^\s*tel: "1566-6188",/);
+  // P7-5 — 옛 단언("1566-6188 은 COMPANY.tel 한 곳에만")의 대상이 사라졌다. 뜻(안내 문장은 예약·상담 전화를 쓴다)은 그대로 잠그고,
+  // 옛 번호가 원장 코드에 다시 들어오지 않는 것을 더한다. 주석 줄은 "필드째 지웠다" 는 이력을 말하므로 코드 줄만 본다.
+  test("옛 번호(1566-6188 · 010-2048-8585)가 원장 코드에 없다 — 안내 문장(분쟁·국외이전 거부)은 예약·상담 전화를 쓴다", () => {
+    expect(codeLines.filter((l) => RETIRED_PHONE.test(l))).toEqual([]);
+    expect(ledger.DISPUTE.channel).toContain(COMPANY.consultTel);
+    for (const t of ledger.OVERSEAS_TRANSFERS) {
+      if (t === ledger.VISITOR_STATS_TRANSFER) continue;
+      expect(t.refusal, t.recipient).toContain(COMPANY.consultTel);
+    }
   });
 
   test("예약·상담 전화 라벨 — LEGAL_LABELS.contact.consultTel", () => {
@@ -570,10 +577,8 @@ describe("OVERSEAS_TRANSFERS — PIPA §28조의8② 각 호 완결성", () => {
    * 아직 채울 수 없는 칸. **오픈 전 반드시 0 이 되어야 한다**(플랜 §8 오픈 게이트).
    * 여기 없는 공란은 실패한다. 여기 있는 칸이 채워져도 실패한다 — 목록이 줄어들도록 강제하는 래칫이다.
    */
-  const PENDING: ReadonlyArray<{ recipient: string; field: string; why: string }> = [
-    { recipient: "Upstash Inc.", field: "contact", why: "계정 미발급(P0-1). 개인정보 연락처를 지어내지 않는다" },
-    { recipient: "Upstash Inc.", field: "country", why: "계정 미발급(P0-1). 리전이 정해지지 않았다" },
-  ];
+  // 2026-10-09 오픈: Upstash 연락처(privacy@upstash.com)·국가(일본 — 도쿄 리전)를 채워 0건이 됐다.
+  const PENDING: ReadonlyArray<{ recipient: string; field: string; why: string }> = [];
 
   const allFields = STATUTORY.flatMap((s) => s.fields);
   const pendingKey = (r: string, f: string) => `${r}|${f}`;

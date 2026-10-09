@@ -8,7 +8,7 @@
  *   - 성공 결과에는 publicCode·notifyQueued 만. reservationId(uuid)·warnings 는 로그로 — 방문자에게 내부 식별자를 주지 않는다.
  *   - 로그 항목에 개인정보 없음 — 오류의 name·message·stack 과 식별자(publicCode·reservationId)뿐. Error.cause 는 싣지 않는다(무엇이든 들어갈 수 있다).
  *
- * messageKey 는 messages/ko.json 의 reservation.errors.* — UI 가 t(messageKey) 로 푼다. 원장 전화번호는 그 문구 안에 있다(테스트가 COMPANY.tel 과 대조).
+ * messageKey 는 messages/ko.json 의 reservation.errors.* — UI 가 t(messageKey) 로 푼다. 전화번호는 그 문구의 `{tel}` 보간으로 원장에서 들어온다(tests/reservation-action.test.ts).
  */
 import type { GuardFailure, GuardReason } from "../guard";
 import type { StructuredLogEntry } from "../log";

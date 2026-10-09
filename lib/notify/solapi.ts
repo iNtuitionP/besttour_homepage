@@ -189,7 +189,7 @@ export function authorizationHeader(apiKey: string, apiSecret: string, date: str
 }
 
 /**
- * 국내 표기로 정규화. 아웃박스의 고객 번호는 E.164(`+8210…`), 사장님 번호는 env 원문(`010…`·`1566-…`)이다.
+ * 국내 표기로 정규화. 아웃박스의 고객 번호는 E.164(`+8210…`), 사장님 번호는 env 원문(`010-…`·`010…` 등 국내 표기)이다.
  * 국외 번호는 null — 국가번호를 쪼개는 표를 지어내지 않는다(보고서 §판단이 갈린 지점).
  */
 export function normalizeKrNumber(raw: string): string | null {

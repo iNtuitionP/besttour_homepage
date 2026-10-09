@@ -7,7 +7,7 @@
  *   - 성공 결과는 뷰 모델(view.ts)뿐 — 원문 개인정보는 타입에 없다.
  *   - 로그 항목에 개인정보 없음 — 오류의 name·message·stack 뿐. Error.cause 는 싣지 않는다.
  *
- * messageKey 는 messages/ko.json 의 reservationCheck.errors.* — UI 가 t(messageKey) 로 푼다(원장 전화번호는 그 문구 안에 있고 테스트가 COMPANY.tel 과 대조).
+ * messageKey 는 messages/ko.json 의 reservationCheck.errors.* — UI 가 t(messageKey) 로 푼다(전화번호는 그 문구의 `{tel}` 보간으로 원장에서 들어온다 — tests/reservation-check.test.ts).
  * 이 파일은 클라이언트에서도 import 된다(components/reservation-check/*) — 값 import 는 없고 타입만 가져온다.
  */
 import type { StructuredLogEntry } from "../log";

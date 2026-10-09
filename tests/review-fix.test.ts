@@ -270,7 +270,7 @@ describe("M1 — 전역 404 · (site) 404 · (site) error 바운더리", () => {
     expect(src).toMatch(/<\/body>\s*<\/html>/);
   });
 
-  // P1-7 — 전화는 예약·상담 전화(원장 COMPANY.consultTel · E.164 링크 CONSULT_TEL_HREF). 대표전화 1566 은 푸터 사업자 정보에만 남는다.
+  // P1-7 — 전화는 예약·상담 전화(원장 COMPANY.consultTel · E.164 링크 CONSULT_TEL_HREF) — 사이트의 전화번호는 이것 하나(P7-5).
   test('app/not-found.tsx: 로케일 밖 — i18n Link 가 아니라 <a href="/">, 원장 예약·상담 전화로 전화 링크', () => {
     const src = read(ROOT_NOT_FOUND);
     expect(src).not.toMatch(/from\s+["']@\/i18n\/navigation["']/);

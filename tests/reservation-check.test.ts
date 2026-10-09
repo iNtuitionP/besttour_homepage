@@ -8,7 +8,7 @@
  *   4. select 화이트리스트 — 어댑터가 넘긴 select 문자열에 email·message·admin_memo·* 없음
  *   5. 액션 정적 — 'use server' 첫 줄 · export 1개 · process.env 0 · try 2개, 입력 모양 방어, IP 비노출
  *   6. lib/guard/deps.ts — limitersFor scope 별 prefix(guard:reserve: vs guard:check:), defaultGuardDeps 의 prefix 는 전과 동일
- *   7. ko.json — reservationCheck 네임스페이스(끝에 추가), 오류 3종에 COMPANY.tel, not_found 문구 고정
+ *   7. ko.json — reservationCheck 네임스페이스(끝에 추가), 오류 3종에 원장 전화 보간 {tel}, not_found 문구 고정
  *   8. 컴포넌트 정적 — useActionState(checkReservation 0 · 가격·BM 금지어 0 · 법정 문구 리터럴 0 · localStorage 0 · 원장은 서버 페이지만
  *
  * `'use server'` 파일을 vitest 에서 부르기 위해 next/headers·lib/guard/deps·lib/supabase/server·lib/reservation-check/db·lib/log 을 vi.mock 한다.
@@ -999,11 +999,12 @@ describe("7. messages/ko.json — reservationCheck 네임스페이스", () => {
   test("ratelimit·infra·server 문구는 원장 보간 {tel} 을 쓴다 · server 는 infra 와 같은 문구", () => {
     for (const k of ["ratelimit", "infra", "server"]) {
       expect(errors[k], k).toContain("{tel}");
-      expect(errors[k], k).not.toContain(COMPANY.tel);
+      // P7-5 — 원장의 전화번호는 COMPANY.consultTel 하나다(옛 COMPANY.tel 은 지웠다). 그 번호도 리터럴로 들어 있지 않다.
+      expect(errors[k], k).not.toContain(COMPANY.consultTel);
     }
     expect(errors.server).toBe(errors.infra);
     expect(errors.validation).not.toContain("{tel}");
-    expect(errors.validation).not.toContain(COMPANY.tel);
+    expect(errors.validation).not.toContain(COMPANY.consultTel);
   });
 
   test("not_found 문구는 브리프 원문 그대로 — 존재/불일치를 구분하는 표현 없음", () => {

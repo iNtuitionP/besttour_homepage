@@ -370,7 +370,7 @@ describe("4. 경고가 나온다 — 분류까지 맞게", () => {
 describe("5. 정당한 운영 글 픽스처 — 경고 0", () => {
   // 사장님이 실제로 쓰실 법한 문장이다. 금액·연락처·날짜·운행 안내가 섞여 있다.
   const LEGIT: readonly string[] = [
-    `추석 연휴 운행 안내 — 연휴 기간 문의는 대표전화 ${COMPANY.tel} 로 주세요.`,
+    `추석 연휴 운행 안내 — 연휴 기간 문의는 전화 ${COMPANY.consultTel} 로 주세요.`,
     "성수기(7월 20일~8월 31일) 요금 안내: 45인승 당일 왕복 1,200,000원부터, 주차료·통행료 별도입니다.",
     "운행 시간이 10시간을 초과하면 기사님 대기 요금이 추가됩니다.",
     "성수기에는 요금표가 달라질 수 있어 견적서로 따로 안내드립니다. 10% 계약금 입금 후 확정됩니다.",
@@ -634,7 +634,7 @@ describe("7. 서버액션 — 저장 전 확인, 확인하면 저장", () => {
   test("걸린 것이 없는 글은 한 번에 저장된다 (기존 흐름 그대로)", async () => {
     const { client, rpc } = dbStub({ data: [{ id: 3 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
-    const r = await createNotice(noticeForm({ [NOTICE_FIELDS.title]: "추석 연휴 운행 안내", [NOTICE_FIELDS.body]: `문의는 ${COMPANY.tel} 로 주세요.` }));
+    const r = await createNotice(noticeForm({ [NOTICE_FIELDS.title]: "추석 연휴 운행 안내", [NOTICE_FIELDS.body]: `문의는 ${COMPANY.consultTel} 로 주세요.` }));
     expect(r).toEqual({ ok: true, changed: true, code: "created" });
     expect(rpc).toHaveBeenCalledTimes(1);
     expect(writtenArgs(rpc)?.fn).toBe("admin_create_notice");

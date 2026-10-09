@@ -325,7 +325,7 @@ describe("3. 카피 규칙 (pages.* + 페이지 소스)", () => {
       COMPANY.legalName,
       COMPANY.bizRegNo,
       COMPANY.mailOrderNo,
-      COMPANY.tel,
+      COMPANY.consultTel, // P7-5 — 원장의 전화번호는 이것 하나다(옛 COMPANY.tel 은 지웠다)
       COMPANY.address,
       COMPANY.representative,
       "45인승 당일왕복",
@@ -418,9 +418,10 @@ describe("4. /about", () => {
     for (const f of ["legalName", "bizRegNo", "mailOrderNo", "address", "email", "establishedYear"]) {
       expect(code, `COMPANY.${f}`).toMatch(new RegExp(`COMPANY\\.${f}\\b`));
     }
-    // P1-7 — 전화 줄은 예약·상담 전화(consultPhone — en 은 +82 표기). 대표전화 1566 은 푸터 사업자 정보 한 줄에만 남는다.
+    // P1-7 — 전화 줄은 예약·상담 전화(consultPhone — en 은 +82 표기). P7-5 — 사이트의 전화번호는 이것 하나다(휴대전화 줄 없음).
     expect(code).toMatch(/consultTel:\s*consultPhone\(\s*locale\s*\)\.display/);
-    expect(code).not.toMatch(/COMPANY\.tel\b/);
+    expect(code).not.toMatch(/COMPANY\.(tel|mobile)\b/);
+    expect(code).not.toMatch(/\bmobile:/);
     expect(code).toMatch(/LegalRecordList/);
   });
 

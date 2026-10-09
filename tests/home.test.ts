@@ -172,7 +172,7 @@ describe("3. 법정 문구는 원장 참조로만", () => {
       COMPANY.legalName,
       COMPANY.bizRegNo,
       COMPANY.mailOrderNo,
-      COMPANY.tel,
+      COMPANY.consultTel, // P7-5 — 원장의 전화번호는 이것 하나다(옛 COMPANY.tel 은 지웠다)
       COMPANY.representative,
       "45인승 당일왕복",
       "결제 진행됩니다",

@@ -466,9 +466,8 @@
       "home": "Home",
       "legalNav": "Legal notices",
       "contact": {
-        "tel": "Main number",
+        "tel": "Phone",
         "consultTel": "Bookings & inquiries",
-        "mobile": "Mobile",
         "fax": "Fax",
         "email": "Email"
       },

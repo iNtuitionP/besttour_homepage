@@ -225,13 +225,12 @@ export const PRICE_LITERALS: readonly CopyRule[] = [
 // ── (5) 연락처·등록번호 리터럴 — `messages/**` 에 0건이어야 한다 ────────────────
 // 원장(lib/legal/disclosures.ts)이 단일 출처다. 카탈로그에는 `{tel}` 보간만 둔다.
 // 값을 원장에서 그대로 읽어 오므로 원장이 바뀌면 이 목록도 같이 바뀐다 — 손으로 베낀 리터럴이 아니다.
-// **사장님 글에도 걸지 않는다**(아래 (6)) — "대표전화로 연락 주세요"는 정당한 공지다.
+// **사장님 글에도 걸지 않는다**(아래 (6)) — "전화로 연락 주세요"는 정당한 공지다.
+// P7-5 — 원장의 전화번호는 예약·상담 전화 하나다(옛 대표전화·휴대전화 필드는 지웠다 — 옛 번호 0건은 tests/contact-phone.test.ts §0).
 export const CONTACT_LITERALS: ReadonlyArray<readonly [label: string, literal: string]> = [
-  ["COMPANY.tel", COMPANY.tel],
   // P1-7 — 예약·상담 전화(국내·국제 표기). 카탈로그는 `{tel}` 보간만 쓴다.
   ["COMPANY.consultTel", COMPANY.consultTel],
   ["COMPANY.consultTelIntl", COMPANY.consultTelIntl],
-  ["COMPANY.mobile", COMPANY.mobile],
   ["COMPANY.fax", COMPANY.fax],
   ["COMPANY.bizRegNo", COMPANY.bizRegNo],
   ["COMPANY.mailOrderNo", COMPANY.mailOrderNo],
@@ -264,7 +263,7 @@ export const COPY_ALLOWLIST: readonly CopyAllowEntry[] = [];
 // 대조하지 않는 것:
 //   · (3-EN)·(3-EN-b)·(3-EN-c) — 관리자 화면은 한국어 전용이다. 영문 규칙은 en.json 카탈로그 몫이다.
 //   · (4) 금액 — 소스 카피의 무가격 규칙(/fares)이다. "성수기 요금 안내"·"주차료 별도"는 사장님이 쓸 수 있는 사실 안내다.
-//   · (5) 연락처 — 카탈로그가 원장 보간을 쓰게 하려는 규칙이다. 공지에 "대표전화 1566-6188"을 적는 것은 정당하다.
+//   · (5) 연락처 — 카탈로그가 원장 보간을 쓰게 하려는 규칙이다. 공지에 회사 전화번호를 적는 것은 정당하다.
 //   · 아래 OWNER_TEXT_EXEMPT 의 두 규칙 — 소스 카피에서만 의미가 있다.
 
 /** 사장님 글에서는 대조하지 않는 (2) 규칙. 항목마다 이유 필수(tests/admin-copy-warning.test.ts 가 단언). */
