@@ -190,7 +190,7 @@ describe("P7-2b — lib/site-url.ts canonicalUrl()", () => {
       "/",
       "/about?bo_page=greeting",
       "/en/about?bo_page=greeting#location",
-      "/ko/fares#routes",
+      "/ko/fleet#insurance",
       "/notices/12?from=list",
       "/quote?vehicle=bus45",
     ];
@@ -251,7 +251,7 @@ describe("P2-6 — lib/site-url.ts localizedUrl() · pageAlternates()", () => {
   });
 
   test("값은 전부 문자열이다 — URL 인스턴스를 넘기면 Next 가 요청 경로·쿼리를 다시 붙인다(resolveAlternateUrl)", () => {
-    const alt = pageAlternates("/fares", "en");
+    const alt = pageAlternates("/fleet", "en");
     expect(typeof alt.canonical).toBe("string");
     for (const v of Object.values(alt.languages)) expect(typeof v).toBe("string");
   });
@@ -459,21 +459,21 @@ describe("P7-2b — sitemap 과 canonical 이 같은 집합을 가리킨다", ()
   /** sitemap URL → 로케일 prefix 를 뗀 라우트 (`/en/about` → `/about`, `/en` → `/`) */
   const routeOf = (url: string) => new URL(canonicalUrl(new URL(url).pathname)).pathname;
 
-  // P3-8: /quote 가 없어져 11 → 10(견적 신청은 홈 `/` 안이다).
-  test("sitemap 의 정적 라우트 == canonical 을 내는 정적 라우트 (10개) — 로케일마다 한 번씩 (ko·en = 20)", async () => {
+  // P3-8: /quote 가 없어져 11 → 10(견적 신청은 홈 `/` 안이다). P7-6: /fares 를 지워 10 → 9(대표 노선은 홈 #routes).
+  test("sitemap 의 정적 라우트 == canonical 을 내는 정적 라우트 (9개) — 로케일마다 한 번씩 (ko·en = 18)", async () => {
     const sitemap = (await import("@/app/sitemap")).default;
     const entries = sitemap();
 
     const canonicalRoutes = ROUTE_FILES.filter((r) => !r.dynamic && canonicalArgs(code(r.rel)).length > 0)
       .map((r) => r.route)
       .sort();
-    expect(canonicalRoutes.length).toBe(10);
+    expect(canonicalRoutes.length).toBe(9);
 
     for (const locale of ["ko", "en"]) {
       const urls = entries.map((e) => e.url).filter((u) => (locale === "en" ? /\/en(\/|$)/.test(new URL(u).pathname) : !/^\/en(\/|$)/.test(new URL(u).pathname)));
       expect(urls.map(routeOf).sort(), locale).toEqual(canonicalRoutes);
     }
-    expect(entries.length).toBe(20);
+    expect(entries.length).toBe(18);
   });
 
   /**

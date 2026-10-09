@@ -427,7 +427,6 @@ const LEDGER_ON_EN: ReadonlyArray<{ file: string; refs: readonly string[]; scree
   { file: "app/[locale]/(legal)/terms/page.tsx", screen: "/en/terms 본문 전체(P1-7: 제8조 아래 청약철회 제한 고지 · R3: 제7조 아래 취소·환불 적용 범위)", notice: true, refs: ["CANCELLATION", "TERMS", "WITHDRAWAL"] },
   { file: "components/legal/LegalArticle.tsx", screen: "/en/terms 조 번호(제N조)", notice: { via: "app/[locale]/(legal)/terms/page.tsx" }, refs: ["LEGAL_LABELS"] },
   { file: "app/[locale]/(site)/about/page.tsx", screen: "/en/about 회사 정보 표 · 찾아오시는 길 주소", notice: true, refs: ["COMPANY.address", "COMPANY.branchAddress", "COMPANY.legalName", "COMPANY.mailOrderIssuer", "COMPANY.mailOrderNo"] },
-  { file: "app/[locale]/(site)/fares/page.tsx", screen: "/en/fares 산정 기준 칩 · 대금 지급", notice: true, refs: ["PAYMENT", "QUOTE_BASIS"] },
   { file: "app/[locale]/(site)/fleet/page.tsx", screen: "/en/fleet 보험 본문", notice: true, refs: ["INSURANCE"] },
   // P3-8: 위저드(/quote)를 지우고 홈 간편 견적 모달로 옮겼다 — 동의 고지 본문은 Hero(서버)가 원장에서 읽어 모달에 내린다.
   { file: "components/home/Hero.tsx", screen: "/en 간편 견적 모달의 개인정보 수집·이용 고지 본문", notice: true, refs: ["PRIVACY_NOTICE"] },
@@ -577,7 +576,6 @@ const EN_ROUTES = [
   "/en",
   "/en/about",
   "/en/fleet",
-  "/en/fares",
   "/en/reservation/check",
   "/en/notices",
   "/en/gallery",
@@ -586,14 +584,15 @@ const EN_ROUTES = [
   "/en/guide",
 ] as const;
 describe("8-e. 렌더 실측 경로 목록 — 없어진 위저드 경로를 200 으로 기대하지 않는다 (P3-8 리뷰 P2-9 · 항상 돈다)", () => {
-  test("EN_ROUTES 에 /en/quote · /en/quote/done 이 없다 (그 주소는 301 — 8-b 의 이동 테스트가 본다)", () => {
+  test("EN_ROUTES 에 /en/quote · /en/quote/done · /en/fares 가 없다 (그 주소는 301 — 8-b 의 이동 테스트가 본다)", () => {
     const routes = EN_ROUTES as readonly string[];
-    expect(routes.filter((r) => r.startsWith("/en/quote"))).toEqual([]);
+    expect(routes.filter((r) => r.startsWith("/en/quote") || r.startsWith("/en/fares"))).toEqual([]);
+    expect(NOTICE_ROUTES as readonly string[]).not.toContain("/en/fares");
   });
 });
 
 /** 원장 블록이 있어 안내가 보여야 하는 영문 경로 */
-const NOTICE_ROUTES = ["/en", "/en/about", "/en/fleet", "/en/fares", "/en/privacy", "/en/terms", "/en/guide"] as const;
+const NOTICE_ROUTES = ["/en", "/en/about", "/en/fleet", "/en/privacy", "/en/terms", "/en/guide"] as const;
 
 describe.runIf(Boolean(EN_BASE))("8-b. 렌더 실측 — /en (GET)", { timeout: 120_000 }, () => {
   const fetchHtml = async (p: string) => {
@@ -634,7 +633,10 @@ describe.runIf(Boolean(EN_BASE))("8-b. 렌더 실측 — /en (GET)", { timeout: 
     ["/quote/done", "/#quote"],
     ["/en/quote", "/en#quote"],
     ["/en/quote/done", "/en#quote"],
-  ] as const)("%s — 옛 위저드 주소는 %s 로 영구 이동한다(301/308)", async ([route, target]) => {
+    // P7-6 — 차량운임료(/fares)는 지웠다. 홈 대표 노선(#routes)으로 영구 이동한다.
+    ["/fares", "/#routes"],
+    ["/en/fares", "/en#routes"],
+  ] as const)("%s — 없앤 주소(위저드 · 운임료)는 %s 로 영구 이동한다(301/308)", async ([route, target]) => {
     const res = await fetch(`${EN_BASE}${route}`, { redirect: "manual" });
     await res.text();
     expect([301, 308], route).toContain(res.status);

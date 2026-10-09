@@ -175,7 +175,7 @@ describe("3. 소스 — 전화는 consultPhone, 옛 필드를 읽는 곳 0", () 
     ["components/layout/FloatingContact.tsx"],
     ["components/layout/Footer.tsx"],
     ["components/home/NoticeSection.tsx"],
-    ["app/[locale]/(site)/fares/page.tsx"],
+    // P7-6: /fares(운임료 CTA 의 전화 링크)는 페이지째 지웠다.
     ["app/[locale]/(site)/not-found.tsx"],
     // P3-8: 위저드 두 화면 대신 홈 간편 견적 — 모달의 전화 폴백은 Hero(서버)가 고른다.
     ["components/home/Hero.tsx"],
@@ -270,13 +270,12 @@ describe.runIf(Boolean(BASE))("5. 렌더 실측 — 전화 배치 (GET)", { time
   test.for([
     ["/"],
     ["/about"],
-    ["/fares"],
     ["/fleet"],
     ["/reservation/check"],
     ["/notices"],
     ["/en"],
     ["/en/about"],
-    ["/en/fares"],
+    ["/en/fleet"],
     ["/guide"],
     ["/privacy"],
     ["/terms"],

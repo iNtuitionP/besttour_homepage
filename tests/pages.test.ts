@@ -1,5 +1,6 @@
 /**
- * P6-3 — 공개 서브페이지 5종(`/about` `/fleet` `/fares` `/notices` `/notices/[id]` `/gallery`) + 옛 메뉴 매핑 완성 계약 테스트.
+ * P6-3 — 공개 서브페이지(`/about` `/fleet` `/notices` `/notices/[id]` `/gallery`) + 메뉴 매핑 완성 계약 테스트.
+ * P7-6 — `/fares`(차량운임료) 는 사용자 결정으로 페이지째 지웠다. 대표 노선 예시와 Top-5 고지는 홈 `#routes` 에 있다(§6 이 잠근다).
  *
  * vitest 는 node 환경이다 — DOM 렌더 테스트용 패키지를 설치하지 않는다. 여기서는
  *   (1) 소스 정적 검사(라우트 파일·`revalidate`·요청 시점 API 0·서비스 롤 0·`dangerouslySetInnerHTML` 0·한글 리터럴 0),
@@ -37,7 +38,6 @@ const SITE = "app/[locale]/(site)";
 const PAGE_FILES = {
   about: `${SITE}/about/page.tsx`,
   fleet: `${SITE}/fleet/page.tsx`,
-  fares: `${SITE}/fares/page.tsx`,
   notices: `${SITE}/notices/page.tsx`,
   noticeDetail: `${SITE}/notices/[id]/page.tsx`,
   gallery: `${SITE}/gallery/page.tsx`,
@@ -112,7 +112,8 @@ const homeLeaves = leaves(homeKo);
  * 예전에는 이 파일이 `UNPROVEN`(17건)과 `PRICE_TABLE`(8건)을 따로 들고 있었고, 그중 비교 광고 패턴
  * (`저렴`·`최저`)은 **`pages.fares` 한 곳에만** 걸렸다. 같은 표현이 홈·위저드에서는 검사 없이 배포됐다
  * (감사 P6-6-audit.md §2 B-1). 비교 광고는 전역(tests/copy-rules.test.ts)으로 올리고,
- * **금액 리터럴만** 여기 /fares 에 남긴다 — 대표 노선 가격은 사장님이 준 정당한 값이라 전역으로 걸면 오탐이다.
+ * **금액 리터럴만** 여기 /fares 에 남겼다 — 대표 노선 가격은 사장님이 준 정당한 값이라 전역으로 걸면 오탐이다.
+ * P7-6: /fares 와 pages.fares 를 지웠다. 금액 리터럴은 이제 서브페이지 카탈로그(pages.*) 전체에 건다(§3 — 대표 노선 가격은 home.* · DB 라 대상 밖).
  */
 const CLAIM_RULES: readonly CopyRule[] = [...UNPROVEN_CLAIMS, ...COMPARATIVE_CLAIMS];
 
@@ -122,7 +123,7 @@ const PRICING_SYMBOLS = new RegExp(
 );
 
 // =============================================================================
-// 1. 라우트 파일 6개 — 존재 · 정적 렌더(ISR 600) · 요청 시점 API 0 · 서비스 롤 0 · HTML 렌더 0
+// 1. 라우트 파일 5개(P7-6 — /fares 삭제) — 존재 · 정적 렌더(ISR 600) · 요청 시점 API 0 · 서비스 롤 0 · HTML 렌더 0
 // =============================================================================
 describe("1. 라우트 파일 — 존재 · revalidate = 600 · 요청 시점 API 0", () => {
   test.for(pageEntries)("%s 라우트 파일이 있다 (%s)", ([, rel]) => {
@@ -130,7 +131,7 @@ describe("1. 라우트 파일 — 존재 · revalidate = 600 · 요청 시점 AP
   });
 
   test("검사 대상이 실제로 있다 (빈 배열 통과 방지)", () => {
-    expect(pageSources.length).toBe(6);
+    expect(pageSources.length).toBe(5);
     expect(componentSources.length).toBeGreaterThanOrEqual(2);
   });
 
@@ -191,11 +192,10 @@ describe("1. 라우트 파일 — 존재 · revalidate = 600 · 요청 시점 AP
     expect(code).toMatch(/splitParagraphs\(/);
   });
 
-  test("목록은 getNotices(50) · 갤러리는 getGallery(60) · 차량은 getVehicles() · 운임료는 getShowcaseRoutes()", () => {
+  test("목록은 getNotices(50) · 갤러리는 getGallery(60) · 차량은 getVehicles()", () => {
     expect(codeOf(PAGE_FILES.notices)).toMatch(/getNotices\(\s*50\s*\)/);
     expect(codeOf(PAGE_FILES.gallery)).toMatch(/getGallery\(\s*60\s*\)/);
     expect(codeOf(PAGE_FILES.fleet)).toMatch(/getVehicles\(\s*\)/);
-    expect(codeOf(PAGE_FILES.fares)).toMatch(/getShowcaseRoutes\(\s*\)/);
   });
 
   test("페이지·components/pages 에 한글 리터럴 0건 (주석 제외) — 문구는 ko.json pages.* · home.* · 원장에서만", () => {
@@ -241,12 +241,13 @@ describe("1. 라우트 파일 — 존재 · revalidate = 600 · 요청 시점 AP
 });
 
 // =============================================================================
-// 2. LEGACY_MENU — 6개 ready:true, blog 는 그대로(env 의존), reservationCheck 는 P6-3a 의 값 그대로
+// 2. LEGACY_MENU — 서브페이지 4개 ready:true, blog 는 그대로(env 의존), reservationCheck 는 P6-3a 의 값 그대로
+//    P7-6: location(/about#location) · fares(/fares) 항목은 사용자 결정으로 메뉴에서 지웠다.
 // =============================================================================
 describe("2. lib/legacy-menu-map.ts — ready 플래그", () => {
   const byKey = new Map(LEGACY_MENU.map((m) => [m.key, m]));
 
-  test.for([["about"], ["location"], ["fleet"], ["fares"], ["notices"], ["gallery"]] as const)(
+  test.for([["about"], ["fleet"], ["notices"], ["gallery"]] as const)(
     "%s → ready:true",
     ([key]) => {
       expect(byKey.get(key)?.ready, key).toBe(true);
@@ -268,7 +269,8 @@ describe("2. lib/legacy-menu-map.ts — ready 플래그", () => {
     expect(notReady).toEqual(["blog"]);
   });
 
-  test("ready:true 인 내부 항목 9개의 라우트 파일이 전부 있다", () => {
+  test("ready:true 인 내부 항목 7개의 라우트 파일이 전부 있다", () => {
+    expect(LEGACY_MENU.filter((m) => m.ready && !m.external)).toHaveLength(7);
     for (const m of LEGACY_MENU) {
       if (!m.ready || m.external) continue;
       const clean = m.href.split("#")[0].replace(/^\//, "");
@@ -279,9 +281,15 @@ describe("2. lib/legacy-menu-map.ts — ready 플래그", () => {
     }
   });
 
-  test("location 은 /about#location — about 페이지에 id=\"location\" 앵커가 있다", () => {
-    expect(byKey.get("location")?.href).toBe("/about#location");
+  // P7-6: 메뉴 항목은 지웠지만 페이지의 구역은 그대로다 — 옛 `bo_page=map` 이 여기로 301 한다(tests/redirects.test.ts).
+  test("찾아오시는 길은 메뉴 항목이 아니라 회사소개 페이지의 구역 — about 페이지에 id=\"location\" 앵커가 그대로 있다", () => {
+    expect(byKey.has("location")).toBe(false);
     expect(read(PAGE_FILES.about)).toMatch(/id="location"/);
+  });
+
+  test("차량운임료 항목은 없고 /fares 라우트 파일도 없다 (P7-6)", () => {
+    expect(byKey.has("fares")).toBe(false);
+    expect(exists(`${SITE}/fares/page.tsx`)).toBe(false);
   });
 });
 
@@ -289,11 +297,19 @@ describe("2. lib/legacy-menu-map.ts — ready 플래그", () => {
 // 3. 카피 규칙 — 전 페이지 + ko.json pages.* : 금지어 · 실증 불가 수치 · 원장 문구 복제 0
 // =============================================================================
 describe("3. 카피 규칙 (pages.* + 페이지 소스)", () => {
-  test("ko.json 에 pages 네임스페이스가 있고 5개 페이지 키 + common 이 있다", () => {
-    for (const k of ["common", "about", "fleet", "fares", "notices", "gallery"]) {
+  test("ko.json 에 pages 네임스페이스가 있고 4개 페이지 키 + common 이 있다 · 지운 페이지(fares)의 카탈로그는 없다", () => {
+    for (const k of ["common", "about", "fleet", "notices", "gallery"]) {
       expect(pagesKo, `pages.${k} 없음`).toHaveProperty(k);
     }
+    expect(pagesKo).not.toHaveProperty("fares");
     expect(pagesLeaves.length).toBeGreaterThan(10);
+  });
+
+  // P7-6: 금액 리터럴의 유일한 대상(pages.fares)이 지워졌다 — 규칙이 대상 없이 남지 않게 서브페이지 카탈로그 전체와 소스에 건다.
+  test.for(PRICE_LITERALS.map(([label, re]) => [label, re] as const))("금액·요금표 표현 0 — %s (pages.* + 서브페이지 소스)", ([, re]) => {
+    expect(re.test(pagesKoText), "ko.json pages.*").toBe(false);
+    // CSS 는 뺀다 — `width: 100%` 는 할인율이 아니다.
+    for (const { rel } of allNewSources.filter((s) => !s.rel.endsWith(".css"))) expect(re.test(codeOf(rel)), rel).toBe(false);
   });
 
   test("통합 목록이 비어 있지 않다 (빈 배열이면 아래 검사가 전면 통과한다)", () => {
@@ -516,26 +532,23 @@ describe("5. /fleet", () => {
 });
 
 // =============================================================================
-// 6. /fares — 무가격: 산정 기준·대금은 원장, 예시는 KrMap(verbatim 고지 포함), 금액·요금표·비교 광고 0
+// 6. 대표 노선 — /fares 의 후신은 홈 #routes (P7-6). 예시는 KrMap(verbatim 고지 포함), 금액 매트릭스·가격 연산 0
 // =============================================================================
-describe("6. /fares (P6-3b)", () => {
-  const src = read(PAGE_FILES.fares);
-  const code = codeOf(PAGE_FILES.fares);
-  const faresKo = JSON.stringify(pagesKo.fares ?? {});
+describe("6. 대표 노선은 홈 #routes 에 (P7-6 — /fares 삭제)", () => {
+  const ROUTES_SECTION = "components/home/RoutesSection.tsx";
+  const routesSrc = read(ROUTES_SECTION);
+  const routesCode = codeOf(ROUTES_SECTION);
 
-  // P1-7 — 전화는 원장 COMPANY 를 직접 읽지 않고 lib/contact-phone(예약·상담 전화 — 원장 COMPANY.consultTel)을 거친다.
-  test("원장 import — QUOTE_BASIS · PAYMENT · VERBATIM 을 가져와 그대로 렌더한다", () => {
-    expect(ledgerImports(src)).toEqual(expect.arrayContaining(["QUOTE_BASIS", "PAYMENT", "VERBATIM"]));
-    expect(code).toMatch(/QUOTE_BASIS\.(factors|line)/);
-    expect(code).toMatch(/PAYMENT\.line/);
-    expect(code).toMatch(/VERBATIM\.bookingNotice/);
+  test("홈 RoutesSection 이 id=\"routes\" 구역에 KrMap 을 렌더한다 — /fares · /en/fares 의 301 목적지(/#routes)가 빈 자리가 아니다", () => {
+    expect(routesCode).toMatch(/id="routes"/);
+    expect(routesSrc).toMatch(/from\s+["']@\/components\/KrMap\/KrMap["']/);
+    expect(routesCode).toMatch(/<KrMap\s+routes=/);
+    expect(codeOf(`${SITE}/page.tsx`)).toMatch(/<RoutesSection\b/);
   });
 
-  test("Top-5 고지는 KrMap 이 VERBATIM.showcaseNotice 로 렌더한다 (바이트 동일 — 원장 참조) · 페이지가 다시 렌더하지 않는다", () => {
-    expect(src).toMatch(/from\s+["']@\/components\/KrMap\/KrMap["']/);
-    expect(code).toMatch(/<KrMap\s+routes=/);
+  test("Top-5 고지는 KrMap 이 VERBATIM.showcaseNotice 로 렌더한다 (바이트 동일 — 원장 참조) · 섹션이 다시 렌더하지 않는다", () => {
     expect(read("components/KrMap/KrMap.tsx")).toMatch(/VERBATIM\.showcaseNotice/);
-    expect(code.includes("showcaseNotice")).toBe(false);
+    expect(routesCode.includes("showcaseNotice")).toBe(false);
     // 원장 값 자체가 CLAUDE.md §3 의 문구와 바이트 동일한지 (게이트도 보지만 여기서 한 번 더)
     const expected = Buffer.from(
       "대표 노선 예시 견적 · 45인승 당일왕복 기준 · 실제 견적은 상담 후 확정",
@@ -544,18 +557,7 @@ describe("6. /fares (P6-3b)", () => {
     expect(Buffer.compare(Buffer.from(VERBATIM.showcaseNotice, "utf8"), expected)).toBe(0);
   });
 
-  test("홈 RoutesSection 의 설명문('저렴')은 가져오지 않는다 — SectionHead + KrMap 조립", () => {
-    expect(/from\s+["']@\/components\/home\/RoutesSection["']/.test(src)).toBe(false);
-    expect(src).toMatch(/from\s+["']@\/components\/home\/SectionHead["']/);
-  });
-
-  // 비교 광고(`저렴`·`최저`)는 여기서 빠졌다 — 전역(CLAIM_RULES)으로 올라갔기 때문이다. 여기 남은 것은 금액 리터럴뿐.
-  test.for(PRICE_LITERALS.map(([label, re]) => [label, re] as const))("금액·요금표 표현 0 — %s", ([, re]) => {
-    expect(re.test(faresKo), "ko.json pages.fares").toBe(false);
-    expect(re.test(code), "fares/page.tsx").toBe(false);
-  });
-
-  test("가격 심볼 0 (check-no-pricing 패턴) · price_from/priceFrom 연산 0 — 새 소스 전부", () => {
+  test("가격 심볼 0 (check-no-pricing 패턴) · price_from/priceFrom 연산 0 — 서브페이지 소스 전부", () => {
     for (const { rel, text } of allNewSources) {
       expect(PRICING_SYMBOLS.test(text), rel).toBe(false);
       expect(/priceFrom\s*[*/+%-]|price_from/.test(text), rel).toBe(false);
@@ -563,18 +565,10 @@ describe("6. /fares (P6-3b)", () => {
     }
   });
 
-  test("CTA — 홈 간편 견적 `/#quote` 링크(P3-8) + 예약·상담 전화 링크(P1-7 — consultPhone(locale), E.164 href)", () => {
-    expect(code).toMatch(/href=\{QUOTE_ANCHOR\}/);
-    expect(code).not.toMatch(/href="\/quote"/);
-    expect(code).toMatch(/consultPhone\(\s*locale\s*\)/);
-    expect(code).toMatch(/href=\{phone\.href\}/);
-    expect(code).not.toMatch(/COMPANY\.tel\b/);
-  });
-
-  test("인벤토리 §4 요금 매트릭스의 숫자(300,000 · 350,000 · 400,000 · 180,000 · 5,500 · 40km)가 어디에도 없다", () => {
+  test("인벤토리 §4 요금 매트릭스의 숫자(300,000 · 350,000 · 400,000 · 180,000 · 5,500 · 40km)가 pages.* · 서브페이지 어디에도 없다", () => {
     for (const n of ["300,000", "350,000", "400,000", "250,000", "180,000", "5,500", "40km", "300km"]) {
-      expect(faresKo.includes(n), n).toBe(false);
-      expect(code.includes(n), n).toBe(false);
+      expect(pagesKoText.includes(n), n).toBe(false);
+      for (const { rel } of allNewSources) expect(codeOf(rel).includes(n), `${rel}: ${n}`).toBe(false);
     }
   });
 });

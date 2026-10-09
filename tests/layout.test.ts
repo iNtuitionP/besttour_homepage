@@ -71,17 +71,19 @@ function ledgerImports(src: string): string[] {
 }
 
 // =============================================================================
-// 1. LEGACY_MENU — "기존 메뉴 삭제 금지" 규칙의 실체
+// 1. LEGACY_MENU — 사이트 메뉴 목록의 실체 (P7-6: 사용자 결정으로 10개 → 8개)
 // =============================================================================
 /**
- * 옛 사이트(bestour.co.kr) 좌측 메뉴 10개. 플랜 v4 §6 P6-3 매핑표 그대로 박아 둔다.
- * 이 배열이 줄면 사장님 요구(기존 메뉴·기능 삭제 금지, 재배치만)를 어긴 것이다.
+ * 사이트 메뉴 8개(위 메뉴 6 + 푸터 전용 이용안내 + env 의존 블로그) — 순서까지 박아 둔다.
+ *
+ * P6-3 때는 옛 사이트 좌측 메뉴 10개를 "삭제 금지, 재배치만" 으로 잠갔다. P7-6(2026-10-09) 에 **사용자가 직접** 그 규칙을 뒤집었다:
+ * 찾아오시는 길은 회사소개 페이지의 한 구역(/about#location — 페이지 내용은 그대로)이라 메뉴에서 빼고, 차량운임료(/fares)는 페이지째
+ * 지웠다(대표 노선은 홈 지도 #routes 에 그대로). 이용안내는 위 메뉴에서만 빠지고 푸터 고객센터 열에 남는다(tests/site-menu.test.ts 가 렌더로 잠근다).
+ * 이 배열이 바뀌면 사용자 결정이 바뀐 것이다 — 결정 없이 고치지 마라.
  */
-const LEGACY_LABELS = [
-  "회사소개 · 인사말",
-  "찾아오시는 길",
+const MENU_LABELS = [
+  "회사소개",
   "차량소개 · 보험내용",
-  "차량운임료",
   "견적요청",
   "예약확인",
   "공지사항",
@@ -90,12 +92,10 @@ const LEGACY_LABELS = [
   "네이버 블로그",
 ] as const;
 
-/** 플랜 P6-3 매핑표의 새 경로. 외부 링크(블로그)는 env 로 주입되므로 빈 문자열이 정상이다. */
+/** 메뉴 항목의 경로. 외부 링크(블로그)는 env 로 주입되므로 빈 문자열이 정상이다. */
 const EXPECTED_HREF: Record<string, string> = {
   about: "/about",
-  location: "/about#location",
   fleet: "/fleet",
-  fares: "/fares",
   // P3-8: 위저드(/quote) 폐지 — 견적요청은 홈 간편 견적 위젯 앵커로 간다.
   quote: "/#quote",
   reservationCheck: "/reservation/check",
@@ -106,24 +106,17 @@ const EXPECTED_HREF: Record<string, string> = {
 };
 
 /**
- * 구현된 라우트: /guide(P1-6) · /quote(P3-4) · /reservation/check(P6-3a) · /about·/about#location·/fleet·/fares·/notices·/gallery(P6-3).
- * 남은 것은 네이버 블로그(외부, URL 미수령)뿐이다. 페이지가 생기는 태스크가 이 표와 플래그를 함께 올린다.
+ * 구현된 라우트: /guide(P1-6) · /quote(P3-4 → P3-8 홈 #quote) · /reservation/check(P6-3a) · /about·/fleet·/notices·/gallery(P6-3).
+ * 남은 것은 네이버 블로그(외부, URL 미수령)뿐이다.
  */
-const EXPECTED_READY = new Set([
-  "guide",
-  "quote",
-  "reservationCheck",
-  "about",
-  "location",
-  "fleet",
-  "fares",
-  "notices",
-  "gallery",
-]);
+const EXPECTED_READY = new Set(["guide", "quote", "reservationCheck", "about", "fleet", "notices", "gallery"]);
 
-describe("1. LEGACY_MENU — 10개, 중복 없음, 옛 메뉴와 1:1", () => {
-  test("정확히 10개다", () => {
-    expect(LEGACY_MENU).toHaveLength(10);
+/** 위 메뉴(머리글 · 휴대폰 패널)에 나오는 항목 — 사용자 결정 순서(P7-6). 블로그는 env 가 있을 때만 렌더된다. */
+const EXPECTED_HEADER = ["about", "fleet", "quote", "reservationCheck", "notices", "gallery", "blog"] as const;
+
+describe("1. LEGACY_MENU — 8개, 중복 없음, 사용자 결정(P7-6)과 1:1", () => {
+  test("정확히 8개다", () => {
+    expect(LEGACY_MENU).toHaveLength(8);
   });
 
   test("key 중복 0", () => {
@@ -131,8 +124,21 @@ describe("1. LEGACY_MENU — 10개, 중복 없음, 옛 메뉴와 1:1", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  test("라벨이 옛 사이트 메뉴 10개와 순서까지 1:1", () => {
-    expect(LEGACY_MENU.map((m) => m.labelKo)).toEqual([...LEGACY_LABELS]);
+  test("라벨이 메뉴 8개와 순서까지 1:1", () => {
+    expect(LEGACY_MENU.map((m) => m.labelKo)).toEqual([...MENU_LABELS]);
+  });
+
+  test("위 메뉴(header:true)는 6개 + 블로그, 순서까지 1:1 — 이용안내만 빠진다", () => {
+    expect(LEGACY_MENU.filter((m) => m.header).map((m) => m.key)).toEqual([...EXPECTED_HEADER]);
+    expect(LEGACY_MENU.filter((m) => !m.header).map((m) => m.key)).toEqual(["guide"]);
+  });
+
+  test("찾아오시는 길 · 차량운임료는 메뉴에 없다 (P7-6 — 키·경로 둘 다)", () => {
+    for (const m of LEGACY_MENU) {
+      expect(["location", "fares"], m.key).not.toContain(m.key);
+      expect(m.href.startsWith("/fares"), m.key).toBe(false);
+      expect(m.href.includes("#location"), m.key).toBe(false);
+    }
   });
 
   test("새 경로가 플랜 P6-3 매핑표와 일치한다", () => {
@@ -142,7 +148,8 @@ describe("1. LEGACY_MENU — 10개, 중복 없음, 옛 메뉴와 1:1", () => {
     }
   });
 
-  test("ready 플래그는 구현된 라우트에만 켜져 있다", () => {
+  test("ready 플래그는 구현된 라우트에만 켜져 있다 (집합 그대로)", () => {
+    expect(LEGACY_MENU.filter((m) => m.ready).map((m) => m.key).sort()).toEqual([...EXPECTED_READY].sort());
     for (const m of LEGACY_MENU) {
       expect(m.ready, `${m.key} 의 ready 가 기대와 다름`).toBe(EXPECTED_READY.has(m.key));
     }

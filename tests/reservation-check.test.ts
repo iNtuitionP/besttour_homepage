@@ -1257,9 +1257,10 @@ describe("8. 컴포넌트·페이지 정적", () => {
     expect(item?.ready).toBe(true);
     expect(item?.href).toBe("/reservation/check");
     expect(existsSync(path.join(ROOT, PAGE))).toBe(true);
-    // P6-3 이 about·location·fleet·fares·notices·gallery 를 올렸다(ready 전체 집합은 tests/layout.test.ts EXPECTED_READY 와 같다).
+    // P6-3 이 about·location·fleet·fares·notices·gallery 를 올렸고, P7-6(사용자 결정)이 location·fares 항목을 메뉴에서 지웠다
+    // (ready 전체 집합은 tests/layout.test.ts EXPECTED_READY 와 같다).
     expect(LEGACY_MENU.filter((m) => m.ready).map((m) => m.key).sort()).toEqual(
-      ["about", "fares", "fleet", "gallery", "guide", "location", "notices", "quote", "reservationCheck"],
+      ["about", "fleet", "gallery", "guide", "notices", "quote", "reservationCheck"],
     );
   });
 

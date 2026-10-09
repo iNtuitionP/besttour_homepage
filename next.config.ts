@@ -13,7 +13,8 @@ const withNextIntl = createNextIntlPlugin();
  *
  * 규칙
  *   - 목적지는 **로케일 prefix 없는 경로**다. `/ko/about` 로 보내면 next-intl 미들웨어가 307 을 한 번 더 태운다.
- *   - 목적지는 `lib/legacy-menu-map.ts` 의 ready 항목(또는 홈)뿐이다. 살아 있지 않은 곳으로 보내지 않는다.
+ *   - 목적지는 `lib/legacy-menu-map.ts` 의 ready 항목 · 홈 · 살아 있는 페이지 안 구역(`/about#location` · `/#routes`)뿐이다.
+ *     살아 있지 않은 곳으로 보내지 않는다(tests/redirects.test.ts 가 구역 id 의 실재까지 본다).
  *   - `/css/*` 는 옮기지 않는다 — 자산 404 는 정상이다. HTML 문서만 옮긴다.
  *   - 목적지를 확정하지 못한 옛 URL 은 **표에서 뺀다**. 매칭 없는 404(정상 문서)가 잘못된 리다이렉트보다 낫다.
  *
@@ -51,8 +52,8 @@ const LEGACY_URLS: readonly LegacyRedirect[] = [
     destination: "/fleet",
   })),
 
-  // 차량운임료 (옛 요금표 → 견적 산정 기준 페이지)
-  { source: LEGACY_PAGE, query: { key: "bo_page", value: "intro11" }, destination: "/fares" },
+  // 차량운임료 (옛 요금표 → 홈 대표 노선). P7-6: /fares 를 지웠다 — 두 번 튀지 않게 홈 `#routes` 로 바로 보낸다.
+  { source: LEGACY_PAGE, query: { key: "bo_page", value: "intro11" }, destination: "/#routes" },
 
   // 견적의뢰 > 이용안내 (이용 절차 + 운송약관)
   { source: LEGACY_PAGE, query: { key: "bo_page", value: "estimate" }, destination: "/guide" },
@@ -73,17 +74,20 @@ const LEGACY_URLS: readonly LegacyRedirect[] = [
 ];
 
 /**
- * P3-8 — 이 사이트가 스스로 없앤 경로. 6단계 견적 위저드(/quote)와 그 완료 화면(/quote/done)을 지우고 접수를 홈 간편 견적 하나로 모았다.
- * 이미 나간 링크(문자·즐겨찾기·검색 결과)가 404 가 되지 않게 홈의 견적 위젯 앵커로 영구 리디렉트한다. 쿼리(옛 프리필·`?code=`)는
- * Next 규칙대로 목적지에 그대로 붙는다 — 홈은 그 쿼리를 읽지 않는다(정적 페이지). 옛 사이트 URL 표(LEGACY_URLS)와는 계약이 달라
+ * 이 사이트가 스스로 없앤 경로. 이미 나간 링크(문자·즐겨찾기·검색 결과)가 404 가 되지 않게 홈의 해당 구역으로 영구 리디렉트한다.
+ * 쿼리는 Next 규칙대로 목적지에 그대로 붙는다 — 홈은 그 쿼리를 읽지 않는다(정적 페이지). 옛 사이트 URL 표(LEGACY_URLS)와는 계약이 달라
  * (로케일별 목적지 · 쿼리 매칭 없음) 따로 둔다. tests/redirects.test.ts §1-b 가 잠근다.
- *   ko(접두 없음) → `/#quote` · en → `/en#quote`. `/ko/quote` 는 미들웨어가 먼저 `/quote` 로 보내고 여기서 다시 한 번 튄다.
+ *   P3-8 — 6단계 견적 위저드(/quote)와 완료 화면(/quote/done) → 홈 간편 견적 `#quote`.
+ *   P7-6 — 차량운임료(/fares, 사용자 결정 2026-10-09 로 삭제) → 홈 대표 노선 지도 `#routes`(16개 노선 · Top-5 고지가 그대로 있다).
+ *   ko(접두 없음) → `/#…` · en → `/en#…`. `/ko/quote`·`/ko/fares` 는 미들웨어가 먼저 접두 없는 경로로 보내고 여기서 다시 한 번 튄다.
  */
 const RETIRED_ROUTES: readonly { source: string; destination: string }[] = [
   { source: "/quote", destination: "/#quote" },
   { source: "/quote/done", destination: "/#quote" },
   { source: "/en/quote", destination: "/en#quote" },
   { source: "/en/quote/done", destination: "/en#quote" },
+  { source: "/fares", destination: "/#routes" },
+  { source: "/en/fares", destination: "/en#routes" },
 ];
 
 const nextConfig: NextConfig = {
@@ -102,7 +106,7 @@ const nextConfig: NextConfig = {
       statusCode: 301,
       ...(query ? { has: [{ type: "query" as const, key: query.key, value: query.value }] } : {}),
     }));
-    // 옛 URL 이 아니라 이 사이트가 없앤 경로(P3-8) — 같은 301 규칙.
+    // 옛 URL 이 아니라 이 사이트가 없앤 경로(P3-8 · P7-6) — 같은 301 규칙.
     const retired = RETIRED_ROUTES.map(({ source, destination }) => ({ source, destination, statusCode: 301 }));
     return [...legacy, ...retired];
   },

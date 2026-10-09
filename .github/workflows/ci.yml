@@ -264,16 +264,18 @@ jobs:
           # ADMIN_EMAILS 가 없는 잡이므로 로그인은 닫힌 상태로 떠야 한다(fail-closed).
           grep -q 'disabled' /tmp/admin-login.html || { echo "/admin/login is open without ADMIN_EMAILS"; exit 1; }
 
-      - name: Assert the quick quote lives on the home page and the retired /quote redirects there (P3-8)
+      - name: Assert the quick quote lives on the home page and the retired /quote and /fares redirect there (P3-8 · P7-6)
         run: |
           # P3-8: 6단계 위저드(/quote)를 지우고 홈 간편 견적 하나로 모았다. 홈은 ISR 이므로 폼 토큰을 HTML 에 굽지 않는다 —
           # 구우면 1시간 뒤 전원 bot 이다(FORM_MAX_AGE_MS). 토큰은 모달을 열 때 서버액션(actions/quote-form-token.ts)으로 받는다.
           h=$(curl -s -D /tmp/home.h -o /tmp/home.html "http://127.0.0.1:3111/")
           grep -q '^HTTP/1.1 200' /tmp/home.h || { echo "/ is not 200"; cat /tmp/home.h; exit 1; }
           grep -q 'id="quote"' /tmp/home.html || { echo "home has no #quote anchor (quick quote widget)"; exit 1; }
+          grep -q 'id="routes"' /tmp/home.html || { echo "home has no #routes anchor (showcase routes map)"; exit 1; }
           if grep -q 'name="formToken"' /tmp/home.html; then echo "home HTML carries a baked formToken — it would expire for everyone"; exit 1; fi
           # 옛 경로 — 영구 리디렉트(301)로 홈 #quote 에. 쿼리(옛 프리필·?code=)는 따라가도 된다(홈은 읽지 않는다).
-          for pair in "/quote|/#quote" "/quote/done?code=ABCDEFGH|#quote" "/en/quote|/en#quote" "/en/quote/done|/en#quote"; do
+          # P7-6: 지운 차량운임료(/fares)는 홈 대표 노선(#routes)으로.
+          for pair in "/quote|/#quote" "/quote/done?code=ABCDEFGH|#quote" "/en/quote|/en#quote" "/en/quote/done|/en#quote" "/fares|/#routes" "/en/fares|/en#routes"; do
             src=${pair%%|*}; want=${pair##*|}
             r=$(curl -s -D- -o /dev/null "http://127.0.0.1:3111$src")
             printf '%s\n' "$r" | grep -q '^HTTP/1.1 301' || { echo "$src is not 301"; printf '%s\n' "$r"; exit 1; }
@@ -285,7 +287,8 @@ jobs:
         run: |
           # lib/legacy-menu-map.ts 의 ready:true 항목이 가리키는 경로 + 예약확인. 여기 없는 경로가 ready 로 올라가면 tests/layout.test.ts 가 잡고,
           # 여기 있는 경로가 죽으면 이 step 이 잡는다. 존재하지 않는 공지 id 는 404 문서여야 한다(열거·색인 방지).
-          for p in /about /fleet /fares /notices /gallery /reservation/check /guide /privacy /terms; do
+          # P7-6: /fares 는 지웠다(위 step 이 301 → /#routes 를 본다).
+          for p in /about /fleet /notices /gallery /reservation/check /guide /privacy /terms; do
             code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:3111$p")
             [ "$code" = "200" ] || { echo "$p -> $code (expected 200)"; exit 1; }
             echo "$p -> 200"
