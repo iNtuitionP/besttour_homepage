@@ -59,7 +59,7 @@ const FIXED = {
   // P7-3 독립 리뷰 P2-6① — 견적 모달의 접힌 카드 전용(접힌 자리는 영문 요약, 한국어 원문은 "View details" 안). 컨트롤러 작성 문안.
   officialNoticeCollapsed:
     "The Korean original under “View details” is the official, legally binding version. If you need help understanding it, please contact us before booking.",
-  bookingNotice: "We will contact you once your booking is confirmed. Payment is taken only for confirmed bookings.",
+  bookingNotice: "We will contact you after reviewing your request. Payment is taken only for confirmed bookings.",
   showcaseNotice:
     "Sample quotes for popular routes · Based on a 45-seat coach, same-day round trip · Final quote confirmed after consultation",
   airportMark: "Airport Pickup & Drop-off (Transfer Specialists)",
@@ -283,7 +283,8 @@ describe("4. 원장 UI 문구 — ko 는 원장 그대로, en 은 컨트롤러 �
   });
 
   test("ko verbatim 두 문구는 CLAUDE.md §3 원문과 바이트 일치 (ko 는 한 글자도 바꾸지 않았다)", () => {
-    expect(VERBATIM.bookingNotice).toBe("사장님 확정 후 연락드리며, 확정된 예약만 결제 진행됩니다.");
+    // P7-7(2026-10-09, 사용자 지시): '사장님 확정 후' → '담당자 확인 후'. en 짝(FIXED.bookingNotice)에는 "owner" 가 없어 그대로다.
+    expect(VERBATIM.bookingNotice).toBe("담당자 확인 후 연락드리며, 확정된 예약만 결제 진행됩니다.");
     expect(VERBATIM.showcaseNotice).toBe("대표 노선 예시 견적 · 45인승 당일왕복 기준 · 실제 견적은 상담 후 확정");
   });
 

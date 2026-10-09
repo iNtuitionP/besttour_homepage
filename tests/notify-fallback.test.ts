@@ -595,13 +595,22 @@ describe("4. 문안", () => {
   // 기준선(BASELINE) 해시를 뜬 시점(P4-4, P1-7 이전) 고객 문안의 전화번호 — 역사 값이다. P7-5 에서 원장의 COMPANY.tel 필드를 지웠으므로
   // 해시 대조용으로만 여기 적는다(배포 표면 밖 — tests/contact-phone.test.ts §0 이 표면의 0건을 잠근다).
   const BASELINE_TEL = "1566-6188";
+  // 기준선을 뜬 시점의 verbatim — 역사 값이다. P7-7(2026-10-09, 사용자 지시)에서 원장 VERBATIM.bookingNotice 의 앞머리가
+  // '사장님 확정 후' → '담당자 확인 후' 로 바뀌었다(손님 문자에 "사장님" 을 쓰지 않는다). 해시 대조용으로만 여기 적는다.
+  const BASELINE_BOOKING_NOTICE = "사장님 확정 후 연락드리며, 확정된 예약만 결제 진행됩니다.";
 
   // P1-7(2026-09-22): 고객 문안 2종의 "문의·변경·취소" 전화가 대표전화(COMPANY.tel)에서 예약·상담 전화(COMPANY.consultTel)로 바뀌었다
   // (사용자 결정 2026-09-21 — 손님에게 전화하라고 안내하는 자리는 전부 010-6362-6188). 지문은 **그 번호만** 되돌려 대조한다 —
   // 번호 말고 한 글자라도 바뀌었으면 여기서 멈춘다. 번호가 실제로 바뀌었다는 것도 함께 단언한다.
   // P1-7 R2(2026-09-22): 고객 확정 문안에 약관 제8조가 약속한 고지 줄 넷(취소·환불 · 청약철회 · 입금 계좌 · 이용안내 링크)을 더했다.
   // 지문은 **그 네 줄만 걷어내고 번호만 되돌리면** 옛 문안과 바이트 동일해야 한다 — 다른 글자는 한 자도 바뀌지 않았다는 뜻이다.
-  test("§7 기존 문안 4종 바이트 무변경 — P4-4 는 추가만 했다 (P1-7: 고객 문안의 전화번호 · R2: 확정 문안의 고지 줄 넷)", () => {
+  // P7-7(2026-10-09): 고객 문안 2종의 verbatim 한 줄이 새 문구로 바뀌었다. 지문은 **그 한 줄만** 옛 문구로 되돌려 대조한다 —
+  // 고객 문안에서 바뀐 것이 번호·고지 줄 넷·verbatim 한 줄뿐이고 다른 글자는 한 자도 바뀌지 않았다는 뜻이다.
+  // 새 문구가 실제로 들어 있고 옛 문구는 남지 않았다는 것, 그리고 사장님 문안 2종은 되돌림 없이 그대로라는 것도 함께 단언한다.
+  test("§7 기존 문안 4종 바이트 무변경 — P4-4 는 추가만 했다 (P1-7: 고객 문안의 전화번호 · R2: 확정 문안의 고지 줄 넷 · P7-7: verbatim 한 줄)", () => {
+    expect(VERBATIM.bookingNotice).not.toBe(BASELINE_BOOKING_NOTICE);
+    // 바뀐 것은 앞머리 한 구절뿐이다 — 쉼표 뒤("확정된 예약만 결제 진행됩니다.")는 그대로다.
+    expect(VERBATIM.bookingNotice.split(", ")[1]).toBe(BASELINE_BOOKING_NOTICE.split(", ")[1]);
     expect(Object.keys(BASELINE).sort()).toEqual([...TEMPLATE_KEYS].sort());
     const addedLines = new Set([CANCELLATION.smsLine, WITHDRAWAL.smsLine, PAYMENT.accountLine, `자세한 내용 ${ORIGIN}${GUIDE_PATH}`]);
     for (const key of TEMPLATE_KEYS) {
@@ -617,12 +626,20 @@ describe("4. 문안", () => {
       if (key === "confirmed.customer.sms") {
         for (const s of [v.sms, v.lms]) for (const l of addedLines) expect(s.split("\n"), `${key} 에 ${l} 줄이 없다`).toContain(l);
       }
-      const asBefore = (s: string) => (customer ? withoutAdded(s).split(COMPANY.consultTel).join(BASELINE_TEL) : s);
+      const asBefore = (s: string) =>
+        customer
+          ? withoutAdded(s).split(COMPANY.consultTel).join(BASELINE_TEL).split(VERBATIM.bookingNotice).join(BASELINE_BOOKING_NOTICE)
+          : s;
       if (customer) {
         for (const s of [v.sms, v.lms]) {
           expect(s, `${key} 에 예약·상담 전화가 없다`).toContain(COMPANY.consultTel);
           expect(s, `${key} 에 대표전화가 남았다`).not.toContain(BASELINE_TEL);
+          expect(s.split(VERBATIM.bookingNotice).length - 1, `${key} 에 새 verbatim 이 정확히 한 번 있지 않다`).toBe(1);
+          expect(s, `${key} 에 옛 verbatim 이 남았다`).not.toContain(BASELINE_BOOKING_NOTICE);
         }
+      } else {
+        // 사장님 문안은 verbatim 을 싣지 않는다 — 되돌림 없이 그대로 대조된다(P7-7 은 사장님 문안을 건드리지 않았다).
+        for (const s of [v.sms, v.lms]) expect(s, `${key} 에 verbatim 이 있다`).not.toContain(VERBATIM.bookingNotice);
       }
       expect(sha(asBefore(v.sms)), `${key}.sms 의 바이트가 바뀌었다`).toBe(BASELINE[key].sms);
       expect(sha(asBefore(v.lms)), `${key}.lms 의 바이트가 바뀌었다`).toBe(BASELINE[key].lms);
