@@ -2,7 +2,7 @@
  * P4-3 — 문자·알림톡 문안 (플랜 v4 P4-3 · CLAUDE.md §3 · ADR-7).
  *
  * 이 태스크가 지키는 것:
- *   1. **verbatim 은 한 바이트도 바뀌지 않는다.** "사장님 확정 후 연락드리며, 확정된 예약만 결제 진행됩니다." 는 원장
+ *   1. **verbatim 은 한 바이트도 바뀌지 않는다.** "담당자 확인 후 연락드리며, 확정된 예약만 결제 진행됩니다." 는 원장
  *      (lib/legal/disclosures.ts VERBATIM.bookingNotice)에서 import 하고, 렌더 결과 안에서 **바이트 열 그대로** 발견돼야 한다.
  *      길이 때문에 줄여야 하면 다른 문장을 줄인다 — 이 문장은 남는다. 아래 §1 이 hex 비교로 잠근다.
  *   2. **정보성 문자에 광고 표현 0.** 섞이면 정보통신망법 §50 상 광고성 정보가 되어 `(광고)` 표기·수신거부 번호 의무가 생긴다.
@@ -149,7 +149,7 @@ describe("1. verbatim 보존", () => {
   test("변수 치환 뒤에도 verbatim 은 그대로다 — 값이 무엇이든", () => {
     const odd: CustomerVars[] = [
       { publicCode: "", origin: "" },
-      { publicCode: "사장님 확정 후", origin: "https://example.test/a?b=c&d=e" },
+      { publicCode: "담당자 확인 후", origin: "https://example.test/a?b=c&d=e" },
       { publicCode: "A".repeat(200), origin: ORIGIN },
     ];
     for (const vars of odd) {
@@ -161,7 +161,7 @@ describe("1. verbatim 보존", () => {
 
   /**
    * 확정 문자의 배치 잠금. verbatim 은 한 글자도 못 고치므로 **주변을 고쳤다**:
-   * "예약이 확정되었습니다" 바로 뒤에 "사장님 확정 후 연락드리며" 가 붙으면 아직 확정 전인 것처럼 읽힌다.
+   * "예약이 확정되었습니다" 바로 뒤에 "담당자 확인 후 연락드리며" 가 붙으면 아직 확정 전인 것처럼 읽힌다.
    * 확정 선언은 맨 위, verbatim 은 맨 아래(사이트 카드의 상시 고지 자리와 같은 위치)여야 한다.
    */
   test("확정 문자 — verbatim 은 마지막 줄이고, 그 바로 앞 문장은 확정 선언이 아니다", () => {
@@ -186,7 +186,7 @@ describe("1. verbatim 보존", () => {
     expect(lms.indexOf(VERBATIM.bookingNotice)).toBeGreaterThan(lms.indexOf(PAYMENT.line));
   });
 
-  test("사장님 템플릿에는 verbatim 을 넣지 않는다 — 사장님에게 '사장님 확정 후' 라고 보내지 않는다", () => {
+  test("사장님 템플릿에는 verbatim 을 넣지 않는다 — 사장님에게 '담당자 확인 후 연락드리며' 라고 보내지 않는다", () => {
     for (const key of OWNER_KEYS) {
       expect(renderTemplate(key, OWNER).text).not.toContain(VERBATIM.bookingNotice);
     }

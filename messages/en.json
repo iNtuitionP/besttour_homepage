@@ -90,7 +90,7 @@
       "widget": {
         "label": "Quote request widget",
         "title": "Request a quote",
-        "sub": "Leave your dates and group size, and the owner will review them and contact you",
+        "sub": "Leave your dates and group size, and we will review them and contact you",
         "origin": "From",
         "dest": "To",
         "date": "Departure date",
@@ -248,7 +248,7 @@
         "title": "Your quote request has been received",
         "codeLabel": "Request number",
         "codeHint": "You can look up your request in Check Booking with this number and the last 4 digits of your mobile number.",
-        "noCode": "We will contact you after reviewing your request.",
+        "noCode": "Your quote request has been received.",
         "sub": "There is no online payment. You will not be charged anything before your booking is confirmed. If it is urgent, feel free to call {tel}.",
         "check": "Check Booking",
         "call": "Call",
@@ -421,7 +421,7 @@
       "body": "If you need help understanding it, please contact us before booking."
     },
     "verbatim": {
-      "bookingNotice": "We will contact you once your booking is confirmed. Payment is taken only for confirmed bookings.",
+      "bookingNotice": "We will contact you after reviewing your request. Payment is taken only for confirmed bookings.",
       "showcaseNotice": "Sample quotes for popular routes · Based on a 45-seat coach, same-day round trip · Final quote confirmed after consultation"
     },
     "pages": {

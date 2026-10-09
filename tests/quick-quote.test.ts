@@ -789,9 +789,11 @@ describe("8. 수정 라운드 — 토큰 재발급 · 배경 inert · 성공 뒤
     const enSub = pick(en, "home.hero.widget.sub");
     expect(koSub).not.toMatch(/문자|SMS/);
     expect(enSub).not.toMatch(/text message|SMS|\btext\b/i);
-    // 모달 요약 안내("사장님이 전화로 확인합니다")와 같은 흐름 — 사장님이 확인하고 연락한다
-    expect(koSub).toMatch(/사장님/);
-    expect(koSub).toMatch(/연락/);
+    // 모달 요약 안내("전화로 확인해 드립니다")와 같은 흐름 — 확인하고 연락한다.
+    // P7-7(2026-10-09, 사용자 지시): 손님 화면에 "사장님" 을 쓰지 않는다 — 옛 단언(/사장님/ 이 있다)을 뒤집었다.
+    expect(koSub).not.toMatch(/사장님/);
+    expect(koSub).toMatch(/확인 후 연락/);
+    expect(enSub).not.toMatch(/owner/i);
     expect(enSub).toMatch(/contact you/i);
   });
 

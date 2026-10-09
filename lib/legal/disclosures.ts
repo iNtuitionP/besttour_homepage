@@ -50,7 +50,8 @@ export const RELATED_COMPANY = {
 
 // ── verbatim — 한 바이트도 바꾸지 마라 (CLAUDE.md §3) ────────────────────
 export const VERBATIM = {
-  bookingNotice: "사장님 확정 후 연락드리며, 확정된 예약만 결제 진행됩니다.",
+  // 사용자 지시(2026-10-09): 손님 화면·문자에 "사장님" 을 쓰지 않는다 → "담당자". 그 밖의 글자는 그대로.
+  bookingNotice: "담당자 확인 후 연락드리며, 확정된 예약만 결제 진행됩니다.",
   showcaseNotice: "대표 노선 예시 견적 · 45인승 당일왕복 기준 · 실제 견적은 상담 후 확정",
   source: "CLAUDE.md §3",
 } as const;
