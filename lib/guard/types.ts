@@ -64,7 +64,10 @@ export interface TurnstileDeps {
   secret: string;
   /** siteverify 응답 hostname 허용 목록(소문자). GUARD_ALLOWED_HOSTS. */
   allowedHosts: readonly string[];
-  /** 위젯 data-action 과 비교할 값. 운영은 항상 TURNSTILE_ACTION('reserve'). null 은 비교 생략 — Cloudflare 더미 키 응답에 action 이 없어 라이브 스모크에서만 쓴다. */
+  /**
+   * 위젯 data-action 과 비교할 값. 운영은 접수 TURNSTILE_ACTION('reserve') · 예약 조회 TURNSTILE_CHECK_ACTION('check', T2-5).
+   * null 은 비교 생략 — Cloudflare 더미 키 응답에 action 이 없어 라이브 스모크에서만 쓴다.
+   */
   action: string | null;
   timeoutMs: number;
 }

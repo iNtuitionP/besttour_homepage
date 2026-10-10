@@ -237,9 +237,7 @@
       },
       "done": {
         "title": "Your quote request has been received",
-        "codeLabel": "Request number",
-        "codeHint": "You can look up your request in Check Booking with this number and the last 4 digits of your mobile number.",
-        "noCode": "Your quote request has been received.",
+        "checkHint": "You can see your request in Check Booking with your mobile number and name.",
         "sub": "You will not be charged anything before your booking is confirmed. If it is urgent, feel free to call {tel}.",
         "check": "Check Booking",
         "call": "Call",
@@ -265,28 +263,31 @@
   "reservationCheck": {
     "meta": {
       "title": "Check Booking — {brand}",
-      "description": "Check the status of your charter bus booking request with the request number from your text message and the last 4 digits of your mobile number."
+      "description": "Check the status of your charter bus booking request with the mobile number and name you used for your request."
     },
     "eyebrow": "Check Booking",
     "title": "Check your booking request",
-    "sub": "Enter the request number from your confirmation text and the last 4 digits of your mobile number. You can see your request status and trip schedule.",
+    "sub": "Enter the mobile number and name you used for your quote request. You can see the status and trip schedule of your upcoming bookings.",
     "form": {
       "required": "Required",
-      "codeLabel": "Request number",
-      "codeHint": "The 8 letters and numbers we sent you by text. Not case-sensitive.",
-      "codePlaceholder": "8-character request number",
-      "phoneLast4Label": "Last 4 digits of your mobile number",
-      "phoneLast4Hint": "The last 4 digits of the mobile number you entered with your request.",
+      "legacyCodeNote": "You no longer need the request number from earlier text messages.",
+      "phoneLabel": "Mobile number",
+      "phoneHint": "The number you entered with your request. For a non-Korean number, start with + and the country code.",
+      "nameLabel": "Name on the booking",
+      "nameHint": "The name you entered with your request. Spacing does not matter.",
+      "security": "Security check",
+      "notReadyTitle": "Online lookup is not available yet",
+      "notReadyBody": "You cannot look up bookings online right now. Please call {tel} and we will help you right away.",
       "submit": "Look up booking",
       "submitting": "Looking up…",
       "errorSummary": "Please check",
-      "codeError": "Please enter the 8-character request number exactly.",
-      "phoneLast4Error": "Please enter the last 4 digits of your mobile number in numbers.",
-      "help": "If you can't find your request number, we can check it for you by phone."
+      "phoneError": "Please enter your mobile number like 010-0000-0000. For a non-Korean number, enter + and the country code followed by digits only.",
+      "nameError": "Please enter the name on the booking (up to 30 characters).",
+      "help": "If you can't remember the number or name you used, we can check it for you by phone."
     },
     "card": {
       "title": "Request details",
-      "code": "Request number",
+      "count": "Upcoming bookings: {n}",
       "status": "Status",
       "name": "Booked by",
       "phone": "Mobile",
@@ -319,8 +320,8 @@
       "oneway_oneway": "One way + one way"
     },
     "errors": {
-      "validation": "Please check the information you entered.",
-      "not_found": "We could not find a booking matching the request number and last digits you entered. Please check the request number in your text message.",
+      "not_found": "We could not find an upcoming booking for the mobile number and name you entered. Please check the number and name you used for your request. Past trips and cancelled bookings are not shown here. If you have questions, please call {tel}.",
+      "turnstile": "The security check was not completed or has expired. Please complete the security check and look up again.",
       "ratelimit": "You have looked up several times in a short period. Please try again in a moment, or call {tel}.",
       "infra": "We could not look up your booking because of a temporary error. Please try again in a moment, or if it is urgent, call {tel}.",
       "server": "We could not look up your booking because of a temporary error. Please try again in a moment, or if it is urgent, call {tel}."

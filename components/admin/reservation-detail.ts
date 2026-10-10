@@ -20,21 +20,8 @@ export function splitNameTemplate(tpl: unknown): { before: string; after: string
   return { before: tpl.slice(0, at), after: tpl.slice(at + "{name}".length) };
 }
 
-const KR_MOBILE = /^01\d{8,9}$/;
-
-/** 상세의 큰 번호 — `+8210…` 휴대전화는 `010-1234-5678`(3-4-4 · 10자리는 3-3-4), 그 밖은 저장값 그대로(양끝 공백만 걷는다). */
-export function detailPhoneText(stored: string): string {
-  const v = (stored ?? "").trim();
-  if (v.startsWith("+82")) {
-    const domestic = `0${v.replace(/\D/g, "").slice(2)}`;
-    if (KR_MOBILE.test(domestic)) {
-      return domestic.length === 11
-        ? `${domestic.slice(0, 3)}-${domestic.slice(3, 7)}-${domestic.slice(7)}`
-        : `${domestic.slice(0, 3)}-${domestic.slice(3, 6)}-${domestic.slice(6)}`;
-    }
-  }
-  return v;
-}
+// 상세의 큰 번호(국내 휴대전화 → 010-1234-5678)는 lib/phone-format.ts `domesticPhoneText` 다 — 사장님 접수 알림 문자도 같은 표기를 써서
+// lib 로 옮겼다(T2-4 · 결정 12, 2026-10-10 · 옛 이름 detailPhoneText).
 
 /** 문자 보내기 — 전체 번호(숫자와 + 만). 숫자가 하나도 없으면 null — 버튼을 그리지 않는다(reservation-list.ts telHref 와 같은 규칙). */
 export function smsHref(stored: string): string | null {

@@ -108,7 +108,7 @@ export function QuoteWidget({
   }, []);
   const onWidgetErrors = useCallback((errs: FieldError[]) => setErrors(errs), []);
   // 접수 성공 — 칸을 처음 상태로(P3-8 리뷰 P2-11). 완료 화면을 닫고 버튼을 다시 눌러도 같은 내용이 또 접수되지 않는다.
-  // 모달의 완료 화면은 칸 값을 쓰지 않으므로(접수번호만) 여기서 비워도 화면이 바뀌지 않는다.
+  // 모달의 완료 화면은 칸 값을 쓰지 않으므로(조회 안내 문구뿐 — T2-5) 여기서 비워도 화면이 바뀌지 않는다.
   const onSubmitted = useCallback(() => {
     setFields(initialWidgetFields(defaults));
     setErrors([]);

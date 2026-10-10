@@ -53,9 +53,11 @@ const VEHICLES = "vehicles";
 
 /**
  * 고객 문안이 읽는 전부. **한 컬럼이다.**
- * 고객 문자 2종(created·confirmed)이 쓰는 값은 접수번호와 사이트 원점뿐이고, 원점은 DB 가 아니라 주입값이다
- * (lib/notify/templates.ts `CustomerVars`). 운행일·구간·차량을 고객 문자에 넣지 않는 것은 실수가 아니라 설계다 —
- * 문안이 "접수 내용은 예약확인 화면에서 접수번호와 휴대폰 뒷 4자리로 확인하실 수 있습니다" 로 안내한다.
+ * 고객 변수(`CustomerVars`)는 접수번호와 사이트 원점뿐이고, 원점은 DB 가 아니라 주입값이다(lib/notify/templates.ts).
+ * T2-5(결정 5, 2026-10-10)부터 **고객 문자 2종(created·confirmed)은 접수번호를 쓰지 않는다** — 예약확인이 휴대폰 번호 + 예약자 이름으로
+ * 바뀌었다. 그래도 public_code 를 계속 읽는 이유: 같은 `CustomerVars` 를 사장님 발송 실패 알림(lib/notify/fallback.ts)이 받고, 그 알림은
+ * 접수번호로 어느 예약인지 가리킨다. 운행일·구간·차량을 고객 문자에 넣지 않는 것은 실수가 아니라 설계다 —
+ * 문안의 "■ 예약 확인" 칸이 예약확인 주소와 "휴대폰 번호와 예약자 이름으로 조회" 를 안내한다(T2-4 블록 서식).
  * 그래서 쓰지 않는 값은 읽지도 않는다(lib/queries/recent.ts 가 public_code 조차 읽지 않는 것과 같은 원칙).
  */
 export const CUSTOMER_VARS_COLUMNS = ["public_code"] as const;
@@ -63,7 +65,8 @@ export const CUSTOMER_VARS_COLUMNS = ["public_code"] as const;
 /**
  * 사장님 접수 알림이 읽는 전부. 문안(templates.ts `ownerVariants`)이 실제로 쓰는 11컬럼이다 —
  * 접수번호·접수 경로·성명·연락처·차량·구간·운행일(출발·도착)·대수·인원. `reservations.id` 는 인자로 이미 받았으므로 읽지 않는다.
- * P3-8: `intake`(간편 접수면 차종·시각 대신 "전화로 확인" 을 적는다) · `return_at`(간편 접수의 도착일)을 더했다.
+ * P3-8: `intake`(제목의 "(간편 접수)"·"(상세 접수)" 와 차종·시각 줄의 유무를 가른다) · `return_at`(간편 접수의 도착일)을 더했다.
+ * 표시 형식(010 국내 표기 · "11월 3일(화)" 날짜 · 줄 접기)은 문안 모듈이 보낼 때 정한다 — 여기서는 저장값을 그대로 넘긴다(T2-4).
  */
 export const OWNER_VARS_COLUMNS = [
   "public_code",
@@ -330,7 +333,7 @@ export function templateVars(deps: TemplateVarsDeps): TemplateVarsPort {
         };
       }
 
-      // 위저드 접수분 — 옛 문안 그대로. 차종·대수가 비어 있으면 반쯤 빈 문안을 보내지 않고 throw(0023 CHECK 가 막는 모양이다).
+      // 위저드 접수분 — 시각·차량·대수까지 싣는다. 차종·대수가 비어 있으면 반쯤 빈 문안을 보내지 않고 throw(0023 CHECK 가 막는 모양이다).
       const slug = requiredString(row, "vehicle_slug");
       // KST 벽시계 변환은 lib/reservation-check/view.ts kstWallClock 하나뿐이다(서버 TZ 와 무관한 고정 +09:00).
       // 사본을 두면 한쪽만 고쳐지고 다른 쪽이 계속 틀린다 — 형식이 유효하지 않으면 여기서 throw 한다.

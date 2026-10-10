@@ -17,7 +17,7 @@ import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 
 import { RATE_LIMITS, RATE_LIMIT_TIMEOUT_MS } from "./rateLimit";
-import { TURNSTILE_ACTION, TURNSTILE_TIMEOUT_MS } from "./turnstile";
+import { TURNSTILE_ACTION, TURNSTILE_CHECK_ACTION, TURNSTILE_TIMEOUT_MS } from "./turnstile";
 import type { GuardDeps, IpBucket, RateLimiterSet, RateWindow } from "./types";
 
 /** HMAC 키·해시 salt 로 쓰이므로 최소 32자(예: `openssl rand -hex 32` = 64자). */
@@ -106,18 +106,25 @@ export function guardSecret(): string {
   return secret;
 }
 
-export function defaultGuardDeps(): GuardDeps {
-  const secret = guardSecret();
-
+/**
+ * Turnstile siteverify 에 필요한 env 두 가지(시크릿·허용 호스트). 접수와 예약 조회가 같은 규칙으로 읽는다 —
+ * 빠지면 throw, 운영(VERCEL_ENV=production)에 Cloudflare 더미 시크릿이 있으면 throw. action 은 호출자가 각자 박는다(대조 값이 달라야 한다).
+ */
+function turnstileEnv(caller: string): { turnstileSecret: string; allowedHosts: string[] } {
   const turnstileSecret = process.env.TURNSTILE_SECRET_KEY ?? "";
-  if (turnstileSecret.length === 0) throw new Error("defaultGuardDeps: TURNSTILE_SECRET_KEY 가 설정되지 않았다");
+  if (turnstileSecret.length === 0) throw new Error(`${caller}: TURNSTILE_SECRET_KEY 가 설정되지 않았다`);
   if (process.env.VERCEL_ENV === "production" && DUMMY_TURNSTILE_SECRET.test(turnstileSecret)) {
-    throw new Error("defaultGuardDeps: 운영 환경에 Cloudflare 테스트용 TURNSTILE_SECRET_KEY 가 들어 있다 — 실키로 교체해야 한다");
+    throw new Error(`${caller}: 운영 환경에 Cloudflare 테스트용 TURNSTILE_SECRET_KEY 가 들어 있다 — 실키로 교체해야 한다`);
   }
 
   const allowedHosts = parseAllowedHosts(process.env.GUARD_ALLOWED_HOSTS);
-  if (allowedHosts.length === 0) throw new Error("defaultGuardDeps: GUARD_ALLOWED_HOSTS 가 비어 있다 (쉼표 구분 호스트 목록)");
+  if (allowedHosts.length === 0) throw new Error(`${caller}: GUARD_ALLOWED_HOSTS 가 비어 있다 (쉼표 구분 호스트 목록)`);
+  return { turnstileSecret, allowedHosts };
+}
 
+export function defaultGuardDeps(): GuardDeps {
+  const secret = guardSecret();
+  const { turnstileSecret, allowedHosts } = turnstileEnv("defaultGuardDeps");
   const { url, token } = upstashEnv("defaultGuardDeps");
 
   return {
@@ -137,20 +144,34 @@ export function defaultGuardDeps(): GuardDeps {
   };
 }
 
-/** 예약확인 조각 가드(lib/reservation-check/guards.ts runCheckGuards)가 받는 deps — Turnstile·타임트랩이 없다. */
-export type CheckGuardDeps = Pick<GuardDeps, "now" | "secret" | "rateLimit">;
+/** 예약확인 조각 가드(lib/reservation-check/guards.ts runCheckGuards)가 받는 deps — 접수와 달리 타임트랩만 없다(T2-5 부터 Turnstile 포함). */
+export type CheckGuardDeps = Pick<GuardDeps, "now" | "secret" | "turnstile" | "rateLimit">;
 
 /**
- * 예약확인(P6-3a) 전용 deps — GUARD_SECRET + Upstash 2종만 요구한다. Turnstile secret·허용 호스트는 읽지 않는다(예약확인은 Turnstile 을 쓰지 않는다 — 컨트롤러 결정).
+ * 예약확인 전용 deps — GUARD_SECRET + Turnstile(시크릿·허용 호스트) + Upstash 2종.
+ *
+ * T2-5(사장님 요청 1 · 결정 5, 2026-10-10)에서 **"예약확인은 Turnstile 을 쓰지 않는다"(P6-3a 컨트롤러 결정)를 번복했다.**
+ * 조회 키가 접수번호(31자 × 8 — 추측 불가)에서 휴대폰 번호 + 이름(남이 알 수도 있는 값)으로 바뀌어, IP 한도만으로는 번호 목록을
+ * 돌리는 자동 조회를 막기에 모자라다. 전화번호 단위 한도는 두지 않는다(결정 5 — 두면 국외이전 고지를 바꿔야 한다) — IP 한도 + Turnstile 로 막는다.
+ * action 은 TURNSTILE_CHECK_ACTION('check') — 접수 위젯('reserve') 토큰을 조회에 다시 쓰지 못한다(turnstile.ts 가 응답의 action 을 대조).
+ *
  * GUARD_SECRET 이 필요한 이유: rate limit 키는 sha256(secret + IP) 다(ipKey.ts) — secret 없는 해시는 IPv4 전 공간을 역산할 수 있어 hashIpKey 가 throw 한다.
  * 빠진 설정은 throw(fail-closed) — 호출자(actions/reservation-check.ts)는 infra 로 다룬다. limiter prefix 는 `guard:check:*` 로 접수(`guard:reserve:*`)와 분리된다.
  */
 export function checkGuardDeps(): CheckGuardDeps {
   const secret = guardSecret();
+  const { turnstileSecret, allowedHosts } = turnstileEnv("checkGuardDeps");
   const { url, token } = upstashEnv("checkGuardDeps");
   return {
     now: () => new Date(),
     secret,
+    turnstile: {
+      fetch: (input, init) => globalThis.fetch(input, init),
+      secret: turnstileSecret,
+      allowedHosts,
+      action: TURNSTILE_CHECK_ACTION,
+      timeoutMs: TURNSTILE_TIMEOUT_MS,
+    },
     rateLimit: {
       limiters: limitersFor(url, token, "check"),
       timeoutMs: RATE_LIMIT_TIMEOUT_MS,
@@ -158,8 +179,11 @@ export function checkGuardDeps(): CheckGuardDeps {
   };
 }
 
-/** 관리자 로그인(P5-1)이 받는 deps — 예약확인과 같은 모양(Turnstile·타임트랩 없음)이고 limiter prefix 만 `guard:admin:*` 로 갈린다. */
-export type AdminGuardDeps = CheckGuardDeps;
+/**
+ * 관리자 로그인(P5-1)이 받는 deps — Turnstile·타임트랩 없음, limiter prefix 만 `guard:admin:*`.
+ * 예전에는 `CheckGuardDeps` 의 별칭이었다. T2-5 에서 예약확인에 Turnstile 이 붙어 모양이 갈라졌으므로 따로 적는다(관리자 로그인은 그대로).
+ */
+export type AdminGuardDeps = Pick<GuardDeps, "now" | "secret" | "rateLimit">;
 
 /**
  * 관리자 로그인 링크 요청 전용 deps — GUARD_SECRET + Upstash 2종만 요구한다.

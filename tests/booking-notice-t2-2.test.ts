@@ -226,7 +226,6 @@ describe("2-b. 견적 위젯 소스 — 하단 안내 문단 0", () => {
 
 // ── 예약 확인 카드 — 접수(new) 상태에서만 ─────────────────────────────────────
 const ROW: ReservationCheckRow = {
-  public_code: "A2B3C4D5",
   name: "홍길동",
   phone: "+821012345678",
   status: "new",
@@ -305,15 +304,31 @@ describe("2-d. 문자·알림톡 — 확정에서 verbatim 삭제 · 접수에�
     expect(wholeLines(created.body, VERBATIM.bookingNotice)).toBe(1);
   });
 
+  // T2-4(2026-10-10 · 사장님 요청 8 · 사용자 승인 초안 · 위험 #9): 확정 문자·알림톡이 블록 서식으로 바뀌어 같은 고지가 다른 줄 모양으로 실린다 —
+  //   대금 지급  : PAYMENT.line(한 줄)        → `■ 대금` 의 PAYMENT.smsDeposit · smsBalance 두 항목
+  //   계좌       : PAYMENT.accountLine(한 줄) → PAYMENT.smsAccount 항목 + smsAccountHolder 이어지는 줄
+  //   취소·청약철회: 원장 그대로 — 항목 표시 "- " 가 앞에 붙는다. 취소는 CANCELLATION.smsItem(smsLine 에서 머리말 "취소·환불 : " 만 뺀
+  //                같은 문장 — 섹션 제목 "■ 취소·환불" 과 겹치지 않게, T2-4 후속), 청약철회는 WITHDRAWAL.smsLine
+  //   이용안내   : "자세한 내용 <주소>"          → "- 이용안내: <주소>"(알림톡은 버튼)
+  // 줄 전체 일치 단언을 새 줄 모양으로 바꿨다. **빠진 고지는 없다** — 약관 제8조 줄 넷과 계약 주체 줄은 그대로 있다.
   test("확정 문자·알림톡의 약관 제8조 줄(대금 지급 · 취소·환불 · 청약철회 · 계좌)과 계약 주체 줄은 그대로", () => {
     const v = renderVariants("confirmed.customer.sms", CUSTOMER);
     const confirmed = ALIMTALK_TEMPLATES.find((t) => t.event === "confirmed")!;
     for (const text of [v.sms, v.lms, confirmed.body]) {
-      for (const line of [PAYMENT.line, CANCELLATION.smsLine, WITHDRAWAL.smsLine, PAYMENT.accountLine]) expect(wholeLines(text, line), line).toBe(1);
+      for (const line of [
+        `- ${PAYMENT.smsDeposit}`,
+        `- ${PAYMENT.smsBalance}`,
+        `- ${PAYMENT.smsAccount}`,
+        `  ${PAYMENT.smsAccountHolder}`,
+        `- ${CANCELLATION.smsItem}`,
+        `- ${WITHDRAWAL.smsLine}`,
+      ]) {
+        expect(wholeLines(text, line), line).toBe(1);
+      }
       const rows = text.split("\n").filter((l) => l.trim().length > 0);
       expect(rows[rows.length - 1]).toBe(CONTRACT_PARTY_LINE);
     }
-    for (const text of [v.sms, v.lms]) expect(wholeLines(text, `자세한 내용 ${CUSTOMER.origin}${GUIDE_PATH}`)).toBe(1);
+    for (const text of [v.sms, v.lms]) expect(wholeLines(text, `- 이용안내: ${CUSTOMER.origin}${GUIDE_PATH}`)).toBe(1);
   });
 });
 

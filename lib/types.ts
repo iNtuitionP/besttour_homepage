@@ -326,7 +326,10 @@ export interface OutboxRow extends NewOutboxRow {
 export interface CreateReservationResult {
   /** reservations.id (uuid). */
   reservationId: string;
-  /** 방문자에게 보여 주는 비순차 코드(8자). 예약확인(P6-3a)은 이것 + 휴대폰 뒷4자리로 조회한다. */
+  /**
+   * 비순차 코드(8자) — 관리자 화면·발송 기록용 내부 식별자. T2-5(결정 5)부터 손님 화면·손님 문자에는 보이지 않는다
+   * (예약확인은 휴대폰 번호 + 예약자 이름). 서버액션 결과(submitResult)에는 남아 있으나 완료 화면이 표시하지 않는다.
+   */
   publicCode: string;
   /** 통지 아웃박스에 계획한 행이 전부 들어갔는가. false = 예약은 저장됐으나 통지 기록이 없거나 모자란다(구조화 로그 남김). */
   notifyQueued: boolean;

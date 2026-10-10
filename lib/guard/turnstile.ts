@@ -16,6 +16,12 @@ import type { GuardResult, TurnstileDeps } from "./types";
 export const TURNSTILE_SITEVERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 /** 위젯 `data-action` 값. 접수 폼 외의 위젯 토큰이 접수에 쓰이지 못하게 한다. */
 export const TURNSTILE_ACTION = "reserve";
+/**
+ * 예약 조회 위젯의 `data-action` 값 (T2-5 · 결정 5, 2026-10-10). 접수와 **다른 값**이어야 한다 —
+ * siteverify 는 토큰이 어느 위젯에서 나왔는지를 action 으로만 알려 주므로, 같은 값을 쓰면 조회 화면에서 받은 토큰으로
+ * 접수를(또는 그 반대를) 통과시킬 수 있다. lib/guard/deps.ts checkGuardDeps 가 이 값으로 대조한다.
+ */
+export const TURNSTILE_CHECK_ACTION = "check";
 export const TURNSTILE_TIMEOUT_MS = 5_000;
 /** Cloudflare 문서상 토큰 최대 길이. */
 const TOKEN_MAX_LENGTH = 2_048;

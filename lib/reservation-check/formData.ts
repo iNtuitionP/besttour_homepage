@@ -1,35 +1,39 @@
 /**
- * 예약확인 FormData → runCheckGuards 입력 (플랜 v4 P6-3a · ADR-4). 순수 — zod 없음, Next 없음, env 없음.
- * lib/reservations/formData.ts(P3-3)와 같은 규칙으로 **모양만 바꾼다**. 검증은 guards.ts 의 zod(CheckInput)가 한다.
+ * 예약확인 FormData → runCheckGuards 입력 (플랜 v4 P6-3a · T2-5 · ADR-4). 순수 — zod 없음, Next 없음, env 없음.
+ * lib/reservations/formData.ts(P3-3)와 같은 규칙으로 **모양만 바꾼다**. 검증·정규화는 guards.ts 의 zod(CheckInput)가 한다.
  *
  * §계약 — 폼 필드명. components/reservation-check/fields.ts 가 같은 값을 `typeof` 로 잠근 사본을 클라이언트에서 쓴다.
  *
- * | FormData 키 | zod 필드   | 비고                                             |
- * |-------------|------------|--------------------------------------------------|
- * | publicCode  | publicCode | 8자 접수번호. trim 만 — 대문자 정규화는 zod 가 한다  |
- * | phoneLast4  | phoneLast4 | 휴대폰 뒷 4자리(숫자)                               |
- * | website     | (guard)    | 허니팟 — zod 밖. 사람에게 보이지 않는 필드            |
+ * | FormData 키           | zod 필드 | 비고                                                                 |
+ * |-----------------------|----------|----------------------------------------------------------------------|
+ * | phone                 | phone    | 휴대폰 번호 칸 하나(`+` 로 시작하면 해외). trim 만 — 정규화는 zod      |
+ * | name                  | name     | 예약자 이름. trim 만 — 비교용 정규화(NFC·공백·소문자)는 lookup.ts     |
+ * | website               | (guard)  | 허니팟 — zod 밖. 사람에게 보이지 않는 필드                            |
+ * | cf-turnstile-response | (guard)  | Turnstile 위젯이 넣는 표준 이름(T2-5) — 접수 폼과 같은 상수            |
+ *
+ * T2-5 이전의 publicCode·phoneLast4 키는 더 읽지 않는다(옛 폼·옛 스크립트가 보내도 버려진다).
  *
  * 변환 규칙
  *   - 문자열: trim. 빈 문자열 → undefined. File 값(문자열이 아닌 것) → undefined
  *   - 계약 밖 키는 읽지 않는다
  *   - FormData 가 아닌 인자(null·plain object·useActionState 의 prevState 등) → 빈 폼과 동일(throw 없음, P3-3-FIX M3)
- *   - website 는 guardFields 로 분리한다(trim 없이 원문 그대로)
+ *   - website·Turnstile 토큰은 guardFields 로 분리한다(trim 없이 원문 그대로)
  *
  * 헤더: guard 에는 P3-3 의 guardHeaders(x-forwarded-for · x-real-ip · host 세 개만 보이는 게으른 뷰)를 그대로 재사용한다.
- * IP 를 변수에 담지 않는다 — guard 가 해시 키로만 쓴다.
+ * IP 를 변수에 담지 않는다 — guard 가 해시 키와 siteverify 의 remoteip 로만 쓴다.
  */
 import { HONEYPOT_FIELD, type HeadersLike } from "../guard";
-import { guardHeaders } from "../reservations/formData";
+import { GUARD_FORM_FIELDS, guardHeaders } from "../reservations/formData";
 import type { CheckGuardContext } from "./guards";
 
 export const CHECK_FORM_FIELDS = {
-  publicCode: "publicCode",
-  phoneLast4: "phoneLast4",
+  phone: "phone",
+  name: "name",
 } as const;
 
 export const CHECK_GUARD_FORM_FIELDS = {
   website: HONEYPOT_FIELD,
+  turnstile: GUARD_FORM_FIELDS.turnstile,
 } as const;
 
 /**
@@ -48,6 +52,7 @@ export function formDataToCheckLocale(fd: unknown): CheckLocale {
 
 export interface CheckGuardFields {
   website?: string;
+  turnstileToken?: string;
 }
 
 function asFormData(fd: unknown): FormData {
@@ -62,7 +67,7 @@ function text(fd: FormData, key: string): string | undefined {
   return t.length === 0 ? undefined : t;
 }
 
-/** guard 필드용 — trim 하지 않는다(허니팟은 채워진 값 그대로). */
+/** guard 필드용 — trim 하지 않는다(허니팟·토큰은 들어온 값 그대로). */
 function verbatim(fd: FormData, key: string): string | undefined {
   const v = fd.get(key);
   return typeof v === "string" ? v : undefined;
@@ -72,10 +77,13 @@ export function formDataToCheckRaw(fd: FormData): { raw: Record<string, unknown>
   const source = asFormData(fd);
   return {
     raw: {
-      publicCode: text(source, CHECK_FORM_FIELDS.publicCode),
-      phoneLast4: text(source, CHECK_FORM_FIELDS.phoneLast4),
+      phone: text(source, CHECK_FORM_FIELDS.phone),
+      name: text(source, CHECK_FORM_FIELDS.name),
     },
-    guardFields: { website: verbatim(source, CHECK_GUARD_FORM_FIELDS.website) },
+    guardFields: {
+      website: verbatim(source, CHECK_GUARD_FORM_FIELDS.website),
+      turnstileToken: verbatim(source, CHECK_GUARD_FORM_FIELDS.turnstile),
+    },
   };
 }
 
@@ -84,5 +92,6 @@ export function checkGuardContext(source: HeadersLike, fields: CheckGuardFields)
   return {
     headers: guardHeaders(source),
     honeypot: { [HONEYPOT_FIELD]: fields.website },
+    turnstileToken: fields.turnstileToken,
   };
 }

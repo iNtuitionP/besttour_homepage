@@ -1,28 +1,27 @@
 /**
- * 개발 전용 — 서버액션 mock 결과 3종 (P6-3a 브리프 §browse: `?previewResult=ok|not_found|ratelimit`, `1` 은 ok). P3-4 preview-submit.ts 와 같은 규약.
+ * 개발 전용 — 서버액션 mock 결과 (P6-3a 브리프 §browse · T2-5: `?previewResult=ok|quick|multi|not_found|ratelimit`, `1` 은 ok). P3-4 preview-submit.ts 와 같은 규약.
  *
- * 원격 reservations 는 비어 있고 **원격에 쓰지 않는다** — 실제 액션은 not_found 만 낸다. 카드·오류 렌더를 실측하기 위한 분기다.
+ * 원격 reservations 에는 **쓰지 않는다** — 실제 액션으로는 카드를 띄울 수 없으니 카드·오류 렌더를 실측하기 위한 분기다.
  * page.tsx 가 NODE_ENV !== production 에서만 searchParams 를 읽어 mode 문자열 하나를 props 로 내리고, CheckForm 은 그 mode 가 있으면
- * checkReservation 대신 아래 previewCheckAction 을 useActionState 에 감싼다. production 빌드에서는 page.tsx 의 분기가 죽어 mode 가 항상 null 이다.
+ * checkReservation 대신 아래 previewCheckAction 을 useActionState 에 감싼다(프리뷰는 Turnstile 위젯도 띄우지 않는다).
+ * production 빌드에서는 page.tsx 의 분기가 죽어 mode 가 항상 null 이다.
  *
- * ok 뷰는 **가려진 값만** 든 ReservationView 리터럴이다 — 원문 이름·전화를 넣고 maskName/maskPhone 으로 가리는 방식이 아니다(P3-5 리뷰 N-2:
+ * 뷰는 **가려진 값만** 든 ReservationView 리터럴이다 — 원문 이름·전화를 넣고 가리는 방식이 아니다(P3-5 리뷰 N-2:
  * dev 에서 클라이언트 번들·서버 props 는 브라우저에 그대로 간다). 라벨은 lib/codes.ts 의 표시 함수로, 차량명은 0001 시드 name_ko 그대로.
+ * T2-5: 접수번호는 뷰에 없다(손님 화면에 보이지 않는 내부 식별자). `multi` 는 한 번호·이름으로 예정된 예약이 두 건인 목록이다.
  */
 import { locationLabelKo } from "@/lib/codes";
 import { CHECK_ERROR_KEYS, notFoundResult, type CheckResult } from "@/lib/reservation-check/result";
 import type { ReservationView } from "@/lib/reservation-check/view";
 
-/** `quick` (P3-8) — 홈 간편 견적으로 들어온 접수의 카드(날짜만 · 차종·대수 줄 없음)를 실측한다. */
-export const PREVIEW_RESULT_MODES = ["ok", "quick", "not_found", "ratelimit"] as const;
+/** `quick` (P3-8) — 홈 간편 견적 카드(날짜만 · 차종·대수 줄 없음). `multi` (T2-5) — 결과 두 건. */
+export const PREVIEW_RESULT_MODES = ["ok", "quick", "multi", "not_found", "ratelimit"] as const;
 export type PreviewResultMode = (typeof PREVIEW_RESULT_MODES)[number];
 
-/** PUBLIC_CODE_ALPHABET(0·O·1·I·L 제외 31자) 안의 8자 — 실제 접수번호 모양이지만 저장된 적 없는 값(P3-4 와 같은 값). */
-export const PREVIEW_PUBLIC_CODE = "PRV2PRV2";
 /** pending 상태를 눈으로 볼 수 있게 살짝 기다린다. */
 const PREVIEW_DELAY_MS = 400;
 
 const PREVIEW_VIEW: ReservationView = {
-  publicCode: PREVIEW_PUBLIC_CODE,
   status: "confirmed",
   statusKey: "reservationCheck.status.confirmed",
   tripType: "round",
@@ -64,9 +63,11 @@ export function parsePreviewResult(v: string | string[] | undefined): PreviewRes
 export function previewCheckResult(mode: PreviewResultMode): CheckResult {
   switch (mode) {
     case "ok":
-      return { ok: true, view: { ...PREVIEW_VIEW } };
+      return { ok: true, views: [{ ...PREVIEW_VIEW }] };
     case "quick":
-      return { ok: true, view: { ...PREVIEW_QUICK_VIEW } };
+      return { ok: true, views: [{ ...PREVIEW_QUICK_VIEW }] };
+    case "multi":
+      return { ok: true, views: [{ ...PREVIEW_VIEW }, { ...PREVIEW_QUICK_VIEW, departAtKst: "2026-11-14", returnAtKst: "2026-11-14" }] };
     case "not_found":
       return notFoundResult();
     case "ratelimit":

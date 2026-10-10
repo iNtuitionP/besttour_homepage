@@ -23,7 +23,7 @@ export const TRIP_TYPES = ["round", "oneway", "oneway_oneway"] as const;
 export type TripType = (typeof TRIP_TYPES)[number];
 
 export interface ReservationView {
-  publicCode: string;
+  // 접수번호(public_code)는 없다 — T2-5(결정 5)부터 관리자·발송 기록용 내부 식별자이고 손님 화면에는 보이지 않는다.
   status: ReservationStatus;
   /** messages/ko.json 라벨 키 — UI 가 t(statusKey) 로 푼다. */
   statusKey: `reservationCheck.status.${ReservationStatus}`;
@@ -50,7 +50,6 @@ export interface ReservationView {
 
 /** 뷰 모델 키 전부 — 테스트가 결과 객체의 키 집합과 대조한다. 아래 타입 잠금이 누락·원문 키를 컴파일에서 막는다. */
 export const RESERVATION_VIEW_KEYS = [
-  "publicCode",
   "status",
   "statusKey",
   "tripType",
@@ -72,7 +71,7 @@ type MissingViewKey = Exclude<keyof ReservationView, (typeof RESERVATION_VIEW_KE
 /** keyof 잠금 1 — RESERVATION_VIEW_KEYS 가 ReservationView 의 모든 키를 담는다(빠지면 컴파일 실패). */
 export const RESERVATION_VIEW_KEYS_EXHAUSTIVE: MissingViewKey extends never ? true : never = true;
 
-type RawPiiKey = "name" | "phone" | "email" | "message" | "adminMemo" | "admin_memo" | "id";
+type RawPiiKey = "name" | "phone" | "email" | "message" | "adminMemo" | "admin_memo" | "id" | "publicCode" | "public_code";
 /** keyof 잠금 2 — 뷰 모델에 원문 개인정보 키가 없다(추가하면 컴파일 실패). */
 export const RESERVATION_VIEW_HAS_NO_RAW_PII: Extract<keyof ReservationView, RawPiiKey> extends never ? true : never = true;
 
@@ -148,7 +147,6 @@ export function toReservationView(row: ReservationCheckRow, vehicleNames: Vehicl
   const tripType = asTripType(row.trip_type);
   const intake = asIntake(row.intake);
   return {
-    publicCode: row.public_code,
     status,
     statusKey: `reservationCheck.status.${status}`,
     tripType,

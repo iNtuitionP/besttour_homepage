@@ -54,11 +54,12 @@ import { SheetTrigger } from "@/components/admin/SheetTrigger";
 import s from "@/components/admin/admin.module.css";
 import {
   dayParts,
-  detailPhoneText,
   receivedAt,
   smsHref,
   splitNameTemplate,
 } from "@/components/admin/reservation-detail";
+// T2-4(2026-10-10 · 결정 12): 상세의 번호 표기 함수는 사장님 접수 알림 문자와 함께 쓰려고 lib 로 옮겼다(옛 이름 detailPhoneText). 단언은 그대로다.
+import { domesticPhoneText as detailPhoneText } from "@/lib/phone-format";
 import { MAX_LIST_PAGES, backToListHref, detailHref, listHref } from "@/components/admin/reservation-list";
 import { IDLE_SNAPSHOT, PROCESS_REGION_ATTR, createPanelChannels, firstVisible } from "@/components/admin/reservation-panel";
 import { getReservationActionLabels } from "@/components/admin/reservationActionLabels";

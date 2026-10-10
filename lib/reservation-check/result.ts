@@ -1,13 +1,17 @@
 /**
- * 예약확인 서버액션 결과·로그 변환 — 순수 (플랜 v4 P6-3a · ADR-4). lib/reservations/submitResult.ts(P3-3)와 같은 역할.
+ * 예약확인 서버액션 결과·로그 변환 — 순수 (플랜 v4 P6-3a · T2-5 · ADR-4). lib/reservations/submitResult.ts(P3-3)와 같은 역할.
  *
  * actions/reservation-check.ts 는 분기하지 않고 여기 함수를 부르기만 한다. 규칙:
- *   - CheckGuardFailure.detail 은 클라이언트로 내리지 않는다. validation 만 detail(zod issues)의 path 로 필드별 문구 키를 뽑는다.
- *   - **부재·불일치·허니팟은 전부 notFoundResult()** — 같은 함수, 같은 객체 모양. 존재 여부를 구분하는 필드·문구는 없다.
- *   - 성공 결과는 뷰 모델(view.ts)뿐 — 원문 개인정보는 타입에 없다.
+ *   - CheckGuardFailure.detail 은 클라이언트로 내리지 않는다.
+ *   - **없음·이름 불일치·지난/취소 건뿐·허니팟·형식 실패는 전부 notFoundResult()** (T2-5 · 결정 5) — 같은 함수, 같은 객체 모양.
+ *     존재 여부를 구분하는 필드·문구는 없다. 형식 실패도 not_found 다: 필드별 서버 오류를 주면 응답이 갈라지고, 사람에게 필요한
+ *     형식 안내는 클라이언트 사전 검증(components/reservation-check/validate.ts — zod 와 같은 판정)이 제출 전에 이미 보여 준다.
+ *   - turnstile·ratelimit·infra·server 는 각자 코드다 — 존재 여부와 무관한 단계(조회 전·조회 실패)라 갈라져도 새는 것이 없고,
+ *     특히 turnstile 은 손님이 보안 확인을 다시 풀어야 하므로 알려야 한다.
+ *   - 성공 결과는 뷰 모델(view.ts) 목록뿐 — 원문 개인정보·접수번호는 타입에 없다.
  *   - 로그 항목에 개인정보 없음 — 오류의 name·message·stack 뿐. Error.cause 는 싣지 않는다.
  *
- * messageKey 는 messages/ko.json 의 reservationCheck.errors.* — UI 가 t(messageKey) 로 푼다(전화번호는 그 문구의 `{tel}` 보간으로 원장에서 들어온다 — tests/reservation-check.test.ts).
+ * messageKey 는 messages 의 reservationCheck.errors.* — UI 가 t(messageKey, { tel }) 로 푼다.
  * 이 파일은 클라이언트에서도 import 된다(components/reservation-check/*) — 값 import 는 없고 타입만 가져온다.
  */
 import type { StructuredLogEntry } from "../log";
@@ -15,60 +19,39 @@ import type { CheckGuardFailure, CheckInput } from "./guards";
 import type { LookupOutcome } from "./lookup";
 import type { ReservationView } from "./view";
 
-export type CheckErrorCode = "validation" | "not_found" | "ratelimit" | "infra" | "server";
+export type CheckErrorCode = "not_found" | "turnstile" | "ratelimit" | "infra" | "server";
 export type CheckErrorKey = `reservationCheck.errors.${CheckErrorCode}`;
 
 export const CHECK_ERROR_KEYS: Readonly<Record<CheckErrorCode, CheckErrorKey>> = {
-  validation: "reservationCheck.errors.validation",
   not_found: "reservationCheck.errors.not_found",
+  turnstile: "reservationCheck.errors.turnstile",
   ratelimit: "reservationCheck.errors.ratelimit",
   infra: "reservationCheck.errors.infra",
   server: "reservationCheck.errors.server",
 };
 
 export type CheckField = keyof CheckInput;
-export type CheckFieldErrorKey = `reservationCheck.form.${"codeError" | "phoneLast4Error"}`;
+export type CheckFieldErrorKey = `reservationCheck.form.${"phoneError" | "nameError"}`;
 
-/** 필드별 문구 키 — 두 칸뿐이라 필드마다 고유 문구를 준다(P3-3 의 공통 validation 키와 다른 점). */
+/** 필드별 문구 키 — **클라이언트 사전 검증 전용**(validate.ts). 서버 결과에는 필드 오류가 없다(형식 실패도 not_found). */
 export const CHECK_FIELD_ERROR_KEYS: Readonly<Record<CheckField, CheckFieldErrorKey>> = {
-  publicCode: "reservationCheck.form.codeError",
-  phoneLast4: "reservationCheck.form.phoneLast4Error",
+  phone: "reservationCheck.form.phoneError",
+  name: "reservationCheck.form.nameError",
 };
 
 export type CheckFieldErrors = Partial<Record<CheckField, CheckFieldErrorKey>>;
 
-export type CheckResult =
-  | { ok: true; view: ReservationView }
-  | { ok: false; code: CheckErrorCode; messageKey: CheckErrorKey; fieldErrors?: CheckFieldErrors };
+export type CheckResult = { ok: true; views: ReservationView[] } | { ok: false; code: CheckErrorCode; messageKey: CheckErrorKey };
 
-const FIELD_SET: ReadonlySet<string> = new Set(Object.keys(CHECK_FIELD_ERROR_KEYS));
-
-/** zod issues(`{ path, code, message }[]`) → { 필드: 문구 키 }. 모르는 path·루트 이슈는 버린다. 모양이 다르면 빈 객체 — throw 하지 않는다. */
-function fieldErrorsOf(detail: unknown): CheckFieldErrors {
-  const out: CheckFieldErrors = {};
-  if (!Array.isArray(detail)) return out;
-  for (const issue of detail) {
-    if (issue === null || typeof issue !== "object") continue;
-    const p = (issue as { path?: unknown }).path;
-    if (typeof p !== "string") continue;
-    const field = p.split(".")[0];
-    if (!FIELD_SET.has(field)) continue;
-    out[field as CheckField] = CHECK_FIELD_ERROR_KEYS[field as CheckField];
-  }
-  return out;
+/** 없음 = 이름 불일치 = 범위 밖 = 허니팟 = 형식 실패. 항상 같은 모양. */
+export function notFoundResult(): CheckResult {
+  return { ok: false, code: "not_found", messageKey: CHECK_ERROR_KEYS.not_found };
 }
 
 export function guardFailureToCheckResult(outcome: CheckGuardFailure): CheckResult {
   const code = outcome.reason;
-  if (code === "validation") {
-    return { ok: false, code, messageKey: CHECK_ERROR_KEYS.validation, fieldErrors: fieldErrorsOf(outcome.detail) };
-  }
+  if (code === "validation") return notFoundResult();
   return { ok: false, code, messageKey: CHECK_ERROR_KEYS[code] };
-}
-
-/** 부재 = 불일치 = 허니팟. 항상 같은 모양. */
-export function notFoundResult(): CheckResult {
-  return { ok: false, code: "not_found", messageKey: CHECK_ERROR_KEYS.not_found };
 }
 
 /** 래퍼가 잡은 예외 → 사용자 결과. infra = guard 준비(env)·실행이 던짐, server = 조회가 던짐. */
@@ -77,7 +60,7 @@ export function checkFailureResult(code: "infra" | "server"): CheckResult {
 }
 
 export function lookupToResult(outcome: LookupOutcome): CheckResult {
-  return outcome.found ? { ok: true, view: outcome.view } : notFoundResult();
+  return outcome.found ? { ok: true, views: outcome.views } : notFoundResult();
 }
 
 // =============================================================================

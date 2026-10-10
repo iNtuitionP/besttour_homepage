@@ -1,10 +1,13 @@
 /**
- * 예약확인 결과 카드 (P6-3a). CheckForm(클라이언트) 트리에서 렌더된다 — 'use client' 지시어는 CheckForm 에만 둔다.
+ * 예약확인 결과 — 카드 한 장(ReservationCard)과 여러 건 묶음(ReservationResults) (P6-3a · T2-5).
+ * CheckForm(클라이언트) 트리에서 렌더된다 — 'use client' 지시어는 CheckForm 에만 둔다.
  *
- * 뷰 모델(lib/reservation-check/view.ts ReservationView)만 받는다 — 원문 name·phone 은 타입에 없다. 금액·가격 0.
- * 상태 배지(new 접수 · confirmed 확정 · cancelled 취소 · done 완료)는 data-status 로 스타일을 가르고 문구는 ko.json 에서 푼다.
+ * 뷰 모델(lib/reservation-check/view.ts ReservationView)만 받는다 — 원문 name·phone·접수번호는 타입에 없다. 금액·가격 0.
+ * T2-5(결정 5): 접수번호는 손님 화면에 보이지 않는다(관리자·발송 기록용 내부 식별자). 한 번호·이름으로 예정된 예약이 여러 건이면
+ * ReservationResults 가 카드를 출발 순으로 늘어놓고, 전화·"다른 예약 조회" 버튼은 묶음 끝에 한 번만 둔다.
+ * 상태 배지(new 접수 · confirmed 확정 · cancelled 취소 · done 완료)는 data-status 로 스타일을 가르고 문구는 카탈로그에서 푼다.
  * 법정 문구(원장 VERBATIM.bookingNotice)와 예약·상담 전화(consultPhone — P1-7)는 서버 페이지가 props 로 내린다 — 원장을 클라이언트 번들에
- * 싣지 않는다(P2-3·P3-4 와 같은 규칙). 한글 리터럴 없음 — 문구는 messages/ko.json reservationCheck.card.*.
+ * 싣지 않는다(P2-3·P3-4 와 같은 규칙). 한글 리터럴 없음 — 문구는 messages 의 reservationCheck.card.*.
  * 날짜(P7-4): 뷰의 KST 벽시계 원문(`YYYY-MM-DD HH:mm` · 간편 접수는 `YYYY-MM-DD`)을 공개 화면 공용 틀로 바꿔 보인다
  * (lib/public-date.ts · 카탈로그 common.dates — ko "10월 9일 (금) 07:00" · en "Fri, Oct 9, 07:00"). 읽을 수 없으면 원문 그대로.
  */
@@ -26,14 +29,36 @@ export interface ReservationCardProps {
   tel: ContactPhone;
   /** "다른 예약 조회" — 폼으로 돌아간다(CheckForm 이 라운드를 올려 상태를 초기화한다). */
   onAgain: () => void;
+  /** 목록 안 순번 — 카드 제목 id 를 겹치지 않게 한다. 한 장이면 0. */
+  index?: number;
+  /** 도움말·전화·"다른 예약 조회" 줄을 이 카드에 둘지. 한 장짜리 호출(기본)은 true, 묶음(ReservationResults)은 끝에 한 번만 두려고 false. */
+  actions?: boolean;
 }
 
-export function ReservationCard({ view, bookingNotice, tel, onAgain }: ReservationCardProps) {
+/** 도움말 + 전화 걸기 + 다른 예약 조회 — 카드 한 장이면 카드 안, 여러 건이면 묶음 끝에 한 번. */
+function ResultActions({ tel, onAgain }: Pick<ReservationCardProps, "tel" | "onAgain">) {
+  const t = useTranslations("reservationCheck");
+  return (
+    <>
+      <p className={q.doneSub}>{t("card.help", { tel: tel.display })}</p>
+      <div className={s.actions}>
+        <a className={`${q.btn} ${q.btnPrev}`} href={tel.href} data-testid="reservation-call">
+          {t("card.call")} {tel.display}
+        </a>
+        <button type="button" className={`${q.btn} ${q.btnSubmit}`} onClick={onAgain} data-testid="reservation-again">
+          {t("card.again")}
+        </button>
+      </div>
+    </>
+  );
+}
+
+export function ReservationCard({ view, bookingNotice, tel, onAgain, index = 0, actions = true }: ReservationCardProps) {
   const t = useTranslations("reservationCheck");
   const tRoot = useTranslations();
   const tCommon = useTranslations("common");
   const locale = useLocale();
-  const titleId = "reservation-check-result-title";
+  const titleId = `reservation-check-result-title-${index}`;
   const dates = publicDateLabels(tCommon.raw("dates"));
   const now = new Date();
   /** 일정·접수 시각 — 시각이 있으면 붙인다(간편 접수는 날짜만). 읽을 수 없으면 원문 그대로(줄을 비우지 않는다). */
@@ -49,11 +74,6 @@ export function ReservationCard({ view, bookingNotice, tel, onAgain }: Reservati
           {tRoot(view.statusKey)}
         </span>
       </div>
-
-      <p className={s.codeLabel}>{t("card.code")}</p>
-      <p className={s.code} data-testid="reservation-code">
-        {view.publicCode}
-      </p>
 
       <dl className={s.rows}>
         <div>
@@ -117,16 +137,32 @@ export function ReservationCard({ view, bookingNotice, tel, onAgain }: Reservati
           <span data-legal="booking-notice">{bookingNotice}</span>
         </p>
       ) : null}
-      <p className={q.doneSub}>{t("card.help", { tel: tel.display })}</p>
 
-      <div className={s.actions}>
-        <a className={`${q.btn} ${q.btnPrev}`} href={tel.href} data-testid="reservation-call">
-          {t("card.call")} {tel.display}
-        </a>
-        <button type="button" className={`${q.btn} ${q.btnSubmit}`} onClick={onAgain} data-testid="reservation-again">
-          {t("card.again")}
-        </button>
-      </div>
+      {actions ? <ResultActions tel={tel} onAgain={onAgain} /> : null}
     </section>
+  );
+}
+
+export interface ReservationResultsProps {
+  /** 출발 순으로 정렬된 뷰(lookup.ts). 비어 있지 않다 — 비면 서버가 not_found 를 돌려준다. */
+  views: ReservationView[];
+  bookingNotice: string;
+  tel: ContactPhone;
+  onAgain: () => void;
+}
+
+/** 여러 건 묶음 — 건수 한 줄 · 카드 n장 · 도움말·전화·다른 조회는 끝에 한 번. 한 건이어도 같은 모양이다. */
+export function ReservationResults({ views, bookingNotice, tel, onAgain }: ReservationResultsProps) {
+  const t = useTranslations("reservationCheck");
+  return (
+    <div className={s.results} data-testid="reservation-results" data-count={views.length}>
+      <p className={s.resultCount} data-testid="reservation-count">
+        {t("card.count", { n: views.length })}
+      </p>
+      {views.map((view, i) => (
+        <ReservationCard key={i} index={i} view={view} bookingNotice={bookingNotice} tel={tel} onAgain={onAgain} actions={false} />
+      ))}
+      <ResultActions tel={tel} onAgain={onAgain} />
+    </div>
   );
 }
