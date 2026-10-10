@@ -78,6 +78,7 @@ export default async function AdminProtectedLayout({ children }: { children: Rea
     comingSoon: t("comingSoon"),
     brand: t("brand"),
     account: t("account"),
+    myAccount: t("myAccount"),
     siteLink: t("siteLink"),
     newWindow: t("newWindow"),
     skip: t("skip"),

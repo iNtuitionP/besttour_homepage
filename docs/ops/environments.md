@@ -83,3 +83,37 @@ Supabase 조직의 요금제에 따라 프로젝트 하나를 더하면 월 컴�
   지우기: `delete from notices where title like '[예시]%'` · `delete from reservations where name like '예시고객%'`.
 - **프리뷰 관리자 로그인에 필요한 사람 몫**: Vercel **Preview 전용** 환경변수(`docs/private/preview-vercel-env.txt` — 커밋 안 됨: `ADMIN_EMAILS`·`NEXT_PUBLIC_SITE_URL`(매직링크가 프리뷰로 돌아오게)·`GUARD_SECRET`·`GUARD_ALLOWED_HOSTS`·Upstash 2개) +
   시험 프로젝트 Supabase 대시보드 Authentication → URL Configuration(Site URL·Redirect URLs 에 프리뷰 주소). 견적 제출까지 보려면 Turnstile 위젯에 프리뷰 호스트 추가 — **Cloudflare 더미 키는 action 검사에서 거부된다**(`lib/guard/turnstile.ts`).
+
+---
+
+## 🔴 로컬과 원격의 Auth 설정은 **일부러 다르다** — 관리자 비밀번호 로그인 (OF-T3-6 · 2026-10-10)
+
+관리자 로그인이 **이메일 + 비밀번호**(기본)와 메일 링크(보조)로 바뀌었다(`actions/admin/auth.ts` 머리 주석 · `docs/ops/admin-manual.md` 1장).
+비밀번호 로그인은 공개 anon 키로 Supabase Auth API(`/auth/v1/token?grant_type=password`)를 **직접** 두드리는 무차별 대입에 열린다 — 서버액션의 IP 한도·허니팟은
+서버액션을 거치는 요청에만 효과가 있다(계획 위험 #2). 그것을 막는 것은 **원격 Supabase Auth 의 CAPTCHA** 다. 그래서 원격 두 프로젝트(운영·시험)는 CAPTCHA·비밀번호 규칙을 켜고,
+**로컬 스택은 켜지 않는다.**
+
+| 설정 | 로컬 `supabase/config.toml` (그대로 둔다) | 원격 운영 · 시험 (대시보드에서 켠다) |
+|---|---|---|
+| CAPTCHA | `[auth.captcha]` 주석 상태 = **꺼짐** | **Turnstile 켜짐** · secret = Vercel 의 `TURNSTILE_SECRET_KEY` 와 같은 위젯의 secret |
+| 최소 길이 | `minimum_password_length = 6` | **10 이상** 권장(사용자의 웍스 비밀번호 길이 확인 후 결정 — 아래) |
+| 조합 규칙 | `password_requirements = ""` | 소문자·대문자·숫자(·기호) 권장 — 같은 조건 |
+| 공개 회원가입 | `enable_signup = true` | **꺼짐**(운영 2026-09-13 · 시험은 위 「아직 남은 설정」 2) |
+
+**로컬을 원격에 맞추지 않는 이유**: 관리자 DB 테스트 9개 파일이 anon 키로 password grant 를 **직접** 부르고(예: `tests/admin-routes.test.ts`),
+테스트 비밀번호는 `p56-${randomUUID()}` 처럼 대문자가 없다. 로컬에 CAPTCHA·조합 규칙을 켜면 그 파일들이 무더기로 깨진다(계획 위험 #5).
+그래서 **CAPTCHA 와 비밀번호 규칙은 원격에서만 실증된다** — 로컬 테스트가 초록이어도 원격 설정을 증명하지 못한다. 배포 직후 원격에서 직접 확인한다(아래 체크).
+
+**CAPTCHA 토큰의 검증 위치**: 로그인 화면의 Turnstile 위젯 토큰을 서버액션이 `captchaToken` 으로 **그대로** Supabase 에 넘기고, **검증은 원격 Supabase Auth 가 한다.**
+서버액션이 siteverify 를 먼저 부르지 않는 이유 — Turnstile 토큰은 1회용이라, 서버액션이 먼저 쓰면 Supabase 의 검증이 언제나 `timeout-or-duplicate` 로 실패해 로그인이 막힌다.
+로컬은 CAPTCHA 가 꺼져 있어 토큰을 보지 않는다(형식만 맞으면 통과).
+
+**배포 순서**(계획 T3-6 「배포」): 원격 CAPTCHA 를 코드보다 **먼저** 켜면 옛 코드의 메일 링크 요청이 `captchaToken` 없이 실패한다. **코드 배포와 같은 시점에 켜고 바로 실측한다:**
+1. 코드 배포(로그인 화면에 Turnstile 상자가 보인다 · `NEXT_PUBLIC_TURNSTILE_SITE_KEY` 필요 — 없으면 화면이 "지금은 로그인 요청을 받을 수 없어요" 로 닫힌다)
+2. 원격 대시보드 → Authentication → Attack Protection(또는 Bot and Abuse Protection) → **Enable CAPTCHA protection** · provider Turnstile · secret 입력 → 저장
+3. 실측: (a) 로그인 화면에서 틀린 비밀번호 → "맞지 않거나" 안내 (b) 맞는 비밀번호 → 관리 홈 (c) 메일 링크 요청 → 메일 도착
+   (d) **CAPTCHA 가 실제로 켜졌는지** — 터미널에서 anon 키로 `POST /auth/v1/token?grant_type=password` 를 토큰 없이 보내 `captcha_failed`(HTTP 400) 가 오는지
+4. 시험 프로젝트도 같은 순서. 프리뷰 Vercel 환경변수에 `NEXT_PUBLIC_TURNSTILE_SITE_KEY` 가 있어야 프리뷰 관리자 로그인이 열린다(이전에는 필요 없었다). Turnstile 위젯의 허용 호스트에 프리뷰 주소가 있어야 상자가 뜬다.
+
+**서버액션 경유 로그인의 한계(기록)**: 서버액션이 부르는 Supabase Auth 요청은 손님 IP 가 아니라 **Vercel 서버의 IP** 로 나간다. 원격 Auth 의 IP 단위 로그인 한도(기본 5분에 30회)는
+그 IP 하나에 쌓이므로, 누군가 로그인 화면으로 대입을 시도하면 사장님의 로그인도 잠깐 막힐 수 있다. 서버액션 자체의 한도(IP 해시 · 10분에 5회 · `lib/guard/rateLimit.ts`)가 먼저 걸러 대부분 그 전에 막힌다.

@@ -90,7 +90,7 @@ const PUBLIC_ACTION_REASONS = Object.freeze({
   "actions/quote-form-token.ts":
     "공개 간편 견적 모달의 타임트랩 폼 토큰(P3-8) — 방문자가 로그인 없이 모달을 열 때 부른다. 발급 시각의 HMAC 서명만 돌려주고(데이터·개인정보 0) 접수 자체는 actions/reservation.ts 의 4종 가드가 막는다",
   "actions/admin/auth.ts":
-    "관리자 로그인 링크 요청 — 인증 전이므로 requireAdmin 을 부를 수 없다. 허용 목록·레이트리밋·허니팟·중립 응답이 지킨다",
+    "관리자 로그인(비밀번호 · 메일 링크, OF-T3-6) — 인증 전이므로 requireAdmin 을 부를 수 없다. 허용 목록·레이트리밋·허니팟·중립 응답·응답 시간 바닥과 원격 Supabase Auth CAPTCHA 가 지킨다",
 });
 
 /** 세션 없이 열려야 하는 관리자 화면·라우트. 역시 사유가 붙고 테스트가 목록을 그대로 단언한다. */
