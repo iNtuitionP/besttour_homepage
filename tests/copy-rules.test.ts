@@ -272,6 +272,7 @@ describe("3-b. 영문 규칙 — 양성 픽스처(잡는다) · 음성 픽스처
     ["We are the No. 1 choice", "No.1 / #1"],
     ["The number one airport transfer", "number one"],
     ["The best charter bus in Korea", "best (최상급)"],
+    ["Book with Best Mobility today", "best (최상급)"], // 브랜드는 붙여 쓴 'Bestmobility' 하나(원장 brandNameEn) — 띄어 쓰면 최상급으로 읽힌다
     ["A leading tour bus provider", "leading (최상급)"],
     ["Korea's largest coach network", "largest"],
     ["Lowest price in Seoul", "lowest"],
@@ -301,7 +302,8 @@ describe("3-b. 영문 규칙 — 양성 픽스처(잡는다) · 음성 픽스처
   /** 실제 en.json 에 쓰였거나 쓰일 수 있는 정당한 문장 — 어느 규칙에도 걸리면 안 된다. */
   const LEGIT_EN: readonly string[] = [
     "Since {year}",
-    "Bestour — charter bus booking agency", // 브랜드 'Bestour' 는 'best' 가 아니다
+    "Bestour — charter bus booking agency", // 옛 브랜드 'Bestour' 는 'best' 가 아니다
+    "Bestmobility — charter bus booking agency", // 브랜드 'Bestmobility'(2026-10-10 간판 변경)도 'best' 가 아니다 — 띄어 쓴 'Best Mobility' 는 걸린다
     "Registered charter bus booking agency",
     "Airport Pickup & Drop-off (Transfer Specialists)",
     "Return date & time", // 손님의 귀가 일정 — 'return leg' 가 아니다

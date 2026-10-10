@@ -8,7 +8,8 @@
  * + env 가 있을 때 네이버 블로그) · 예약·상담 전화 · 언어 전환(P2-6b). 이용안내는 위 메뉴에서 빠지고 푸터에 남는다.
  *   - 전화는 예약·상담 전화(P1-7 — COMPANY.consultTel, 영문은 +82 표기) — 사이트의 전화번호는 이것 하나다(P7-5).
  *     모바일 패널 맨 아래에도 같은 번호의 전화 버튼을 둔다(목업 variant-08 .drawer .btn).
- *   - 로고는 bestour 만. 관계사(best mobility) 로고는 헤더에 넣지 않는다(스펙 §13.1).
+ *   - 로고는 간판 브랜드 best mobility 하나(사장님 요청 2 · 결정 1 — 2026-10-10, 스펙 §13.13. 그 전 §13.1 의 "bestour 단독" 을 뒤집었다).
+ *     두 로고를 나란히 두지 않는다는 원칙은 그대로다. 가로가 긴 로고(7.96:1)라 좁은 폰에서는 로고 칸만 줄어든다(Header.module.css .brand).
  *   - 목업 상단바의 "대표전화 · 연중무휴", "운행 13년" 같은 부가 문구는 옮기지 않는다.
  *     실증 불가 수치이고 C4 규칙 범위 밖이다(브리프 §1). 번호만 노출한다.
  *   - 메뉴 구성은 lib/legacy-menu-map.ts 한 곳이 정한다(여기서 거르지 않는다). 아직 없는 페이지는 링크가 아니라 비활성 텍스트로 나간다(Nav).
@@ -56,10 +57,10 @@ export default async function Header() {
         <Link className={styles.brand} href="/">
           <Image
             className={styles.logo}
-            src="/brand/logo-bestour.png"
+            src="/brand/logo-bestmobility.png"
             alt={ui.brand}
-            width={165}
-            height={32}
+            width={191}
+            height={24}
             priority
           />
         </Link>

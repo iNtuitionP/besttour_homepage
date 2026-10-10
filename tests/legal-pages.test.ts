@@ -291,7 +291,8 @@ export const LEGAL_MAPPING: readonly MappingRow[] = [
   { law: "전자상거래법 §13②8호 — 소비자 불만·분쟁 처리 절차", ledgerKey: "DISPUTE", page: "/guide" },
   { law: "전자상거래법 §13③ / PIPA §22조의2 — 만 14세 미만 제한", ledgerKey: "MINORS.line", page: "/guide" },
   { law: "확인시트 ★2 — 차량 보험 안내(기존 문구 계승)", ledgerKey: "INSURANCE.body", page: "/guide" },
-  { law: "CLAUDE.md §3 — verbatim 접수·확정 고지", ledgerKey: "VERBATIM.bookingNotice", page: "/guide" },
+  // T2-2(2026-10-10): "CLAUDE.md §3 — verbatim 접수·확정 고지(VERBATIM.bookingNotice) → /guide" 행을 뺐다 — 그 문장은 이제 /guide 에 없다
+  // (견적 모달 제출 위 · 완료 화면 · 예약 확인 카드(접수 상태)에만). 법정 고지 의무가 아니라 CLAUDE.md 규약 문구라 매핑표의 의무 목록은 줄지 않는다.
   { law: "CLAUDE.md §3 — verbatim Top-5 예시 견적 고지", ledgerKey: "VERBATIM.showcaseNotice", page: "/guide" },
   { law: "플랜 P1-6 — 이용안내 절 순서·이용 절차 4단계", ledgerKey: "GUIDE_SECTIONS", page: "/guide" },
   // ── 개인정보 처리방침 (PIPA §30① · 시행령 §31) ──
@@ -394,10 +395,13 @@ describe("3. 페이지·레이아웃·컴포넌트 소스에 한글 리터럴 0�
     }
   });
 
-  test("/guide 는 verbatim 2건을 원장 VERBATIM 에서 렌더한다", () => {
-    const src = read(PAGE_FILES.guide);
-    expect(src).toMatch(/VERBATIM\.bookingNotice/);
+  // T2-2(2026-10-10, 사장님 요청 7 · 결정 3-2): /guide 안내 상자에서 접수 안내 verbatim(bookingNotice)을 뺐다 — Top-5 고지 하나만 남는다.
+  // 대금 지급 줄(PAYMENT.line)은 그대로 렌더한다(전자상거래법 §13② 계약 전 표시 — 요청 20 은 홈에서만 뺀다).
+  test("/guide 는 Top-5 고지 verbatim 을 원장 VERBATIM 에서 렌더하고, 접수 안내 verbatim 은 렌더하지 않는다 · 대금 지급 줄은 렌더한다", () => {
+    const src = codeOf(PAGE_FILES.guide);
+    expect(src).not.toMatch(/VERBATIM\.bookingNotice/);
     expect(src).toMatch(/VERBATIM\.showcaseNotice/);
+    expect(src).toMatch(/PAYMENT\.line/);
   });
 
   test("레이아웃은 (site) 셸을 상속하지 않고 LEGAL_LINKS 3개 + 홈 링크를 i18n Link 로 렌더한다", () => {
@@ -475,12 +479,14 @@ describe.runIf(Boolean(BASE))("5. dev 서버 — 200/404", { timeout: GATE_TIMEO
     const html = await (await fetch(`${BASE}/privacy`)).text();
     expect(html.match(/<td[^>]*>\s*<\/td>/g) ?? []).toEqual([]);
   });
-  test("/terms 조항 12개 · /guide verbatim 2건", async () => {
+  // T2-2(2026-10-10): /guide 의 verbatim 은 Top-5 고지 하나 — 접수 안내 verbatim 은 없다(대금 지급 줄은 있다).
+  test("/terms 조항 12개 · /guide verbatim 1건(Top-5) · 접수 안내 verbatim 0 · 대금 지급 줄", async () => {
     const terms = await (await fetch(`${BASE}/terms`)).text();
     expect((terms.match(/<article/g) ?? []).length).toBe(12);
     const guide = await (await fetch(`${BASE}/guide`)).text();
-    expect(guide).toContain(ledger.VERBATIM.bookingNotice);
+    expect(guide).not.toContain(ledger.VERBATIM.bookingNotice);
     expect(guide).toContain(ledger.VERBATIM.showcaseNotice);
+    expect(guide).toContain(ledger.PAYMENT.line);
     expect(CANCELLATION.tiers.length).toBe(2); // P1-7 — 사장님 답변 2026-09-21 A-1 로 2단계
     expect(guide).toContain(ledger.WITHDRAWAL.notice);
     expect(terms).toContain(ledger.WITHDRAWAL.notice);

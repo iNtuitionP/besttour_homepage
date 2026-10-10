@@ -2,9 +2,9 @@
  * 공유 미리보기 메타(Open Graph · Twitter) — 사이트 단위 값만 (P7-4 · 브리프 §12).
  *
  * 로케일 레이아웃(app/[locale]/layout.tsx)의 generateMetadata 가 이 결과를 펼친다. 여기서 정하는 것은
- *   - og:type website · og:site_name(ko "베스트투어" / en "Bestour" — 카탈로그 common.siteName)
+ *   - og:type website · og:site_name(ko "베스트모빌리티" / en "Bestmobility" — 카탈로그 common.siteName = 원장 brandName·brandNameEn)
  *   - og:locale ko_KR / en_US 와 대안 로케일(서로)
- *   - og:image · twitter:image = `/og.png`(app/og.png/route.tsx — 빌드 때 한 번 만드는 1200×630 PNG) · alt = 사이트 이름
+ *   - og:image · twitter:image = `/og.png?v=2`(app/og.png/route.tsx — 빌드 때 한 번 만드는 1200×630 PNG) · alt = 사이트 이름
  *   - twitter:card summary_large_image
  * 뿐이다. **제목·설명은 넣지 않는다** — Next 가 openGraph·twitter 에 제목·설명이 없으면 그 페이지의 title·description 을 물려준다
  * (next/dist/lib/metadata/resolve-metadata.js inheritFromMetadata · postProcessMetadata). 그래서 페이지별 메타가 그대로 공유 문구가 된다
@@ -22,8 +22,14 @@ const OG_LOCALE: Readonly<Record<string, string>> = { ko: "ko_KR", en: "en_US" }
 
 /** 공유 이미지 크기 — 이 값 하나를 메타(width·height)와 이미지 라우트(app/og.png/route.tsx)가 같이 쓴다. */
 export const OG_IMAGE_SIZE = { width: 1200, height: 630 } as const;
-/** 공유 이미지 주소 — 미들웨어 matcher 밖(점 포함) · 로케일 공용. */
-export const OG_IMAGE_PATH = "/og.png";
+/**
+ * 공유 이미지 주소 — 미들웨어 matcher 밖(점 포함) · 로케일 공용.
+ * `?v=2` 는 **판 번호**다(사장님 요청 2 · 2026-10-10 로고 교체). 카카오톡·페이스북 등은 미리보기 이미지를 주소 단위로 오래 붙들고 있어서
+ * 같은 주소로는 새 로고가 반영되지 않는다 — 주소를 바꿔야 새로 긁는다. 경로는 그대로라 같은 정적 라우트(app/og.png/route.tsx, force-static)가
+ * 받는다(정적 라우트는 쿼리를 보지 않는다 — 사본 프로덕션 빌드에서 `/og.png?v=2` 200 image/png 실측, T2-1 보고서 ⑦).
+ * 다음에 이미지를 바꾸면 숫자를 올린다.
+ */
+export const OG_IMAGE_PATH = "/og.png?v=2";
 
 export function shareMetadata(locale: string, siteName: string): Pick<Metadata, "openGraph" | "twitter"> {
   const og = OG_LOCALE[locale] ?? OG_LOCALE.ko;

@@ -17,7 +17,7 @@
   text-wrap: pretty;
 }
 
-/* 카드 머리 — 셸 사이드바와 같은 브랜드 표식 + "베스트투어 관리"(B-13) */
+/* 카드 머리 — 셸 사이드바와 같은 브랜드 표식 + "베스트모빌리티 관리"(B-13 · admin.tabs.brand) */
 .brand {
   display: flex;
   align-items: center;

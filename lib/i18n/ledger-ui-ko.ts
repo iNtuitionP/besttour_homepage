@@ -16,7 +16,6 @@ import {
   LEGAL_PAGES,
   PRIVACY_NOTICE,
   QUOTE_BASIS,
-  RELATED_COMPANY,
   VERBATIM,
   WITHDRAWAL,
 } from "@/lib/legal/disclosures";
@@ -52,8 +51,7 @@ export interface LedgerUi {
    * withdrawal 의 영문은 en.json 이 아니라 **원장의 영문 필드**(WITHDRAWAL.consentLabelEn)에서 온다 — 브리프가 원장에 확정 영문을 두었다.
    */
   consent: { privacy: string; marketing: string; withdrawal: string };
-  /** 푸터 관계사 배지 — RELATED_COMPANY.role */
-  relatedRole: string;
+  // 푸터 관계사 배지(relatedRole — RELATED_COMPANY.role)는 사장님 요청 5 · 결정 2(2026-10-10)로 걷었다 — 렌더하는 곳이 없어 키째 뺐다.
   /** 원장 라벨(LEGAL_LABELS) 중 공개 셸·서브페이지가 쓰는 것 */
   labels: {
     effectiveDate: string;
@@ -67,9 +65,12 @@ export interface LedgerUi {
     officer: { phone: string };
     /** /privacy 방문 통계 거부 버튼 — LEGAL_LABELS.analyticsOptOut (P1-7 R2) */
     analyticsOptOut: { optOut: string; optIn: string; storageFailed: string; browserRefused: string };
+    /**
+     * 원장 LEGAL_LABELS.footer 중 화면이 쓰는 것. 'operator'(운영사 배지 · /about 상호 행 라벨)는 사장님 요청 5 · 결정 2(2026-10-10)로
+     * 걷었다 — 원장 값은 기록용으로 남고 여기로 내보내지 않는다(tests/i18n-en.test.ts §4 · tests/brand-bestmobility.test.ts §8).
+     */
     footer: {
       companyInfo: string;
-      operator: string;
       representative: string;
       bizRegNo: string;
       mailOrder: string;
@@ -97,7 +98,6 @@ export const LEDGER_UI_KO: LedgerUi = {
     marketing: PRIVACY_NOTICE.marketingConsentLabel,
     withdrawal: WITHDRAWAL.consentLabel,
   },
-  relatedRole: RELATED_COMPANY.role,
   labels: {
     effectiveDate: LEGAL_LABELS.effectiveDate,
     home: LEGAL_LABELS.home,
@@ -117,7 +117,6 @@ export const LEDGER_UI_KO: LedgerUi = {
     },
     footer: {
       companyInfo: F.companyInfo,
-      operator: F.operator,
       representative: F.representative,
       bizRegNo: F.bizRegNo,
       mailOrder: F.mailOrder,

@@ -20,7 +20,7 @@ import s from "./check.module.css";
 
 export interface ReservationCardProps {
   view: ReservationView;
-  /** 원장 VERBATIM.bookingNotice — 서버 페이지가 넣는다. */
+  /** 원장 VERBATIM.bookingNotice — 서버 페이지가 넣는다. 접수(new) 상태일 때만 보인다(사장님 요청 7 · 결정 3-2, 2026-10-10). */
   bookingNotice: string;
   /** 예약·상담 전화 — 전화 폴백. 표시는 로케일별, 링크는 E.164. */
   tel: ContactPhone;
@@ -111,9 +111,12 @@ export function ReservationCard({ view, bookingNotice, tel, onAgain }: Reservati
         </div>
       </dl>
 
-      <p className={q.doneNote}>
-        <span data-legal="booking-notice">{bookingNotice}</span>
-      </p>
+      {/* 접수 안내 verbatim 은 접수(new) 상태일 때만 — 확정·완료·취소된 예약에 "확인 후 연락드리겠습니다" 는 뜻이 맞지 않는다(결정 3-2). */}
+      {view.status === "new" ? (
+        <p className={q.doneNote}>
+          <span data-legal="booking-notice">{bookingNotice}</span>
+        </p>
+      ) : null}
       <p className={q.doneSub}>{t("card.help", { tel: tel.display })}</p>
 
       <div className={s.actions}>

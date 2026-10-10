@@ -2,7 +2,8 @@
  * 섹션 1 — 히어로 (목업 variant-08 .hero): 좌 5초 캐러셀 3장 + 우 견적 위젯. 서버 컴포넌트.
  *
  * 카피는 messages/ko.json home.hero.* — 목업 슬라이드 문구를 옮기되 실증 불가 수치("13년"·"4,800+"·"운행 경력")가
- * 든 문장·팩트 블록·스탯 블록은 뺐다(P2-4 보고서 §제거 목록). verbatim(bookingNotice)만 원장에서 가져와 위젯에 props 로 내린다.
+ * 든 문장·팩트 블록·스탯 블록은 뺐다(P2-4 보고서 §제거 목록). verbatim(bookingNotice)은 원장에서 가져와 모달 법정 묶음(legal)으로만 내린다 —
+ * 위젯 하단의 결제 안내·verbatim 두 줄은 사장님 요청 7(2026-10-10 · T2-2)로 걷었다(모달 제출 위·완료 화면에만 남는다).
  * 위젯 선택지는 LOCATION_CODES(28) 전부 — 공항 / 16개 시도 / 대표 노선 도시 세 그룹(공항 그룹명은 사장님 요청 10 으로 '공항' 한 단어), 라벨은 locationLabel(code, locale)
  * (ko 는 locationLabelKo 그대로, en 은 PLACES.nameEn · REGION_LABELS_EN — P2-6). 값은 언제나 canonical code 다.
  * verbatim 은 localizeVerbatim — ko 는 원장 문자열 그 자체, en 은 컨트롤러 확정 영문.
@@ -113,8 +114,6 @@ export async function Hero() {
           }}
           groups={groups}
           defaults={{ origin: AIRPORT_CODE, dest: "SEL" }}
-          paymentNote={t("widget.note")}
-          bookingNotice={bookingNotice}
           locale={locale}
           legal={{
             // 제목·체크박스 라벨은 ledgerUi(ko 는 PRIVACY_NOTICE 그대로, en 은 컨트롤러 확정 영문). 4대 고지 본문은 원장 한국어 그대로 —

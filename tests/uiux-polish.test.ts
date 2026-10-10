@@ -48,7 +48,7 @@ import { lockDocumentScroll } from "@/lib/scroll-lock";
 import { CHECK_LOCALE_FIELD, formDataToCheckLocale } from "@/lib/reservation-check/formData";
 import { lookupReservation, type ReservationCheckRow } from "@/lib/reservation-check/lookup";
 import { toReservationView, type ReservationView } from "@/lib/reservation-check/view";
-import { shareMetadata } from "@/lib/share-meta";
+import { OG_IMAGE_PATH, shareMetadata } from "@/lib/share-meta";
 import { CL } from "@/components/reservation-check/fields";
 
 import { RETIRED_PHONE } from "./helpers/retired-phones";
@@ -765,14 +765,17 @@ describe("7-c. 사장님 글은 lang=\"ko\" (영문 화면) · 거부 버튼은 
 
   // 후속 ①: 컨트롤러가 원장에 영문 단계(GUIDE_SECTIONS.flow.stepsEn)를 넣었다 — en 은 그것을 lang 없이, ko 는 steps 그대로.
   // 렌더 단언(바이트 일치 · ko 마크업 무변경 · 리터럴 0)은 tests/how-it-works.test.ts 가 한다. 여기서는 소스 모양만.
-  test("홈 '이용 방법' 4단계 — en 은 원장 stepsEn(목록에 lang 없음) · 한국어로 남는 두 줄에만 lang + 그 위 공식 안내", () => {
+  // T2-2(2026-10-10, 사장님 요청 20): 대금 지급 줄(PAYMENT.line)을 홈에서 뺐다 — 한국어로 남는 줄은 산정 기준 하나다(lang 2 → 1).
+  test("홈 '이용 방법' 4단계 — en 은 원장 stepsEn(목록에 lang 없음) · 한국어로 남는 한 줄(산정 기준)에만 lang + 그 위 공식 안내", () => {
     const src = codeOf("components/home/HowItWorks.tsx");
     expect(src).toMatch(/GUIDE_SECTIONS/);
     expect(src).toMatch(/flow\.stepsEn/);
     expect(src).toMatch(/<ol className=\{s\.steps\} data-testid="how-steps">/);
     expect(src).toMatch(/<OfficialKoreanNotice/);
     expect(src.indexOf("<OfficialKoreanNotice")).toBeGreaterThan(src.indexOf("</ol>"));
-    expect((src.match(/lang=\{lang\}/g) ?? []).length).toBe(2);
+    expect((src.match(/lang=\{lang\}/g) ?? []).length).toBe(1);
+    expect(src.indexOf("QUOTE_BASIS.line")).toBeGreaterThan(src.indexOf("<OfficialKoreanNotice"));
+    expect(src).not.toMatch(/PAYMENT\.line/);
   });
 });
 
@@ -783,7 +786,9 @@ describe("8. 404 · global-error · 관리자 오류 화면", () => {
   test("전역 404 — 로고 · 홈 링크 · 예약·상담 전화 · 영문 블록(en 카탈로그) · /en 주소면 영문을 보이는 스크립트 · 한글 리터럴 0", () => {
     const src = read("app/not-found.tsx");
     const code = codeOf("app/not-found.tsx");
-    expect(src).toMatch(/\/brand\/logo-bestour\.png/);
+    // 사장님 요청 2(2026-10-10 · T2-1): 로고가 bestour → best mobility. 옛 로고는 남지 않는다.
+    expect(src).toMatch(/\/brand\/logo-bestmobility\.png/);
+    expect(src).not.toMatch(/logo-bestour/);
     expect(src).toMatch(/<a\s[^>]*href="\/"/);
     expect(src).toMatch(/href="\/en"/);
     expect(src).toMatch(/getTranslations\(\{\s*locale:\s*["']en["']/);
@@ -1072,23 +1077,26 @@ describe("12. 공유 메타 · 공유 이미지(/og.png)", () => {
   // 처음엔 파일 규약 app/[locale]/opengraph-image.tsx 로 했으나, 기본 로케일(ko)의 이미지 주소가 /ko/opengraph-image/… 가 되어
   // next-intl(as-needed)이 307 로 /opengraph-image/…?hash= 로 돌렸다(실측 — 쿼리까지 바뀐다). 크롤러가 리다이렉트를 안 따라가면 미리보기가
   // 비므로, 점이 든 주소(/og.png — 미들웨어 matcher 밖) 하나를 두 로케일이 함께 쓴다(이미지에 글자가 없어 로케일 차이가 없다).
-  test("shareMetadata — website · siteName · og:locale ko_KR/en_US(대안 로케일 서로) · 이미지 /og.png 1200×630(alt = 브랜드명) · summary_large_image · 제목·설명은 넣지 않는다(페이지 메타를 물려받는다)", () => {
-    const k = shareMetadata("ko", "베스트투어");
+  // 사장님 요청 2·14(2026-10-10 · T2-1): 사이트 이름은 원장 브랜드(베스트모빌리티 / Bestmobility), 이미지 주소는 판 번호를 단 `/og.png?v=2` —
+  // 카카오톡·페이스북이 옛 로고 이미지를 주소 단위로 들고 있어 주소를 바꿔야 새로 긁는다. 경로는 같은 정적 라우트(app/og.png/route.tsx)다.
+  test("shareMetadata — website · siteName · og:locale ko_KR/en_US(대안 로케일 서로) · 이미지 /og.png?v=2 1200×630(alt = 브랜드명) · summary_large_image · 제목·설명은 넣지 않는다(페이지 메타를 물려받는다)", () => {
+    expect(OG_IMAGE_PATH).toBe("/og.png?v=2");
+    const k = shareMetadata("ko", COMPANY.brandName);
     expect(k.openGraph).toEqual({
       type: "website",
-      siteName: "베스트투어",
+      siteName: COMPANY.brandName,
       locale: "ko_KR",
       alternateLocale: ["en_US"],
-      images: [{ url: "/og.png", width: 1200, height: 630, type: "image/png", alt: "베스트투어" }],
+      images: [{ url: "/og.png?v=2", width: 1200, height: 630, type: "image/png", alt: COMPANY.brandName }],
     });
-    expect(k.twitter).toEqual({ card: "summary_large_image", images: [{ url: "/og.png", alt: "베스트투어" }] });
-    const e = shareMetadata("en", "Bestour");
+    expect(k.twitter).toEqual({ card: "summary_large_image", images: [{ url: "/og.png?v=2", alt: COMPANY.brandName }] });
+    const e = shareMetadata("en", COMPANY.brandNameEn);
     expect(e.openGraph).toEqual({
       type: "website",
-      siteName: "Bestour",
+      siteName: COMPANY.brandNameEn,
       locale: "en_US",
       alternateLocale: ["ko_KR"],
-      images: [{ url: "/og.png", width: 1200, height: 630, type: "image/png", alt: "Bestour" }],
+      images: [{ url: "/og.png?v=2", width: 1200, height: 630, type: "image/png", alt: COMPANY.brandNameEn }],
     });
   });
 
@@ -1110,7 +1118,9 @@ describe("12. 공유 메타 · 공유 이미지(/og.png)", () => {
     expect(src).toMatch(/export async function GET\(/);
     expect(src).toMatch(/export const dynamic = ["']force-static["']/);
     expect(src).toMatch(/OG_IMAGE_SIZE/); // 크기는 lib/share-meta.ts 의 한 곳(메타의 width·height 와 같은 값)
-    expect(src).toMatch(/public\/brand\/logo-bestour\.png/);
+    // 사장님 요청 2(2026-10-10 · T2-1): 공유 이미지의 로고도 best mobility(가로형 · 심볼 포함 · 배경 투명)
+    expect(src).toMatch(/public\/brand\/logo-bestmobility\.png/);
+    expect(src).not.toMatch(/logo-bestour/);
     expect(src).toMatch(/styles\/semantic\.css/);
     expect(src).not.toMatch(/#[0-9a-fA-F]{3,8}\b/); // 색은 토큰에서 — HEX 를 다시 적지 않는다
     expect(src.split("\n").filter((l) => HANGUL.test(l))).toEqual([]);
@@ -1163,22 +1173,26 @@ describe.runIf(Boolean(BASE))("14. 렌더 실측 (GET)", { timeout: 180_000 }, (
     expect(status).toBe(404);
     expect(html).toContain('data-locale-block="en"');
     expect(html).toContain(en.errors.notFoundTitle);
-    expect(html).toMatch(/logo-bestour/);
+    expect(html).toMatch(/logo-bestmobility/);
+    expect(html).not.toMatch(/logo-bestour/);
     expect(html).toMatch(/href="\/en"/);
   });
 
-  test("/ · /en — og:image(/og.png · 리다이렉트 없이 200 PNG) · og:locale · twitter:card · icon 링크", async () => {
+  test("/ · /en — og:image(/og.png?v=2 · 리다이렉트 없이 200 PNG — 쿼리가 붙어도 같은 정적 라우트) · og:locale · twitter:card · icon 링크", async () => {
     for (const [route, loc] of [["/", "ko_KR"], ["/en", "en_US"]] as const) {
       const { html } = await get(route);
-      const og = /<meta property="og:image" content="([^"]+)"/.exec(html)?.[1];
+      const og = /<meta property="og:image" content="([^"]+)"/.exec(html.replace(/&amp;/g, "&"))?.[1];
       expect(og, route).toBeDefined();
-      expect(new URL(og!).pathname, route).toBe("/og.png");
-      const img = await fetch(`${BASE}/og.png`, { redirect: "manual" });
+      const ogUrl = new URL(og!);
+      expect(ogUrl.pathname, route).toBe("/og.png");
+      expect(ogUrl.search, route).toBe("?v=2");
+      // 광고한 주소 그대로(판 번호 포함) 받는다 — 정적 라우트가 쿼리를 무시하고 같은 PNG 를 낸다
+      const img = await fetch(`${BASE}${ogUrl.pathname}${ogUrl.search}`, { redirect: "manual" });
       expect(img.status, route).toBe(200);
       expect(img.headers.get("content-type"), route).toBe("image/png");
       expect(html, route).toContain(`<meta property="og:locale" content="${loc}"`);
       expect(html, route).toMatch(/<meta name="twitter:card" content="summary_large_image"/);
-      expect(html, route).toMatch(/<meta name="twitter:image" content="[^"]*\/og\.png"/);
+      expect(html, route).toMatch(/<meta name="twitter:image" content="[^"]*\/og\.png\?v=2"/);
       expect(html, route).toMatch(/<link rel="icon" href="\/icon\.png/);
       expect(html, route).toMatch(/<link rel="apple-touch-icon" href="\/apple-icon\.png/);
     }

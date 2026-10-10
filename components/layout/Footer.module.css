@@ -44,11 +44,14 @@
   gap: var(--space-stack-sm);
 }
 
+/* 간판 로고 best mobility 가로형(2110×265 — 가로:세로 7.96:1 · 사장님 요청 2). 옛 bestour(5.15:1) 165×32 자리 */
 .logo {
   display: block;
-  width: 165px;
-  height: 32px;
+  width: 215px;
+  height: 27px;
+  max-width: 100%;
   object-fit: contain;
+  object-position: left center;
 }
 
 .tel {
@@ -133,35 +136,15 @@
   color: var(--text-secondary);
 }
 
-.badgeRow {
-  margin: 0;
-}
-
-.badge,
-.badgeRelated {
-  display: inline-flex;
-  align-items: center;
-  padding: 0 var(--space-inline-xs);
-  border-radius: var(--radius-chip);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  line-height: 1.8;
-}
-
-.badge {
-  background: var(--bg-subtle);
-  color: var(--text-brand);
-}
-
-.badgeRelated {
-  border: 1px solid var(--border-decorative);
-  color: var(--text-secondary);
-}
-
+/* align-items center (T2-1, 2026-10-10): 링크(.factLink)는 .fact(inline-flex)의 flex 항목이라 위아래 안쪽 여백(누르는 상자 48px 이상)이
+ * 실제로 높이를 갖는다. 줄 맨 위에 붙이면(기본 stretch) 링크 글자만 같은 줄의 다른 사실보다 아래로 처졌다(이메일 — 1280px 실측 약 25px,
+ * 이번에 베스트투어 줄로 옮긴 '사업자정보 확인'도 같다). 가운데 맞춤으로 글줄을 이웃과 같은 높이에 둔다 — 링크가 있는 줄만 그만큼 높아지고,
+ * 누르는 상자는 자기 줄 안에 있어 아래·위 줄의 링크와 겹치지 않는다(음수 바깥 여백으로 되돌리면 1280px 영문에서 이메일 상자가
+ * '사업자정보 확인' 글자 아래쪽을 덮었다 — 실측). */
 .row {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0 var(--space-inline-sm);
   margin: 0;
 }
@@ -182,8 +165,9 @@
   color: var(--text-primary);
 }
 
-/* 이메일 링크 — 사업자 정보 문장 줄 안의 인라인 링크. 위아래 안쪽 여백으로 누르는 상자만 48px 로 키운다(인라인 요소의 세로 여백은
- * 줄 높이를 바꾸지 않는다 — 글줄은 그대로다 · 위아래 줄은 누를 것이 없는 글자뿐이다 · P7-4) */
+/* 사업자 정보 줄 안의 링크(이메일 · T2-1 부터 '사업자정보 확인'). 위아래 안쪽 여백으로 누르는 상자를 48px 이상으로 키운다(P7-4).
+ * .fact(inline-flex)의 flex 항목이라 이 여백은 높이를 갖는다 — 링크가 있는 줄만 그만큼 높아지고 글줄 맞춤은 .row 의 align-items 가 맡는다.
+ * 누르는 상자가 자기 줄 안에 있어 위·아래 줄의 다른 링크를 덮지 않는다(사본 실측 · 320~1280px · 국문·영문 — 글자 9곳 눌러 9곳 모두 제 링크). */
 .factLink {
   padding-block: var(--space-stack-sm);
   color: var(--text-link);
@@ -196,11 +180,10 @@
   border-radius: var(--radius-chip);
 }
 
-/* 운영사와 관계사를 눈으로 가르는 점선 — 계약 주체가 누구인지 오해하지 않도록 */
-.related {
+/* 두 번째 회사((주)베스트모빌리티) 줄 — 위 베스트투어 묶음과 한 줄 남짓 띄운다. '운영사'·'관계사' 배지와 점선은 사장님 요청 5(2026-10-10)로
+ * 걷었다 — 계약 주체가 누구인지는 맨 아래 고지(.note — RELATED_COMPANY.note)가 이름으로 밝힌다. */
+.rowNextCompany {
   margin-top: var(--space-stack-xs);
-  padding-top: var(--space-stack-xs);
-  border-top: 1px dashed var(--border-decorative);
 }
 
 .note {

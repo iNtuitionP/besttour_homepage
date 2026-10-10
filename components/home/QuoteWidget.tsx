@@ -13,6 +13,8 @@
  *   - 닫히면 여는 버튼으로, [수정]이면 첫 칸으로 포커스를 돌려준다.
  *   - 선택지·라벨·법정 문구(verbatim·동의·청약철회)는 서버 Hero 가 props 로 넣는다. 이 파일에 한글 리터럴·원장 import 없음.
  * 인천공항을 고르면 보이던 공항 안내 한 줄(목업 .quote__air)은 사장님 요청 12(2026-10-10)로 지웠다 — 목업과 다르다.
+ * 버튼 아래 작은 안내 두 줄(목업 .quote__note — 결제 안내 · 접수 안내)도 사장님 요청 7(2026-10-10 · T2-2)로 지웠다 — 목업과 다르다.
+ * 접수 안내 verbatim 은 모달의 제출 버튼 위와 완료 화면에서 보인다(legal.bookingNotice).
  */
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
@@ -48,8 +50,6 @@ export function QuoteWidget({
   labels,
   groups,
   defaults,
-  paymentNote,
-  bookingNotice,
   locale,
   legal,
   turnstileSiteKey,
@@ -58,8 +58,6 @@ export function QuoteWidget({
   labels: QuoteWidgetLabels;
   groups: QuoteGroup[];
   defaults: { origin: string; dest: string };
-  paymentNote: string;
-  bookingNotice: string;
   locale: string;
   legal: QuickQuoteLegal;
   turnstileSiteKey: string;
@@ -254,11 +252,6 @@ export function QuoteWidget({
         >
           {labels.cta}
         </button>
-        <p className={s.quoteNote}>
-          {paymentNote}
-          <br />
-          {bookingNotice}
-        </p>
       </div>
 
       <QuickQuoteModal

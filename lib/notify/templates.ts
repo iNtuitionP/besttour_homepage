@@ -7,9 +7,11 @@
  *
  * 지키는 것 네 가지
  * ---------------------------------------------------------------------------
- * 1. **verbatim 은 한 바이트도 바뀌지 않는다.** 접수·확정 문구는 원장(../legal/disclosures VERBATIM.bookingNotice)에서
- *    가져다 그대로 끼운다. 길이가 모자라면 **다른 문장을 줄인다** — 이 문장은 SMS 판에도 그대로 남는다
- *    (tests/notify-templates.test.ts §1 이 hex 로 대조한다).
+ * 1. **verbatim 은 한 바이트도 바뀌지 않는다.** 접수 안내 문구("확인 후 연락드리겠습니다.")는 원장
+ *    (../legal/disclosures VERBATIM.bookingNotice)에서 가져다 그대로 끼운다. 길이가 모자라면 **다른 문장을 줄인다** — 이 문장은
+ *    SMS 판에도 그대로 남는다(tests/notify-templates.test.ts §1 이 hex 로 대조한다).
+ *    **접수 문자·접수 알림톡에만 넣는다.** 확정 문자·확정 알림톡에는 넣지 않는다(사장님 요청 7 · 결정 3-2, 2026-10-10 · T2-2) —
+ *    이미 확정된 예약에 "확인 후 연락드리겠습니다" 가 붙으면 아직 확정 전인 것처럼 읽혀 뜻이 뒤집힌다.
  * 2. **정보성 문자에 광고 표현 0.** 할인·이벤트·특가 같은 낱말이 하나라도 섞이면 정보통신망법 §50 상 광고성 정보가 되어
  *    제목의 `(광고)` 표기와 무료 수신거부 번호 고지 의무가 생긴다 — 우리는 그 둘을 만들지 않았고, 만들 계획도 없다.
  *    `marketing_consent` 를 받은 사람에게도 **이 템플릿으로는** 광고를 보내지 않는다(광고 발송은 별도 템플릿·별도 태스크).
@@ -28,9 +30,9 @@
  * 그 대가를 눈에 보이게 하려고 `kscByteLength()`(EUC-KR 추정)를 같이 계산해 `RenderedMessage.kscBytes` 로 싣는다 —
  * **선택에는 쓰지 않는다.** 요금 판단과 P4-2 의 제공자 대조용 숫자다.
  *
- * 실제 결과: verbatim 한 문장이 UTF-8 81바이트(EUC-KR 추정 57바이트)라 90바이트 SMS 에 거의 다 찬다. 그래서 verbatim 을
- * 반드시 포함해야 하는 고객 문자 2종과, 필수 항목이 많은 사장님 문자 2종은 **전부 LMS 로 나간다.** 줄일 수 있는 것은
- * 이미 줄였고, 남은 것은 규약이 요구하는 내용뿐이다.
+ * 실제 결과: 고객 접수 문자는 접수번호 · verbatim(UTF-8 36바이트 — 2026-10-10 새 문장) · 예약확인 링크 · 문의 전화를 다 담으면
+ * 90바이트를 넘고, 고객 확정 문자는 약관 제8조 고지 줄 때문에, 사장님 문자 2종은 필수 항목이 많아서 **전부 LMS 로 나간다.**
+ * 줄일 수 있는 것은 이미 줄였고, 남은 것은 규약이 요구하는 내용뿐이다(옛 verbatim 은 81바이트였다).
  */
 import { CANCELLATION, COMPANY, PAYMENT, VERBATIM, WITHDRAWAL } from "../legal/disclosures";
 import { FALLBACK_SITE_ORIGIN } from "../site-url";
@@ -64,8 +66,16 @@ export const ADMIN_RESERVATIONS_PATH = "/admin/reservations";
  */
 export const ADMIN_NOTIFICATIONS_PATH = "/admin/notifications";
 
-/** 발신 브랜드 표기. 원장의 브랜드명으로 만든다 — 상호를 여기 다시 적지 않는다. */
+/** 발신 브랜드 표기. 원장의 브랜드명으로 만든다 — 상호를 여기 다시 적지 않는다. (2026-10-10 간판 변경: [베스트투어] → [베스트모빌리티]) */
 const BRAND = `[${COMPANY.brandName}]`;
+
+/**
+ * 계약 주체 줄 — 고객 확정 문자·알림톡의 **맨 아래**에 붙는다(사장님 요청 14 · 결정 12 · T2-1, 2026-10-10).
+ * 접두가 간판 브랜드([베스트모빌리티])로 바뀌어도 계약 상대가 법정 상호(합자회사 베스트투어 — 원장 COMPANY.legalName)라는 사실이
+ * 확정 통지에 남게 한다. 입금 계좌 줄의 예금주((주)베스트모빌리티)와 함께 읽혀 계약 주체·대금 수령 주체가 갈린다는 것도 드러난다
+ * (사이트 푸터의 RELATED_COMPANY.note 와 같은 사실). 상호는 원장에서 조립한다 — 여기 다시 적지 않는다.
+ */
+export const CONTRACT_PARTY_LINE = `운영: ${COMPANY.legalName}`;
 
 export type MessageFormat = "sms" | "lms";
 
@@ -236,7 +246,7 @@ function quickOwnerVariants(v: OwnerVars): MessageVariants {
 
 /**
  * 사장님 접수 알림 — 접수번호·성명·연락처·차량·운행일·구간·인원·관리자 링크(브리프 Part 1).
- * verbatim 은 넣지 않는다: "담당자 확인 후 연락드리며" 는 고객에게 하는 약속이고, 사장님에게 되돌려 보내면 뜻이 뒤집힌다.
+ * verbatim 은 넣지 않는다: "확인 후 연락드리겠습니다" 는 고객에게 하는 약속이고, 사장님에게 되돌려 보내면 뜻이 뒤집힌다.
  * SMS 판은 같은 항목을 한 줄로 붙인 최소형이다 — 이 항목들을 더 뺄 수 없어 실제로는 언제나 LMS 로 나간다.
  * P3-8: 간편 접수는 quickOwnerVariants 로 간다. 아래 위저드 판은 옛 접수분(통지가 아직 대기열에 있는 행)을 위해 한 글자도 바꾸지 않았다.
  */
@@ -260,6 +270,8 @@ function ownerVariants(v: OwnerVars): MessageVariants {
 
 /**
  * 고객 접수 확인 — 접수번호 + verbatim + 예약확인 안내 + 예약·상담 전화(브리프 Part 1 · P1-7).
+ * verbatim("확인 후 연락드리겠습니다.")은 여기 남긴다(T2-2 판단, 2026-10-10): 접수 직후에 보내는 문자라 "확인한 뒤 연락한다" 는 뜻이
+ * 사실과 맞는다. 사이트의 완료 화면·예약 확인 카드(접수 상태)와 같은 말이다.
  * 예약확인은 접수번호와 휴대폰 뒷 4자리로 조회한다(app/[locale]/(site)/reservation/check). 문구는 그 화면과 같은 말을 쓴다.
  * 전화는 원장 COMPANY.consultTel — 손님에게 "여기로 전화하라" 고 안내하는 번호다(사이트의 전화번호는 이것 하나 — P7-5).
  */
@@ -279,22 +291,21 @@ function createdCustomerVariants(v: CustomerVars): MessageVariants {
 }
 
 /**
- * 확정 사실을 알리는 문장. 이 문장 **바로 뒤**에 verbatim 이 오면 "확정됐다" 다음에 "담당자 확인 후 연락드리며" 가 붙어
- * 아직 확정 전인 것처럼 읽힌다 — 확정 문자에서 이것은 문체 문제가 아니라 사실을 뒤집는 결함이다.
- * verbatim 은 한 글자도 고칠 수 없으므로(CLAUDE.md §3) **주변을 고쳤다**: 이 문장은 맨 위(일어난 일),
- * verbatim 은 맨 아래(늘 붙는 고지)로 떼어 놓았다. tests/notify-templates.test.ts §1 이 그 배치를 잠근다.
+ * 확정 사실을 알리는 문장 — 확정 문자·알림톡의 맨 위(일어난 일).
+ * 예전에는 verbatim 이 확정 문자 맨 아래에 붙어 있어 "확정됐다" 와 부딪히지 않게 떼어 놓는 배치 잠금이 있었다. 새 verbatim
+ * "확인 후 연락드리겠습니다." 는 어디에 두어도 확정 통지의 뜻을 뒤집으므로 확정 문자·알림톡에서 아예 뺐다(사장님 요청 7 · 결정 3-2,
+ * 2026-10-10 · T2-2). tests/notify-templates.test.ts §1 · tests/booking-notice-t2-2.test.ts 가 그 부재를 잠근다.
  */
 export const CONFIRMED_HEADLINE = "예약이 확정되었습니다.";
 
 /**
- * 고객 확정 안내 — 접수번호 + 확정 사실 + verbatim + 결제 안내(브리프 Part 1).
+ * 고객 확정 안내 — 접수번호 + 확정 사실 + 결제 안내 + 약관 제8조 고지(브리프 Part 1).
  *
- * 읽는 순서를 "일어난 일 → 앞으로 할 일 → 늘 붙는 고지" 로 짰다.
- *   1. 일어난 일   : `[베스트투어] 예약이 확정되었습니다.` + 접수번호
+ * 읽는 순서를 "일어난 일 → 앞으로 할 일 → 계약 주체" 로 짰다.
+ *   1. 일어난 일   : `[베스트모빌리티] 예약이 확정되었습니다.` + 접수번호
  *   2. 앞으로 할 일: 대금 지급 조건(원장 PAYMENT.line 그대로 — **지어내지 않는다**) · 예약확인 방법 · 변경·취소 연락처
- *   3. 늘 붙는 고지: verbatim. 사이트에서도 이 문장은 카드 아래쪽의 상시 고지 자리에 있다
- *                    (components/reservation-check/ReservationCard.tsx `data-legal="booking-notice"`).
- * 그래서 verbatim 앞 문장은 확정 선언이 아니라 연락처 안내다 — 두 문장이 서로 부딪히지 않는다.
+ *   3. 맨 아래     : 계약 주체 줄(CONTRACT_PARTY_LINE — '운영: 합자회사 베스트투어', T2-1). 서명처럼 마지막에 둔다.
+ * verbatim 은 넣지 않는다(T2-2 — 위 CONFIRMED_HEADLINE 주석). 사이트의 예약 확인 카드도 확정 상태에서는 그 문장을 보이지 않는다.
  * 변경·취소 안내 문구는 예약확인 화면(`reservationCheck.card.help`)과 같은 말을 쓴다.
  *
  * P1-7 R2 [P1-4] — 약관 제8조가 약속한 "예약 확정 통지에서의 고지": 결제 안내 바로 다음에 원장 줄 셋(취소·환불 · 청약철회 제한 ·
@@ -304,7 +315,13 @@ export const CONFIRMED_HEADLINE = "예약이 확정되었습니다.";
 function confirmedCustomerVariants(v: CustomerVars): MessageVariants {
   const notices = [CANCELLATION.smsLine, WITHDRAWAL.smsLine, PAYMENT.accountLine, `자세한 내용 ${guideLink(v)}`];
   return {
-    sms: lines(`${BRAND} 확정 ${v.publicCode}`, PAYMENT.line, ...notices, `문의 ${COMPANY.consultTel}`, VERBATIM.bookingNotice),
+    sms: lines(
+      `${BRAND} 확정 ${v.publicCode}`,
+      PAYMENT.line,
+      ...notices,
+      `문의 ${COMPANY.consultTel}`,
+      CONTRACT_PARTY_LINE,
+    ),
     lms: lines(
       `${BRAND} ${CONFIRMED_HEADLINE}`,
       "",
@@ -315,7 +332,7 @@ function confirmedCustomerVariants(v: CustomerVars): MessageVariants {
       `예약 내용은 ${checkLink(v)} 에서 접수번호와 휴대폰 뒷 4자리로 확인하실 수 있습니다.`,
       `예약 변경·취소는 ${COMPANY.consultTel} 로 전화 주시면 도와드립니다.`,
       "",
-      VERBATIM.bookingNotice,
+      CONTRACT_PARTY_LINE,
     ),
   };
 }
@@ -333,7 +350,7 @@ const FAILURE_KIND_LABEL: Record<NotifyEvent, string> = { created: "접수", con
  * **고객 이름·전화·메일·문의내용을 넣지 않는다.** 입력 타입이 `CustomerVars` 라 넣을 자리도 없다(TemplateVarsByKey 주석).
  * 사장님은 접수번호로 관리자 화면에서 전부 볼 수 있고, 통지가 못 나간 채널로 개인정보를 다시 흘릴 이유가 없다.
  *
- * verbatim 은 넣지 않는다 — "담당자 확인 후 연락드리며" 는 **고객에게 하는 약속**이지 사장님께 하는 보고가 아니다
+ * verbatim 은 넣지 않는다 — "확인 후 연락드리겠습니다" 는 **고객에게 하는 약속**이지 사장님께 하는 보고가 아니다
  * (사장님 접수 알림 `ownerVariants` 가 같은 이유로 넣지 않는다).
  * 시각도 넣지 않는다: 이 모듈에는 시계가 없고(순수), 메일 자체의 수신 시각과 발송 내역의 시각이 그 역할을 한다.
  *
@@ -418,11 +435,11 @@ export function renderTemplate<K extends TemplateKey>(key: K, vars: TemplateVars
  * 알림톡은 문자와 달리 **본문을 미리 카카오에 등록하고 심사를 받는다.** 심사에 내는 형태는 변수 자리를 `#{변수명}` 으로
  * 적은 원문이고, 발송 시 그 자리에 값을 채워 보낸다. 아래 `body` 가 **그대로 심사 제출본**이다(별도 사본을 만들지 않는다).
  *
- * created 의 심사 제출본은 이렇게 생겼다:
- *   [베스트투어] 견적 신청이 접수되었습니다.
+ * created 의 심사 제출본은 이렇게 생겼다(접두는 원장 brandName — 2026-10-10 간판 변경):
+ *   [베스트모빌리티] 견적 신청이 접수되었습니다.
  *
  *   접수번호 #{접수번호}
- *   담당자 확인 후 연락드리며, 확정된 예약만 결제 진행됩니다.
+ *   확인 후 연락드리겠습니다.
  *
  *   접수 내용은 예약확인 화면에서 접수번호와 휴대폰 뒷 4자리로 확인하실 수 있습니다.
  *   문의 #{상담전화}
@@ -489,8 +506,8 @@ export const ALIMTALK_TEMPLATES: readonly AlimtalkTemplate[] = [
   },
   {
     event: "confirmed",
-    // 문자 확정본과 같은 순서다: 일어난 일 → 앞으로 할 일 → 늘 붙는 고지(verbatim 은 맨 아래).
-    // 확정 선언 바로 뒤에 verbatim 이 오면 아직 확정 전인 것처럼 읽힌다 — 채널이 달라도 같은 결함이다.
+    // 문자 확정본과 같은 순서다: 일어난 일 → 앞으로 할 일 → 맨 아래 계약 주체 줄(T2-1).
+    // verbatim("확인 후 연락드리겠습니다.")은 넣지 않는다 — 확정 통지에 붙으면 아직 확정 전인 것처럼 읽힌다(T2-2 · 결정 3-2). 채널이 달라도 같다.
     name: "예약 확정 안내",
     body: lines(
       `${BRAND} ${CONFIRMED_HEADLINE}`,
@@ -504,7 +521,7 @@ export const ALIMTALK_TEMPLATES: readonly AlimtalkTemplate[] = [
       "예약 내용은 예약확인 화면에서 접수번호와 휴대폰 뒷 4자리로 확인하실 수 있습니다.",
       "예약 변경·취소는 #{상담전화} 로 전화 주시면 도와드립니다.",
       "",
-      VERBATIM.bookingNotice,
+      CONTRACT_PARTY_LINE,
     ),
     variables: ALIMTALK_VARIABLES,
     // R3 [P2-H]: 문자의 "자세한 내용 <origin>/guide" 에 해당하는 링크를 **버튼으로** 담는다(본문 URL 금지 규칙은 그대로).

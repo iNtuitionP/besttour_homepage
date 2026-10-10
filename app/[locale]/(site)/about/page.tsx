@@ -72,8 +72,10 @@ export default async function AboutPage({ params }: { params: Params }) {
 
   // 회사 정보 표 — 라벨은 원장 라벨(ledgerUi), 값은 원장 COMPANY. 빈 값 행은 LegalRecordList 가 뺀다.
   // 전화 줄은 예약·상담 전화(P1-7 — en 은 +82 표기) — 사이트의 전화번호는 이것 하나다(P7-5 — 휴대전화 줄은 지웠다).
+  // 상호 행 라벨은 '운영사'(원장 footer.operator) 대신 이 페이지 카탈로그의 '상호'(pages.about.facts.legalName) — 사장님 요청 5 · 결정 2(2026-10-10):
+  // 화면에서 '운영사'·'관계사' 꼬리표를 걷는다. 값은 법정 상호(합자회사 베스트투어) 그대로다.
   const factLabels = {
-    legalName: footer.operator,
+    legalName: t("facts.legalName"),
     representative: footer.representative,
     bizRegNo: footer.bizRegNo,
     mailOrder: footer.mailOrder,
@@ -118,7 +120,8 @@ export default async function AboutPage({ params }: { params: Params }) {
 
       <section className={`${h.section} ${h.toneLav}`} aria-labelledby="facts-h" data-section="facts">
         <div className={h.wrap}>
-          <SectionHead id="facts-h" eyebrow={footer.operator} title={footer.companyInfo} split={false} />
+          {/* 소제목 없음 — 예전 소제목 '운영사' 를 걷었다(사장님 요청 5). 제목(사업자 정보)은 남는다 */}
+          <SectionHead id="facts-h" title={footer.companyInfo} split={false} />
           <OfficialKoreanNotice notice={ui.officialNotice} />
           <LegalRecordList
             labels={factLabels}

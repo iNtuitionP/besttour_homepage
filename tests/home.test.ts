@@ -158,9 +158,13 @@ describe("2. 'use client' 경계", () => {
 // 3. 원장 import 존재 + 원장 문구 문자열 리터럴 0
 // =============================================================================
 describe("3. 법정 문구는 원장 참조로만", () => {
-  test("components/home/** 전체에서 VERBATIM · QUOTE_BASIS · PAYMENT · COMPANY 를 import 한다", () => {
+  // T2-2(2026-10-10, 사장님 요청 20 · 결정 3-5): 대금 지급 줄(PAYMENT.line)을 홈 이용 방법에서 뺐다 — components/home/** 의 PAYMENT import 는
+  // 0 이 됐다(견적 모달의 대금 지급 줄은 components/quote/WithdrawalNotice.tsx 가 그린다 — 아래 단언). 필수 import 목록에서 PAYMENT 를 빼고 부재를 잠근다.
+  test("components/home/** 전체에서 VERBATIM · QUOTE_BASIS · COMPANY 를 import 한다 · PAYMENT 는 import 하지 않는다(대금 지급 줄은 모달·/guide)", () => {
     const all = new Set(homeTsx.flatMap((f) => ledgerImports(read(f))));
-    for (const name of ["VERBATIM", "QUOTE_BASIS", "PAYMENT", "COMPANY"]) expect(all.has(name), name).toBe(true);
+    for (const name of ["VERBATIM", "QUOTE_BASIS", "COMPANY"]) expect(all.has(name), name).toBe(true);
+    expect(all.has("PAYMENT"), "PAYMENT").toBe(false);
+    expect(ledgerImports(read("components/quote/WithdrawalNotice.tsx"))).toContain("PAYMENT");
   });
 
   test("원장 문구의 문자열 리터럴 0건 — 소스와 ko.json home.* 양쪽", () => {
@@ -185,12 +189,14 @@ describe("3. 법정 문구는 원장 참조로만", () => {
     for (const frag of fragments) expect(homeKo.includes(frag), `ko.json home 에 원장 문구 복제: ${frag}`).toBe(false);
   });
 
-  test("HowItWorks 는 GUIDE_SECTIONS.flow 와 verbatim · 산정기준 · 대금 문구를 원장에서 렌더한다", () => {
+  // T2-2(2026-10-10, 사장님 요청 7 · 20 · 결정 3-2 · 3-5): 이용 방법 상자에서 verbatim 과 대금 지급 줄을 뺐다 — 산정 기준 한 줄만 남는다.
+  test("HowItWorks 는 GUIDE_SECTIONS.flow 와 산정기준을 원장에서 렌더하고, verbatim · 대금 지급 줄은 렌더하지 않는다", () => {
     const src = read(`${HOME_DIR}/HowItWorks.tsx`);
-    expect(ledgerImports(src)).toEqual(expect.arrayContaining(["GUIDE_SECTIONS", "VERBATIM", "QUOTE_BASIS", "PAYMENT"]));
-    expect(src).toMatch(/VERBATIM\.bookingNotice/);
+    expect(ledgerImports(src).sort()).toEqual(["GUIDE_SECTIONS", "QUOTE_BASIS"]);
     expect(src).toMatch(/QUOTE_BASIS\.line/);
-    expect(src).toMatch(/PAYMENT\.line/);
+    const code = stripComments(src, `${HOME_DIR}/HowItWorks.tsx`);
+    expect(code).not.toMatch(/VERBATIM|bookingNotice|localizeVerbatim/);
+    expect(code).not.toMatch(/PAYMENT/);
   });
 
   // P2-6: 대표자 표기는 ledgerUi(locale).representative — ko 는 COMPANY.representative, en 은 원장의 COMPANY.representativeEn.

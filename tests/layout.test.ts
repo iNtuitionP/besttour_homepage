@@ -247,11 +247,13 @@ describe("3. components/layout/** — 한글 리터럴 0건 + 원장 import", ()
     expect(hits, "문구는 원장(lib/legal/disclosures.ts) 또는 messages/ 에서만 온다").toEqual([]);
   });
 
-  test("원장 상수 4종을 import 하고, 원장 라벨(LEGAL_LABELS)은 ledgerUi 로 받는다 (P2-6)", () => {
+  // T2-2(2026-10-10, 사장님 요청 7 · 결정 3-2): 푸터에서 verbatim(VERBATIM.bookingNotice)을 뺐다 — layout/** 의 VERBATIM import 는 0 이다.
+  test("원장 상수 3종을 import 하고(VERBATIM 은 import 하지 않는다), 원장 라벨(LEGAL_LABELS)은 ledgerUi 로 받는다 (P2-6)", () => {
     const imported = new Set(layoutSources.flatMap(({ text }) => ledgerImports(text)));
-    for (const name of ["VERBATIM", "COMPANY", "RELATED_COMPANY", "LEGAL_LINKS"]) {
+    for (const name of ["COMPANY", "RELATED_COMPANY", "LEGAL_LINKS"]) {
       expect(imported, `${name} import 없음`).toContain(name);
     }
+    expect(imported, "VERBATIM import 가 남았다").not.toContain("VERBATIM");
     // 라벨은 로케일에 따라 원장 한국어(ko — LEGAL_LABELS 그대로) 또는 en.json legal.labels 가 된다.
     // ko 값이 LEGAL_LABELS 와 같은 글자라는 것은 tests/i18n-en.test.ts §4 가 잠근다. 셸은 라벨 리터럴을 갖지 않는다.
     const viaLedgerUi = layoutSources.filter(({ text }) =>
@@ -270,10 +272,11 @@ describe("3. components/layout/** — 한글 리터럴 0건 + 원장 import", ()
       "COMPANY.privacyOfficer",
       "RELATED_COMPANY.bizRegNo",
       "RELATED_COMPANY.note",
-      "VERBATIM.bookingNotice",
     ]) {
       expect(src, field).toContain(field);
     }
+    // T2-2(2026-10-10): 접수 안내 verbatim 은 푸터에서 뺐다 — 주석을 걷은 코드에 그 참조가 없다.
+    expect(stripComments(src, `${LAYOUT_DIR}/Footer.tsx`)).not.toMatch(/VERBATIM|bookingNotice|localizeVerbatim/);
   });
 
   test("실증 불가 수치·문구를 옮기지 않았다 (목업 상단바의 상담 가능 시간·운행 연차 등)", () => {
@@ -300,8 +303,14 @@ describe("3. components/layout/** — 한글 리터럴 0건 + 원장 import", ()
     }
   });
 
-  test("헤더에 관계사 로고(best mobility)를 넣지 않는다 (스펙 §13.1)", () => {
-    expect(read(`${LAYOUT_DIR}/Header.tsx`)).not.toContain("bestmobility");
+  // 스펙 §13.1 의 "헤더는 bestour 단독" 은 사장님 요청 2·14(2026-10-10 · 결정 1 간판 변경)로 뒤집혔다 — 헤더·푸터 로고는 best mobility 하나다.
+  // 두 로고를 나란히 두지 않는다는 원칙(어느 회사와 계약하는지 흐려진다)은 그대로라, 옛 로고가 남지 않았는지도 함께 본다.
+  test("헤더·푸터 로고는 best mobility 하나 — 옛 bestour 로고를 함께 두지 않는다 (사장님 요청 2 · 스펙 §13.13)", () => {
+    for (const f of ["Header.tsx", "Footer.tsx"]) {
+      const code = codeOf(`${LAYOUT_DIR}/${f}`);
+      expect(code, f).toContain("/brand/logo-bestmobility.png");
+      expect(code, f).not.toContain("logo-bestour");
+    }
   });
 
   test("verbatim 문자열 리터럴 0건 — 문구는 원장 참조로만", () => {

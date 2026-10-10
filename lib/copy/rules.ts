@@ -170,7 +170,8 @@ export const COMPARATIVE_CLAIMS_EN: readonly CopyRule[] = [
   ["most popular / most used", /\bmost\s+(popular|used|requested|booked)\b/i],
   ["transparent pricing / rates", /\btransparent\s+(pric|rate|fare)/i],
   ["one-minute quote", /\b(one|1)[-\s]minute\b/i],
-  // ── P2-6 (브리프 §5) — 최상급·순위·보장. 브랜드 'Bestour' 는 `\bbest\b` 에 걸리지 않는다(뒤가 단어 문자).
+  // ── P2-6 (브리프 §5) — 최상급·순위·보장. 브랜드 'Bestmobility'(원장 brandNameEn · 2026-10-10 간판 변경 — 옛 'Bestour' 도)는
+  //    `\bbest\b` 에 걸리지 않는다(뒤가 단어 문자). 띄어 쓴 'Best Mobility' 는 걸린다 — 브랜드는 붙여 쓴다.
   ["number one", /\bnumber\s*(?:one|1)\b/i],
   ["best (최상급)", /\bbest\b/i],
   ["leading (최상급)", /\bleading\b/i],

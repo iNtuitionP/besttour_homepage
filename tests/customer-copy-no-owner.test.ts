@@ -64,7 +64,8 @@ describe("1. 공개 카탈로그 — admin.* 를 뺀 모든 값", () => {
   test("P7-7 에서 바꾼 세 자리 — 새 문구 그대로", () => {
     const pick = (cat: Record<string, unknown>, dotted: string) =>
       dotted.split(".").reduce<unknown>((o, k) => (o as Record<string, unknown>)[k], cat);
-    expect(pick(ko, "home.hero.widget.sub")).toBe("일정과 인원을 남겨 주시면 확인 후 연락드립니다");
+    // T2-2(2026-10-10, 사장님 요청 7 · 결정 3-7): 어미만 verbatim 과 같게 '연락드립니다' → '연락드리겠습니다'. "사장님" 0 은 그대로다.
+    expect(pick(ko, "home.hero.widget.sub")).toBe("일정과 인원을 남겨 주시면 확인 후 연락드리겠습니다");
     expect(pick(ko, "quote.modal.summaryHint")).toBe("차량 종류·출발 시각 등은 전화로 확인해 드립니다.");
     expect(pick(en, "home.hero.widget.sub")).toBe("Leave your dates and group size, and we will review them and contact you");
   });
@@ -72,8 +73,10 @@ describe("1. 공개 카탈로그 — admin.* 를 뺀 모든 값", () => {
 
 describe("2. 원장 — 손님 화면에 렌더되는 값", () => {
   test("verbatim 접수·확정 문구에 사장님이 없다 — 새 문구 바이트 그대로", () => {
-    expect(VERBATIM.bookingNotice).toBe("담당자 확인 후 연락드리며, 확정된 예약만 결제 진행됩니다.");
+    // T2-2(2026-10-10, 사장님 요청 7 · 결정 3 A안): '담당자 확인 후 …' → '확인 후 연락드리겠습니다.'(원장 · CLAUDE.md §3 함께 개정).
+    expect(VERBATIM.bookingNotice).toBe("확인 후 연락드리겠습니다.");
     expect(VERBATIM.bookingNotice).not.toContain(OWNER_KO);
+    expect(ledgerUi("en").verbatim.bookingNotice).not.toMatch(OWNER_EN);
   });
 
   test("원장 상수의 문자열 값 — 출처 메모(source) 를 뺀 전부에 사장님 0건", () => {

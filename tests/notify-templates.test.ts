@@ -2,9 +2,10 @@
  * P4-3 — 문자·알림톡 문안 (플랜 v4 P4-3 · CLAUDE.md §3 · ADR-7).
  *
  * 이 태스크가 지키는 것:
- *   1. **verbatim 은 한 바이트도 바뀌지 않는다.** "담당자 확인 후 연락드리며, 확정된 예약만 결제 진행됩니다." 는 원장
- *      (lib/legal/disclosures.ts VERBATIM.bookingNotice)에서 import 하고, 렌더 결과 안에서 **바이트 열 그대로** 발견돼야 한다.
- *      길이 때문에 줄여야 하면 다른 문장을 줄인다 — 이 문장은 남는다. 아래 §1 이 hex 비교로 잠근다.
+ *   1. **verbatim 은 한 바이트도 바뀌지 않는다.** "확인 후 연락드리겠습니다."(2026-10-10 사장님 요청 7)는 원장
+ *      (lib/legal/disclosures.ts VERBATIM.bookingNotice)에서 import 하고, 접수 문자·접수 알림톡 렌더 결과 안에서 **바이트 열 그대로**
+ *      발견돼야 한다. 길이 때문에 줄여야 하면 다른 문장을 줄인다 — 이 문장은 남는다. 확정 문자·확정 알림톡에는 없어야 한다(T2-2 · 결정 3-2).
+ *      아래 §1 이 hex 비교로 잠근다.
  *   2. **정보성 문자에 광고 표현 0.** 섞이면 정보통신망법 §50 상 광고성 정보가 되어 `(광고)` 표기·수신거부 번호 의무가 생긴다.
  *      할인·이벤트·특가 류 단어를 정적으로 금지한다(§5).
  *   3. **법정 문구·회사 정보 리터럴 0.** 전화번호·결제 안내·verbatim 을 이 파일에 다시 타이핑하지 않는다(§6).
@@ -22,6 +23,7 @@ import {
   ADMIN_RESERVATIONS_PATH,
   ALIMTALK_TEMPLATES,
   CONFIRMED_HEADLINE,
+  CONTRACT_PARTY_LINE,
   GUIDE_PATH,
   LMS_BYTE_LIMIT,
   RESERVATION_CHECK_PATH,
@@ -125,68 +127,81 @@ function variantsAny(key: TemplateKey) {
 // =============================================================================
 // 1. verbatim — 바이트 동일 (xxd 수준)
 // =============================================================================
+// T2-2(2026-10-10, 사장님 요청 7 · 결정 3-2): verbatim 이 "확인 후 연락드리겠습니다." 로 바뀌면서 **접수 문자에만** 남고 확정 문자에서는 빠졌다.
+// 그래서 "고객 템플릿 2종에 정확히 한 번" 단언을 둘로 나눴다 — 접수 문자는 같은 강도(바이트 열 그대로 · 정확히 한 번 · 두 판 모두 · 변수와 무관),
+// 확정 문자는 0(두 판 모두 · 변수와 무관). 확정 문자의 "verbatim 은 본문 마지막 줄" 배치 잠금은 대상이 사라져 "맨 아래 계약 주체 줄 앞이 확정 선언이
+// 아니다" 로 옮겼다.
+const CREATED_CUSTOMER = "created.customer.sms" as const;
+const CONFIRMED_CUSTOMER = "confirmed.customer.sms" as const;
+
 describe("1. verbatim 보존", () => {
-  test("고객 템플릿 2종에 verbatim 이 바이트 열 그대로, 정확히 한 번 들어간다", () => {
+  test("고객 템플릿 키는 접수·확정 둘이다(아래 단언이 둘을 나눠 본다)", () => {
+    expect([...CUSTOMER_KEYS].sort()).toEqual([CONFIRMED_CUSTOMER, CREATED_CUSTOMER].sort());
+  });
+
+  test("고객 접수 문자에 verbatim 이 바이트 열 그대로, 정확히 한 번 들어간다", () => {
     const expected = Buffer.from(VERBATIM.bookingNotice, "utf8");
-    for (const key of CUSTOMER_KEYS) {
-      const actual = Buffer.from(renderTemplate(key, CUSTOMER).text, "utf8");
-      const at = actual.indexOf(expected);
-      expect(at, `${key} 에 verbatim 이 없다`).toBeGreaterThanOrEqual(0);
-      // xxd 수준 비교 — 잘라낸 구간의 hex 가 원장 문구의 hex 와 완전히 같아야 한다.
-      expect(actual.subarray(at, at + expected.length).toString("hex")).toBe(expected.toString("hex"));
-      expect(actual.lastIndexOf(expected), `${key} 에 verbatim 이 두 번 들어갔다`).toBe(at);
-    }
+    const actual = Buffer.from(renderTemplate(CREATED_CUSTOMER, CUSTOMER).text, "utf8");
+    const at = actual.indexOf(expected);
+    expect(at, "접수 문자에 verbatim 이 없다").toBeGreaterThanOrEqual(0);
+    // xxd 수준 비교 — 잘라낸 구간의 hex 가 원장 문구의 hex 와 완전히 같아야 한다.
+    expect(actual.subarray(at, at + expected.length).toString("hex")).toBe(expected.toString("hex"));
+    expect(actual.lastIndexOf(expected), "접수 문자에 verbatim 이 두 번 들어갔다").toBe(at);
   });
 
-  test("SMS·LMS 두 벌 모두 verbatim 을 그대로 갖는다 — 짧게 만들 때 이 문장을 줄이지 않았다", () => {
-    for (const key of CUSTOMER_KEYS) {
-      const v = renderVariants(key, CUSTOMER);
-      expect(hex(v.sms), `${key}.sms`).toContain(hex(VERBATIM.bookingNotice));
-      expect(hex(v.lms), `${key}.lms`).toContain(hex(VERBATIM.bookingNotice));
-    }
+  test("고객 확정 문자에는 verbatim 이 없다 — 확정 통지에 '확인 후 연락드리겠습니다' 가 붙으면 뜻이 뒤집힌다(결정 3-2)", () => {
+    expect(renderTemplate(CONFIRMED_CUSTOMER, CUSTOMER).text).not.toContain(VERBATIM.bookingNotice);
   });
 
-  test("변수 치환 뒤에도 verbatim 은 그대로다 — 값이 무엇이든", () => {
+  test("SMS·LMS 두 벌 — 접수는 둘 다 verbatim 을 그대로 갖고(짧게 만들 때 줄이지 않았다), 확정은 둘 다 갖지 않는다", () => {
+    const created = renderVariants(CREATED_CUSTOMER, CUSTOMER);
+    expect(hex(created.sms), `${CREATED_CUSTOMER}.sms`).toContain(hex(VERBATIM.bookingNotice));
+    expect(hex(created.lms), `${CREATED_CUSTOMER}.lms`).toContain(hex(VERBATIM.bookingNotice));
+    const confirmed = renderVariants(CONFIRMED_CUSTOMER, CUSTOMER);
+    expect(hex(confirmed.sms), `${CONFIRMED_CUSTOMER}.sms`).not.toContain(hex(VERBATIM.bookingNotice));
+    expect(hex(confirmed.lms), `${CONFIRMED_CUSTOMER}.lms`).not.toContain(hex(VERBATIM.bookingNotice));
+  });
+
+  test("변수 치환 뒤에도 — 접수 문자의 verbatim 은 그대로, 확정 문자에는 생기지 않는다", () => {
     const odd: CustomerVars[] = [
       { publicCode: "", origin: "" },
-      { publicCode: "담당자 확인 후", origin: "https://example.test/a?b=c&d=e" },
+      { publicCode: "확인 후", origin: "https://example.test/a?b=c&d=e" },
       { publicCode: "A".repeat(200), origin: ORIGIN },
     ];
     for (const vars of odd) {
-      for (const key of CUSTOMER_KEYS) {
-        expect(hex(renderTemplate(key, vars).text), `${key} / ${vars.publicCode.slice(0, 12)}`).toContain(hex(VERBATIM.bookingNotice));
-      }
+      const where = vars.publicCode.slice(0, 12);
+      expect(hex(renderTemplate(CREATED_CUSTOMER, vars).text), `${CREATED_CUSTOMER} / ${where}`).toContain(hex(VERBATIM.bookingNotice));
+      expect(hex(renderTemplate(CONFIRMED_CUSTOMER, vars).text), `${CONFIRMED_CUSTOMER} / ${where}`).not.toContain(hex(VERBATIM.bookingNotice));
     }
   });
 
-  /**
-   * 확정 문자의 배치 잠금. verbatim 은 한 글자도 못 고치므로 **주변을 고쳤다**:
-   * "예약이 확정되었습니다" 바로 뒤에 "담당자 확인 후 연락드리며" 가 붙으면 아직 확정 전인 것처럼 읽힌다.
-   * 확정 선언은 맨 위, verbatim 은 맨 아래(사이트 카드의 상시 고지 자리와 같은 위치)여야 한다.
-   */
-  test("확정 문자 — verbatim 은 마지막 줄이고, 그 바로 앞 문장은 확정 선언이 아니다", () => {
+  // 사장님 요청 14 · 결정 12(2026-10-10 · T2-1): 확정 문자 맨 아래에 계약 주체 줄(CONTRACT_PARTY_LINE — '운영: ' + 원장 legalName).
+  // T2-2: 그 바로 앞에 있던 verbatim 이 빠져서, 계약 주체 줄 바로 앞은 연락처 안내다 — 확정 선언과 맨 아래가 이웃하지 않는다는 잠금은 그대로 둔다.
+  test("확정 문자 — 맨 아래는 계약 주체 줄이고, 그 바로 앞 문장은 확정 선언이 아닌 연락처 안내다", () => {
     for (const variant of ["sms", "lms"] as const) {
-      const text = renderVariants("confirmed.customer.sms", CUSTOMER)[variant];
+      const text = renderVariants(CONFIRMED_CUSTOMER, CUSTOMER)[variant];
       const rows = text.split("\n").filter((l) => l.trim().length > 0);
-      expect(rows[rows.length - 1], `${variant}: verbatim 이 마지막 줄이 아니다`).toBe(VERBATIM.bookingNotice);
-      const before = rows[rows.length - 2];
-      expect(before, `${variant}: verbatim 앞이 확정 선언이다`).not.toContain(CONFIRMED_HEADLINE);
-      expect(before, `${variant}: verbatim 앞 문장이 없다`).toBeTruthy();
+      expect(rows[rows.length - 1], `${variant}: 계약 주체 줄이 마지막 줄이 아니다`).toBe(CONTRACT_PARTY_LINE);
+      rows.pop();
+      const before = rows[rows.length - 1];
+      expect(before, `${variant}: 계약 주체 줄 앞이 확정 선언이다`).not.toContain(CONFIRMED_HEADLINE);
+      expect(before, `${variant}: 계약 주체 줄 앞이 연락처 안내가 아니다`).toContain(COMPANY.consultTel);
+      expect(rows, `${variant}: verbatim 이 남았다`).not.toContain(VERBATIM.bookingNotice);
     }
   });
 
-  test("확정 문자 — 확정 사실은 맨 첫 줄에 있다 (일어난 일 → 앞으로 할 일 → 상시 고지)", () => {
-    const lms = renderVariants("confirmed.customer.sms", CUSTOMER).lms;
+  test("확정 문자 — 확정 사실은 맨 첫 줄에 있다 (일어난 일 → 앞으로 할 일 → 계약 주체)", () => {
+    const lms = renderVariants(CONFIRMED_CUSTOMER, CUSTOMER).lms;
     const rows = lms.split("\n").filter((l) => l.trim().length > 0);
     expect(rows[0]).toContain(CONFIRMED_HEADLINE);
     expect(rows[0]).toContain(`[${COMPANY.brandName}]`);
-    // 확정 선언과 verbatim 사이에 "앞으로 할 일"이 실제로 들어 있다 — 두 문장이 이웃하지 않는다.
+    // 확정 선언과 맨 아래 줄 사이에 "앞으로 할 일"이 실제로 들어 있다 — 두 줄이 이웃하지 않는다.
     expect(rows.length).toBeGreaterThanOrEqual(5);
     expect(lms.indexOf(PAYMENT.line)).toBeGreaterThan(lms.indexOf(CONFIRMED_HEADLINE));
-    expect(lms.indexOf(VERBATIM.bookingNotice)).toBeGreaterThan(lms.indexOf(PAYMENT.line));
+    expect(lms.indexOf(CONTRACT_PARTY_LINE)).toBeGreaterThan(lms.indexOf(PAYMENT.line));
   });
 
-  test("사장님 템플릿에는 verbatim 을 넣지 않는다 — 사장님에게 '담당자 확인 후 연락드리며' 라고 보내지 않는다", () => {
+  test("사장님 템플릿에는 verbatim 을 넣지 않는다 — 사장님에게 '확인 후 연락드리겠습니다' 라고 보내지 않는다", () => {
     for (const key of OWNER_KEYS) {
       expect(renderTemplate(key, OWNER).text).not.toContain(VERBATIM.bookingNotice);
     }
@@ -376,8 +391,19 @@ describe("4. 개인정보 경계", () => {
     expect(text).not.toContain("~");
   });
 
-  test("P3-8 — 위저드 접수분의 사장님 알림은 한 글자도 바뀌지 않았다(옛 문안 그대로)", () => {
-    const v = renderVariants("created.owner.sms", OWNER);
+  // T2-1(2026-10-10 · 사장님 요청 14): 바뀐 것은 접두의 브랜드뿐이다 — 원장 COMPANY.brandName(베스트모빌리티)이 접두를 만든다.
+  // 아래 옛 문안은 역사 값으로 그대로 두고, 렌더 결과에서 **접두 한 군데만** 옛 브랜드로 되돌려 대조한다(다른 글자는 한 자도 안 바뀌었다는 뜻).
+  test("P3-8 — 위저드 접수분의 사장님 알림은 접두의 브랜드 말고는 한 글자도 바뀌지 않았다(옛 문안 그대로)", () => {
+    const OLD_BRAND = "[베스트투어]";
+    const NEW_BRAND = `[${COMPANY.brandName}]`;
+    expect(NEW_BRAND).not.toBe(OLD_BRAND);
+    const raw = renderVariants("created.owner.sms", OWNER);
+    for (const s of [raw.sms, raw.lms]) {
+      expect(s.startsWith(NEW_BRAND)).toBe(true);
+      expect(s.split(NEW_BRAND).length - 1).toBe(1);
+      expect(s).not.toContain(OLD_BRAND);
+    }
+    const v = { sms: raw.sms.replace(NEW_BRAND, OLD_BRAND), lms: raw.lms.replace(NEW_BRAND, OLD_BRAND) };
     expect(v.lms).toBe(
       [
         "[베스트투어] 새 예약이 접수되었습니다.",
@@ -431,7 +457,8 @@ describe("4. 개인정보 경계", () => {
   });
 
   // P1-7 R2 [P1-4] — 약관 제8조: "회사는 이 사실을 견적 신청 화면과 **예약 확정 통지**에 고지합니다."
-  test("확정 통지 — 취소·환불 줄 · 청약철회 줄 · 입금 계좌 줄 · 이용안내 링크가 결제 안내 다음, verbatim 앞에 있다 (두 판 모두)", () => {
+  // T2-2(2026-10-10): 끝 기준점이던 verbatim 이 확정 문자에서 빠져, 같은 자리(맨 아래)의 계약 주체 줄을 끝 기준점으로 삼는다.
+  test("확정 통지 — 취소·환불 줄 · 청약철회 줄 · 입금 계좌 줄 · 이용안내 링크가 결제 안내 다음, 계약 주체 줄 앞에 있다 (두 판 모두)", () => {
     const guide = `${ORIGIN}${GUIDE_PATH}`;
     for (const variant of ["sms", "lms"] as const) {
       const text = renderVariants("confirmed.customer.sms", CUSTOMER)[variant];
@@ -441,7 +468,7 @@ describe("4. 개인정보 경계", () => {
       expect(at(CANCELLATION.smsLine), variant).toBeLessThan(at(WITHDRAWAL.smsLine));
       expect(at(WITHDRAWAL.smsLine), variant).toBeLessThan(at(PAYMENT.accountLine));
       expect(at(PAYMENT.accountLine), variant).toBeLessThan(at(guide));
-      expect(at(guide), variant).toBeLessThan(at(VERBATIM.bookingNotice));
+      expect(at(guide), variant).toBeLessThan(at(CONTRACT_PARTY_LINE));
     }
   });
 
@@ -589,28 +616,36 @@ describe("7. 알림톡 템플릿", () => {
     }
   });
 
-  test("알림톡도 verbatim 을 바이트 그대로 갖는다", () => {
-    for (const t of ALIMTALK_TEMPLATES) expect(hex(t.body), t.event).toContain(hex(VERBATIM.bookingNotice));
+  // T2-2(2026-10-10 · 결정 3-2): 접수 알림톡은 verbatim 을 그대로 갖고, 확정 알림톡은 갖지 않는다(문자와 같은 규칙).
+  test("알림톡 — 접수 알림톡은 verbatim 을 바이트 그대로 한 번 갖고, 확정 알림톡은 갖지 않는다", () => {
+    const byEvent = Object.fromEntries(ALIMTALK_TEMPLATES.map((t) => [t.event, t.body]));
+    expect(Object.keys(byEvent).sort()).toEqual(["confirmed", "created"]);
+    expect(hex(byEvent.created)).toContain(hex(VERBATIM.bookingNotice));
+    expect(byEvent.created.split(VERBATIM.bookingNotice).length - 1).toBe(1);
+    expect(hex(byEvent.confirmed)).not.toContain(hex(VERBATIM.bookingNotice));
   });
 
-  test("확정 알림톡도 문자와 같은 순서다 — verbatim 이 마지막이고 그 앞은 확정 선언이 아니다", () => {
+  // T2-1(2026-10-10): 문자와 같이 맨 아래에 계약 주체 줄. T2-2: 그 앞의 verbatim 이 빠져 바로 앞은 변경·취소 안내다.
+  test("확정 알림톡도 문자와 같은 순서다 — 계약 주체 줄이 마지막, 그 바로 앞은 확정 선언이 아닌 변경·취소 안내다", () => {
     const confirmed = ALIMTALK_TEMPLATES.find((t) => t.event === "confirmed");
     expect(confirmed).toBeTruthy();
     const rows = (confirmed as { body: string }).body.split("\n").filter((l) => l.trim().length > 0);
-    expect(rows[rows.length - 1]).toBe(VERBATIM.bookingNotice);
-    expect(rows[rows.length - 2]).not.toContain(CONFIRMED_HEADLINE);
+    expect(rows.pop()).toBe(CONTRACT_PARTY_LINE);
+    expect(rows[rows.length - 1]).not.toContain(CONFIRMED_HEADLINE);
+    expect(rows[rows.length - 1]).toContain("#{상담전화}");
+    expect(rows).not.toContain(VERBATIM.bookingNotice);
     expect(rows[0]).toContain(CONFIRMED_HEADLINE);
   });
 
   // P1-7 R2 [P1-4] — 알림톡 초안에도 확정 통지의 고지 줄을 넣는다. 전화 자리 이름은 `#{상담전화}`(심사 전이라 바꿀 수 있다).
-  test("확정 알림톡 — 취소·환불 · 청약철회 · 입금 계좌 줄이 결제 안내 다음, verbatim 앞에 있다 · 접수 알림톡에는 없다", () => {
+  test("확정 알림톡 — 취소·환불 · 청약철회 · 입금 계좌 줄이 결제 안내 다음, 계약 주체 줄 앞에 있다 · 접수 알림톡에는 없다", () => {
     const confirmed = ALIMTALK_TEMPLATES.find((t) => t.event === "confirmed")?.body ?? "";
     const at = (s: string) => confirmed.indexOf(s);
     expect(at(PAYMENT.line)).toBeGreaterThan(-1);
     expect(at(PAYMENT.line)).toBeLessThan(at(CANCELLATION.smsLine));
     expect(at(CANCELLATION.smsLine)).toBeLessThan(at(WITHDRAWAL.smsLine));
     expect(at(WITHDRAWAL.smsLine)).toBeLessThan(at(PAYMENT.accountLine));
-    expect(at(PAYMENT.accountLine)).toBeLessThan(at(VERBATIM.bookingNotice));
+    expect(at(PAYMENT.accountLine)).toBeLessThan(at(CONTRACT_PARTY_LINE));
     const created = ALIMTALK_TEMPLATES.find((t) => t.event === "created")?.body ?? "";
     for (const s of [CANCELLATION.smsLine, WITHDRAWAL.smsLine, PAYMENT.accountLine]) expect(created.includes(s), s).toBe(false);
   });
@@ -646,12 +681,13 @@ describe("7. 알림톡 템플릿", () => {
     }
   });
 
-  test("renderAlimtalk — 변수를 치환해도 verbatim 이 남고, 미치환 자리는 throw 한다", () => {
+  test("renderAlimtalk — 변수를 치환해도 접수 알림톡의 verbatim 이 남고(확정에는 생기지 않고), 미치환 자리는 throw 한다", () => {
     const values = { 접수번호: "BT12ABCD", 상담전화: COMPANY.consultTel };
     for (const t of ALIMTALK_TEMPLATES) {
       const out = renderAlimtalk(t.event, values);
       expect(out).not.toMatch(/#\{/);
-      expect(hex(out), t.event).toContain(hex(VERBATIM.bookingNotice));
+      if (t.event === "created") expect(hex(out), t.event).toContain(hex(VERBATIM.bookingNotice));
+      else expect(hex(out), t.event).not.toContain(hex(VERBATIM.bookingNotice));
       expect(out).toContain("BT12ABCD");
     }
     expect(() => renderAlimtalk("created", {})).toThrow();

@@ -2,7 +2,8 @@
  * 공유 미리보기 이미지 `/og.png`(og:image · twitter:image) — 1200×630 PNG (P7-4 · 브리프 §12). Next 기본 next/og ImageResponse 로
  * **빌드 때 한 번** 만든다(force-static). 메타는 lib/share-meta.ts 가 두 로케일 모두 이 주소로 붙인다(파일 규약을 쓰지 않는 이유도 거기).
  *
- * 그리는 것은 **브랜드 자산뿐**이다 — 로고(public/brand/logo-bestour.png, 심볼이 이미 들어 있는 가로 로고 · 배경 투명)와 원장 색
+ * 그리는 것은 **브랜드 자산뿐**이다 — 로고(public/brand/logo-bestmobility.png, 심볼이 이미 들어 있는 가로 로고 · 배경 투명 —
+ * 사장님 요청 2 · 2026-10-10 간판 변경. 2110×265 라 900×113 으로 그린다 · 옛 bestour 는 840×163)와 원장 색
  * (역할 토큰을 styles/semantic.css → tokens.css 로 풀어 쓴다 — 색을 여기 다시 적지 않는다). 흰 면 가운데 로고 + 아래 금색 선·보라 띠.
  * 가운데 배치라 카카오톡·페이스북이 2:1 로 잘라도 로고가 남는다.
  *
@@ -48,7 +49,7 @@ async function brandColors() {
 export async function GET() {
   const [colors, logo] = await Promise.all([
     brandColors(),
-    readFile(path.join(process.cwd(), "public/brand/logo-bestour.png")),
+    readFile(path.join(process.cwd(), "public/brand/logo-bestmobility.png")),
   ]);
   const logoSrc = `data:image/png;base64,${logo.toString("base64")}`;
 
@@ -57,7 +58,7 @@ export async function GET() {
       <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", background: colors.surface }}>
         <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
           {/* eslint-disable-next-line @next/next/no-img-element -- ImageResponse(satori) 는 <img> 만 읽는다(next/image 아님) */}
-          <img src={logoSrc} width={840} height={163} alt="" />
+          <img src={logoSrc} width={900} height={113} alt="" />
         </div>
         <div style={{ display: "flex", height: 8, background: colors.accent }} />
         <div style={{ display: "flex", height: 56, background: colors.brand }} />
