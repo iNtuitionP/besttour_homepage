@@ -8,7 +8,7 @@
  *   4. OWNER_EMAIL 없음 → 행 0건이고 **보고서에 이유가 드러난다**(조용히 넘어가지 않는다)
  *   5. 개인정보 0 — 렌더된 문안·넣는 행·보고서·로그 어디에도 고객 이름·전화·메일·문의내용이 없다
  *   6. From 은 MAIL_FROM 뿐 — 수신 전용 주소를 발신에 쓰지 않는다
- *   7. 기존 문안 4종 **바이트 무변경**(sha256 고정) · verbatim 무손상
+ *   7. 문안 4종 **바이트 지문**(sha256 고정 — 2026-10-10 T2-4 블록 서식에서 새로 떴다 · 이력은 §7) · verbatim 무손상
  *   8. DB 실증 — 실제 행으로 1·2·3 을 재현(로컬 스택 + REQUIRE_DB_TESTS=1)
  *
  * 주의: tests/ 아래라 게이트의 검사 대상이다 — 임시값 마커·금지어 리터럴을 두지 않는다.
@@ -32,6 +32,8 @@ import { memorySender, type NotificationSender, type SendOutcome } from "@/lib/n
 import { TEMPLATE_AUDIENCE } from "@/lib/notify/solapi";
 import {
   ADMIN_NOTIFICATIONS_PATH,
+  ADMIN_RESERVATIONS_PATH,
+  CHECK_GUIDE_ITEM,
   CONTRACT_PARTY_LINE,
   GUIDE_PATH,
   renderTemplate,
@@ -555,12 +557,18 @@ describe("4. 문안", () => {
     expect(read("lib/admin/notifications.ts")).toContain(`ADMIN_NOTIFICATIONS_PATH = "${ADMIN_NOTIFICATIONS_PATH}"`);
   });
 
-  // ── §7 기존 문안 4종 바이트 무변경 ──────────────────────────────────────
+  // ── §7 문안 4종 바이트 지문 — 2026-10-10 T2-4 에서 새로 떴다 ─────────────────
   /**
-   * P4-3 이 독립 리뷰를 통과한 문안 4종의 **바이트 지문**. 렌더 결과의 UTF-8 바이트를 sha256 한 값이며
-   * 2026-09-16(P4-4 착수 직전) 저장소 상태에서 뜬 것이다. 한 글자·한 공백이라도 바뀌면 여기서 멈춘다.
+   * 기준선 이력
+   *   - 2026-09-16(P4-4 착수 직전): P4-3 이 독립 리뷰를 통과한 문안 4종의 지문(아래 RETIRED_BASELINE_P4_4). 그 뒤 P1-7 · R2 · P7-7 · T2-1 ·
+   *     T2-2 · T2-5 는 "바뀐 자리만 옛 모양으로 되돌리면 이 지문과 바이트 동일" 로 대조했다(되돌림 사슬).
+   *   - **2026-10-10 T2-4**(사장님 요청 8 · 11 문자 줄 · 결정 12 · 사용자 승인 초안 "문자 서식 승인"): 네 문안 전부가
+   *     "■ 섹션 / - 라벨: 값" 블록 서식으로 **통째로** 다시 짜였다(제목 줄 · 줄 순서 · 대금/계좌 줄 모양 · 전화 표기 · 날짜 표기 ·
+   *     "전화로 확인할 것" 삭제). 되돌려서 옛 지문에 닿을 부분이 남지 않아 사슬을 끊고 **지문을 새로 떴다**(BASELINE_T2_4 ·
+   *     BASELINE_T2_4_QUICK). 무엇이 바뀌었고 무엇이 그대로인지는 아래 두 번째 테스트가 단언으로 남긴다(느슨하게 하지 않는다).
+   * 지문은 렌더 결과의 UTF-8 바이트를 sha256 한 값이다. 한 글자·한 공백이라도 바뀌면 여기서 멈춘다.
    */
-  const BASELINE: Record<string, { sms: string; lms: string; subject: string | null }> = {
+  const RETIRED_BASELINE_P4_4: Record<string, { sms: string; lms: string; subject: string | null }> = {
     "created.owner.sms": {
       sms: "7440f20f1777ed35cf9c156286ce11369031794a58ca656db4af4135970db80d",
       lms: "ff82ee61cf5fc5a929f45da862f919e3ceab4b68ce66b7ca52ed81a282fe1ff3",
@@ -583,13 +591,54 @@ describe("4. 문안", () => {
     },
   };
 
+  /** T2-4 기준선(2026-10-10) — 위저드 접수분 사장님 알림 · 고객 문안 2종. 손님·사장님 문안 모두 SMS 판 = LMS 판이라 두 값이 같다. */
+  const BASELINE_T2_4: Record<string, { sms: string; lms: string; subject: string | null }> = {
+    "created.owner.sms": {
+      sms: "5d46fe3b067202eadb691957bc1623eee5dae0b2cbd802e50e1fe118f93d2f59",
+      lms: "5d46fe3b067202eadb691957bc1623eee5dae0b2cbd802e50e1fe118f93d2f59",
+      subject: null,
+    },
+    "created.owner.email": {
+      sms: "5d46fe3b067202eadb691957bc1623eee5dae0b2cbd802e50e1fe118f93d2f59",
+      lms: "5d46fe3b067202eadb691957bc1623eee5dae0b2cbd802e50e1fe118f93d2f59",
+      subject: "f5241f3bd3142459aac88a37e51d697df6fad87b49eab32fe7cd327d7a593c1c",
+    },
+    "created.customer.sms": {
+      sms: "33e658cbf5eef47edb117b64ec7c8d91220d870c904ebea3ac5f5fa05511714d",
+      lms: "33e658cbf5eef47edb117b64ec7c8d91220d870c904ebea3ac5f5fa05511714d",
+      subject: null,
+    },
+    // T2-4 후속(2026-10-10): 확정 문안**만** 다시 떴다 — "■ 취소·환불" 아래 항목이 원장 CANCELLATION.smsLine("취소·환불 : …")에서
+    // smsItem(머리말만 뺀 같은 문장)으로 바뀌어 제목과 항목의 낱말 겹침이 사라졌다. 다른 다섯 지문(위·아래)은 그대로다.
+    // 그 직전 값(겹침이 있던 T2-4 첫 판): c44e9d4da965361eb58251de71a04a4cc6ca3448af05eaee34ef0004b7bc0503
+    "confirmed.customer.sms": {
+      sms: "d5ff41dfe6d77cfa319d8fa22d37f9aa9eb69f304d048a26ff41a7f6b9e65221",
+      lms: "d5ff41dfe6d77cfa319d8fa22d37f9aa9eb69f304d048a26ff41a7f6b9e65221",
+      subject: null,
+    },
+  };
+
+  /** T2-4 기준선(2026-10-10) — 간편 접수분 사장님 알림(문자 · 메일 폴백). 옛 기준선에는 없던 칸이다(P3-8 이 간편 판을 더했을 때 지문을 두지 않았다). */
+  const BASELINE_T2_4_QUICK: Record<string, { sms: string; lms: string; subject: string | null }> = {
+    "created.owner.sms": {
+      sms: "7bf2514db91a3aeff950ebae9ce4db631db51da10b52bb641c3a6ff042110af6",
+      lms: "7bf2514db91a3aeff950ebae9ce4db631db51da10b52bb641c3a6ff042110af6",
+      subject: null,
+    },
+    "created.owner.email": {
+      sms: "7bf2514db91a3aeff950ebae9ce4db631db51da10b52bb641c3a6ff042110af6",
+      lms: "7bf2514db91a3aeff950ebae9ce4db631db51da10b52bb641c3a6ff042110af6",
+      subject: "c21faf060479c4f7b99028e3372f61b6e9fc13f80377542ab6545bd8328139a0",
+    },
+  };
+
   const BASELINE_OWNER: OwnerVars = {
     publicCode: "BT12ABCD",
     origin: ORIGIN,
     reservationId: "3f2b9c14-5f0a-4a2e-9c1b-8d7e6f5a4b3c",
     name: "한지원",
     phone: "+821020488585",
-    intake: "wizard", // P3-8 — 위저드 접수분의 문안은 한 글자도 바뀌지 않았다(아래 해시가 그 증거)
+    intake: "wizard",
     vehicleLabel: "45인승 우등",
     departAtKst: "2026-10-03 08:00",
     returnDateKst: null,
@@ -597,6 +646,16 @@ describe("4. 문안", () => {
     destinationLabel: "부산",
     busCount: 2,
     passengers: 80,
+  };
+
+  const BASELINE_QUICK_OWNER: OwnerVars = {
+    ...BASELINE_OWNER,
+    intake: "quick",
+    vehicleLabel: null,
+    departAtKst: "2026-10-03",
+    returnDateKst: "2026-10-05",
+    busCount: null,
+    passengers: 30,
   };
 
   const sha = (s: string): string => createHash("sha256").update(Buffer.from(s, "utf8")).digest("hex");
@@ -615,110 +674,114 @@ describe("4. 문안", () => {
   const BASELINE_PAYMENT_LINE = "대금 지급 : 온라인 결제 없음 · 계약금 10만원 · 잔금과 지급 방법은 예약 확정 시 안내";
   const REMOVED_PAYMENT_PHRASE = "온라인 결제 없음 · ";
 
-  // P1-7(2026-09-22): 고객 문안 2종의 "문의·변경·취소" 전화가 대표전화(COMPANY.tel)에서 예약·상담 전화(COMPANY.consultTel)로 바뀌었다
-  // (사용자 결정 2026-09-21 — 손님에게 전화하라고 안내하는 자리는 전부 010-6362-6188). 지문은 **그 번호만** 되돌려 대조한다 —
-  // 번호 말고 한 글자라도 바뀌었으면 여기서 멈춘다. 번호가 실제로 바뀌었다는 것도 함께 단언한다.
-  // P1-7 R2(2026-09-22): 고객 확정 문안에 약관 제8조가 약속한 고지 줄 넷(취소·환불 · 청약철회 · 입금 계좌 · 이용안내 링크)을 더했다.
-  // 지문은 **그 네 줄만 걷어내고 번호만 되돌리면** 옛 문안과 바이트 동일해야 한다 — 다른 글자는 한 자도 바뀌지 않았다는 뜻이다.
-  // P7-7(2026-10-09): 고객 문안 2종의 verbatim 한 줄이 새 문구로 바뀌었다. 지문은 **그 한 줄만** 옛 문구로 되돌려 대조한다 —
-  // 고객 문안에서 바뀐 것이 번호·고지 줄 넷·verbatim 한 줄뿐이고 다른 글자는 한 자도 바뀌지 않았다는 뜻이다.
-  // 새 문구가 실제로 들어 있고 옛 문구는 남지 않았다는 것, 그리고 사장님 문안 2종은 되돌림 없이 그대로라는 것도 함께 단언한다.
-  // T2-1(2026-10-10): 여섯 문안의 접두가 [베스트투어] → [베스트모빌리티](원장 brandName)로, 고객 확정 문안 맨 아래에 계약 주체 줄
-  // (CONTRACT_PARTY_LINE — '운영: ' + 원장 legalName) 한 줄이 붙었다. 지문은 **접두 한 군데를 옛 브랜드로 되돌리고 계약 주체 줄만 걷어내면**
-  // 이전과 바이트 동일해야 한다 — 그 둘 말고는 한 글자도 바뀌지 않았다는 뜻이다. 새 접두가 정확히 한 번(맨 앞) 있고 옛 접두는 0,
-  // 계약 주체 줄이 확정 두 판의 맨 아래에 정확히 한 번 있다는 것도 함께 단언한다.
-  // T2-2(2026-10-10, 사장님 요청 7 · 결정 3-2): 고객 확정 문안 두 판에서 verbatim 한 줄을 뺐다(확정 통지에 "확인 후 연락드리겠습니다" 는
-  // 뜻이 뒤집힌다). 그 줄은 기준선에서 **본문 맨 끝**에 있었다 — 지문은 계약 주체 줄을 걷은 뒤 맨 끝에 그 한 줄을 되돌려 대조한다.
-  // 그래서 확정 문안에서 바뀐 것이 verbatim 한 줄의 삭제뿐이라는 것이 해시로 확인된다. 확정 두 판에 verbatim 이 0 이고,
-  // 접수 문안은 줄 전체로 정확히 한 번이라는 것도 함께 단언한다.
-  test("§7 기존 문안 4종 바이트 무변경 — P4-4 는 추가만 했다 (P1-7: 고객 문안의 전화번호 · R2: 확정 문안의 고지 줄 넷 · P7-7: verbatim 한 줄 · T2-1: 접두 브랜드 · 확정 문안의 계약 주체 줄 · T2-2: 확정 문안의 verbatim 삭제)", () => {
-    expect(VERBATIM.bookingNotice).not.toBe(BASELINE_BOOKING_NOTICE);
-    // 결정 3 A안(2026-10-10 — 컨트롤러 원장 작성)으로 verbatim 이 통째로 "확인 후 연락드리겠습니다." 가 됐다. P7-7 때의 단언
-    // "바뀐 것은 앞머리 한 구절뿐(쉼표 뒤 그대로)" 은 더는 사실이 아니어서 그 값으로 바꿨다. 아래 지문은 그 **줄 전체**를 옛 문구로
-    // 되돌려 대조하므로 이 변경이 다른 글자를 가리지 않는다(줄 전체로 들어 있는지는 아래에서 본다). 확정 문자에서는 T2-2 가 그 줄을 걷었다.
+  // 옛 사슬의 마지막 고리(T2-5)가 되돌리던 조회 안내 문장 — 역사 값이다. T2-4 에서 블록 항목 CHECK_GUIDE_ITEM 으로 바뀌었다.
+  const T25_GUIDE_SENTENCE = "휴대폰 번호와 예약자 이름으로 확인하실 수 있습니다.";
+
+  test("§7 문안 4종(+ 간편 접수 사장님 알림 2종) 바이트 지문 — 2026-10-10 T2-4 기준선과 같다 · 옛 기준선 지문은 하나도 남지 않았다", () => {
+    expect(Object.keys(BASELINE_T2_4).sort()).toEqual([...TEMPLATE_KEYS].sort());
+    expect(Object.keys(RETIRED_BASELINE_P4_4).sort()).toEqual([...TEMPLATE_KEYS].sort());
+    const retired = new Set(Object.values(RETIRED_BASELINE_P4_4).flatMap((b) => [b.sms, b.lms, b.subject]).filter((h): h is string => h !== null));
+    const check = (label: string, v: { sms: string; lms: string; subject?: string }, base: { sms: string; lms: string; subject: string | null }) => {
+      const got = { sms: sha(v.sms), lms: sha(v.lms), subject: v.subject === undefined ? null : sha(v.subject) };
+      expect(got.sms, `${label}.sms 의 바이트가 바뀌었다`).toBe(base.sms);
+      expect(got.lms, `${label}.lms 의 바이트가 바뀌었다`).toBe(base.lms);
+      expect(got.subject, `${label}.subject 가 바뀌었다`).toBe(base.subject);
+      // T2-4 는 네 문안 전부를 다시 짰다 — 옛 지문과 겹치는 값이 있으면 "바뀌지 않은 문안" 이 섞였다는 뜻이다
+      for (const h of [got.sms, got.lms, got.subject]) if (h !== null) expect(retired.has(h), `${label} 이 옛 지문과 같다`).toBe(false);
+    };
+    for (const key of TEMPLATE_KEYS) {
+      check(key, key.includes(".owner.") ? renderVariants(key, BASELINE_OWNER) : renderVariants(key, CUSTOMER), BASELINE_T2_4[key]);
+    }
+    for (const key of ["created.owner.sms", "created.owner.email"] as const) {
+      check(`${key}/quick`, renderVariants(key, BASELINE_QUICK_OWNER), BASELINE_T2_4_QUICK[key]);
+    }
+  });
+
+  // T2-4(2026-10-10 · 사장님 요청 8 · 11 문자 줄 · 결정 12 · 사용자 승인 초안): 무엇이 바뀌었고 무엇이 그대로인지 — 지문을 새로 뜬 이유를 단언으로 남긴다.
+  test("§7 T2-4 에서 바뀐 것(블록 서식 · 옛 줄 0)과 그대로인 것(브랜드 접두 · verbatim · 약관 제8조 줄 · 계약 주체 줄 · 접수번호 경계)", () => {
+    // 이전 고리들이 확인한 원장 값은 그대로다(역사 값과 다르다는 것까지)
     expect(VERBATIM.bookingNotice).toBe("확인 후 연락드리겠습니다.");
-    // 대금 지급 줄은 어구 하나만 빠졌다 — 그 어구를 제자리에 되돌리면 옛 줄과 같다(다른 글자는 그대로).
+    expect(VERBATIM.bookingNotice).not.toBe(BASELINE_BOOKING_NOTICE);
     expect(PAYMENT.line).not.toContain("온라인 결제");
     expect(PAYMENT.line.replace("대금 지급 : ", `대금 지급 : ${REMOVED_PAYMENT_PHRASE}`)).toBe(BASELINE_PAYMENT_LINE);
-    expect(Object.keys(BASELINE).sort()).toEqual([...TEMPLATE_KEYS].sort());
     expect(BRAND_NOW).not.toBe(BASELINE_BRAND);
-    const addedLines = new Set([CANCELLATION.smsLine, WITHDRAWAL.smsLine, PAYMENT.accountLine, `자세한 내용 ${ORIGIN}${GUIDE_PATH}`]);
+    expect(CHECK_GUIDE_ITEM).toBe("휴대폰 번호와 예약자 이름으로 조회");
+
+    const adminLink = `${ORIGIN}${ADMIN_RESERVATIONS_PATH}/${BASELINE_OWNER.reservationId}`;
     for (const key of TEMPLATE_KEYS) {
-      const v = key.includes(".owner.") ? renderVariants(key, BASELINE_OWNER) : renderVariants(key, CUSTOMER);
-      const customer = key.includes(".customer.");
-      const confirmed = key === "confirmed.customer.sms";
-      // T2-1 — 접두: 모든 판·제목의 맨 앞에 새 브랜드가 정확히 한 번, 옛 브랜드는 0
-      for (const s of [v.sms, v.lms, ...(v.subject === undefined ? [] : [v.subject])]) {
-        expect(s.startsWith(BRAND_NOW), `${key} 의 접두가 새 브랜드가 아니다`).toBe(true);
-        expect(s.split(BRAND_NOW).length - 1, `${key} 에 새 접두가 정확히 한 번 있지 않다`).toBe(1);
-        expect(s, `${key} 에 옛 접두가 남았다`).not.toContain(BASELINE_BRAND);
-      }
-      // T2-1 — 계약 주체 줄: 확정 두 판의 맨 아래에 정확히 한 번 · 다른 문안에는 없다
-      for (const s of [v.sms, v.lms]) {
-        const rows = s.split("\n").filter((l) => l.trim().length > 0);
-        if (confirmed) {
-          expect(rows[rows.length - 1], `${key} 의 맨 아래 줄이 계약 주체 줄이 아니다`).toBe(CONTRACT_PARTY_LINE);
-          expect(s.split(CONTRACT_PARTY_LINE).length - 1, `${key} 에 계약 주체 줄이 정확히 한 번 있지 않다`).toBe(1);
-        } else {
-          expect(s, `${key} 에 계약 주체 줄`).not.toContain(CONTRACT_PARTY_LINE);
+      const variants = key.includes(".owner.")
+        ? [renderVariants(key, BASELINE_OWNER), renderVariants(key, BASELINE_QUICK_OWNER)]
+        : [renderVariants(key, CUSTOMER)];
+      for (const v of variants) {
+        // 바뀐 것 ① — 두 판이 같은 본문(어느 판도 90바이트에 들어가지 않아 SMS 판은 쓰인 적이 없다 · 보낼 한 통 = 승인 초안)
+        expect(v.sms, `${key}: SMS 판과 LMS 판이 다르다`).toBe(v.lms);
+        const rows = v.lms.split("\n");
+        // 그대로 ① — 접두는 새 브랜드가 맨 앞에 정확히 한 번(제목 포함) · 옛 브랜드 0
+        for (const s of [v.lms, ...(v.subject === undefined ? [] : [v.subject])]) {
+          expect(s.startsWith(BRAND_NOW), `${key} 의 접두가 새 브랜드가 아니다`).toBe(true);
+          expect(s.split(BRAND_NOW).length - 1, `${key} 에 새 접두가 정확히 한 번 있지 않다`).toBe(1);
+          expect(s, `${key} 에 옛 접두가 남았다`).not.toContain(BASELINE_BRAND);
         }
-      }
-      const rebrand = (s: string) => s.replace(BRAND_NOW, BASELINE_BRAND);
-      const withoutAdded = (s: string) =>
-        confirmed
-          ? s
-              .split("\n")
-              .filter((l) => !addedLines.has(l) && l !== CONTRACT_PARTY_LINE)
-              .join("\n")
-          : s;
-      if (confirmed) {
-        for (const s of [v.sms, v.lms]) for (const l of addedLines) expect(s.split("\n"), `${key} 에 ${l} 줄이 없다`).toContain(l);
-      }
-      // 결정 3-3 — 대금 지급 줄(확정 문안에만 있다)을 옛 줄로 되돌린다. 줄 전체 일치로만 바꾼다(부분 문자열 치환 아님).
-      const unpay = (s: string) =>
-        s
-          .split("\n")
-          .map((l) => (l === PAYMENT.line ? BASELINE_PAYMENT_LINE : l))
-          .join("\n");
-      // T2-2 — 확정 문안에서 걷은 verbatim 한 줄을 기준선의 자리(본문 맨 끝)에 되돌린다. 아래 split/join 이 그것을 옛 문구로 바꾼다.
-      const restoreVerbatim = (s: string) => (confirmed ? `${s}\n${VERBATIM.bookingNotice}` : s);
-      const asBefore = (s: string) =>
-        customer
-          ? unpay(rebrand(restoreVerbatim(withoutAdded(s))))
-              .split(COMPANY.consultTel)
-              .join(BASELINE_TEL)
-              .split(VERBATIM.bookingNotice)
-              .join(BASELINE_BOOKING_NOTICE)
-          : rebrand(s);
-      if (confirmed) {
-        for (const s of [v.sms, v.lms]) {
-          expect(s.split("\n").filter((l) => l === PAYMENT.line), `${key} 에 대금 지급 줄이 줄 전체로 한 번 있지 않다`).toHaveLength(1);
-          expect(s, `${key} 에 옛 대금 지급 줄이 남았다`).not.toContain(BASELINE_PAYMENT_LINE);
-        }
-      } else {
-        for (const s of [v.sms, v.lms]) expect(s, `${key} 에 대금 지급 줄`).not.toContain(PAYMENT.line);
-      }
-      if (customer) {
-        for (const s of [v.sms, v.lms]) {
-          expect(s, `${key} 에 예약·상담 전화가 없다`).toContain(COMPANY.consultTel);
-          expect(s, `${key} 에 대표전화가 남았다`).not.toContain(BASELINE_TEL);
-          if (confirmed) {
-            // T2-2 — 확정 두 판에는 verbatim 이 없다(되돌림은 위 restoreVerbatim 이 맨 끝 한 줄로만 한다)
-            expect(s, `${key} 에 verbatim 이 남았다`).not.toContain(VERBATIM.bookingNotice);
-          } else {
-            expect(s.split(VERBATIM.bookingNotice).length - 1, `${key} 에 새 verbatim 이 정확히 한 번 있지 않다`).toBe(1);
-            // 새 verbatim 은 짧아서(문장 하나) 줄 전체로 들어 있는지까지 본다 — 다른 줄의 일부를 되돌림 대상으로 잡지 않게
-            expect(s.split("\n").filter((l) => l === VERBATIM.bookingNotice), `${key} 에 verbatim 이 줄 전체로 있지 않다`).toHaveLength(1);
+        // 바뀐 것 ② — 블록 서식: "■ " 섹션 줄이 있고, 섹션 아래 항목은 "- " 로 시작한다
+        expect(rows.some((l) => l.startsWith("■ ")), `${key}: 섹션 줄이 없다`).toBe(true);
+
+        if (key.includes(".owner.")) {
+          const quick = v === variants[1];
+          expect(rows[0]).toBe(`${BRAND_NOW} 새 견적 신청 (${quick ? "간편 접수" : "상세 접수"})`);
+          expect(rows).toEqual(expect.arrayContaining(["■ 고객", "- 한지원 / 010-2048-8585", "■ 운행", "관리자에서 보기", adminLink, `접수번호 ${BASELINE_OWNER.publicCode}`]));
+          // 옛 줄 0 — 제목 문장 · "고객 이름 +82…" · "운행/운행일 YYYY-MM-DD" · "확인 <링크>" · 요청 11 의 "전화로 확인할 것" · SMS 한 줄 판
+          for (const old of ["새 예약이 접수되었습니다", "접수되었습니다(간편 접수)", "고객 한지원", "전화로 확인할 것", "차종·시각 전화 확인", `확인 ${adminLink}`, "2026-10-03", "+821020488585"]) {
+            expect(v.lms, `${key}${quick ? "/quick" : ""} 에 옛 모양 "${old}"`).not.toContain(old);
           }
-          expect(s, `${key} 에 옛 verbatim 이 남았다`).not.toContain(BASELINE_BOOKING_NOTICE);
+          expect(v.lms, key).not.toContain(VERBATIM.bookingNotice);
+          if (v.subject !== undefined) expect(v.subject).toBe(`${rows[0]} ${BASELINE_OWNER.publicCode}`);
+          continue;
         }
-      } else {
-        // 사장님 문안은 verbatim 을 싣지 않는다 — 되돌림 없이 그대로 대조된다(P7-7 은 사장님 문안을 건드리지 않았다).
-        for (const s of [v.sms, v.lms]) expect(s, `${key} 에 verbatim 이 있다`).not.toContain(VERBATIM.bookingNotice);
+
+        // 그대로 ② — 고객 문안: 예약·상담 전화 있음 · 옛 대표전화 0 · 옛 verbatim 0 · 접수번호 0(T2-5)
+        expect(v.lms, `${key} 에 예약·상담 전화가 없다`).toContain(COMPANY.consultTel);
+        expect(v.lms, `${key} 에 대표전화가 남았다`).not.toContain(BASELINE_TEL);
+        expect(v.lms, `${key} 에 옛 verbatim 이 남았다`).not.toContain(BASELINE_BOOKING_NOTICE);
+        expect(v.lms, `${key} 에 접수번호가 남았다`).not.toContain(CUSTOMER.publicCode);
+        expect(v.lms, `${key} 에 옛 조회 안내 문장이 남았다`).not.toContain(T25_GUIDE_SENTENCE);
+
+        if (key === "created.customer.sms") {
+          expect(rows[0]).toBe(`${BRAND_NOW} 견적 신청 접수`);
+          // 그대로 ③ — verbatim 은 줄 전체로 정확히 한 번
+          expect(rows.filter((l) => l === VERBATIM.bookingNotice)).toHaveLength(1);
+          expect(rows).toEqual(expect.arrayContaining(["■ 예약 확인", `- ${ORIGIN}/reservation/check`, `- ${CHECK_GUIDE_ITEM}`, "■ 문의", `- ${COMPANY.consultTel}`]));
+          for (const old of ["견적 신청이 접수되었습니다.", "접수 내용은", `문의 ${COMPANY.consultTel}`, `확인 ${ORIGIN}`]) expect(v.lms, old).not.toContain(old);
+          expect(v.lms, key).not.toContain(CONTRACT_PARTY_LINE);
+        } else {
+          expect(rows[0]).toBe(`${BRAND_NOW} 예약 확정 안내`);
+          // 그대로 ④ — 약관 제8조 고지 줄(위험 #9): 대금 · 계좌 · 취소·환불 · 청약철회 · 이용안내 링크가 모두 있다(모양만 블록 항목)
+          expect(rows).toEqual(
+            expect.arrayContaining([
+              "■ 대금",
+              `- ${PAYMENT.smsDeposit}`,
+              `- ${PAYMENT.smsBalance}`,
+              `- ${PAYMENT.smsAccount}`,
+              `  ${PAYMENT.smsAccountHolder}`,
+              "■ 취소·환불",
+              `- ${CANCELLATION.smsItem}`,
+              `- ${WITHDRAWAL.smsLine}`,
+              "■ 예약 확인·변경",
+              `- 이용안내: ${ORIGIN}${GUIDE_PATH}`,
+            ]),
+          );
+          // T2-4 후속 — 제목과 항목의 낱말 겹침 제거: "취소·환불" 은 섹션 제목 한 번뿐 · 머리말 달린 smsLine 은 문안에 없다
+          expect(v.lms.split("취소·환불").length - 1).toBe(1);
+          expect(v.lms).not.toContain(CANCELLATION.smsLine);
+          // 그대로 ⑤ — 계약 주체 줄이 맨 아래에 정확히 한 번 · verbatim 0(T2-2)
+          expect(rows[rows.length - 1]).toBe(CONTRACT_PARTY_LINE);
+          expect(v.lms.split(CONTRACT_PARTY_LINE).length - 1).toBe(1);
+          expect(v.lms).not.toContain(VERBATIM.bookingNotice);
+          // 옛 줄 0 — 확정 선언 문장 · 대금 한 줄 요약 · 계좌 한 줄 · "자세한 내용" · 전화 안내 문장
+          for (const old of ["예약이 확정되었습니다.", PAYMENT.line, PAYMENT.accountLine, BASELINE_PAYMENT_LINE, "자세한 내용", "로 전화 주시면 도와드립니다", "예약 내용은"]) {
+            expect(v.lms, `옛 모양 "${old}"`).not.toContain(old);
+          }
+        }
       }
-      expect(sha(asBefore(v.sms)), `${key}.sms 의 바이트가 바뀌었다`).toBe(BASELINE[key].sms);
-      expect(sha(asBefore(v.lms)), `${key}.lms 의 바이트가 바뀌었다`).toBe(BASELINE[key].lms);
-      expect(v.subject === undefined ? null : sha(rebrand(v.subject)), `${key}.subject 가 바뀌었다`).toBe(BASELINE[key].subject);
     }
   });
 

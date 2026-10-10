@@ -5,7 +5,8 @@
  *
  * 흐름: 위젯(components/home/QuoteWidget.tsx)이 다섯 칸을 검사한 뒤에만 이 모달을 연다.
  *   요약(출발→도착 · 날짜 · 인원 · [수정]) → 이름 · 연락처 → 개인정보 수집·이용 고지 + 필수 체크 → 청약철회 제한·취소 규정 고지 + 필수 체크
- *   → verbatim → Turnstile → [견적 신청하기] → 완료(접수번호 · verbatim · 예약 확인 · 전화).
+ *   → verbatim → Turnstile → [견적 신청하기] → 완료(조회 안내 · verbatim · 예약 확인 · 전화).
+ *   T2-5(결정 5): 완료 화면은 접수번호를 보이지 않는다 — 예약 확인은 휴대폰 번호 + 예약자 이름으로 한다(접수번호는 내부 식별자).
  *   P7-3: 두 고지는 **핵심만 보이고** 전문은 "자세히 보기"(MoreToggle, 기본 접힘) 안에 있다 — 개인정보는 수집 항목 · 보유 기간(강조),
  *   청약철회는 취소·환불 2단계 → 적용 범위 → 제한 한 줄(강조). 체크박스는 토글 밖이라 펼치지 않아도 체크할 수 있다.
  *   두 블록은 같은 카드 틀(.agreeCard)이다. verbatim 은 접히지 않는다.
@@ -127,7 +128,7 @@ function ModalShell({ onClose, onEdit, onWidgetErrors, onSubmitted, ...common }:
   const dialogRef = useRef<HTMLDivElement | null>(null);
   /** undefined = 받는 중 · null = 시크릿 없음(fail-closed) · 문자열 = 토큰 */
   const [formToken, setFormToken] = useState<string | null | undefined>(undefined);
-  const [done, setDone] = useState<{ code: string | null } | null>(null);
+  const [done, setDone] = useState(false);
 
   // 폼 토큰 받기 — 열 때 한 번, 그리고 서버가 bot(타임트랩: 만료·위조·너무 빠름)을 돌려줄 때마다 새로(P3-8 리뷰 P2-1).
   // 모달을 한 시간 넘게 열어 두면 첫 토큰이 만료된다 — 그대로 두면 이후 제출이 전부 bot 인 막다른 길이다.
@@ -224,7 +225,7 @@ function ModalShell({ onClose, onEdit, onWidgetErrors, onSubmitted, ...common }:
         </button>
         <div className={m.body}>
           {done ? (
-            <QuickQuoteDone code={done.code} bookingNotice={common.legal.bookingNotice} tel={common.legal.tel} onClose={onClose} titleId={titleId} />
+            <QuickQuoteDone bookingNotice={common.legal.bookingNotice} tel={common.legal.tel} onClose={onClose} titleId={titleId} />
           ) : (
             <QuickQuoteForm
               {...common}
@@ -232,8 +233,8 @@ function ModalShell({ onClose, onEdit, onWidgetErrors, onSubmitted, ...common }:
               onEdit={onEdit}
               onWidgetErrors={onWidgetErrors}
               onStaleToken={loadFormToken}
-              onDone={(code) => {
-                setDone({ code });
+              onDone={() => {
+                setDone(true);
                 // 위젯이 칸을 비운다 — 완료 화면을 닫고 다시 [견적 신청하기] 를 눌러도 같은 내용이 또 접수되지 않게(P2-11).
                 onSubmitted();
               }}
@@ -253,8 +254,8 @@ export interface QuickQuoteFormProps extends CommonProps {
   onWidgetErrors: (errors: FieldError[]) => void;
   /** 서버가 bot(타임트랩)을 돌려줬다 — 모달이 폼 토큰을 새로 받는다(P2-1). */
   onStaleToken: () => void;
-  /** 성공 — 접수번호(허니팟 가짜 성공이면 null). */
-  onDone: (code: string | null) => void;
+  /** 성공(허니팟 가짜 성공 포함 — 화면은 같다). 접수번호는 넘기지 않는다(T2-5 — 손님 화면에 보이지 않는 내부 식별자). */
+  onDone: () => void;
   titleId: string;
 }
 
@@ -334,7 +335,7 @@ export function QuickQuoteForm({
     if (!result || handledRef.current === result) return;
     handledRef.current = result;
     if (result.ok) {
-      onDoneRef.current(result.publicCode);
+      onDoneRef.current();
       return;
     }
     setServerError(resolve(result.messageKey));
@@ -538,15 +539,17 @@ export function QuickQuoteForm({
   );
 }
 
-/** 완료 — 접수번호(허니팟 가짜 성공이면 없음) · verbatim · 예약 확인 · 예약·상담 전화. */
+/**
+ * 완료 — 조회 안내 · verbatim · 예약 확인 · 예약·상담 전화.
+ * T2-5(결정 5): 접수번호를 보이지 않는다 — 예약 확인은 휴대폰 번호 + 예약자 이름으로 한다. 그래서 진짜 접수와 허니팟 가짜 성공의
+ * 화면이 완전히 같다(예전에는 접수번호 유무로 갈렸다).
+ */
 export function QuickQuoteDone({
-  code,
   bookingNotice,
   tel,
   onClose,
   titleId,
 }: {
-  code: string | null;
   bookingNotice: string;
   tel: ContactPhone;
   onClose: () => void;
@@ -561,19 +564,9 @@ export function QuickQuoteDone({
       <h2 className={m.title} id={titleId} tabIndex={-1} data-focus-first="">
         {t("title")}
       </h2>
-      {code ? (
-        <>
-          <p className={s.doneCodeLabel}>{t("codeLabel")}</p>
-          <p className={s.doneCode} data-testid="quick-quote-code">
-            {code}
-          </p>
-          <p className={s.doneHint}>{t("codeHint")}</p>
-        </>
-      ) : (
-        <p className={s.doneHint} data-testid="quick-quote-nocode">
-          {t("noCode")}
-        </p>
-      )}
+      <p className={s.doneHint} data-testid="quick-quote-check-hint">
+        {t("checkHint")}
+      </p>
       <p className={s.doneNote}>
         <span data-legal="booking-notice">{bookingNotice}</span>
       </p>

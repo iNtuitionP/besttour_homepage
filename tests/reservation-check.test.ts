@@ -1,18 +1,22 @@
 /**
- * P6-3a — 예약확인 `/reservation/check` 계약 테스트 (플랜 v4 P6-3a · ADR-3 · ADR-4 · CLAUDE.md §3 서비스 롤 서버 전용).
+ * 예약확인 `/reservation/check` 계약 테스트 — T2-5(사장님 요청 1 · 결정 5 B안, 2026-10-10)로 대부분 다시 썼다.
+ * 원래 계약: P6-3a · ADR-3 · ADR-4 · CLAUDE.md §3 서비스 롤 서버 전용.
  *
- * 브리프 §검증 1~8 을 그대로 단언한다:
- *   1. zod — 코드 7자/9자/알파벳 밖 문자(PUBLIC_CODE_ALPHABET 로 계산) → validation, 소문자는 대문자 정규화 후 통과. 뒷자리 3자/5자/문자 → validation
- *   2. 순서 — validation 실패 → 허니팟·rateLimit·DB 0 / 허니팟 → DB 0 + not_found 와 같은 응답 / rateLimit 거부 → DB 0 + ratelimit
- *   3. 조회 — 부재와 뒷자리 불일치가 **같은 객체**(toEqual + JSON 동일) / 일치 → view 에 원문 name·phone·email 키 0, 마스킹 규칙, KST 변환(TZ 두 가지)
- *   4. select 화이트리스트 — 어댑터가 넘긴 select 문자열에 email·message·admin_memo·* 없음
- *   5. 액션 정적 — 'use server' 첫 줄 · export 1개 · process.env 0 · try 2개, 입력 모양 방어, IP 비노출
- *   6. lib/guard/deps.ts — limitersFor scope 별 prefix(guard:reserve: vs guard:check:), defaultGuardDeps 의 prefix 는 전과 동일
- *   7. ko.json — reservationCheck 네임스페이스(끝에 추가), 오류 3종에 원장 전화 보간 {tel}, not_found 문구 고정
- *   8. 컴포넌트 정적 — useActionState(checkReservation 0 · 가격·BM 금지어 0 · 법정 문구 리터럴 0 · localStorage 0 · 원장은 서버 페이지만
+ * 조회 키가 "접수번호 + 휴대폰 뒷 4자리" 에서 **"휴대폰 번호 + 예약자 이름"** 으로 바뀌었다. 단언하는 것:
+ *   1. zod — 휴대폰은 접수와 같은 정규화(contactPhone · '+820' 저장값 보정), 이름은 trim·1~30자. formData 계약
+ *   2. 순서 — zod → 허니팟 → Turnstile(action "check") → rateLimit. 앞 단계 실패는 뒤 단계(네트워크·카운터)를 쓰지 않는다.
+ *      접수용 "reserve" 토큰은 조회에 쓰이지 못한다(siteverify 응답의 action 대조). 전화번호 단위 한도는 없다(결정 5)
+ *   3. 조회 — SQL 조건은 전화번호 하나, 이름 비교는 서버 코드(상수 시간 — timingSafeEqual 을 행마다 · 부재면 더미 1회),
+ *      결과 범위는 운행일이 오늘(KST) 이후이고 취소가 아닌 건. 여러 건이면 목록(출발 순)
+ *   4. select 화이트리스트 — public_code·email·message·admin_memo 를 읽지 않는다. `in(phone)` 외 조건 0
+ *   5. 액션 — 없음·이름 불일치·지난/취소 건만·허니팟·형식 실패는 **같은 not_found 하나**(모양·로그·응답 시간 바닥까지)
+ *   6. lib/guard/deps.ts — checkGuardDeps 에 Turnstile(action "check") · 접수는 그대로 "reserve" · 관리자 로그인은 그대로
+ *   7. 카탈로그 — 접수번호·뒷자리 안내가 손님 화면에서 사라졌다(옛 문자 안내 한 줄만)
+ *   8. 컴포넌트·페이지 정적 — 사이트 키·action 전달, 여러 건 카드, 클라이언트 사전 검증 = zod
+ *   (손님 문자·알림톡 — 접수번호 줄이 없고 조회 안내는 "휴대폰 번호와 예약자 이름으로" — 은 tests/notify-templates.test.ts 의 T2-5 블록이 잠근다)
  *
  * `'use server'` 파일을 vitest 에서 부르기 위해 next/headers·lib/guard/deps·lib/supabase/server·lib/reservation-check/db·lib/log 을 vi.mock 한다.
- * **runCheckGuards·lookupReservation 은 진짜다** — limiter·DB 포트만 주입 mock 이라 순서·결과가 실제 코드에서 나온다. 원격 DB 접근 0.
+ * **runCheckGuards·lookupReservation 은 진짜다** — limiter·siteverify fetch·DB 포트만 주입 mock 이라 순서·결과가 실제 코드에서 나온다. 원격 DB 접근 0.
  * tests/ 아래라 세 게이트의 검사 대상이다 — 금지어·임시값 마커 리터럴은 이스케이프로 조립한다.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -23,22 +27,27 @@ import { CF, CG } from "@/components/reservation-check/fields";
 import { PREVIEW_RESULT_MODES, parsePreviewResult, previewCheckResult } from "@/components/reservation-check/preview-result";
 import { validateCheckForm } from "@/components/reservation-check/validate";
 import { locationLabelKo } from "@/lib/codes";
-import { HONEYPOT_FIELD, RATE_LIMITS, type RateLimiterSet } from "@/lib/guard";
+import { HONEYPOT_FIELD, RATE_LIMITS, TURNSTILE_ACTION, TURNSTILE_CHECK_ACTION, type RateLimiterSet } from "@/lib/guard";
 import { COMPANY, VERBATIM } from "@/lib/legal/disclosures";
 import { LEGACY_MENU } from "@/lib/legacy-menu-map";
 import { CHECK_FORM_FIELDS, CHECK_GUARD_FORM_FIELDS, checkGuardContext, formDataToCheckRaw } from "@/lib/reservation-check/formData";
-import { CheckInput, PHONE_LAST4_PATTERN, runCheckGuards, type CheckGuardDeps } from "@/lib/reservation-check/guards";
+import { CheckInput, runCheckGuards, type CheckGuardDeps } from "@/lib/reservation-check/guards";
 import {
+  CHECK_MAX_ROWS,
   RESERVATION_CHECK_COLUMNS,
   RESERVATION_CHECK_SELECT,
+  isUpcoming,
   lookupReservation,
-  phoneLast4Matches,
+  namesMatch,
+  normalizeName,
   type ReservationCheckDb,
   type ReservationCheckRow,
 } from "@/lib/reservation-check/lookup";
+import { checkPhoneE164, storedPhoneCandidates } from "@/lib/reservation-check/phone";
 import { CHECK_ERROR_KEYS, CHECK_FIELD_ERROR_KEYS, checkFailureResult, guardFailureToCheckResult, notFoundResult, type CheckResult } from "@/lib/reservation-check/result";
+import { CHECK_RESPONSE_FLOOR_MS } from "@/lib/reservation-check/timing";
 import { RESERVATION_STATUSES, RESERVATION_VIEW_KEYS, kstWallClock, toReservationView, type ReservationView } from "@/lib/reservation-check/view";
-import { PUBLIC_CODE_ALPHABET, PUBLIC_CODE_LENGTH, PUBLIC_CODE_PATTERN } from "@/lib/reservations/publicCode";
+import { GUARD_FORM_FIELDS } from "@/lib/reservations/formData";
 
 // server-only 는 vitest(node) 에서 import 즉시 throw 한다 — 빈 모듈로 바꿔치기(guard.test.ts·reservation-action.test.ts 선례).
 vi.mock("server-only", () => ({}));
@@ -47,17 +56,29 @@ vi.mock("@/lib/guard/deps", () => ({ checkGuardDeps: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createServiceClient: vi.fn(() => ({ kind: "fake-service-client" })) }));
 vi.mock("@/lib/reservation-check/db", () => ({ supabaseReservationCheckDb: vi.fn() }));
 vi.mock("@/lib/log", () => ({ structuredLog: vi.fn() }));
+// 응답 시간 바닥(T2-5) — 액션 테스트가 실제로 기다리지 않게 바꿔치기한다. 함수 자체는 §5 끝에서 importActual 로 따로 본다.
+vi.mock("@/lib/reservation-check/timing", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@/lib/reservation-check/timing")>();
+  return { ...mod, holdResponseFloor: vi.fn(async () => {}) };
+});
 // 허니팟 단계가 "불렸는가" 를 세기 위해 원본을 spy 로 감싼다(동작은 그대로).
 vi.mock("@/lib/guard/honeypot", async (importOriginal) => {
   const mod = await importOriginal<typeof import("@/lib/guard/honeypot")>();
   return { ...mod, checkHoneypot: vi.fn(mod.checkHoneypot) };
 });
+// 이름 비교가 상수 시간 비교(timingSafeEqual)를 **행마다** 쓰는지 세기 위해 원본을 spy 로 감싼다(동작은 그대로).
+vi.mock("node:crypto", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("node:crypto")>();
+  return { ...mod, timingSafeEqual: vi.fn(mod.timingSafeEqual) };
+});
 
+import { timingSafeEqual } from "node:crypto";
 import { headers } from "next/headers";
 import { checkGuardDeps } from "@/lib/guard/deps";
 import { checkHoneypot } from "@/lib/guard/honeypot";
 import { structuredLog } from "@/lib/log";
 import { supabaseReservationCheckDb } from "@/lib/reservation-check/db";
+import { holdResponseFloor } from "@/lib/reservation-check/timing";
 import { createServiceClient } from "@/lib/supabase/server";
 import { checkReservation } from "@/actions/reservation-check";
 
@@ -105,16 +126,19 @@ const UNPROVEN = ["연중무휴", "24시간", "누적", "대 보유", "운행 13
 // 픽스처
 // =============================================================================
 const SECRET = "unit-test-guard-secret-0123456789abcdef0123456789abcdef";
+/** KST 2026-09-13 12:00 — "오늘(KST)" 은 9월 13일이다. */
 const NOW = new Date("2026-09-13T03:00:00.000Z");
 const IP = "10.9.8.7";
-const CODE = "A2B3C4D5";
-const LAST4 = "5678";
+const TOKEN = "unit-test-turnstile-token-check";
 const RAW_NAME = "홍길동";
 const RAW_PHONE_E164 = "+821012345678";
+/** 손님이 칸에 치는 모양(접수 모달과 같은 자동 하이픈). */
+const INPUT_PHONE = "010-1234-5678";
 const RAW_PHONE_FORMS = [RAW_PHONE_E164, "821012345678", "01012345678", "010-1234-5678", "1012345678"];
+/** '+820' 저장값 보정까지 — SQL 의 `in(phone, …)` 에 들어가는 후보. */
+const CANDIDATES = ["+821012345678", "+8201012345678"];
 
 const ROW: ReservationCheckRow = {
-  public_code: CODE,
   name: RAW_NAME,
   phone: RAW_PHONE_E164,
   status: "confirmed",
@@ -134,10 +158,11 @@ const VEHICLE_NAME = "45인승 관광버스";
 const VEHICLE_NAMES = { ko: VEHICLE_NAME, en: "45-seat Coach" };
 
 type FakeDb = ReservationCheckDb & { find: ReturnType<typeof vi.fn>; veh: ReturnType<typeof vi.fn> };
-function fakeDb(row: ReservationCheckRow | null, vehicleNames: { ko: string; en: string } | null = VEHICLE_NAMES): FakeDb {
-  const find = vi.fn(async () => row);
+/** SQL `where phone in (…)` 를 흉내 낸다 — 후보에 든 번호의 행만 돌려준다(이름·상태·날짜 조건은 SQL 에 없다). */
+function fakeDb(rows: ReservationCheckRow[], vehicleNames: { ko: string; en: string } | null = VEHICLE_NAMES): FakeDb {
+  const find = vi.fn(async (phones: readonly string[]) => rows.filter((r) => phones.includes(r.phone)));
   const veh = vi.fn(async () => vehicleNames);
-  return { findByPublicCode: find, vehicleNames: veh, find, veh };
+  return { findByPhones: find, vehicleNames: veh, find, veh };
 }
 
 function limiterSet(success = true): RateLimiterSet {
@@ -149,13 +174,33 @@ const limitCalls = (set: RateLimiterSet) =>
     .flatMap((b) => (["short", "long"] as const).map((w) => vi.mocked(set[b][w].limit).mock.calls.length))
     .reduce((a, b) => a + b, 0);
 
-function fakeDeps(limiters: RateLimiterSet = limiterSet()): CheckGuardDeps & { limiters: RateLimiterSet } {
-  return { now: () => NOW, secret: SECRET, rateLimit: { limiters, timeoutMs: 1_000 }, limiters };
+/** Cloudflare siteverify 응답 흉내. 기본은 조회 위젯(action "check")에서 나온 정상 토큰. */
+function siteverify(body: Record<string, unknown> = {}) {
+  return vi.fn<(input: string, init: RequestInit) => Promise<Response>>(async () =>
+    new Response(JSON.stringify({ success: true, hostname: "localhost", action: TURNSTILE_CHECK_ACTION, "error-codes": [], ...body }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }),
+  );
+}
+
+type Deps = CheckGuardDeps & { limiters: RateLimiterSet; fetch: ReturnType<typeof siteverify> };
+function fakeDeps(o: { limiters?: RateLimiterSet; fetch?: ReturnType<typeof siteverify> } = {}): Deps {
+  const limiters = o.limiters ?? limiterSet();
+  const fetch = o.fetch ?? siteverify();
+  return {
+    now: () => NOW,
+    secret: SECRET,
+    turnstile: { fetch, secret: "unit-test-turnstile-secret", allowedHosts: ["localhost"], action: TURNSTILE_CHECK_ACTION, timeoutMs: 1_000 },
+    rateLimit: { limiters, timeoutMs: 1_000 },
+    limiters,
+    fetch,
+  };
 }
 
 type FormValue = string | null;
 function form(overrides: Record<string, FormValue> = {}): FormData {
-  const base: Record<string, FormValue> = { publicCode: CODE, phoneLast4: LAST4 };
+  const base: Record<string, FormValue> = { phone: INPUT_PHONE, name: RAW_NAME, "cf-turnstile-response": TOKEN };
   const fd = new FormData();
   for (const [k, v] of Object.entries({ ...base, ...overrides })) {
     if (v === null) continue;
@@ -164,8 +209,13 @@ function form(overrides: Record<string, FormValue> = {}): FormData {
   return fd;
 }
 
-const ctx = (o: { ip?: string | null; website?: string } = {}) =>
-  checkGuardContext(new Headers(o.ip === null ? {} : { "x-forwarded-for": o.ip ?? IP, host: "localhost" }), { website: o.website });
+const ctx = (o: { ip?: string | null; website?: string; token?: string | null } = {}) =>
+  checkGuardContext(new Headers(o.ip === null ? {} : { "x-forwarded-for": o.ip ?? IP, host: "localhost" }), {
+    website: o.website,
+    turnstileToken: o.token === null ? undefined : (o.token ?? TOKEN),
+  });
+
+const VALID_RAW = { phone: INPUT_PHONE, name: RAW_NAME };
 
 type RequestHeaders = Awaited<ReturnType<typeof headers>>;
 const requestHeaders = (init: Record<string, string>) => new Headers(init) as unknown as RequestHeaders;
@@ -173,14 +223,16 @@ const requestHeaders = (init: Record<string, string>) => new Headers(init) as un
 const digitRuns = (s: string, min = 4): string[] => s.match(new RegExp(`\\d{${min},}`, "g")) ?? [];
 
 let db: FakeDb;
+let deps: Deps;
 let consoleError: ReturnType<typeof vi.spyOn>;
 let consoleWarn: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  db = fakeDb(ROW);
+  db = fakeDb([ROW]);
+  deps = fakeDeps();
   vi.mocked(headers).mockResolvedValue(requestHeaders({ "x-forwarded-for": IP, host: "localhost" }));
-  vi.mocked(checkGuardDeps).mockReturnValue(fakeDeps());
+  vi.mocked(checkGuardDeps).mockImplementation(() => deps);
   vi.mocked(supabaseReservationCheckDb).mockImplementation(() => db);
   consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
   consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -199,183 +251,342 @@ const everythingLogged = () =>
   ].join("\n");
 
 // =============================================================================
-// 1. zod — CheckInput
+// 1. zod — CheckInput · 휴대폰 정규화 · formData
 // =============================================================================
-describe("1. zod CheckInput — 코드 8자(알파벳 31자, 대문자 정규화) + 뒷 4자리 숫자", () => {
-  const parse = (publicCode: unknown, phoneLast4: unknown = LAST4) => CheckInput.safeParse({ publicCode, phoneLast4 });
+describe("1. zod CheckInput — 휴대폰은 접수와 같은 정규화, 이름은 trim·1~30자", () => {
+  const parse = (phone: unknown, name: unknown = RAW_NAME) => CheckInput.safeParse({ phone, name });
 
-  test("정상 8자 → 통과. 소문자·양끝 공백은 대문자·trim 으로 정규화된다", () => {
-    expect(parse(CODE).success).toBe(true);
-    const r = parse(" a2b3c4d5 ");
+  test("국내 휴대폰 — 하이픈 유무·양끝 공백과 무관하게 +82 E.164 로 정규화된다(contactPhone 과 같은 결과)", () => {
+    for (const raw of ["010-1234-5678", "01012345678", " 010-1234-5678 ", "010-1234-5678\t"]) {
+      const r = parse(raw);
+      expect(r.success, JSON.stringify(raw)).toBe(true);
+      if (r.success) expect(r.data).toEqual({ phone: RAW_PHONE_E164, name: RAW_NAME });
+    }
+    expect(checkPhoneE164("011-123-4567")).toBe("+82111234567");
+  });
+
+  test("해외 번호 — `+` 로 시작하면 숫자만 남겨 E.164 · '+82…' 는 국내 번호로 같은 값 · '+820…' 은 0 을 떼어 보정", () => {
+    expect(checkPhoneE164("+15551234567")).toBe("+15551234567");
+    expect(checkPhoneE164("+1 (555) 123-4567")).toBe("+15551234567");
+    expect(checkPhoneE164("+82 10-1234-5678")).toBe(RAW_PHONE_E164);
+    // 해외 칸에 국내 번호를 0 째로 적은 경우 — lib/reservations/phone.ts 가 그대로 저장해 온 모양이다(계획 위험 '+820')
+    expect(checkPhoneE164("+82010-1234-5678")).toBe(RAW_PHONE_E164);
+    expect(checkPhoneE164("+8201012345678")).toBe(RAW_PHONE_E164);
+  });
+
+  test("형식 밖 → 실패: 빈 칸·유선·짧은 번호·글자·국가번호 0·`+` 만", () => {
+    for (const bad of ["", "   ", "02-123-4567", "010-12-34", "1234", "abcd", "010-1234-567a", "+0123456789", "+", "+12", "１０１２３４５６７８"]) {
+      expect(parse(bad).success, JSON.stringify(bad)).toBe(false);
+      expect(checkPhoneE164(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+
+  test("이름 — trim · 빈 이름/공백만 실패 · 30자 통과 · 31자 실패 · 띄어쓰기는 그대로 받는다(비교에서 지운다)", () => {
+    const r = parse(INPUT_PHONE, "  홍 길동 ");
     expect(r.success).toBe(true);
-    if (r.success) expect(r.data).toEqual({ publicCode: CODE, phoneLast4: LAST4 });
+    if (r.success) expect(r.data.name).toBe("홍 길동");
+    for (const bad of ["", "   ", "가".repeat(31)]) expect(parse(INPUT_PHONE, bad).success, JSON.stringify(bad)).toBe(false);
+    expect(parse(INPUT_PHONE, "가".repeat(30)).success).toBe(true);
   });
 
-  test("7자·9자 → validation", () => {
-    expect(parse(CODE.slice(0, 7)).success).toBe(false);
-    expect(parse(`${CODE}2`).success).toBe(false);
-    expect(PUBLIC_CODE_LENGTH).toBe(8);
-  });
-
-  test("알파벳 밖 문자 — PUBLIC_CODE_ALPHABET 로 계산한 혼동 문자(0·O·1·I·L)·기호·한글 → validation, 알파벳 31자는 전부 통과", () => {
-    const outside = ["0", "O", "1", "I", "L"].filter((c) => !PUBLIC_CODE_ALPHABET.includes(c));
-    expect(outside).toHaveLength(5);
-    for (const c of [...outside, "-", "_", " ", "가", "*"]) expect(parse(CODE.slice(0, 7) + c).success, JSON.stringify(c)).toBe(false);
-    expect(PUBLIC_CODE_ALPHABET).toHaveLength(31);
-    for (const c of PUBLIC_CODE_ALPHABET) expect(parse(c.repeat(PUBLIC_CODE_LENGTH)).success, c).toBe(true);
-    for (const c of PUBLIC_CODE_ALPHABET.toLowerCase()) expect(parse(c.repeat(PUBLIC_CODE_LENGTH)).success, c).toBe(true);
-  });
-
-  test("뒷자리 3자·5자·문자·공백 포함 → validation. 4자리 숫자만 통과(선행 0 포함)", () => {
-    for (const bad of ["567", "56789", "abcd", "56 8", " 5678", "5678 ", "５６７８", ""]) expect(parse(CODE, bad).success, JSON.stringify(bad)).toBe(false);
-    for (const ok of ["0000", "0042", "9999"]) expect(parse(CODE, ok).success, ok).toBe(true);
-    expect(PHONE_LAST4_PATTERN.test("5678")).toBe(true);
-    expect(PHONE_LAST4_PATTERN.test("56789")).toBe(false);
-  });
-
-  test("누락·비문자열·이상한 모양 → validation, throw 없음", () => {
-    for (const raw of [{}, { publicCode: CODE }, { phoneLast4: LAST4 }, { publicCode: 12345678, phoneLast4: 5678 }, null, "x", []]) {
+  test("누락·비문자열·이상한 모양 → 실패, throw 없음", () => {
+    for (const raw of [{}, { phone: INPUT_PHONE }, { name: RAW_NAME }, { phone: 1012345678, name: RAW_NAME }, null, "x", []]) {
       expect(CheckInput.safeParse(raw).success, JSON.stringify(raw)).toBe(false);
     }
   });
 
-  test("formDataToCheckRaw — 계약 키 2개만 trim 해서 읽고, website 는 raw 밖·guardFields 안(원문 그대로). FormData 가 아니면 빈 폼", () => {
-    expect(CHECK_FORM_FIELDS).toEqual({ publicCode: "publicCode", phoneLast4: "phoneLast4" });
-    expect(CHECK_GUARD_FORM_FIELDS).toEqual({ website: HONEYPOT_FIELD });
-    const { raw, guardFields } = formDataToCheckRaw(form({ publicCode: " a2b3c4d5 ", website: " http://spam " }));
-    expect(raw).toEqual({ publicCode: "a2b3c4d5", phoneLast4: LAST4 });
-    expect(guardFields).toEqual({ website: " http://spam " });
+  test("storedPhoneCandidates — 국내 번호는 정규형과 '+820' 옛 저장형 둘, 해외 번호는 하나", () => {
+    expect(storedPhoneCandidates(RAW_PHONE_E164)).toEqual(CANDIDATES);
+    expect(storedPhoneCandidates("+15551234567")).toEqual(["+15551234567"]);
+  });
+
+  test("formDataToCheckRaw — 계약 키 2개(phone·name)만 trim 해서 읽고, website·Turnstile 토큰은 raw 밖·guardFields 안(원문 그대로)", () => {
+    expect(CHECK_FORM_FIELDS).toEqual({ phone: "phone", name: "name" });
+    expect(CHECK_GUARD_FORM_FIELDS).toEqual({ website: HONEYPOT_FIELD, turnstile: "cf-turnstile-response" });
+    // Turnstile 위젯이 넣는 표준 이름 — 접수 폼과 같은 상수를 쓴다(이름을 두 군데에 적지 않는다)
+    expect(CHECK_GUARD_FORM_FIELDS.turnstile).toBe(GUARD_FORM_FIELDS.turnstile);
+    const { raw, guardFields } = formDataToCheckRaw(form({ name: "  홍길동 ", website: " http://spam " }));
+    expect(raw).toEqual({ phone: INPUT_PHONE, name: "홍길동" });
+    expect(guardFields).toEqual({ website: " http://spam ", turnstileToken: TOKEN });
     expect(HONEYPOT_FIELD in raw).toBe(false);
     const fd = form();
     fd.append("status", "confirmed");
-    fd.append("name", "x");
-    expect(Object.keys(formDataToCheckRaw(fd).raw).sort()).toEqual(["phoneLast4", "publicCode"]);
-    expect(formDataToCheckRaw(form({ publicCode: "" })).raw.publicCode).toBeUndefined();
+    fd.append("publicCode", "A2B3C4D5");
+    fd.append("phoneLast4", "5678");
+    expect(Object.keys(formDataToCheckRaw(fd).raw).sort()).toEqual(["name", "phone"]);
+    expect(formDataToCheckRaw(form({ name: "" })).raw.name).toBeUndefined();
     const empty = formDataToCheckRaw(new FormData());
-    expect(empty).toEqual({ raw: { publicCode: undefined, phoneLast4: undefined }, guardFields: { website: undefined } });
+    expect(empty).toEqual({ raw: { phone: undefined, name: undefined }, guardFields: { website: undefined, turnstileToken: undefined } });
     for (const notForm of [null, undefined, {}, { ok: false }, "crafted", 42]) expect(formDataToCheckRaw(notForm as never)).toEqual(empty);
   });
 });
 
 // =============================================================================
-// 2. 순서 — zod → 허니팟 → rateLimit
+// 2. 순서 — zod → 허니팟 → Turnstile("check") → rateLimit
 // =============================================================================
-describe("2. runCheckGuards — zod → 허니팟 → rateLimit (형식 틀린 요청이 카운터를 먹지 않는다)", () => {
-  test("validation 실패 → checkHoneypot 0 · limit 0 · reason validation", async () => {
-    const deps = fakeDeps();
-    const out = await runCheckGuards({ publicCode: "short", phoneLast4: LAST4 }, ctx({ website: "filled" }), deps);
+describe("2. runCheckGuards — zod → 허니팟 → Turnstile(action \"check\") → rateLimit", () => {
+  test("형식 실패 → 허니팟 0 · siteverify 0 · limit 0 · reason validation", async () => {
+    const d = fakeDeps();
+    const out = await runCheckGuards({ phone: "1234", name: RAW_NAME }, ctx({ website: "filled" }), d);
     expect(out).toMatchObject({ ok: false, reason: "validation" });
     expect(checkHoneypot).toHaveBeenCalledTimes(0);
-    expect(limitCalls(deps.limiters)).toBe(0);
+    expect(d.fetch).toHaveBeenCalledTimes(0);
+    expect(limitCalls(d.limiters)).toBe(0);
   });
 
-  test("허니팟 채워짐 → { ok:true, silent:true } · limit 0 (봇은 슬롯을 태우지 않는다)", async () => {
-    const deps = fakeDeps();
-    const out = await runCheckGuards({ publicCode: CODE, phoneLast4: LAST4 }, ctx({ website: "http://spam" }), deps);
+  test("허니팟 채워짐 → { ok:true, silent:true } · siteverify 0 · limit 0 (봇은 네트워크도 슬롯도 쓰지 않는다)", async () => {
+    const d = fakeDeps();
+    const out = await runCheckGuards(VALID_RAW, ctx({ website: "http://spam" }), d);
     expect(out).toEqual({ ok: true, silent: true });
     expect(checkHoneypot).toHaveBeenCalledTimes(1);
-    expect(limitCalls(deps.limiters)).toBe(0);
+    expect(d.fetch).toHaveBeenCalledTimes(0);
+    expect(limitCalls(d.limiters)).toBe(0);
+  });
+
+  test("Turnstile 토큰 없음 → reason turnstile · siteverify 0(네트워크 없이 거부) · limit 0", async () => {
+    const d = fakeDeps();
+    const out = await runCheckGuards(VALID_RAW, ctx({ token: null }), d);
+    expect(out).toMatchObject({ ok: false, reason: "turnstile" });
+    expect(d.fetch).toHaveBeenCalledTimes(0);
+    expect(limitCalls(d.limiters)).toBe(0);
+  });
+
+  test("🔴 접수 위젯(action \"reserve\") 토큰은 조회에 쓰이지 못한다 — siteverify 는 통과했어도 action 대조로 거부 · limit 0", async () => {
+    expect(TURNSTILE_CHECK_ACTION).toBe("check");
+    expect(TURNSTILE_ACTION).toBe("reserve");
+    const d = fakeDeps({ fetch: siteverify({ action: TURNSTILE_ACTION }) });
+    const out = await runCheckGuards(VALID_RAW, ctx(), d);
+    expect(out).toMatchObject({ ok: false, reason: "turnstile", detail: { code: "action-mismatch" } });
+    expect(d.fetch).toHaveBeenCalledTimes(1);
+    expect(limitCalls(d.limiters)).toBe(0);
+    // action 이 없는 응답(Cloudflare 더미 키 모양)도 운영 deps 에서는 통과하지 못한다
+    const noAction = fakeDeps({ fetch: siteverify({ action: undefined }) });
+    expect(await runCheckGuards(VALID_RAW, ctx(), noAction)).toMatchObject({ ok: false, reason: "turnstile" });
+  });
+
+  test("siteverify 실패(success:false) → turnstile · 네트워크 오류 → infra (fail-closed)", async () => {
+    expect(await runCheckGuards(VALID_RAW, ctx(), fakeDeps({ fetch: siteverify({ success: false, "error-codes": ["invalid-input-response"] }) }))).toMatchObject({
+      ok: false,
+      reason: "turnstile",
+    });
+    const down = vi.fn(async () => {
+      throw new TypeError("fetch failed");
+    });
+    const d = fakeDeps({ fetch: down as never });
+    expect(await runCheckGuards(VALID_RAW, ctx(), d)).toMatchObject({ ok: false, reason: "infra" });
+    expect(limitCalls(d.limiters)).toBe(0);
+  });
+
+  test("siteverify 에는 토큰과 시크릿을 보내고, 결과·detail 에는 IP·토큰을 싣지 않는다", async () => {
+    const d = fakeDeps({ fetch: siteverify({ success: false }) });
+    const out = await runCheckGuards(VALID_RAW, ctx(), d);
+    const body = JSON.parse(String((d.fetch.mock.calls[0][1] as RequestInit).body)) as Record<string, string>;
+    expect(body.response).toBe(TOKEN);
+    expect(body.secret).toBe("unit-test-turnstile-secret");
+    expect(JSON.stringify(out)).not.toContain(IP);
+    expect(JSON.stringify(out)).not.toContain(TOKEN);
   });
 
   test("rateLimit 거부 → reason ratelimit · short 창 1회(known)", async () => {
-    const deps = fakeDeps(limiterSet(false));
-    const out = await runCheckGuards({ publicCode: CODE, phoneLast4: LAST4 }, ctx(), deps);
+    const d = fakeDeps({ limiters: limiterSet(false) });
+    const out = await runCheckGuards(VALID_RAW, ctx(), d);
     expect(out).toMatchObject({ ok: false, reason: "ratelimit" });
-    expect(vi.mocked(deps.limiters.known.short.limit)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(deps.limiters.known.long.limit)).toHaveBeenCalledTimes(0);
-    expect(limitCalls(deps.limiters)).toBe(1);
+    expect(vi.mocked(d.limiters.known.short.limit)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(d.limiters.known.long.limit)).toHaveBeenCalledTimes(0);
   });
 
   test("rateLimit throw → infra (fail-closed)", async () => {
     const throwing = { limit: vi.fn(async () => { throw new Error("redis down"); }) };
-    const deps = fakeDeps({ known: { short: throwing, long: throwing }, unknown: { short: throwing, long: throwing } });
-    const out = await runCheckGuards({ publicCode: CODE, phoneLast4: LAST4 }, ctx(), deps);
-    expect(out).toMatchObject({ ok: false, reason: "infra" });
+    const d = fakeDeps({ limiters: { known: { short: throwing, long: throwing }, unknown: { short: throwing, long: throwing } } });
+    expect(await runCheckGuards(VALID_RAW, ctx(), d)).toMatchObject({ ok: false, reason: "infra" });
   });
 
-  test("통과 → { ok, silent:false, input } · input 은 대문자 정규화된 값 · known 버킷 short→long 순서로 2회", async () => {
-    const deps = fakeDeps();
-    const out = await runCheckGuards({ publicCode: "a2b3c4d5", phoneLast4: LAST4 }, ctx(), deps);
-    expect(out).toEqual({ ok: true, silent: false, input: { publicCode: CODE, phoneLast4: LAST4 } });
-    expect(vi.mocked(deps.limiters.known.short.limit)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(deps.limiters.known.long.limit)).toHaveBeenCalledTimes(1);
-    expect(limitCalls(deps.limiters)).toBe(2);
+  test("통과 → { ok, silent:false, input(정규화된 E.164·trim 된 이름), now } · siteverify 1 · known 버킷 short→long 2회", async () => {
+    const d = fakeDeps();
+    const out = await runCheckGuards({ phone: "01012345678", name: " 홍길동 " }, ctx(), d);
+    expect(out).toEqual({ ok: true, silent: false, input: { phone: RAW_PHONE_E164, name: RAW_NAME }, now: NOW });
+    expect(d.fetch).toHaveBeenCalledTimes(1);
+    expect(limitCalls(d.limiters)).toBe(2);
   });
 
   test("IP 헤더 없음 → unknown 버킷 · limit 키에 IP 원문 없음(해시 16자)", async () => {
-    const deps = fakeDeps();
-    await runCheckGuards({ publicCode: CODE, phoneLast4: LAST4 }, ctx({ ip: null }), deps);
-    expect(vi.mocked(deps.limiters.unknown.short.limit)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(deps.limiters.known.short.limit)).toHaveBeenCalledTimes(0);
+    const d = fakeDeps();
+    await runCheckGuards(VALID_RAW, ctx({ ip: null }), d);
+    expect(vi.mocked(d.limiters.unknown.short.limit)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(d.limiters.known.short.limit)).toHaveBeenCalledTimes(0);
     const withIp = fakeDeps();
-    await runCheckGuards({ publicCode: CODE, phoneLast4: LAST4 }, ctx(), withIp);
+    await runCheckGuards(VALID_RAW, ctx(), withIp);
     const key = vi.mocked(withIp.limiters.known.short.limit).mock.calls[0][0];
     expect(key).toMatch(/^[0-9a-f]{16}$/);
     expect(key).not.toContain(IP);
   });
 
+  test("전화번호 단위 한도는 없다(결정 5) — 한도 키는 IP 해시 하나라 번호가 달라도 같은 키 · 키에 번호 숫자가 없다", async () => {
+    const a = fakeDeps();
+    await runCheckGuards(VALID_RAW, ctx(), a);
+    const b = fakeDeps();
+    await runCheckGuards({ phone: "010-9876-5432", name: RAW_NAME }, ctx(), b);
+    const keyA = vi.mocked(a.limiters.known.short.limit).mock.calls[0][0];
+    const keyB = vi.mocked(b.limiters.known.short.limit).mock.calls[0][0];
+    expect(keyA).toBe(keyB);
+    expect(keyA).not.toMatch(/1234|5678|9876|5432/);
+    const src = codeOf(`${LIB_DIR}/guards.ts`);
+    expect(src.match(/checkRateLimit\(/g) ?? []).toHaveLength(1);
+    expect(src).toMatch(/clientIpKey\(ctx\.headers,\s*deps\.secret\)/);
+  });
+
   test("한도는 접수와 같은 RATE_LIMITS(known 10분 5·1시간 15)를 쓴다 — 별도 상수를 만들지 않았다", () => {
     expect(RATE_LIMITS.known.short).toEqual({ max: 5, window: "10 m" });
     expect(RATE_LIMITS.known.long).toEqual({ max: 15, window: "1 h" });
-    const src = read(`${LIB_DIR}/guards.ts`);
-    expect(src).not.toMatch(/max:\s*\d/);
+    expect(read(`${LIB_DIR}/guards.ts`)).not.toMatch(/max:\s*\d/);
   });
 });
 
 // =============================================================================
-// 3. 조회 — 부재 = 불일치 (동일 객체) · 뷰 모델
+// 3. 조회 — SQL 은 전화번호 하나 · 이름은 서버에서 상수 시간 · 범위는 오늘(KST) 이후 미취소
 // =============================================================================
-describe("3. lookupReservation — 부재와 불일치는 같은 결과, 일치는 마스킹 뷰", () => {
-  const input = { publicCode: CODE, phoneLast4: LAST4 };
+describe("3. lookupReservation — 없음 = 이름 불일치 = 범위 밖, 일치는 마스킹 뷰 목록", () => {
+  const input = { phone: RAW_PHONE_E164, name: RAW_NAME };
+  const run = (rows: ReservationCheckRow[], o: { name?: string; now?: Date; locale?: string } = {}) => {
+    const d = fakeDb(rows);
+    return { d, out: lookupReservation({ ...input, name: o.name ?? RAW_NAME }, { db: d, now: o.now ?? NOW, locale: o.locale }) };
+  };
 
-  test("(a) 부재 → { found:false } · findByPublicCode 1회 · vehicleNames 0", async () => {
-    const absent = fakeDb(null);
-    expect(await lookupReservation(input, { db: absent })).toEqual({ found: false });
-    expect(absent.find).toHaveBeenCalledTimes(1);
-    expect(absent.find).toHaveBeenCalledWith(CODE);
-    expect(absent.veh).toHaveBeenCalledTimes(0);
+  test("(a) 없음 → { found:false } · findByPhones 1회(후보 = 정규형 + '+820' 옛 저장형) · vehicleNames 0", async () => {
+    const { d, out } = run([]);
+    expect(await out).toEqual({ found: false });
+    expect(d.find).toHaveBeenCalledTimes(1);
+    expect(d.find).toHaveBeenCalledWith(CANDIDATES);
+    expect(d.veh).toHaveBeenCalledTimes(0);
   });
 
-  test("(b) 존재 + 뒷자리 불일치 → { found:false } · vehicleNames 0 · (a) 와 toEqual + JSON 바이트 동일", async () => {
-    const absent = await lookupReservation(input, { db: fakeDb(null) });
-    const present = fakeDb(ROW);
-    const mismatch = await lookupReservation({ ...input, phoneLast4: "0000" }, { db: present });
+  test("(b) 번호는 있고 이름이 다르다 → (a) 와 toEqual + JSON 바이트 동일 · vehicleNames 0", async () => {
+    const absent = await run([]).out;
+    const { d, out } = run([ROW], { name: "김철수" });
+    const mismatch = await out;
     expect(mismatch).toEqual(absent);
     expect(JSON.stringify(mismatch)).toBe(JSON.stringify(absent));
-    expect(Object.keys(mismatch)).toEqual(Object.keys(absent));
-    expect(present.veh).toHaveBeenCalledTimes(0);
-    expect(present.find).toHaveBeenCalledTimes(1);
+    expect(d.veh).toHaveBeenCalledTimes(0);
   });
 
-  test("액션 레벨 — 부재·불일치·허니팟 세 응답이 toEqual 로 같고 messageKey 는 not_found (존재 여부를 흘리는 필드 0)", async () => {
-    db = fakeDb(null);
-    const absent = await checkReservation(form());
-    db = fakeDb(ROW);
-    const mismatch = await checkReservation(form({ phoneLast4: "0000" }));
-    const bot = await checkReservation(form({ website: "http://spam" }));
-    expect(absent).toEqual({ ok: false, code: "not_found", messageKey: "reservationCheck.errors.not_found" });
-    expect(mismatch).toEqual(absent);
-    expect(bot).toEqual(absent);
-    expect(JSON.stringify(mismatch)).toBe(JSON.stringify(absent));
-    expect(JSON.stringify(bot)).toBe(JSON.stringify(absent));
-    expect(notFoundResult()).toEqual(absent);
-    expect(structuredLog).toHaveBeenCalledTimes(0);
+  test("(b') 이름까지 맞아도 지난 운행·취소 건뿐이면 → (a) 와 같은 결과 (기본 범위: 운행일이 오늘 이후 · 취소 아님)", async () => {
+    const absent = await run([]).out;
+    const past: ReservationCheckRow = { ...ROW, depart_at: "2026-09-01T00:00:00.000Z", return_at: "2026-09-01T09:00:00.000Z" };
+    const cancelled: ReservationCheckRow = { ...ROW, status: "cancelled" };
+    for (const rows of [[past], [cancelled], [past, cancelled]]) {
+      const got = await run(rows).out;
+      expect(got).toEqual(absent);
+      expect(JSON.stringify(got)).toBe(JSON.stringify(absent));
+    }
   });
 
-  test("(c) 일치 → view: 키 집합 = RESERVATION_VIEW_KEYS · 원문 name·phone(5가지 표기)·email·message·admin_memo 0 · 마스킹·라벨 규칙", async () => {
-    const leaky = { ...ROW, email: "hong@example.com", message: "비밀 메모입니다", admin_memo: "관리자 메모" } as ReservationCheckRow;
-    const out = await lookupReservation(input, { db: fakeDb(leaky) });
+  test("이름 정규화 — NFC · 공백 전부 제거 · 소문자 (양쪽 모두)", async () => {
+    expect(normalizeName(" 홍 길동 ")).toBe("홍길동");
+    expect(normalizeName("Hong Gil-Dong")).toBe("honggil-dong");
+    const nfd = RAW_NAME.normalize("NFD");
+    expect(nfd).not.toBe(RAW_NAME);
+    expect(normalizeName(nfd)).toBe(RAW_NAME);
+    for (const [stored, typed] of [
+      ["홍 길동", "홍길동"],
+      ["홍길동", " 홍 길 동 "],
+      [nfd, RAW_NAME],
+      [RAW_NAME, nfd],
+      ["Hong Gildong", "hong gildong"],
+      ["JOHN SMITH", "john\tsmith"],
+    ]) {
+      expect(namesMatch(stored, typed), `${stored} / ${typed}`).toBe(true);
+      expect((await run([{ ...ROW, name: stored }], { name: typed }).out).found, `${stored} / ${typed}`).toBe(true);
+    }
+    for (const [stored, typed] of [
+      ["홍길동", "홍길순"],
+      ["홍길동", "홍길"],
+      ["홍길동", "홍길동동"],
+      ["John Smith", "Jon Smith"],
+    ]) {
+      expect(namesMatch(stored, typed), `${stored} / ${typed}`).toBe(false);
+    }
+    // 부재(null)는 더미 비교를 하되 결과는 언제나 false
+    expect(namesMatch(null, RAW_NAME)).toBe(false);
+    expect(namesMatch(null, "")).toBe(false);
+  });
+
+  test("🔴 상수 시간 비교 — 이름 비교는 timingSafeEqual 로, 행마다 한 번(이름이 먼저 맞아도 끝까지) · 행이 없으면 더미 1회", async () => {
+    const t = vi.mocked(timingSafeEqual);
+    t.mockClear();
+    await run([]).out;
+    expect(t).toHaveBeenCalledTimes(1);
+    t.mockClear();
+    await run([ROW], { name: "김철수" }).out;
+    expect(t).toHaveBeenCalledTimes(1);
+    t.mockClear();
+    const other = { ...ROW, name: "김철수" };
+    const past = { ...ROW, depart_at: "2026-09-01T00:00:00.000Z", return_at: null };
+    await run([ROW, other, past, { ...ROW, status: "cancelled" }]).out;
+    expect(t).toHaveBeenCalledTimes(4);
+    // 비교 함수는 길이가 다른 이름도 같은 길이(해시)로 맞춰 비교한다 — 이른 return·=== 비교가 없다
+    const src = codeOf(`${LIB_DIR}/lookup.ts`);
+    expect(src).toMatch(/import \{[^}]*timingSafeEqual[^}]*\} from "node:crypto"/);
+    expect(src).toMatch(/createHash\("sha256"\)/);
+    expect(src).not.toMatch(/normalizeName\([^)]*\)\s*===|===\s*normalizeName\(/);
+  });
+
+  test("🔴 SQL 조건은 전화번호 하나 — 포트 호출 인자는 후보 번호뿐(이름이 DB 로 가지 않는다)", async () => {
+    const { d, out } = run([ROW]);
+    await out;
+    expect(d.find.mock.calls).toEqual([[CANDIDATES]]);
+    expect(JSON.stringify(d.find.mock.calls)).not.toContain(RAW_NAME);
+  });
+
+  test("'+820' 으로 저장된 옛 행도 국내 번호 입력으로 찾는다", async () => {
+    const legacy = { ...ROW, phone: "+8201012345678" };
+    const out = await run([legacy]).out;
     expect(out.found).toBe(true);
-    if (!out.found) throw new Error("unreachable");
-    const view = out.view;
+  });
+
+  test("범위 경계(KST) — 오늘 출발은 보이고 어제 하루 운행은 안 보인다 · 어제 출발해 내일 돌아오는 운행 중 건은 보인다", async () => {
+    const todayStart = { ...ROW, depart_at: "2026-09-12T15:00:00.000Z", return_at: null }; // KST 9/13 00:00
+    const yesterdayEnd = { ...ROW, depart_at: "2026-09-12T14:59:00.000Z", return_at: null }; // KST 9/12 23:59
+    const ongoing = { ...ROW, depart_at: "2026-09-12T00:00:00.000Z", return_at: "2026-09-14T09:00:00.000Z" }; // KST 9/12 → 9/14
+    expect(isUpcoming(todayStart, "2026-09-13")).toBe(true);
+    expect(isUpcoming(yesterdayEnd, "2026-09-13")).toBe(false);
+    expect(isUpcoming(ongoing, "2026-09-13")).toBe(true);
+    expect(isUpcoming({ ...todayStart, status: "cancelled" }, "2026-09-13")).toBe(false);
+    for (const status of ["new", "confirmed", "done"]) expect(isUpcoming({ ...todayStart, status }, "2026-09-13"), status).toBe(true);
+    // "오늘" 은 KST 달력 날짜다 — UTC 로는 아직 9/12 인 KST 9/13 00:30 에도 9/12 23:59 운행은 지난 것이다
+    const justAfterMidnightKst = new Date("2026-09-12T15:30:00.000Z");
+    expect((await run([yesterdayEnd], { now: justAfterMidnightKst }).out).found).toBe(false);
+    expect((await run([todayStart], { now: justAfterMidnightKst }).out).found).toBe(true);
+  });
+
+  test("여러 건 → 목록(출발 순) · 이름이 다른 행·지난 행·취소 행은 빠진다 · 차량 이름은 slug 마다 한 번만 읽는다", async () => {
+    const later: ReservationCheckRow = { ...ROW, depart_at: "2026-11-01T00:00:00.000Z", return_at: null, status: "new" };
+    const sooner: ReservationCheckRow = { ...ROW, depart_at: "2026-09-20T00:00:00.000Z", return_at: null };
+    const otherName = { ...ROW, name: "김철수", depart_at: "2026-10-05T00:00:00.000Z" };
+    const past = { ...ROW, depart_at: "2026-08-01T00:00:00.000Z", return_at: null };
+    const cancelled = { ...ROW, status: "cancelled", depart_at: "2026-10-10T00:00:00.000Z" };
+    const { d, out } = run([later, otherName, past, sooner, cancelled]);
+    const got = await out;
+    expect(got.found).toBe(true);
+    if (!got.found) throw new Error("unreachable");
+    expect(got.views.map((v) => v.departAtKst)).toEqual(["2026-09-20 09:00", "2026-11-01 09:00"]);
+    expect(got.views.map((v) => v.status)).toEqual(["confirmed", "new"]);
+    expect(d.veh).toHaveBeenCalledTimes(1);
+    expect(d.veh).toHaveBeenCalledWith("bus45");
+  });
+
+  test("(c) 일치 → view: 키 집합 = RESERVATION_VIEW_KEYS(접수번호 없음) · 원문 name·phone(5가지 표기)·email·message·admin_memo 0 · 마스킹·라벨 규칙", async () => {
+    const leaky = { ...ROW, public_code: "A2B3C4D5", email: "hong@example.com", message: "비밀 메모입니다", admin_memo: "관리자 메모" } as ReservationCheckRow;
+    const got = await run([leaky]).out;
+    expect(got.found).toBe(true);
+    if (!got.found) throw new Error("unreachable");
+    expect(got.views).toHaveLength(1);
+    const view = got.views[0];
     expect(Object.keys(view).sort()).toEqual([...RESERVATION_VIEW_KEYS].sort());
-    const json = JSON.stringify(view);
-    for (const needle of [RAW_NAME, ...RAW_PHONE_FORMS, "hong@", "example.com", "비밀 메모", "관리자 메모", "email", "message", "admin_memo", "adminMemo"]) {
+    const json = JSON.stringify(got);
+    for (const needle of [RAW_NAME, ...RAW_PHONE_FORMS, "A2B3C4D5", "publicCode", "public_code", "hong@", "example.com", "비밀 메모", "관리자 메모", "email", "message", "admin_memo", "adminMemo"]) {
       expect(json.includes(needle), needle).toBe(false);
     }
-    for (const k of ["name", "phone", "email", "id"]) expect(k in view, k).toBe(false);
     expect(view).toEqual({
-      publicCode: CODE,
       status: "confirmed",
       statusKey: "reservationCheck.status.confirmed",
       tripType: "round",
@@ -394,7 +605,6 @@ describe("3. lookupReservation — 부재와 불일치는 같은 결과, 일치�
     });
   });
 
-  // P3-8 — 홈 간편 견적(0023 intake='quick'): 날짜만(저장된 00:00 은 자리값) · 차종·대수 줄 없음 · 차량 라벨을 읽지 않는다.
   test("(c') 간편 접수 → 날짜만 · vehicleLabel·busCount null · vehicles 조회 0", async () => {
     const quick: ReservationCheckRow = {
       ...ROW,
@@ -406,80 +616,37 @@ describe("3. lookupReservation — 부재와 불일치는 같은 결과, 일치�
       depart_at: "2026-09-30T15:00:00.000Z", // KST 2026-10-01 00:00
       return_at: "2026-10-02T15:00:00.000Z", // KST 2026-10-03 00:00
     };
-    const db = fakeDb(quick);
-    const out = await lookupReservation(input, { db });
-    if (!out.found) throw new Error("unreachable");
-    expect(out.view).toMatchObject({
-      intake: "quick",
-      tripType: null,
-      tripTypeKey: null,
-      departAtKst: "2026-10-01",
-      returnAtKst: "2026-10-03",
-      vehicleLabel: null,
-      busCount: null,
-      passengers: 30,
-    });
-    expect(out.view.departAtKst).not.toMatch(/\d{2}:\d{2}/);
-    expect(db.veh).not.toHaveBeenCalled();
-  });
-
-  test("(c'') 결과 카드 렌더 — 간편 접수는 차량·대수 줄이 없고 라벨이 '출발일·도착일'(시각 없음) · 위저드 카드는 그대로", async () => {
-    const { renderToStaticMarkup } = await import("react-dom/server");
-    const { createElement } = await import("react");
-    const { NextIntlClientProvider } = await import("next-intl");
-    const { ReservationCard } = await import("@/components/reservation-check/ReservationCard");
-    const { consultPhone } = await import("@/lib/contact-phone");
-    const messages = JSON.parse(read("messages/ko.json")) as Record<string, unknown>;
-    const providerProps = { locale: "ko", messages, timeZone: "Asia/Seoul" } as unknown as Parameters<typeof NextIntlClientProvider>[0];
-    const render = (view: ReservationView) =>
-      renderToStaticMarkup(
-        createElement(
-          NextIntlClientProvider,
-          providerProps,
-          createElement(ReservationCard, { view, bookingNotice: VERBATIM.bookingNotice, tel: consultPhone("ko"), onAgain: () => {} }),
-        ),
-      );
-    const card = (messages.reservationCheck as { card: Record<string, string> }).card;
-    // P7-4: 카드의 날짜는 공개 화면 공용 틀(lib/public-date.ts · 카탈로그 common.dates)로 보인다 — 올해(KST)면 연도 없이.
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-09-30T03:00:00.000Z"));
-    try {
-      const quickView = toReservationView(
-        { ...ROW, intake: "quick", trip_type: null, vehicle_slug: null, bus_count: null, depart_at: "2026-09-30T15:00:00.000Z", return_at: "2026-10-02T15:00:00.000Z" },
-        null,
-      );
-      const quickHtml = render(quickView);
-      expect(quickHtml).not.toContain(`<dt>${card.vehicle}</dt>`);
-      expect(quickHtml).not.toContain(`<dt>${card.busCount}</dt>`);
-      expect(quickHtml).toContain(`<dt>${card.departDate}</dt><dd>10월 1일 (목)</dd>`);
-      expect(quickHtml).toContain(`<dt>${card.returnDate}</dt><dd>10월 3일 (토)</dd>`);
-      expect(quickHtml).not.toContain(`<dt>${card.departAt}</dt>`);
-      const wizardHtml = render(toReservationView(ROW, VEHICLE_NAMES));
-      expect(wizardHtml).toContain(`<dt>${card.vehicle}</dt><dd>${VEHICLE_NAME}</dd>`);
-      expect(wizardHtml).toContain(`<dt>${card.departAt}</dt><dd>10월 1일 (목) 08:30</dd>`);
-    } finally {
-      vi.useRealTimers();
-    }
+    const { d, out } = run([quick]);
+    const got = await out;
+    if (!got.found) throw new Error("unreachable");
+    expect(got.views[0]).toMatchObject({ intake: "quick", tripType: null, tripTypeKey: null, departAtKst: "2026-10-01", returnAtKst: "2026-10-03", vehicleLabel: null, busCount: null, passengers: 30 });
+    expect(d.veh).not.toHaveBeenCalled();
   });
 
   test("(c) 4자리 이상 숫자열은 날짜·대수·인원·마스킹 뒷자리 외 0 · 5자리 이상 숫자열 0 (전화 원문이 어떤 형식으로도 없다)", async () => {
-    const out = await lookupReservation(input, { db: fakeDb(ROW) });
-    if (!out.found) throw new Error("unreachable");
-    const v = out.view;
-    const allowed = new Set([
-      ...digitRuns(v.departAtKst),
-      ...digitRuns(v.returnAtKst ?? ""),
-      ...digitRuns(v.createdAtKst),
-      String(v.busCount),
-      String(v.passengers ?? ""),
-      v.maskedPhone.slice(-4),
-    ]);
+    const got = await run([ROW]).out;
+    if (!got.found) throw new Error("unreachable");
+    const v = got.views[0];
+    const allowed = new Set([...digitRuns(v.departAtKst), ...digitRuns(v.returnAtKst ?? ""), ...digitRuns(v.createdAtKst), String(v.busCount), String(v.passengers ?? ""), v.maskedPhone.slice(-4)]);
     const runs = digitRuns(JSON.stringify(v));
     expect(runs.length).toBeGreaterThan(0);
-    for (const run of runs) expect(allowed.has(run), run).toBe(true);
+    for (const r of runs) expect(allowed.has(r), r).toBe(true);
     expect(digitRuns(JSON.stringify(v), 5)).toEqual([]);
     expect(v.maskedPhone).toMatch(/^\d{3}-\*{4}-\d{4}$/);
     expect(v.maskedName).toMatch(/^.\*{1,2}$/);
+  });
+
+  test("(c) 해외 번호 행도 view 에 원문 숫자열 0 · maskedPhone '***'", async () => {
+    for (const phone of ["+15551234567", "+6581234567", "+447911123456"]) {
+      const d = fakeDb([{ ...ROW, phone }]);
+      const got = await lookupReservation({ phone, name: RAW_NAME }, { db: d, now: NOW });
+      expect(got.found, phone).toBe(true);
+      if (!got.found) throw new Error("unreachable");
+      const json = JSON.stringify(got.views);
+      expect(got.views[0].maskedPhone, phone).toBe("***");
+      expect(digitRuns(json, 5), phone).toEqual([]);
+      for (const needle of [phone, phone.slice(1), phone.slice(-7), phone.slice(-4)]) expect(json.includes(needle), `${phone}: ${needle}`).toBe(false);
+    }
   });
 
   test("KST — depart_at UTC 23:30 → 다음날 08:30 벽시계. 서버 TZ 가 America/New_York 이든 Asia/Seoul 이든 같다", () => {
@@ -498,112 +665,72 @@ describe("3. lookupReservation — 부재와 불일치는 같은 결과, 일치�
     expect(() => kstWallClock("not-a-date")).toThrow();
   });
 
-  test("뒷자리 비교는 phone 의 숫자만 본다 — E.164·하이픈 국내 표기·공백 모두 같은 결과. SQL 이 아니라 서버 코드에서 비교한다", async () => {
-    for (const phone of ["+821012345678", "010-1234-5678", "01012345678", "+82 10 1234 5678"]) {
-      const out = await lookupReservation(input, { db: fakeDb({ ...ROW, phone }) });
-      expect(out.found, phone).toBe(true);
-      expect(phoneLast4Matches(phone, LAST4), phone).toBe(true);
-      expect(phoneLast4Matches(phone, "5679"), phone).toBe(false);
-    }
-    const dbSrc = read(`${LIB_DIR}/db.ts`);
-    expect(dbSrc).not.toMatch(/phone/i);
-  });
-
-  test("phoneLast4Matches — 부재(null)도 false 를 돌려주되 throw 하지 않는다(더미 비교로 경로 길이를 맞춘다) · 짧은 번호도 안전", () => {
-    expect(phoneLast4Matches(null, LAST4)).toBe(false);
-    expect(phoneLast4Matches("", LAST4)).toBe(false);
-    expect(phoneLast4Matches("12", LAST4)).toBe(false);
-    expect(phoneLast4Matches("+8210", "8210")).toBe(true);
-    const src = codeOf(`${LIB_DIR}/lookup.ts`);
-    // 비교 함수는 phone 이 null 일 때도 같은 비교 루틴을 탄다 — 이른 return 으로 분기하지 않는다
-    expect(src).toMatch(/phoneLast4Matches\(/);
-  });
-
-  test("status 4종 전부 view 를 만든다 — cancelled·done 도 본인 예약이므로 보여 준다", async () => {
-    expect([...RESERVATION_STATUSES].sort()).toEqual(["cancelled", "confirmed", "done", "new"]);
-    for (const status of RESERVATION_STATUSES) {
-      const out = await lookupReservation(input, { db: fakeDb({ ...ROW, status }) });
-      expect(out.found, status).toBe(true);
-      if (out.found) {
-        expect(out.view.status).toBe(status);
-        expect(out.view.statusKey).toBe(`reservationCheck.status.${status}`);
-      }
-    }
+  test("편도(return_at null)·인원 미입력 → null, 알 수 없는 trip_type → null 라벨 키 · vehicles 에 없는 slug → slug 폴백 · 모르는 status → throw", async () => {
+    const d = fakeDb([{ ...ROW, trip_type: "oneway", return_at: null, passengers: null }], null);
+    const got = await lookupReservation(input, { db: d, now: NOW });
+    if (!got.found) throw new Error("unreachable");
+    expect(got.views[0]).toMatchObject({ tripType: "oneway", tripTypeKey: "reservationCheck.tripType.oneway", returnAtKst: null, passengers: null, vehicleLabel: "bus45" });
+    const weird = toReservationView({ ...ROW, trip_type: null }, VEHICLE_NAMES);
+    expect(weird.tripTypeKey).toBeNull();
     expect(() => toReservationView({ ...ROW, status: "weird" }, VEHICLE_NAMES)).toThrow();
   });
 
-  test("편도(return_at null)·인원 미입력 → null, 알 수 없는 trip_type → null 라벨 키 · vehicles 에 없는 slug → slug 폴백", async () => {
-    const out = await lookupReservation(input, { db: fakeDb({ ...ROW, trip_type: "oneway", return_at: null, passengers: null }, null) });
-    if (!out.found) throw new Error("unreachable");
-    expect(out.view).toMatchObject({ tripType: "oneway", tripTypeKey: "reservationCheck.tripType.oneway", returnAtKst: null, passengers: null, vehicleLabel: "bus45" });
-    const weird = toReservationView({ ...ROW, trip_type: null }, VEHICLE_NAMES);
-    expect(weird.tripType).toBeNull();
-    expect(weird.tripTypeKey).toBeNull();
-  });
-
-  test("마스킹 — +82 휴대전화만 010-****-NNNN, 그 밖(해외 E.164·+82 유선·형식 불명·국내 표기 원문)은 정확히 '***' (리뷰 M-1, fail-closed)", () => {
+  test("마스킹 — +82 휴대전화만 010-****-NNNN, 그 밖은 정확히 '***' (리뷰 M-1, fail-closed)", () => {
     const masked = (phone: string) => toReservationView({ ...ROW, phone }, VEHICLE_NAMES).maskedPhone;
     expect(masked("+821012345678")).toBe("010-****-5678");
-    expect(masked("+82 10 1234 5678")).toBe("010-****-5678");
-    expect(masked("+821112345678")).toBe("011-****-5678");
     expect(masked("+82101234567")).toBe("010-***-4567");
-    for (const other of ["+15551234567", "+6581234567", "+447911123456", "+82212345678", "+8221234567", "+82", "garbage", "", "010-1234-5678", "01012345678"]) {
-      expect(masked(other), JSON.stringify(other)).toBe("***");
-    }
-    // 리뷰 M-1 의 실측 재현 — 예전 구현이 만들던 값이 더는 나오지 않는다
-    expect(masked("+15551234567")).not.toBe("155-****-4567");
-    expect(masked("+6581234567")).not.toBe("658-***-4567");
+    for (const other of ["+15551234567", "+6581234567", "+82212345678", "+82", "garbage", "", "010-1234-5678"]) expect(masked(other), JSON.stringify(other)).toBe("***");
   });
 
-  test("(c) 해외 번호 행도 view 에 원문 숫자열 0 · 5자리 이상 숫자열 0 · maskedPhone '***' (리뷰 M-1 — 누출 테스트를 국제 표기로 확장)", async () => {
-    for (const phone of ["+15551234567", "+6581234567", "+82212345678", "+447911123456"]) {
-      const out = await lookupReservation({ publicCode: CODE, phoneLast4: phone.slice(-4) }, { db: fakeDb({ ...ROW, phone }) });
-      expect(out.found, phone).toBe(true);
-      if (!out.found) throw new Error("unreachable");
-      const json = JSON.stringify(out.view);
-      expect(out.view.maskedPhone, phone).toBe("***");
-      expect(digitRuns(json, 5), phone).toEqual([]);
-      for (const needle of [phone, phone.slice(1), phone.slice(-7), phone.slice(-4), phone.slice(1, 4)]) expect(json.includes(needle), `${phone}: ${needle}`).toBe(false);
+  test("뷰 모델 키 목록 — 15개(T2-5 에서 publicCode 를 뺐다), 원문·내부 식별자 키 없음", () => {
+    expect([...RESERVATION_VIEW_KEYS].sort()).toEqual(
+      ["status", "statusKey", "tripType", "tripTypeKey", "intake", "departAtKst", "returnAtKst", "vehicleLabel", "originLabel", "destinationLabel", "busCount", "passengers", "maskedName", "maskedPhone", "createdAtKst"].sort(),
+    );
+    for (const k of ["name", "phone", "email", "message", "adminMemo", "admin_memo", "id", "publicCode", "public_code"]) {
+      expect(RESERVATION_VIEW_KEYS as readonly string[], k).not.toContain(k);
     }
-  });
-
-  test("일치 시에만 vehicleNames 를 부른다(1회, slug 로) — 실패 경로는 DB 호출 1회로 동일", async () => {
-    const hit = fakeDb(ROW);
-    await lookupReservation(input, { db: hit });
-    expect(hit.veh).toHaveBeenCalledTimes(1);
-    expect(hit.veh).toHaveBeenCalledWith("bus45");
+    expect(read(`${LIB_DIR}/view.ts`)).toMatch(/keyof ReservationView/);
   });
 });
 
 // =============================================================================
-// 4. select 화이트리스트 — 실제 어댑터에 가짜 클라이언트를 물려 select 문자열을 본다
+// 4. select 화이트리스트 — 실제 어댑터에 가짜 클라이언트를 물려 질의를 본다
 // =============================================================================
-describe("4. supabaseReservationCheckDb — select 화이트리스트", () => {
-  type Call = { table: string; select?: string; eq: [string, unknown][]; limit?: number; maybeSingle?: boolean };
+describe("4. supabaseReservationCheckDb — select 화이트리스트 · 조건은 phone 하나", () => {
+  type Call = { table: string; select?: string; filters: [string, string, unknown][]; order?: [string, unknown]; limit?: number; maybeSingle?: boolean };
   type Resp = { data: unknown; error: { code: string; message: string; details?: string } | null };
   function fakeClient(res: { reservation?: Resp; vehicle?: Resp } = {}) {
     const calls: Call[] = [];
     const client = {
       calls,
       from(table: string) {
-        const c: Call = { table, eq: [] };
+        const c: Call = { table, filters: [] };
         calls.push(c);
+        const resp = () => (table === "reservations" ? (res.reservation ?? { data: [], error: null }) : (res.vehicle ?? { data: null, error: null }));
         const q = {
           select(s: string) {
             c.select = s;
             return q;
           },
           eq(k: string, v: unknown) {
-            c.eq.push([k, v]);
+            c.filters.push(["eq", k, v]);
+            return q;
+          },
+          in(k: string, v: unknown) {
+            c.filters.push(["in", k, v]);
+            return q;
+          },
+          order(k: string, o: unknown) {
+            c.order = [k, o];
             return q;
           },
           limit(n: number) {
             c.limit = n;
-            return q;
+            return Promise.resolve(resp());
           },
           async maybeSingle(): Promise<Resp> {
             c.maybeSingle = true;
-            return table === "reservations" ? (res.reservation ?? { data: null, error: null }) : (res.vehicle ?? { data: null, error: null });
+            return resp();
           },
         };
         return q;
@@ -616,88 +743,158 @@ describe("4. supabaseReservationCheckDb — select 화이트리스트", () => {
     real = await vi.importActual<typeof import("@/lib/reservation-check/db")>("@/lib/reservation-check/db");
   });
 
-  test("reservations — select 는 화이트리스트 13열 그대로, email·message·admin_memo·id·* 없음 · where public_code = :code 1행", async () => {
-    const client = fakeClient({ reservation: { data: ROW, error: null } });
+  test("reservations — select 는 화이트리스트 13열(public_code 없음) · `phone in (후보)` 하나 · 출발 늦은 순 · 상한", async () => {
+    const client = fakeClient({ reservation: { data: [ROW], error: null } });
     const port = real.supabaseReservationCheckDb(client as never);
-    expect(await port.findByPublicCode(CODE)).toEqual(ROW);
+    expect(await port.findByPhones(CANDIDATES)).toEqual([ROW]);
     expect(client.calls).toHaveLength(1);
     const [c] = client.calls;
     expect(c.table).toBe("reservations");
     expect(c.select).toBe(RESERVATION_CHECK_SELECT);
     expect(c.select).toBe(RESERVATION_CHECK_COLUMNS.join(","));
     const cols = (c.select ?? "").split(",");
-    expect(cols.sort()).toEqual(
-      // P3-8: intake(간편 접수면 날짜만 · 차종 줄 없음)를 더했다 — 14열
-      ["public_code", "name", "phone", "status", "intake", "trip_type", "depart_at", "return_at", "vehicle_slug", "origin_code", "destination_code", "bus_count", "passengers", "created_at"].sort(),
+    expect([...cols].sort()).toEqual(
+      ["name", "phone", "status", "intake", "trip_type", "depart_at", "return_at", "vehicle_slug", "origin_code", "destination_code", "bus_count", "passengers", "created_at"].sort(),
     );
-    for (const banned of ["email", "message", "admin_memo", "id", "*", "waypoint_codes", "confirmed_at"]) expect(cols, banned).not.toContain(banned);
-    expect(c.select).not.toMatch(/\*/);
-    expect(c.eq).toEqual([["public_code", CODE]]);
-    expect(c.maybeSingle).toBe(true);
-    expect(c.limit).toBe(1);
+    for (const banned of ["public_code", "email", "message", "admin_memo", "id", "*", "waypoint_codes", "confirmed_at"]) expect(cols, banned).not.toContain(banned);
+    // SQL 조건은 전화번호 하나 — 이름·상태·날짜 조건을 SQL 에 넣지 않는다(부재·불일치·범위 밖이 같은 경로를 탄다)
+    expect(c.filters).toEqual([["in", "phone", CANDIDATES]]);
+    expect(c.order).toEqual(["depart_at", { ascending: false }]);
+    expect(c.limit).toBe(CHECK_MAX_ROWS);
+    expect(CHECK_MAX_ROWS).toBeGreaterThanOrEqual(20);
   });
 
-  test("reservations — 행 없음 → null (throw 아님) · PostgREST error → throw, message 에 code 만(details 미포함)", async () => {
-    expect(await real.supabaseReservationCheckDb(fakeClient() as never).findByPublicCode(CODE)).toBeNull();
+  test("reservations — 행 없음 → [] (throw 아님) · data null → [] · PostgREST error → throw, message 에 code 만(details 미포함)", async () => {
+    expect(await real.supabaseReservationCheckDb(fakeClient() as never).findByPhones(CANDIDATES)).toEqual([]);
+    expect(await real.supabaseReservationCheckDb(fakeClient({ reservation: { data: null, error: null } }) as never).findByPhones(CANDIDATES)).toEqual([]);
     const client = fakeClient({ reservation: { data: null, error: { code: "42501", message: "permission denied", details: `Failing row contains (${RAW_NAME}, ${RAW_PHONE_E164})` } } });
-    await expect(real.supabaseReservationCheckDb(client as never).findByPublicCode(CODE)).rejects.toThrow(/42501/);
-    await expect(real.supabaseReservationCheckDb(client as never).findByPublicCode(CODE)).rejects.not.toThrow(new RegExp(RAW_NAME));
+    await expect(real.supabaseReservationCheckDb(client as never).findByPhones(CANDIDATES)).rejects.toThrow(/42501/);
+    await expect(real.supabaseReservationCheckDb(client as never).findByPhones(CANDIDATES)).rejects.not.toThrow(new RegExp(RAW_NAME));
   });
 
-  // P7-4: 영문 화면은 vehicles.name_en 을 보인다 — 한 번의 select 로 ko·en 을 함께 읽는다(일치했을 때만 · 조회 횟수는 그대로 1회).
-  test("vehicles — select name_ko,name_en 만 · where slug · 없음 → null · name_en 이 문자열이 아니면 빈 문자열(뷰가 name_ko 로 폴백)", async () => {
+  test("vehicles — select name_ko,name_en 만 · where slug · 없음 → null · name_en 이 문자열이 아니면 빈 문자열", async () => {
     const client = fakeClient({ vehicle: { data: { name_ko: VEHICLE_NAME, name_en: "45-seat Coach" }, error: null } });
-    const port = real.supabaseReservationCheckDb(client as never);
-    expect(await port.vehicleNames("bus45")).toEqual(VEHICLE_NAMES);
+    expect(await real.supabaseReservationCheckDb(client as never).vehicleNames("bus45")).toEqual(VEHICLE_NAMES);
     const [c] = client.calls;
     expect(c.table).toBe("vehicles");
     expect(c.select).toBe("name_ko,name_en");
-    expect(c.eq).toEqual([["slug", "bus45"]]);
+    expect(c.filters).toEqual([["eq", "slug", "bus45"]]);
     expect(await real.supabaseReservationCheckDb(fakeClient() as never).vehicleNames("bus45")).toBeNull();
     const noEn = fakeClient({ vehicle: { data: { name_ko: VEHICLE_NAME, name_en: null }, error: null } });
     expect(await real.supabaseReservationCheckDb(noEn as never).vehicleNames("bus45")).toEqual({ ko: VEHICLE_NAME, en: "" });
   });
 
-  test("정적 — db.ts 는 server-only · 화이트리스트 상수를 lookup.ts 에서 import(문자열 재작성 0) · 비교 로직 0", () => {
+  test("정적 — db.ts 는 server-only · 화이트리스트 상수를 lookup.ts 에서 import · 이름·상태·날짜 조건 0 · 비교 로직 0", () => {
     const src = read(`${LIB_DIR}/db.ts`);
     expect(src).toMatch(/^import\s+["']server-only["'];?$/m);
     expect(src).toMatch(/RESERVATION_CHECK_SELECT/);
-    expect(src).not.toMatch(/public_code,\s*name/);
-    expect(src).not.toMatch(/slice\(-4\)|phoneLast4/);
+    const code = codeOf(`${LIB_DIR}/db.ts`);
+    expect(code).not.toMatch(/\.(eq|ilike|like|neq|gte|lte|gt|lt|textSearch)\(\s*["'](name|status|depart_at|return_at|public_code)["']/);
+    expect(code).not.toMatch(/normalizeName|namesMatch|timingSafeEqual|isUpcoming/);
   });
 });
 
 // =============================================================================
-// 5. 액션 — 얇은 래퍼 · 입력 방어 · IP 비노출 · 정적
+// 5. 액션 — 얇은 래퍼 · 존재 비노출(같은 응답 하나) · 응답 시간 바닥 · 정적
 // =============================================================================
-describe("5. checkReservation — 얇은 래퍼", () => {
-  test("validation → db 0 · createServiceClient 0 · limit 0 · fieldErrors 에 필드별 키", async () => {
-    const deps = fakeDeps();
-    vi.mocked(checkGuardDeps).mockReturnValue(deps);
-    const result = await checkReservation(form({ publicCode: "A2B3C4D", phoneLast4: "12" }));
-    expect(result).toMatchObject({ ok: false, code: "validation", messageKey: "reservationCheck.errors.validation" });
-    if (result.ok) throw new Error("unreachable");
-    expect(result.fieldErrors).toEqual({ publicCode: CHECK_FIELD_ERROR_KEYS.publicCode, phoneLast4: CHECK_FIELD_ERROR_KEYS.phoneLast4 });
-    expect(db.find).toHaveBeenCalledTimes(0);
-    expect(createServiceClient).toHaveBeenCalledTimes(0);
-    expect(limitCalls(deps.limiters)).toBe(0);
+describe("5. checkReservation — 얇은 래퍼 · not_found 단일화", () => {
+  const NOT_FOUND = { ok: false, code: "not_found", messageKey: "reservationCheck.errors.not_found" };
+
+  test("🔴 존재 비노출 — 없음·이름 불일치·지난 건만·취소 건만·허니팟·형식 실패(번호·이름) 응답이 전부 같은 객체·같은 JSON · 로그 0", async () => {
+    const results: CheckResult[] = [];
+    db = fakeDb([]);
+    results.push(await checkReservation(form()));
+    db = fakeDb([ROW]);
+    results.push(await checkReservation(form({ name: "김철수" })));
+    db = fakeDb([{ ...ROW, depart_at: "2026-09-01T00:00:00.000Z", return_at: null }]);
+    results.push(await checkReservation(form()));
+    db = fakeDb([{ ...ROW, status: "cancelled" }]);
+    results.push(await checkReservation(form()));
+    db = fakeDb([ROW]);
+    results.push(await checkReservation(form({ website: "http://spam" })));
+    results.push(await checkReservation(form({ phone: "1234" })));
+    results.push(await checkReservation(form({ name: "" })));
+    results.push(await checkReservation(form({ phone: null, name: null })));
+    for (const r of results) {
+      expect(r).toEqual(NOT_FOUND);
+      expect(JSON.stringify(r)).toBe(JSON.stringify(results[0]));
+      expect(Object.keys(r)).toEqual(["ok", "code", "messageKey"]);
+    }
+    expect(notFoundResult()).toEqual(NOT_FOUND);
     expect(structuredLog).toHaveBeenCalledTimes(0);
   });
 
-  test("허니팟 → not_found 응답(성공 아님) · db 0 · createServiceClient 0 · limit 0 · 로그 0", async () => {
-    const deps = fakeDeps();
-    vi.mocked(checkGuardDeps).mockReturnValue(deps);
-    const result = await checkReservation(form({ website: "https://spam.example" }));
-    expect(result).toEqual(notFoundResult());
-    expect(result.ok).toBe(false);
+  test("🔴 응답 시간 바닥 — 성공·not_found·거부·예외 모든 경로가 holdResponseFloor 를 정확히 한 번, 요청 시작 시각으로 부른다", async () => {
+    const paths: Array<() => Promise<CheckResult>> = [
+      () => checkReservation(form()),
+      () => checkReservation(form({ name: "김철수" })),
+      () => checkReservation(form({ website: "x" })),
+      () => checkReservation(form({ phone: "x" })),
+      () => {
+        deps = fakeDeps({ fetch: siteverify({ action: TURNSTILE_ACTION }) });
+        return checkReservation(form());
+      },
+      () => {
+        deps = fakeDeps({ limiters: limiterSet(false) });
+        return checkReservation(form());
+      },
+      () => {
+        vi.mocked(checkGuardDeps).mockImplementationOnce(() => {
+          throw new Error("env missing");
+        });
+        return checkReservation(form());
+      },
+      () => {
+        db.find.mockRejectedValueOnce(new Error("db down"));
+        return checkReservation(form());
+      },
+    ];
+    for (const [i, p] of paths.entries()) {
+      vi.mocked(holdResponseFloor).mockClear();
+      deps = fakeDeps();
+      db = fakeDb([ROW]);
+      const before = Date.now();
+      await p();
+      expect(vi.mocked(holdResponseFloor), `경로 ${i}`).toHaveBeenCalledTimes(1);
+      const [startedAt] = vi.mocked(holdResponseFloor).mock.calls[0];
+      expect(typeof startedAt, `경로 ${i}`).toBe("number");
+      expect(startedAt, `경로 ${i}`).toBeGreaterThanOrEqual(before);
+    }
+  });
+
+  test("holdResponseFloor(진짜) — 바닥까지 남은 만큼만 기다리고, 이미 넘었으면 기다리지 않는다", async () => {
+    const real = await vi.importActual<typeof import("@/lib/reservation-check/timing")>("@/lib/reservation-check/timing");
+    expect(CHECK_RESPONSE_FLOOR_MS).toBeGreaterThanOrEqual(300);
+    expect(CHECK_RESPONSE_FLOOR_MS).toBeLessThanOrEqual(2_000);
+    const sleep = vi.fn(async () => {});
+    await real.holdResponseFloor(1_000, () => 1_100, sleep);
+    expect(sleep).toHaveBeenCalledWith(CHECK_RESPONSE_FLOOR_MS - 100);
+    sleep.mockClear();
+    await real.holdResponseFloor(1_000, () => 1_000 + CHECK_RESPONSE_FLOOR_MS + 5, sleep);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  test("형식 실패·허니팟 → not_found · db 0 · createServiceClient 0 · siteverify 0 · limit 0", async () => {
+    for (const fd of [form({ phone: "02-123-4567" }), form({ website: "https://spam.example" })]) {
+      deps = fakeDeps();
+      expect(await checkReservation(fd)).toEqual(NOT_FOUND);
+      expect(deps.fetch).toHaveBeenCalledTimes(0);
+      expect(limitCalls(deps.limiters)).toBe(0);
+    }
     expect(db.find).toHaveBeenCalledTimes(0);
     expect(createServiceClient).toHaveBeenCalledTimes(0);
+  });
+
+  test("Turnstile 실패(토큰 없음·접수용 토큰) → { code:'turnstile' } · db 0 · limit 0 — 존재 여부와 무관한 단계라 따로 알린다(위젯을 다시 풀게)", async () => {
+    expect(await checkReservation(form({ "cf-turnstile-response": null }))).toEqual({ ok: false, code: "turnstile", messageKey: "reservationCheck.errors.turnstile" });
+    deps = fakeDeps({ fetch: siteverify({ action: TURNSTILE_ACTION }) });
+    expect(await checkReservation(form())).toEqual({ ok: false, code: "turnstile", messageKey: "reservationCheck.errors.turnstile" });
     expect(limitCalls(deps.limiters)).toBe(0);
-    expect(structuredLog).toHaveBeenCalledTimes(0);
+    expect(db.find).toHaveBeenCalledTimes(0);
   });
 
   test("ratelimit → { ok:false, code:'ratelimit' } · db 0", async () => {
-    vi.mocked(checkGuardDeps).mockReturnValue(fakeDeps(limiterSet(false)));
+    deps = fakeDeps({ limiters: limiterSet(false) });
     expect(await checkReservation(form())).toEqual({ ok: false, code: "ratelimit", messageKey: "reservationCheck.errors.ratelimit" });
     expect(db.find).toHaveBeenCalledTimes(0);
     expect(createServiceClient).toHaveBeenCalledTimes(0);
@@ -705,7 +902,7 @@ describe("5. checkReservation — 얇은 래퍼", () => {
 
   test("checkGuardDeps throw(env 누락) → infra + structuredLog(guard_setup_failed) 1회 · throw 가 밖으로 나가지 않는다", async () => {
     vi.mocked(checkGuardDeps).mockImplementation(() => {
-      throw new Error("checkGuardDeps: UPSTASH_REDIS_REST_URL 이 설정되지 않았다");
+      throw new Error("checkGuardDeps: TURNSTILE_SECRET_KEY 가 설정되지 않았다");
     });
     await expect(checkReservation(form())).resolves.toEqual({ ok: false, code: "infra", messageKey: "reservationCheck.errors.infra" });
     expect(structuredLog).toHaveBeenCalledTimes(1);
@@ -728,26 +925,26 @@ describe("5. checkReservation — 얇은 래퍼", () => {
     expect(entry).toMatchObject({ level: "error", event: "reservation_check.lookup_failed", name: "Error" });
   });
 
-  test("일치 → { ok:true, view } · createServiceClient 1 · supabaseReservationCheckDb(client) · 결과에 원문 0", async () => {
-    const result = await checkReservation(form({ publicCode: "a2b3c4d5" }));
+  test("일치 → { ok:true, views } · createServiceClient 1 · 포트에는 후보 번호만 · 결과에 원문·접수번호 0", async () => {
+    const result = await checkReservation(form({ phone: "01012345678", name: " 홍 길동 " }));
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("unreachable");
-    expect(result.view.publicCode).toBe(CODE);
-    expect(result.view.maskedName).toBe("홍**");
+    expect(result.views).toHaveLength(1);
+    expect(result.views[0].maskedName).toBe("홍**");
+    expect(Object.keys(result)).toEqual(["ok", "views"]);
     expect(createServiceClient).toHaveBeenCalledTimes(1);
     expect(supabaseReservationCheckDb).toHaveBeenCalledWith({ kind: "fake-service-client" });
-    expect(db.find).toHaveBeenCalledWith(CODE);
+    expect(db.find).toHaveBeenCalledWith(CANDIDATES);
     const json = JSON.stringify(result);
-    for (const needle of [RAW_NAME, ...RAW_PHONE_FORMS]) expect(json.includes(needle), needle).toBe(false);
+    for (const needle of [RAW_NAME, ...RAW_PHONE_FORMS, "publicCode"]) expect(json.includes(needle), needle).toBe(false);
   });
 
-  test("FormData 가 아닌 인자(null·undefined·{}·useActionState prevState·문자열) → validation · reject 아님 · db 0 · limit 0", async () => {
-    const prev: CheckResult = { ok: false, code: "validation", messageKey: "reservationCheck.errors.validation" };
+  test("FormData 가 아닌 인자(null·undefined·{}·useActionState prevState·문자열) → not_found · reject 아님 · db 0 · limit 0", async () => {
+    const prev: CheckResult = { ok: false, code: "turnstile", messageKey: "reservationCheck.errors.turnstile" };
     for (const arg of [null, undefined, {}, prev, "crafted"]) {
-      const deps = fakeDeps();
-      vi.mocked(checkGuardDeps).mockReturnValue(deps);
+      deps = fakeDeps();
       const result = await checkReservation(arg as never);
-      expect(result, String(arg)).toMatchObject({ ok: false, code: "validation" });
+      expect(result, String(arg)).toEqual(NOT_FOUND);
       expect(limitCalls(deps.limiters)).toBe(0);
     }
     expect(db.find).toHaveBeenCalledTimes(0);
@@ -756,15 +953,16 @@ describe("5. checkReservation — 얇은 래퍼", () => {
 
   test.each([
     ["일치", async () => checkReservation(form())],
-    ["부재", async () => {
-      db = fakeDb(null);
+    ["없음", async () => {
+      db = fakeDb([]);
       return checkReservation(form());
     }],
-    ["불일치", async () => checkReservation(form({ phoneLast4: "0000" }))],
-    ["validation", async () => checkReservation(form({ publicCode: "x" }))],
+    ["이름 불일치", async () => checkReservation(form({ name: "김철수" }))],
+    ["형식 실패", async () => checkReservation(form({ phone: "x" }))],
     ["허니팟", async () => checkReservation(form({ website: "x" }))],
+    ["turnstile", async () => checkReservation(form({ "cf-turnstile-response": null }))],
     ["ratelimit", async () => {
-      vi.mocked(checkGuardDeps).mockReturnValue(fakeDeps(limiterSet(false)));
+      deps = fakeDeps({ limiters: limiterSet(false) });
       return checkReservation(form());
     }],
     ["deps throw", async () => {
@@ -777,38 +975,31 @@ describe("5. checkReservation — 얇은 래퍼", () => {
       db.find.mockRejectedValue(new Error("db down"));
       return checkReservation(form());
     }],
-  ])("IP 비노출 · detail 0 — %s 경로", async (_label, run) => {
-    const result = await run();
+  ])("IP·토큰·원문 비노출 · detail 0 — %s 경로", async (_label, runIt) => {
+    const result = await runIt();
     const json = JSON.stringify(result);
     expect(json).not.toContain(IP);
+    expect(json).not.toContain(TOKEN);
     expect(json).not.toMatch(/"detail"/);
-    expect(everythingLogged()).not.toContain(IP);
-    expect(everythingLogged()).not.toContain(RAW_NAME);
-    expect(everythingLogged()).not.toContain(RAW_PHONE_E164);
+    expect(json).not.toMatch(/"fieldErrors"/);
+    const logged = everythingLogged();
+    for (const needle of [IP, TOKEN, RAW_NAME, RAW_PHONE_E164, INPUT_PHONE]) expect(logged).not.toContain(needle);
   });
 
   describe("result.ts (순수)", () => {
-    test("guardFailureToCheckResult — validation 은 zod path 를 필드 키로, 모르는 path 는 버린다, detail 미포함", () => {
-      const r = guardFailureToCheckResult({
-        ok: false,
-        reason: "validation",
-        detail: [
-          { path: "publicCode", code: "invalid_format", message: "should-not-leak" },
-          { path: "nope", code: "custom", message: "x" },
-          { path: "", code: "custom", message: "root" },
-        ],
-      });
-      expect(r).toEqual({ ok: false, code: "validation", messageKey: CHECK_ERROR_KEYS.validation, fieldErrors: { publicCode: CHECK_FIELD_ERROR_KEYS.publicCode } });
-      expect(JSON.stringify(r)).not.toContain("should-not-leak");
-      for (const reason of ["ratelimit", "infra"] as const) {
+    test("guardFailureToCheckResult — validation 은 not_found 와 같은 객체 · turnstile·ratelimit·infra 는 각자 키 · detail 미포함", () => {
+      const v = guardFailureToCheckResult({ ok: false, reason: "validation", detail: [{ path: "phone", code: "custom", message: "should-not-leak" }] });
+      expect(v).toEqual(notFoundResult());
+      expect(JSON.stringify(v)).not.toContain("should-not-leak");
+      for (const reason of ["turnstile", "ratelimit", "infra"] as const) {
         expect(guardFailureToCheckResult({ ok: false, reason, detail: { secretish: "leak" } })).toEqual({ ok: false, code: reason, messageKey: CHECK_ERROR_KEYS[reason] });
       }
     });
 
-    test("CHECK_ERROR_KEYS — 5 코드 전부 reservationCheck.errors.* · not_found 결과에 fieldErrors 없음", () => {
-      expect(Object.keys(CHECK_ERROR_KEYS).sort()).toEqual(["infra", "not_found", "ratelimit", "server", "validation"]);
+    test("CHECK_ERROR_KEYS — 5 코드(not_found·turnstile·ratelimit·infra·server) · validation 코드는 없다 · 필드 키는 클라이언트 사전 검증용 둘", () => {
+      expect(Object.keys(CHECK_ERROR_KEYS).sort()).toEqual(["infra", "not_found", "ratelimit", "server", "turnstile"]);
       for (const [code, key] of Object.entries(CHECK_ERROR_KEYS)) expect(key).toBe(`reservationCheck.errors.${code}`);
-      expect("fieldErrors" in notFoundResult()).toBe(false);
+      expect(CHECK_FIELD_ERROR_KEYS).toEqual({ phone: "reservationCheck.form.phoneError", name: "reservationCheck.form.nameError" });
       expect(Object.keys(notFoundResult())).toEqual(["ok", "code", "messageKey"]);
     });
   });
@@ -824,7 +1015,6 @@ describe("5. checkReservation — 얇은 래퍼", () => {
     });
 
     test("process.env 0 · console 0 · headers.get 0 · zod 직접 호출 0 · next/cache·next/server 0 · try 정확히 2개", () => {
-      // process.env 는 주석까지 포함해 0 — tests/reservation-action.test.ts §7 이 actions/** 원문을 grep 해 목록을 잠근다
       expect(action).not.toMatch(/process\.env/);
       const code = codeOf(ACTION);
       expect(code).not.toMatch(/console\./);
@@ -832,18 +1022,27 @@ describe("5. checkReservation — 얇은 래퍼", () => {
       expect(code).not.toMatch(/safeParse|\.parse\(/);
       expect(code).not.toMatch(/from\s+["']next\/(cache|server)["']/);
       expect(action).toMatch(/from\s+["']next\/headers["']/);
-      expect((codeOf(ACTION).match(/^\s*try \{\s*$/gm) ?? []).length).toBe(2);
-      expect(codeOf(ACTION)).not.toMatch(/\bif \(.*(name|phone|status)\b/);
+      expect((code.match(/^\s*try \{\s*$/gm) ?? []).length).toBe(2);
+      expect(code).not.toMatch(/\bif \(.*(name|phone|status)\b/);
     });
 
-    test("부품을 import 만 한다 — checkGuardDeps·createServiceClient·supabaseReservationCheckDb·structuredLog·formDataToCheckRaw·checkGuardContext·runCheckGuards·lookupReservation · defaultGuardDeps 0 · Turnstile 0", () => {
-      for (const sym of ["checkGuardDeps", "createServiceClient", "supabaseReservationCheckDb", "structuredLog", "formDataToCheckRaw", "checkGuardContext", "runCheckGuards", "lookupReservation", "notFoundResult", "checkFailureResult", "guardFailureToCheckResult", "lookupToResult"]) {
+    test("부품을 import 만 한다 — Turnstile 검증은 guard 가 한다(액션이 siteverify 를 직접 부르지 않는다) · defaultGuardDeps 0", () => {
+      for (const sym of ["checkGuardDeps", "createServiceClient", "supabaseReservationCheckDb", "structuredLog", "formDataToCheckRaw", "checkGuardContext", "runCheckGuards", "lookupReservation", "notFoundResult", "checkFailureResult", "guardFailureToCheckResult", "lookupToResult", "holdResponseFloor"]) {
         expect(action, sym).toContain(sym);
       }
-      expect(codeOf(ACTION)).not.toMatch(/defaultGuardDeps|runGuards\(|turnstile/i);
+      expect(codeOf(ACTION)).not.toMatch(/defaultGuardDeps|runGuards\(|verifyTurnstile/);
     });
 
-    test("`await headers()` 와 `formDataToCheckRaw(` 가 첫 try 안, `lookupReservation(` 이 둘째 try 안", () => {
+    test("요청 시작 시각을 맨 처음 재고, 바닥은 결과를 돌려주기 직전 한 곳에서만 기다린다", () => {
+      const code = codeOf(ACTION);
+      const body = code.slice(code.indexOf("export async function checkReservation"));
+      const first = body.split("\n").slice(1).find((l) => l.trim().length > 0) ?? "";
+      expect(first).toMatch(/const startedAt = Date\.now\(\);/);
+      expect(code.match(/holdResponseFloor\(/g) ?? []).toHaveLength(1);
+      expect(code).toMatch(/await holdResponseFloor\(startedAt\);\s*return result;/);
+    });
+
+    test("`await headers()`·`formDataToCheckRaw(`·`runCheckGuards(` 가 첫 try 안, `lookupReservation(`·`createServiceClient()` 가 둘째 try 안 · 조회 시각은 guard 의 now", () => {
       const lines = codeOf(ACTION).split("\n");
       const tries = lines.map((l, i) => (/^\s*try \{\s*$/.test(l) ? i : -1)).filter((i) => i >= 0);
       const catches = lines.map((l, i) => (/^\s*\} catch \(/.test(l) ? i : -1)).filter((i) => i >= 0);
@@ -856,10 +1055,11 @@ describe("5. checkReservation — 얇은 래퍼", () => {
       expect(inBlock(idx(/runCheckGuards\(/), 0)).toBe(true);
       expect(inBlock(idx(/lookupReservation\(/), 1)).toBe(true);
       expect(inBlock(idx(/createServiceClient\(\)/), 1)).toBe(true);
+      expect(codeOf(ACTION)).toMatch(/now: outcome\.now/);
     });
 
-    test("lib/reservation-check/{guards,lookup,view,result,formData}.ts 는 순수 — 'use server' 0 · next 0 · server-only 0 · supabase 0 · process.env 0", () => {
-      for (const f of ["guards", "lookup", "view", "result", "formData"]) {
+    test("lib/reservation-check/{guards,lookup,view,result,formData,phone,timing}.ts 는 순수 — 'use server' 0 · next 0 · server-only 0 · supabase 0 · process.env 0", () => {
+      for (const f of ["guards", "lookup", "view", "result", "formData", "phone", "timing"]) {
         const src = read(`${LIB_DIR}/${f}.ts`);
         expect(src, f).not.toMatch(/["']use server["']/);
         expect(src, f).not.toMatch(/from\s+["']next(\/|["'])/);
@@ -870,35 +1070,39 @@ describe("5. checkReservation — 얇은 래퍼", () => {
       expect(read(`${LIB_DIR}/db.ts`)).not.toMatch(/process\.env/);
     });
 
-    test("lib/reservations/** · actions/reservation.ts 를 수정하지 않았다 — import 만 (guardHeaders 재사용)", () => {
+    test("정규화는 접수와 같은 함수를 쓴다 — contactPhone(lib/reservations/phone) · 패턴은 lib/types 원본 · guardHeaders 재사용", () => {
+      const phone = read(`${LIB_DIR}/phone.ts`);
+      expect(phone).toMatch(/from\s+["']\.\.\/reservations\/phone["']/);
+      expect(phone).toMatch(/contactPhone\(/);
+      expect(phone).toMatch(/PHONE_KR_PATTERN/);
+      expect(phone).toMatch(/PHONE_INTL_PATTERN/);
       expect(read(`${LIB_DIR}/formData.ts`)).toMatch(/guardHeaders/);
-      expect(read(`${LIB_DIR}/formData.ts`)).toMatch(/from\s+["'](\.\.\/reservations\/formData|@\/lib\/reservations\/formData)["']/);
     });
   });
 });
 
 // =============================================================================
-// 6. lib/guard/deps.ts — limitersFor scope · checkGuardDeps
+// 6. lib/guard/deps.ts — checkGuardDeps 에 Turnstile("check")
 // =============================================================================
-describe("6. lib/guard/deps.ts — limitersFor(url, token, scope) · checkGuardDeps()", () => {
-  type Deps = typeof import("@/lib/guard/deps");
-  let real: Deps;
+describe("6. lib/guard/deps.ts — checkGuardDeps() 는 Turnstile(action \"check\")까지 · 접수·관리자 로그인은 그대로", () => {
+  type DepsModule = typeof import("@/lib/guard/deps");
+  let real: DepsModule;
   const KEYS = ["GUARD_SECRET", "GUARD_ALLOWED_HOSTS", "TURNSTILE_SECRET_KEY", "UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN", "VERCEL_ENV"] as const;
   let saved: Record<string, string | undefined> = {};
   const URL = "https://unit-test-p63a.upstash.io";
-  const TOKEN = "unit-test-token-p63a";
+  const TOKEN_ENV = "unit-test-token-p63a";
   const prefixOf = (l: unknown) => (l as { prefix?: unknown }).prefix;
 
   beforeAll(async () => {
-    real = await vi.importActual<Deps>("@/lib/guard/deps");
+    real = await vi.importActual<DepsModule>("@/lib/guard/deps");
   });
   beforeEach(() => {
     saved = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]));
     process.env.GUARD_SECRET = SECRET;
-    process.env.GUARD_ALLOWED_HOSTS = "localhost";
+    process.env.GUARD_ALLOWED_HOSTS = " Localhost, bestour.co.kr ";
     process.env.TURNSTILE_SECRET_KEY = "real-looking-secret";
     process.env.UPSTASH_REDIS_REST_URL = URL;
-    process.env.UPSTASH_REDIS_REST_TOKEN = TOKEN;
+    process.env.UPSTASH_REDIS_REST_TOKEN = TOKEN_ENV;
     delete process.env.VERCEL_ENV;
   });
   afterAll(() => {
@@ -908,49 +1112,37 @@ describe("6. lib/guard/deps.ts — limitersFor(url, token, scope) · checkGuardD
     }
   });
 
-  test("scope 별 prefix — reserve: guard:reserve:<bucket>:<window> / check: guard:check:<bucket>:<window> (4개 창 전부)", () => {
-    const reserve = real.limitersFor(URL, TOKEN, "reserve");
-    const check = real.limitersFor(URL, TOKEN, "check");
+  test("scope 별 prefix — reserve / check 4개 창 전부 분리 · 캐시는 (url, token, scope) 단위", () => {
+    const reserve = real.limitersFor(URL, TOKEN_ENV, "reserve");
+    const check = real.limitersFor(URL, TOKEN_ENV, "check");
     for (const b of ["known", "unknown"] as const) {
       for (const w of ["short", "long"] as const) {
         expect(prefixOf(reserve[b][w])).toBe(`guard:reserve:${b}:${w}`);
         expect(prefixOf(check[b][w])).toBe(`guard:check:${b}:${w}`);
         expect(check[b][w]).not.toBe(reserve[b][w]);
-        expect(real.rateLimitPrefix("check", b, w)).toBe(`guard:check:${b}:${w}`);
       }
     }
+    expect(real.limitersFor(URL, TOKEN_ENV, "check")).toBe(real.limitersFor(URL, TOKEN_ENV, "check"));
   });
 
-  test("캐시 — 같은 (url, token, scope) 는 같은 인스턴스, scope 가 다르면 다른 인스턴스", () => {
-    expect(real.limitersFor(URL, TOKEN, "check")).toBe(real.limitersFor(URL, TOKEN, "check"));
-    expect(real.limitersFor(URL, TOKEN, "reserve")).toBe(real.limitersFor(URL, TOKEN, "reserve"));
-    expect(real.limitersFor(URL, TOKEN, "reserve")).not.toBe(real.limitersFor(URL, TOKEN, "check"));
-  });
-
-  test("defaultGuardDeps() 의 limiter prefix 는 전과 동일 guard:reserve:* (접수 카운터가 옮겨가지 않는다)", () => {
-    const deps = real.defaultGuardDeps();
+  test("checkGuardDeps() — turnstile.action 'check' · 시크릿·허용 호스트(trim·소문자) · 5초 · prefix guard:check:*", () => {
+    const d = real.checkGuardDeps();
+    expect(Object.keys(d).sort()).toEqual(["now", "rateLimit", "secret", "turnstile"]);
+    expect(d.turnstile.action).toBe(TURNSTILE_CHECK_ACTION);
+    expect(d.turnstile.action).not.toBe(TURNSTILE_ACTION);
+    expect(d.turnstile.secret).toBe("real-looking-secret");
+    expect(d.turnstile.allowedHosts).toEqual(["localhost", "bestour.co.kr"]);
+    expect(d.turnstile.timeoutMs).toBe(5_000);
+    expect(typeof d.turnstile.fetch).toBe("function");
+    expect(d.secret).toBe(SECRET);
     for (const b of ["known", "unknown"] as const) {
-      for (const w of ["short", "long"] as const) expect(prefixOf(deps.rateLimit.limiters[b][w])).toBe(`guard:reserve:${b}:${w}`);
+      for (const w of ["short", "long"] as const) expect(prefixOf(d.rateLimit.limiters[b][w])).toBe(`guard:check:${b}:${w}`);
     }
-    expect(deps.rateLimit.limiters).toBe(real.limitersFor(URL, TOKEN, "reserve"));
-  });
-
-  test("checkGuardDeps() — Turnstile·허용 호스트 env 없이 동작 · prefix guard:check:* · secret·now·timeoutMs", () => {
-    delete process.env.TURNSTILE_SECRET_KEY;
-    delete process.env.GUARD_ALLOWED_HOSTS;
-    const deps = real.checkGuardDeps();
-    expect(Object.keys(deps).sort()).toEqual(["now", "rateLimit", "secret"]);
-    expect(deps.secret).toBe(SECRET);
-    expect(deps.now()).toBeInstanceOf(Date);
-    expect(deps.rateLimit.timeoutMs).toBe(5_000);
-    for (const b of ["known", "unknown"] as const) {
-      for (const w of ["short", "long"] as const) expect(prefixOf(deps.rateLimit.limiters[b][w])).toBe(`guard:check:${b}:${w}`);
-    }
-    expect(deps.rateLimit.limiters).toBe(real.limitersFor(URL, TOKEN, "check"));
-    expect("turnstile" in deps).toBe(false);
   });
 
   test.each([
+    ["TURNSTILE_SECRET_KEY", /TURNSTILE_SECRET_KEY/],
+    ["GUARD_ALLOWED_HOSTS", /GUARD_ALLOWED_HOSTS/],
     ["UPSTASH_REDIS_REST_URL", /UPSTASH_REDIS_REST_URL/],
     ["UPSTASH_REDIS_REST_TOKEN", /UPSTASH_REDIS_REST_TOKEN/],
     ["GUARD_SECRET", /GUARD_SECRET/],
@@ -959,241 +1151,331 @@ describe("6. lib/guard/deps.ts — limitersFor(url, token, scope) · checkGuardD
     expect(() => real.checkGuardDeps()).toThrow(re);
   });
 
-  test("checkGuardDeps() — 짧은 GUARD_SECRET(32자 미만) → throw (IP 해시 키를 약한 secret 으로 만들지 않는다)", () => {
-    process.env.GUARD_SECRET = "short";
-    expect(() => real.checkGuardDeps()).toThrow(/GUARD_SECRET/);
+  test("checkGuardDeps() — 운영(VERCEL_ENV=production)에서 Cloudflare 더미 secret 은 거부한다(접수와 같은 규칙)", () => {
+    process.env.VERCEL_ENV = "production";
+    process.env.TURNSTILE_SECRET_KEY = "1x0000000000000000000000000000000AA";
+    expect(() => real.checkGuardDeps()).toThrow(/TURNSTILE_SECRET_KEY/);
+    delete process.env.VERCEL_ENV;
+    expect(() => real.checkGuardDeps()).not.toThrow();
   });
 
-  test("정적 — 소스에 scope 템플릿 `guard:${scope}:` · 캐시 키에 scope · 새 env 이름 없음 · 우회 스위치 없음", () => {
+  test("접수(defaultGuardDeps)는 그대로 'reserve' · 관리자 로그인(adminGuardDeps)은 그대로 Turnstile 없음(Turnstile env 없이도 동작)", () => {
+    expect(real.defaultGuardDeps().turnstile.action).toBe(TURNSTILE_ACTION);
+    delete process.env.TURNSTILE_SECRET_KEY;
+    delete process.env.GUARD_ALLOWED_HOSTS;
+    const admin = real.adminGuardDeps();
+    expect(Object.keys(admin).sort()).toEqual(["now", "rateLimit", "secret"]);
+    expect("turnstile" in admin).toBe(false);
+  });
+
+  test("정적 — 두 deps 가 action 상수를 각자 박는다 · 새 env 이름 없음 · 우회 스위치 없음", () => {
     const src = read("lib/guard/deps.ts");
-    expect(src).toMatch(/guard:\$\{scope\}:\$\{bucket\}:\$\{window\}/);
-    expect(src).toMatch(/export function limitersFor\(url: string, token: string, scope: RateLimitScope\)/);
-    expect(src).toMatch(/export function checkGuardDeps\(\)/);
+    expect(src).toMatch(/action:\s*TURNSTILE_ACTION\b/);
+    expect(src).toMatch(/action:\s*TURNSTILE_CHECK_ACTION\b/);
     const names = [...new Set([...src.matchAll(/process\.env\.([A-Z0-9_]+)/g)].map((m) => m[1]))].sort();
     expect(names).toEqual(["GUARD_ALLOWED_HOSTS", "GUARD_SECRET", "TURNSTILE_SECRET_KEY", "UPSTASH_REDIS_REST_TOKEN", "UPSTASH_REDIS_REST_URL", "VERCEL_ENV"]);
     expect(src).not.toMatch(/GUARD_(DISABLE|BYPASS|SKIP|MOCK)|(DISABLE|BYPASS|SKIP)_GUARD/);
+    expect(read("lib/guard/turnstile.ts")).toMatch(/export const TURNSTILE_CHECK_ACTION = "check";/);
   });
 });
 
 // =============================================================================
-// 7. messages/ko.json — reservationCheck.*
+// 7. 카탈로그 — reservationCheck.* · quote.modal.done (ko·en)
 // =============================================================================
-describe("7. messages/ko.json — reservationCheck 네임스페이스", () => {
+describe("7. 카탈로그 — 휴대폰 번호 + 예약자 이름, 접수번호 안내 0", () => {
   const ko = JSON.parse(read("messages/ko.json")) as Record<string, unknown>;
-  const ns = ko.reservationCheck as Record<string, unknown> | undefined;
-  const errors = (ns?.errors ?? {}) as Record<string, string>;
-  const resolve = (key: string) => key.split(".").reduce<unknown>((acc, seg) => (acc && typeof acc === "object" ? (acc as Record<string, unknown>)[seg] : undefined), ko);
-  const nsText = JSON.stringify(ns ?? {});
+  const en = JSON.parse(read("messages/en.json")) as Record<string, unknown>;
+  const at = (root: Record<string, unknown>, key: string) =>
+    key.split(".").reduce<unknown>((acc, seg) => (acc && typeof acc === "object" ? (acc as Record<string, unknown>)[seg] : undefined), root);
+  const leaves = (node: unknown, prefix = ""): Array<[string, string]> =>
+    typeof node === "string"
+      ? [[prefix, node]]
+      : node && typeof node === "object"
+        ? Object.entries(node as Record<string, unknown>).flatMap(([k, v]) => leaves(v, prefix ? `${prefix}.${k}` : k))
+        : [];
 
-  test("quote 뒤에 추가됐고 기존 최상위 키 순서는 그대로 (뒤에 오는 태스크의 네임스페이스 — P6-3 pages — 는 그 뒤에 붙는다)", () => {
+  test("quote 뒤에 있고 기존 최상위 키 순서는 그대로", () => {
     expect(Object.keys(ko).slice(0, 7)).toEqual(["common", "layout", "errors", "home", "reservation", "quote", "reservationCheck"]);
   });
 
-  test("오류 5종 — validation·not_found·ratelimit·infra·server, 전부 비어 있지 않은 문자열", () => {
-    expect(Object.keys(errors).sort()).toEqual(["infra", "not_found", "ratelimit", "server", "validation"]);
-    for (const [k, v] of Object.entries(errors)) expect(typeof v === "string" && v.trim().length > 0, k).toBe(true);
-  });
-
-  // P6-6: 리터럴 대표전화 → 원장 보간 `{tel}`. 이유는 tests/reservation-action.test.ts 의 같은 자리 주석 참조
-  // (감사 R-6 — reservationCheck.* 는 어떤 카피 게이트도 보지 않던 네임스페이스다). 값은 CheckForm 이 tel prop 으로 넣는다.
-  test("ratelimit·infra·server 문구는 원장 보간 {tel} 을 쓴다 · server 는 infra 와 같은 문구", () => {
-    for (const k of ["ratelimit", "infra", "server"]) {
-      expect(errors[k], k).toContain("{tel}");
-      // P7-5 — 원장의 전화번호는 COMPANY.consultTel 하나다(옛 COMPANY.tel 은 지웠다). 그 번호도 리터럴로 들어 있지 않다.
-      expect(errors[k], k).not.toContain(COMPANY.consultTel);
-    }
-    expect(errors.server).toBe(errors.infra);
-    expect(errors.validation).not.toContain("{tel}");
-    expect(errors.validation).not.toContain(COMPANY.consultTel);
-  });
-
-  test("not_found 문구는 브리프 원문 그대로 — 존재/불일치를 구분하는 표현 없음", () => {
-    expect(errors.not_found).toBe("입력하신 접수번호와 휴대폰 뒷자리에 해당하는 예약을 찾지 못했습니다. 문자로 받으신 접수번호를 다시 확인해 주세요.");
-    for (const w of ["존재", "일치하지", "없는 접수번호", "틀렸"]) expect(errors.not_found.includes(w), w).toBe(false);
-  });
-
-  test("상태 라벨 4종(new 접수·confirmed 확정·cancelled 취소·done 완료) · 운행 구분 3종", () => {
-    expect(ns?.status).toEqual({ new: "접수", confirmed: "확정", cancelled: "취소", done: "완료" });
-    expect(Object.keys((ns?.tripType ?? {}) as object).sort()).toEqual(["oneway", "oneway_oneway", "round"]);
-  });
-
-  test("코드가 쓰는 키가 전부 풀린다 — CHECK_ERROR_KEYS · CHECK_FIELD_ERROR_KEYS · status · tripType · meta · form · card", () => {
-    for (const key of [...Object.values(CHECK_ERROR_KEYS), ...Object.values(CHECK_FIELD_ERROR_KEYS)]) expect(typeof resolve(key), key).toBe("string");
-    for (const s of RESERVATION_STATUSES) expect(typeof resolve(`reservationCheck.status.${s}`), s).toBe("string");
-    for (const t of ["round", "oneway", "oneway_oneway"]) expect(typeof resolve(`reservationCheck.tripType.${t}`), t).toBe("string");
-    expect(typeof resolve("reservationCheck.meta.title")).toBe("string");
-    expect(resolve("reservationCheck.meta.title")).toContain("{brand}");
-    for (const k of ["title", "sub", "eyebrow"]) expect(typeof resolve(`reservationCheck.${k}`), k).toBe("string");
-    for (const k of ["codeLabel", "codeHint", "phoneLast4Label", "phoneLast4Hint", "submit", "submitting", "errorSummary", "codeError", "phoneLast4Error"]) {
-      expect(typeof resolve(`reservationCheck.form.${k}`), k).toBe("string");
-    }
-    for (const k of ["title", "code", "status", "name", "phone", "vehicle", "route", "tripType", "departAt", "returnAt", "busCount", "passengers", "createdAt", "again", "call"]) {
-      expect(typeof resolve(`reservationCheck.card.${k}`), k).toBe("string");
+  test("오류 5종(not_found·turnstile·ratelimit·infra·server) — ko·en 모두 · validation 문구는 없다(서버는 형식 실패를 not_found 로 답한다)", () => {
+    for (const root of [ko, en]) {
+      const errors = at(root, "reservationCheck.errors") as Record<string, string>;
+      expect(Object.keys(errors).sort()).toEqual(["infra", "not_found", "ratelimit", "server", "turnstile"]);
+      for (const [k, v] of Object.entries(errors)) expect(typeof v === "string" && v.trim().length > 0, k).toBe(true);
+      for (const k of ["not_found", "ratelimit", "infra", "server"]) {
+        expect(errors[k], k).toContain("{tel}");
+        expect(errors[k], k).not.toContain(COMPANY.consultTel);
+      }
+      expect(errors.server).toBe(errors.infra);
     }
   });
 
-  test("금지어·가격 표기·실증 불가 문구·원장 verbatim 리터럴 0 — 문구는 안내와 라벨뿐", () => {
+  test("not_found 문구 — 원문 고정 · 존재/불일치를 구분하는 표현 없음 · 지난·취소 건이 안 보인다는 사실을 알린다", () => {
+    const k = at(ko, "reservationCheck.errors.not_found") as string;
+    expect(k).toBe(
+      "입력하신 휴대폰 번호와 예약자 이름으로 확인되는 예정된 예약이 없습니다. 견적 신청 때 적으신 번호와 성함을 다시 확인해 주세요. 지난 일정과 취소된 예약은 여기에 보이지 않습니다. 궁금하신 점은 {tel} 로 전화 주세요.",
+    );
+    for (const w of ["존재", "일치하지", "틀렸", "없는 번호", "등록되지"]) expect(k.includes(w), w).toBe(false);
+    const e = at(en, "reservationCheck.errors.not_found") as string;
+    expect(e).toMatch(/mobile number and name/);
+    expect(e).toMatch(/[Pp]ast trips and cancelled bookings/);
+    for (const w of ["exist", "does not match", "wrong", "not registered"]) expect(e.toLowerCase().includes(w), w).toBe(false);
+  });
+
+  test("🔴 손님 화면에서 접수번호·뒷 4자리 안내가 사라졌다 — 남은 것은 '예전 문자의 접수번호는 필요 없다' 한 줄뿐", () => {
+    for (const [root, codeWord, last4] of [
+      [ko, /접수번호/, /뒷\s*4|뒷자리/],
+      [en, /request number/i, /last 4|last four|last digits/i],
+    ] as const) {
+      const rc = leaves(at(root, "reservationCheck"), "reservationCheck");
+      expect(rc.filter(([, v]) => codeWord.test(v)).map(([p]) => p)).toEqual(["reservationCheck.form.legacyCodeNote"]);
+      expect(rc.filter(([, v]) => last4.test(v)).map(([p]) => p)).toEqual([]);
+      const done = leaves(at(root, "quote.modal.done"), "quote.modal.done");
+      expect(done.filter(([, v]) => codeWord.test(v) || last4.test(v)).map(([p]) => p)).toEqual([]);
+      for (const gone of ["form.codeLabel", "form.codeHint", "form.codePlaceholder", "form.phoneLast4Label", "form.phoneLast4Hint", "form.codeError", "form.phoneLast4Error", "card.code", "errors.validation"]) {
+        expect(at(root, `reservationCheck.${gone}`), gone).toBeUndefined();
+      }
+      for (const gone of ["codeLabel", "codeHint", "noCode"]) expect(at(root, `quote.modal.done.${gone}`), gone).toBeUndefined();
+    }
+    expect(at(ko, "reservationCheck.form.legacyCodeNote")).toBe("예전 문자에 적힌 접수번호는 이제 입력하지 않으셔도 됩니다.");
+    expect(at(en, "reservationCheck.form.legacyCodeNote")).toBe("You no longer need the request number from earlier text messages.");
+  });
+
+  test("완료 화면 — 접수번호 대신 '예약 확인에서 휴대폰 번호와 이름으로' 안내(ko·en)", () => {
+    expect(at(ko, "quote.modal.done.checkHint")).toBe("접수 내용은 예약 확인에서 휴대폰 번호와 예약자 이름으로 확인하실 수 있습니다.");
+    expect(at(en, "quote.modal.done.checkHint")).toBe("You can see your request in Check Booking with your mobile number and name.");
+  });
+
+  test("상태 라벨 4종 · 운행 구분 3종 (그대로)", () => {
+    expect(at(ko, "reservationCheck.status")).toEqual({ new: "접수", confirmed: "확정", cancelled: "취소", done: "완료" });
+    expect(Object.keys((at(ko, "reservationCheck.tripType") ?? {}) as object).sort()).toEqual(["oneway", "oneway_oneway", "round"]);
+  });
+
+  test("코드가 쓰는 키가 ko·en 모두 풀린다 — CHECK_ERROR_KEYS · CHECK_FIELD_ERROR_KEYS · status · tripType · meta · form · card", () => {
+    for (const root of [ko, en]) {
+      for (const key of [...Object.values(CHECK_ERROR_KEYS), ...Object.values(CHECK_FIELD_ERROR_KEYS)]) expect(typeof at(root, key), key).toBe("string");
+      for (const s of RESERVATION_STATUSES) expect(typeof at(root, `reservationCheck.status.${s}`), s).toBe("string");
+      expect(at(root, "reservationCheck.meta.title")).toContain("{brand}");
+      for (const k of ["title", "sub", "eyebrow"]) expect(typeof at(root, `reservationCheck.${k}`), k).toBe("string");
+      for (const k of ["required", "nameLabel", "nameHint", "phoneLabel", "phoneHint", "submit", "submitting", "errorSummary", "nameError", "phoneError", "help", "legacyCodeNote", "security", "notReadyTitle", "notReadyBody"]) {
+        expect(typeof at(root, `reservationCheck.form.${k}`), k).toBe("string");
+      }
+      for (const k of ["title", "count", "status", "name", "phone", "vehicle", "route", "tripType", "departAt", "returnAt", "busCount", "passengers", "createdAt", "again", "call", "help"]) {
+        expect(typeof at(root, `reservationCheck.card.${k}`), k).toBe("string");
+      }
+    }
+    expect(at(ko, "reservationCheck.card.count")).toContain("{n}");
+    expect(at(ko, "reservationCheck.form.notReadyBody")).toContain("{tel}");
+  });
+
+  test("금지어·가격 표기·실증 불가 문구·원장 verbatim 리터럴 0", () => {
+    const nsText = JSON.stringify(at(ko, "reservationCheck") ?? {});
     for (const w of FORBIDDEN) expect(nsText.includes(w), w).toBe(false);
     for (const re of PRICE_MARKS) expect(re.test(nsText), String(re)).toBe(false);
     for (const w of UNPROVEN) expect(nsText.includes(w), w).toBe(false);
     expect(nsText.includes(VERBATIM.bookingNotice)).toBe(false);
-    expect(nsText.includes("결제 진행됩니다")).toBe(false);
   });
 
-  test("기존 네임스페이스는 그대로 — reservation.errors 6키·접수 완료 안내(P3-8: quote.done → quote.modal.done) 존재", () => {
+  test("기존 네임스페이스는 그대로 — reservation.errors 6키", () => {
     expect(Object.keys((ko.reservation as { errors: object }).errors).sort()).toEqual(["bot", "infra", "ratelimit", "server", "turnstile", "validation"]);
-    expect(typeof resolve("quote.modal.done.codeHint")).toBe("string");
   });
 });
 
 // =============================================================================
-// 8. 컴포넌트·페이지 정적 — useActionState 래퍼 · 원장은 서버 페이지만 · 금지어 · 가격 0 · localStorage 0
+// 8. 컴포넌트·페이지 정적 + 렌더
 // =============================================================================
-describe("8. 컴포넌트·페이지 정적", () => {
+describe("8. 컴포넌트·페이지", () => {
   const componentFiles = walk(path.join(ROOT, COMPONENT_DIR))
     .map((p) => path.relative(ROOT, p).split(path.sep).join("/"))
     .sort();
   const codeFiles = componentFiles.filter((f) => /\.(ts|tsx)$/.test(f));
   const sources = [...codeFiles, PAGE].map((file) => ({ file, text: read(file), code: codeOf(file) }));
+  const ko = JSON.parse(read("messages/ko.json")) as Record<string, unknown>;
 
-  test("산출물이 있다 — page.tsx · CheckForm.tsx · ReservationCard.tsx · fields.ts · validate.ts · preview-result.ts · check.module.css · lib 6개 · 액션", () => {
+  async function renderWithIntl(element: unknown): Promise<string> {
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const { createElement } = await import("react");
+    const { NextIntlClientProvider } = await import("next-intl");
+    const providerProps = { locale: "ko", messages: ko, timeZone: "Asia/Seoul" } as unknown as Parameters<typeof NextIntlClientProvider>[0];
+    return renderToStaticMarkup(createElement(NextIntlClientProvider, providerProps, element as never));
+  }
+
+  test("산출물이 있다 — page · CheckForm · ReservationCard · fields · validate · preview-result · css · lib 8개 · 액션", () => {
     for (const f of [PAGE, FORM, CARD, PREVIEW, `${COMPONENT_DIR}/fields.ts`, `${COMPONENT_DIR}/validate.ts`, `${COMPONENT_DIR}/check.module.css`, ACTION]) {
       expect(existsSync(path.join(ROOT, f)), f).toBe(true);
     }
-    for (const f of ["guards", "lookup", "db", "view", "result", "formData"]) expect(existsSync(path.join(ROOT, LIB_DIR, `${f}.ts`)), f).toBe(true);
+    for (const f of ["guards", "lookup", "db", "view", "result", "formData", "phone", "timing"]) expect(existsSync(path.join(ROOT, LIB_DIR, `${f}.ts`)), f).toBe(true);
   });
 
-  // P6-6: 카탈로그가 `{tel}` 보간을 쓰게 됐으므로, 값을 넘기지 않으면 next-intl 이 렌더 시점에 던진다.
-  // 카탈로그 쪽 단언(§7)과 짝이 되는 소스 쪽 단언 — 한쪽만 고치면 빨간불이다.
-  test("서버 오류 문구를 풀 때 원장 tel 을 보간 인자로 넘긴다 ({tel} 자리가 비지 않게)", () => {
-    const src = codeOf(FORM);
-    // P1-7 — tel 은 { display, href }. 문장에는 표시 문자열(ko 010-… / en +82 …)을 넣는다.
-    expect(src).toMatch(/tRoot\(\s*result\.messageKey\s*,\s*\{\s*tel:\s*tel\.display\s*\}\s*\)/);
+  test("서버 페이지 — 사이트 키(NEXT_PUBLIC_TURNSTILE_SITE_KEY)와 조회 전용 action 을 내린다 · 원장 verbatim·전화 · 정적 렌더 유지", () => {
+    const src = codeOf(PAGE);
+    expect(/^\s*["']use client["']/m.test(src)).toBe(false);
+    expect(src).toMatch(/turnstileSiteKey=\{process\.env\.NEXT_PUBLIC_TURNSTILE_SITE_KEY \?\? ""\}/);
+    expect(src).toMatch(/turnstileAction=\{TURNSTILE_CHECK_ACTION\}/);
+    expect(src).not.toMatch(/turnstileAction=\{TURNSTILE_ACTION\}/);
+    expect(ledgerImports(read(PAGE))).toEqual(expect.arrayContaining(["VERBATIM"]));
+    expect(src).toMatch(/bookingNotice=\{localizeVerbatim\(locale,\s*VERBATIM\.bookingNotice\)\}/);
+    expect(src).toMatch(/tel=\{consultPhone\(locale\)\}/);
+    expect(src).not.toMatch(/force-dynamic/);
+    expect(src).toMatch(/namespace:\s*["']reservationCheck\.meta["']/);
+    expect(src).toMatch(/ledgerUi\(locale\)\.brand\b/);
+    expect(src).not.toMatch(/createServiceClient|checkReservation\(|lib\/reservation-check\/(db|lookup)/);
   });
 
-  test("useActionState — checkReservation 을 직접 넘기지 않고 (_prev, fd) 래퍼로 감싼다 (P3-4 규칙)", () => {
-    const src = codeOf(FORM);
-    expect(src).toMatch(/^\s*["']use client["'];?/m);
-    expect(src).toMatch(/useActionState/);
-    expect(src).not.toMatch(/useActionState\(\s*checkReservation/);
-    expect(src).not.toMatch(/useActionState<[^>]*>\(\s*checkReservation/);
-    expect(src).toMatch(/checkReservation\(\s*fd\s*\)/);
-    expect(src).toMatch(/from\s+["']@\/actions\/reservation-check["']/);
-  });
-
-  test("폼 — name 은 CF/CG 상수만(문자열 리터럴 name 0) · 허니팟 website(tabIndex -1·autoComplete off·aria-hidden) · role=alert · aria-invalid · pending 시 disabled", () => {
+  test("폼 — name 은 CF/CG 상수만 · phone·name 두 칸 · 허니팟 · Turnstile 위젯(서버가 준 action·사이트 키·리셋 키) · 사이트 키가 없으면 준비 중 안내 + 제출 닫힘", () => {
     const src = codeOf(FORM);
     expect(src).not.toMatch(/name="/);
-    expect(src).toMatch(/name=\{CF\.publicCode\}/);
-    expect(src).toMatch(/name=\{CF\.phoneLast4\}/);
+    expect(src).toMatch(/name=\{CF\.phone\}/);
+    expect(src).toMatch(/name=\{CF\.name\}/);
+    expect(src).not.toMatch(/publicCode|phoneLast4|last4/);
     const hp = src.match(/<input[^>]*name=\{CG\.website\}[^>]*\/>/)?.[0] ?? "";
     expect(hp, "허니팟 input 이 있어야 한다").not.toBe("");
     expect(hp).toMatch(/tabIndex=\{-1\}/);
     expect(hp).toMatch(/autoComplete="off"/);
     expect(hp).toMatch(/aria-hidden/);
-    expect(src).toMatch(/role="alert"/);
-    expect(src).toMatch(/aria-invalid=/);
+    expect(src).toMatch(/<TurnstileWidget siteKey=\{turnstileSiteKey\} action=\{turnstileAction\} resetKey=\{turnstileResetKey\} \/>/);
+    expect(src).toMatch(/from\s+["']@\/components\/quote\/TurnstileWidget["']/);
+    expect(src).toMatch(/data-testid="reservation-check-not-ready"/);
     expect(src).toMatch(/disabled=\{[^}]*pending/);
-    // 토큰·Turnstile 없음 — 숨은 값은 화면 로케일 한 칸뿐(P7-4: 결과 카드의 지명·차종 언어 · 조회 조건과 무관 · formDataToCheckLocale)
+    expect(src).toMatch(/disabled=\{[^}]*notReady/);
+    // 숨은 칸은 화면 로케일 하나뿐(Turnstile 의 hidden input 은 위젯이 스스로 넣는다)
     expect(src.match(/type="hidden"/g) ?? []).toHaveLength(1);
     expect(src).toMatch(/<input type="hidden" name=\{CL\} value=\{locale === "en" \? "en" : "ko"\} \/>/);
+    // 입력 정리는 접수 모달과 같은 함수(자동 하이픈 · `+` 로 시작하면 해외)
+    expect(src).toMatch(/formatPhoneInput\(/);
+    expect(src).toMatch(/autoComplete="tel"/);
+    expect(src).toMatch(/autoComplete="name"/);
+    expect(src).toMatch(/data-testid="reservation-check-legacy-note"/);
     expect(CF).toEqual(CHECK_FORM_FIELDS);
     expect(CG).toEqual(CHECK_GUARD_FORM_FIELDS);
-    expect(CG.website).toBe(HONEYPOT_FIELD);
   });
 
-  test("서버 오류 결과 → 포커스를 role=alert 요약으로 옮긴다 — tabIndex -1 + liveRef + useEffect, 훅은 카드 early return 앞 (리뷰 M-2)", () => {
+  test("서버 응답이 오면(성공 아님) 위젯을 새 토큰으로 리셋하고 요약으로 포커스 · 성공하면 결과 묶음으로 포커스", () => {
     const src = codeOf(FORM);
-    const alertTag = src.match(/<div[^>]*role="alert"[^>]*>/)?.[0] ?? "";
-    expect(alertTag, "role=alert 요약이 있어야 한다").not.toBe("");
-    expect(alertTag).toMatch(/ref=\{liveRef\}/);
-    expect(alertTag).toMatch(/tabIndex=\{-1\}/);
-    expect(src).toMatch(/const liveRef = useRef<HTMLDivElement \| null>\(null\)/);
     const effect = src.match(/useEffect\(\(\) => \{[\s\S]*?\}, \[result\]\);/)?.[0] ?? "";
     expect(effect, "result 를 보는 useEffect 가 있어야 한다").not.toBe("");
-    expect(effect).toMatch(/result && !result\.ok/);
     expect(effect).toMatch(/liveRef\.current\?\.focus\(\)/);
+    expect(effect).toMatch(/setTurnstileResetKey\(/);
+    expect(effect).toMatch(/resultsRef\.current\?\.focus\(\)/);
     expect(src.indexOf("useEffect(() =>")).toBeLessThan(src.indexOf("if (result?.ok)"));
-    // 클라이언트 검증 경로는 첫 오류 입력으로(기존) — 두 경로 모두 포커스가 body 에 남지 않는다
-    expect(src).toMatch(/\(errs\.publicCode \? codeRef : last4Ref\)\.current\?\.focus\(\)/);
-    const css = read(`${COMPONENT_DIR}/check.module.css`);
-    expect(css).toMatch(/\.alertFocus:focus-visible\s*\{[^}]*var\(--focus-ring\)/);
+    expect(src).toMatch(/tRoot\(\s*result\.messageKey\s*,\s*\{\s*tel:\s*tel\.display\s*\}\s*\)/);
   });
 
-  test("클라이언트 컴포넌트는 원장·서버 모듈을 import 하지 않는다 — 법정 문구·서비스 롤이 번들로 새지 않는다", () => {
+  test("폼 렌더 — 사이트 키가 있으면 조회 전용 위젯(data-action=check) · 없으면 준비 중 안내 + 제출 닫힘 · 프리뷰는 위젯 없음 · 접수번호 칸 0", async () => {
+    const { createElement } = await import("react");
+    const { CheckForm } = await import("@/components/reservation-check/CheckForm");
+    const { consultPhone } = await import("@/lib/contact-phone");
+    const base = { bookingNotice: VERBATIM.bookingNotice, tel: consultPhone("ko"), turnstileAction: TURNSTILE_CHECK_ACTION, previewResult: null };
+    const withKey = await renderWithIntl(createElement(CheckForm, { ...base, turnstileSiteKey: "1x00000000000000000000AA" }));
+    expect(withKey).toContain('data-action="check"');
+    expect(withKey).not.toContain('data-testid="reservation-check-not-ready"');
+    expect(withKey).toMatch(/<button[^>]*type="submit"(?![^>]*disabled)[^>]*>/);
+    expect(withKey).toContain('name="phone"');
+    expect(withKey).toContain('name="name"');
+    expect(withKey).not.toMatch(/name="(publicCode|phoneLast4)"/);
+    expect(withKey).toContain("예전 문자에 적힌 접수번호는 이제 입력하지 않으셔도 됩니다.");
+    const noKey = await renderWithIntl(createElement(CheckForm, { ...base, turnstileSiteKey: "" }));
+    expect(noKey).toContain('data-testid="reservation-check-not-ready"');
+    expect(noKey).not.toContain('data-testid="turnstile"');
+    expect(noKey).toMatch(/<button[^>]*type="submit"[^>]*disabled[^>]*>/);
+    const preview = await renderWithIntl(createElement(CheckForm, { ...base, turnstileSiteKey: "", previewResult: "ok" }));
+    expect(preview).not.toContain('data-testid="reservation-check-security"');
+    expect(preview).toMatch(/<button[^>]*type="submit"(?![^>]*disabled)[^>]*>/);
+  });
+
+  test("토큰 없이 누르면 서버까지 가지 않고 보안 확인 안내(같은 문구 키)를 보인다 — 프리뷰는 예외", () => {
+    const src = codeOf(FORM);
+    expect(src).toMatch(/\.get\(CG\.turnstile\)/);
+    expect(src).toMatch(/CHECK_ERROR_KEYS\.turnstile/);
+  });
+
+  test("useActionState — checkReservation 을 직접 넘기지 않고 (_prev, fd) 래퍼로 감싼다", () => {
+    const src = codeOf(FORM);
+    expect(src).toMatch(/^\s*["']use client["'];?/m);
+    expect(src).not.toMatch(/useActionState(<[^>]*>)?\(\s*checkReservation/);
+    expect(src).toMatch(/checkReservation\(\s*fd\s*\)/);
+  });
+
+  test("클라이언트 컴포넌트는 원장·서버 모듈을 import 하지 않는다 · 'use client' 는 CheckForm 하나", () => {
     for (const f of codeFiles) {
       const src = read(f);
       expect(ledgerImports(src), f).toEqual([]);
-      expect(/lib\/supabase|lib\/guard\/deps|server-only|lib\/reservation-check\/(db|guards|lookup)["']/.test(src), f).toBe(false);
+      expect(/lib\/supabase|lib\/guard|server-only|lib\/reservation-check\/(db|guards|lookup|phone|timing)["']/.test(src), f).toBe(false);
       expect(/from\s+["']zod["']/.test(src), f).toBe(false);
       expect(/from\s+["']next\/link["']/.test(src), f).toBe(false);
     }
-    const clients = codeFiles.filter((f) => /^\s*["']use client["']/m.test(read(f)));
-    expect(clients).toEqual([FORM]);
+    expect(codeFiles.filter((f) => /^\s*["']use client["']/m.test(read(f)))).toEqual([FORM]);
   });
 
-  test("서버 페이지 — 원장 VERBATIM.bookingNotice·예약·상담 전화(P1-7)를 읽어 props 로 내린다 · 'use client' 0 · force-dynamic 0 · 메타 reservationCheck.meta", () => {
-    const src = codeOf(PAGE);
-    expect(/^\s*["']use client["']/m.test(src)).toBe(false);
-    expect(ledgerImports(read(PAGE))).toEqual(expect.arrayContaining(["VERBATIM"]));
-    // P2-6: ko 는 원장 문자열 그 자체, en 은 컨트롤러 확정 영문(localizeVerbatim — tests/i18n-en.test.ts §4).
-    expect(src).toMatch(/bookingNotice=\{localizeVerbatim\(locale,\s*VERBATIM\.bookingNotice\)\}/);
-    // P1-7: 예약·상담 전화 — { display(ko 010-… / en +82 …), href(E.164) } (lib/contact-phone — 원장 COMPANY.consultTel)
-    expect(src).toMatch(/tel=\{consultPhone\(locale\)\}/);
-    expect(src).not.toMatch(/force-dynamic/);
-    expect(src).toMatch(/generateMetadata/);
-    expect(src).toMatch(/namespace:\s*["']reservationCheck\.meta["']/);
-    // P2-6: 브랜드는 로케일별 원장 필드(ledgerUi — ko COMPANY.brandName · en COMPANY.brandNameEn)
-    expect(src).toMatch(/ledgerUi\(locale\)\.brand\b/);
-    expect(src).not.toMatch(/createServiceClient|checkReservation\(|lib\/reservation-check\/(db|lookup)/);
-  });
-
-  test("카드 — data-legal=\"booking-notice\" 로 원장 문구 자리를 표시 · tel: 링크 · data-status 배지 · 가격 0", () => {
+  test("카드 — 접수번호를 보이지 않는다 · data-legal booking-notice · tel 링크 · 가린 값만", () => {
     const src = codeOf(CARD);
+    expect(src).not.toMatch(/publicCode|card\.code|reservation-code/);
     expect(src).toMatch(/data-legal="booking-notice"/);
-    expect(src).toMatch(/href=\{tel\.href\}/); // P1-7 — E.164 링크(표시 문자열의 +82 공백을 tel: 에 넣지 않는다)
-    expect(src).toMatch(/data-status=/);
-    for (const k of ["maskedName", "maskedPhone", "vehicleLabel", "originLabel", "destinationLabel", "departAtKst", "createdAtKst", "publicCode"]) expect(src, k).toContain(k);
+    expect(src).toMatch(/href=\{tel\.href\}/);
+    for (const k of ["maskedName", "maskedPhone", "vehicleLabel", "originLabel", "destinationLabel", "departAtKst", "createdAtKst"]) expect(src, k).toContain(k);
     expect(src).not.toMatch(/view\.(name|phone|email)\b/);
   });
 
-  test("개발 프리뷰(?previewResult=) — 페이지는 NODE_ENV 가드 뒤에서만 searchParams 를 읽고 mode 문자열만 내린다 · 원문 모양 값 0", () => {
+  test("여러 건 결과 — 카드 n장 · 건수 · 전화·다른 조회 버튼은 한 번만 · 카드 제목 id 가 겹치지 않는다", async () => {
+    const { createElement } = await import("react");
+    const { ReservationResults } = await import("@/components/reservation-check/ReservationCard");
+    const { consultPhone } = await import("@/lib/contact-phone");
+    const a = toReservationView(ROW, VEHICLE_NAMES);
+    const b = toReservationView({ ...ROW, status: "new", depart_at: "2026-11-01T00:00:00.000Z", return_at: null }, VEHICLE_NAMES);
+    const html = await renderWithIntl(createElement(ReservationResults, { views: [a, b], bookingNotice: VERBATIM.bookingNotice, tel: consultPhone("ko"), onAgain: () => {} }));
+    expect(html.match(/data-testid="reservation-card"/g) ?? []).toHaveLength(2);
+    expect(html.match(/data-testid="reservation-call"/g) ?? []).toHaveLength(1);
+    expect(html.match(/data-testid="reservation-again"/g) ?? []).toHaveLength(1);
+    expect(html).toContain("예정된 예약 2건");
+    const ids = [...html.matchAll(/id="(reservation-check-result-title-[^"]*)"/g)].map((m) => m[1]);
+    expect(new Set(ids).size).toBe(2);
+    // verbatim 은 접수(new) 상태 카드에만 — 확정 카드에는 없다(결정 3-2)
+    expect(html.match(/data-legal="booking-notice"/g) ?? []).toHaveLength(1);
+    expect(html).not.toContain("A2B3C4D5");
+  });
+
+  test("단일 카드(기존 호출 모양) — 전화·다른 조회 버튼을 그대로 갖는다(다른 테스트·화면 호환)", async () => {
+    const { createElement } = await import("react");
+    const { ReservationCard } = await import("@/components/reservation-check/ReservationCard");
+    const { consultPhone } = await import("@/lib/contact-phone");
+    const html = await renderWithIntl(createElement(ReservationCard, { view: toReservationView(ROW, VEHICLE_NAMES), bookingNotice: VERBATIM.bookingNotice, tel: consultPhone("ko"), onAgain: () => {} }));
+    expect(html).toContain('data-testid="reservation-call"');
+    expect(html).toContain('data-testid="reservation-again"');
+    expect(html).not.toContain('data-testid="reservation-code"');
+  });
+
+  test("개발 프리뷰(?previewResult=) — NODE_ENV 가드 뒤에서만 searchParams · 모드 5종(ok·quick·multi·not_found·ratelimit)", () => {
     const page = codeOf(PAGE);
     const guard = page.indexOf('process.env.NODE_ENV !== "production"');
     const sp = page.indexOf("await searchParams");
     expect(guard).toBeGreaterThan(-1);
     expect(sp).toBeGreaterThan(guard);
     expect(page).toMatch(/previewResult=\{/);
-    expect(page).not.toMatch(/name:\s*["']|phone:\s*["']/);
-    // P3-8: quick — 간편 접수 카드(날짜만 · 차종·대수 줄 없음)를 실측하는 모드
-    expect([...PREVIEW_RESULT_MODES]).toEqual(["ok", "quick", "not_found", "ratelimit"]);
+    expect([...PREVIEW_RESULT_MODES]).toEqual(["ok", "quick", "multi", "not_found", "ratelimit"]);
     expect(parsePreviewResult("1")).toBe("ok");
-    expect(parsePreviewResult("ok")).toBe("ok");
-    expect(parsePreviewResult("quick")).toBe("quick");
-    expect(parsePreviewResult("not_found")).toBe("not_found");
-    expect(parsePreviewResult("ratelimit")).toBe("ratelimit");
+    expect(parsePreviewResult("multi")).toBe("multi");
     for (const bad of [undefined, "", "infra", ["ok"], "OK"]) expect(parsePreviewResult(bad as never), String(bad)).toBeNull();
   });
 
-  test("프리뷰 결과 3종 — not_found 는 notFoundResult 와 동일 · ratelimit 키 · ok 뷰는 RESERVATION_VIEW_KEYS 와 같고 원문 모양 0", () => {
+  test("프리뷰 결과 — not_found 는 notFoundResult 와 동일 · ok 는 1건 · multi 는 2건 · 뷰는 RESERVATION_VIEW_KEYS 와 같고 원문 모양 0", () => {
     expect(previewCheckResult("not_found")).toEqual(notFoundResult());
     expect(previewCheckResult("ratelimit")).toEqual({ ok: false, code: "ratelimit", messageKey: CHECK_ERROR_KEYS.ratelimit });
-    const ok = previewCheckResult("ok");
-    expect(ok.ok).toBe(true);
-    if (!ok.ok) throw new Error("unreachable");
-    const v: ReservationView = ok.view;
-    expect(Object.keys(v).sort()).toEqual([...RESERVATION_VIEW_KEYS].sort());
-    expect(PUBLIC_CODE_PATTERN.test(v.publicCode)).toBe(true);
-    expect(v.maskedName).toMatch(/^.\*{1,2}$/);
-    expect(v.maskedPhone).toMatch(/^\d{3}-\*{4}-\d{4}$/);
-    expect(digitRuns(JSON.stringify(v), 5)).toEqual([]);
-    expect(RESERVATION_STATUSES).toContain(v.status);
+    for (const [mode, n] of [["ok", 1], ["quick", 1], ["multi", 2]] as const) {
+      const r = previewCheckResult(mode);
+      if (!r.ok) throw new Error("unreachable");
+      expect(r.views, mode).toHaveLength(n);
+      for (const v of r.views as ReservationView[]) {
+        expect(Object.keys(v).sort()).toEqual([...RESERVATION_VIEW_KEYS].sort());
+        expect(v.maskedName).toMatch(/^.\*{1,2}$/);
+        expect(digitRuns(JSON.stringify(v), 5)).toEqual([]);
+      }
+    }
     const src = codeOf(PREVIEW);
-    expect(src).not.toMatch(/name:\s*["']|phone:\s*["']|email/);
-    expect(src).not.toMatch(/maskName\(|maskPhone\(/); // 원문을 넣고 가리는 방식이 아니라 가려진 값만 둔다
+    expect(src).not.toMatch(/name:\s*["']|phone:\s*["']|email|publicCode/);
   });
 
-  test("한글 리터럴 0 (프리뷰 픽스처 제외) — 문구는 messages/ko.json reservationCheck.* 에서만", () => {
+  test("한글 리터럴 0 (프리뷰 픽스처 제외) — 문구는 messages 의 reservationCheck.* 에서만", () => {
     for (const { file, code } of sources) {
       if (file === PREVIEW) continue;
       const hits = code
@@ -1204,72 +1486,59 @@ describe("8. 컴포넌트·페이지 정적", () => {
     }
   });
 
-  test("금지어 0 · 가격 표기 0 · 실증 불가 문구 0 · localStorage/sessionStorage 0 · verbatim 조각 0", () => {
+  test("금지어 0 · 가격 표기 0 · 실증 불가 문구 0 · localStorage/sessionStorage 0", () => {
     for (const { file, code } of sources) {
       for (const w of FORBIDDEN) expect(code.includes(w), `${file}: ${w}`).toBe(false);
       for (const re of PRICE_MARKS) expect(re.test(code), `${file}: ${re}`).toBe(false);
       for (const w of UNPROVEN) expect(code.includes(w), `${file}: ${w}`).toBe(false);
       expect(/localStorage|sessionStorage/.test(code), file).toBe(false);
-      for (const frag of ["45인승 당일", "상담 후 확정", "결제 진행됩니다"]) expect(code.includes(frag), `${file}: verbatim 조각`).toBe(false);
     }
-    for (const f of ["guards", "lookup", "db", "view", "result", "formData"]) {
+    for (const f of ["guards", "lookup", "db", "view", "result", "formData", "phone", "timing"]) {
       const code = codeOf(`${LIB_DIR}/${f}.ts`);
       for (const re of PRICE_MARKS) expect(re.test(code), `${f}: ${re}`).toBe(false);
     }
   });
 
-  test("CSS — quote.module.css 를 import 해 폼 클래스를 재사용하고, check.module.css 는 추가분만(간격은 역할 토큰 — 규약은 layout.test §4 가 검사)", () => {
+  test("CSS — 역할 토큰만(HEX·rgba 0) · 폼 클래스 복제 0 · 접수번호 표시 클래스는 지웠다", () => {
     expect(read(FORM)).toMatch(/from\s+["']@\/components\/quote\/quote\.module\.css["']/);
-    expect(read(FORM)).toMatch(/from\s+["']\.\/check\.module\.css["']/);
     const css = codeOf(`${COMPONENT_DIR}/check.module.css`);
     expect(css.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).toEqual([]);
     expect(/\b(rgba?|hsla?)\(/.test(css)).toBe(false);
-    expect(css).not.toMatch(/\.control\s*\{|\.btn\s*\{|\.field\s*\{/); // 복제 금지
-    expect(css.length).toBeLessThan(read("components/quote/quote.module.css").length / 2);
+    expect(css).not.toMatch(/\.control\s*\{|\.btn\s*\{|\.field\s*\{/);
+    expect(css).not.toMatch(/\.codeLabel\s*\{|\.code\s*\{|\.codeInput\s*\{/);
   });
 
   test("클라이언트 사전 검증 validateCheckForm 은 zod CheckInput 과 같은 판정을 낸다(표본) · 필드별 키", () => {
-    const samples: Array<{ publicCode: string; phoneLast4: string }> = [
-      { publicCode: CODE, phoneLast4: LAST4 },
-      { publicCode: " a2b3c4d5 ", phoneLast4: "0000" },
-      { publicCode: "A2B3C4D", phoneLast4: LAST4 },
-      { publicCode: "A2B3C4D5X", phoneLast4: LAST4 },
-      { publicCode: "A2B3C4DI", phoneLast4: LAST4 },
-      { publicCode: "A2B3C4D0", phoneLast4: LAST4 },
-      { publicCode: CODE, phoneLast4: "567" },
-      { publicCode: CODE, phoneLast4: "56789" },
-      { publicCode: CODE, phoneLast4: "abcd" },
-      { publicCode: "", phoneLast4: "" },
-      { publicCode: "A2B3-C4D5", phoneLast4: LAST4 },
+    const samples: Array<{ phone: string; name: string }> = [
+      { phone: INPUT_PHONE, name: RAW_NAME },
+      { phone: "01012345678", name: " 홍 길동 " },
+      { phone: "+15551234567", name: "John Smith" },
+      { phone: "+82010-1234-5678", name: RAW_NAME },
+      { phone: "+1 555 123 4567", name: RAW_NAME },
+      { phone: "02-123-4567", name: RAW_NAME },
+      { phone: "010-12-34", name: RAW_NAME },
+      { phone: "+0123", name: RAW_NAME },
+      { phone: "", name: RAW_NAME },
+      { phone: INPUT_PHONE, name: "" },
+      { phone: INPUT_PHONE, name: "   " },
+      { phone: INPUT_PHONE, name: "가".repeat(30) },
+      { phone: INPUT_PHONE, name: "가".repeat(31) },
+      { phone: "abc", name: "" },
     ];
     for (const s of samples) {
       const errs = validateCheckForm(s);
-      const zodOk = CheckInput.safeParse(s).success;
-      expect(Object.keys(errs).length === 0, JSON.stringify(s)).toBe(zodOk);
-      if (errs.publicCode) expect(errs.publicCode).toBe(CHECK_FIELD_ERROR_KEYS.publicCode);
-      if (errs.phoneLast4) expect(errs.phoneLast4).toBe(CHECK_FIELD_ERROR_KEYS.phoneLast4);
+      const zod = CheckInput.safeParse(s);
+      expect(Object.keys(errs).length === 0, JSON.stringify(s)).toBe(zod.success);
+      if (errs.phone) expect(errs.phone).toBe(CHECK_FIELD_ERROR_KEYS.phone);
+      if (errs.name) expect(errs.name).toBe(CHECK_FIELD_ERROR_KEYS.name);
     }
-    expect(validateCheckForm({ publicCode: "A2B3C4D", phoneLast4: "1" })).toEqual({ publicCode: CHECK_FIELD_ERROR_KEYS.publicCode, phoneLast4: CHECK_FIELD_ERROR_KEYS.phoneLast4 });
+    expect(validateCheckForm({ phone: "x", name: "" })).toEqual({ phone: CHECK_FIELD_ERROR_KEYS.phone, name: CHECK_FIELD_ERROR_KEYS.name });
   });
 
-  test("legacy-menu — 예약확인 ready:true (라우트 파일과 함께) · 나머지 항목은 그대로", () => {
+  test("legacy-menu — 예약확인 ready:true · 나머지 항목은 그대로", () => {
     const item = LEGACY_MENU.find((m) => m.key === "reservationCheck");
     expect(item?.ready).toBe(true);
     expect(item?.href).toBe("/reservation/check");
-    expect(existsSync(path.join(ROOT, PAGE))).toBe(true);
-    // P6-3 이 about·location·fleet·fares·notices·gallery 를 올렸고, P7-6(사용자 결정)이 location·fares 항목을 메뉴에서 지웠다
-    // (ready 전체 집합은 tests/layout.test.ts EXPECTED_READY 와 같다).
-    expect(LEGACY_MENU.filter((m) => m.ready).map((m) => m.key).sort()).toEqual(
-      ["about", "fleet", "gallery", "guide", "notices", "quote", "reservationCheck"],
-    );
-  });
-
-  test("뷰 모델 키 목록 — RESERVATION_VIEW_KEYS 16개(P3-8 intake 추가), 원문 키 없음(타입 단언은 view.ts 의 keyof 잠금)", () => {
-    expect([...RESERVATION_VIEW_KEYS].sort()).toEqual(
-      ["publicCode", "status", "statusKey", "tripType", "tripTypeKey", "intake", "departAtKst", "returnAtKst", "vehicleLabel", "originLabel", "destinationLabel", "busCount", "passengers", "maskedName", "maskedPhone", "createdAtKst"].sort(),
-    );
-    for (const k of ["name", "phone", "email", "message", "adminMemo", "admin_memo", "id"]) expect(RESERVATION_VIEW_KEYS as readonly string[], k).not.toContain(k);
-    const src = read(`${LIB_DIR}/view.ts`);
-    expect(src).toMatch(/keyof ReservationView/);
+    expect(LEGACY_MENU.filter((m) => m.ready).map((m) => m.key).sort()).toEqual(["about", "fleet", "gallery", "guide", "notices", "quote", "reservationCheck"]);
   });
 });

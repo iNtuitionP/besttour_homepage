@@ -12,3 +12,24 @@ export function intlPhone(domestic: string): string {
   const v = domestic.trim();
   return /^0\d/.test(v) ? `+82 ${v.slice(1)}` : v;
 }
+
+const KR_MOBILE = /^01\d{8,9}$/;
+
+/**
+ * 저장값(E.164)의 국내 표기 — 반대 방향(국제 → 국내). `+8210…` 휴대전화만 `010-1234-5678`(3-4-4 · 10자리는 3-3-4)로 바꾸고,
+ * 그 밖(해외 번호 · 유선 · 모르는 모양)은 저장값 그대로 둔다(양끝 공백만 걷는다) — 짐작해서 바꾸지 않는다. 가리지 않는다.
+ * 쓰는 곳: 관리자 접수 상세의 큰 번호(전화를 거는 화면) · 사장님 접수 알림 문자(T2-4 · 결정 12 — 옛 이름 detailPhoneText,
+ * components/admin/reservation-detail.ts 에서 옮겼다).
+ */
+export function domesticPhoneText(stored: string): string {
+  const v = (stored ?? "").trim();
+  if (v.startsWith("+82")) {
+    const domestic = `0${v.replace(/\D/g, "").slice(2)}`;
+    if (KR_MOBILE.test(domestic)) {
+      return domestic.length === 11
+        ? `${domestic.slice(0, 3)}-${domestic.slice(3, 7)}-${domestic.slice(7)}`
+        : `${domestic.slice(0, 3)}-${domestic.slice(3, 6)}-${domestic.slice(6)}`;
+    }
+  }
+  return v;
+}

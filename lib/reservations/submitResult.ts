@@ -28,7 +28,10 @@ export const RESERVATION_ERROR_KEYS: Readonly<Record<SubmitErrorCode, Reservatio
 
 export type SubmitResult =
   | { ok: true; publicCode: string; notifyQueued: boolean }
-  /** 허니팟 가짜 성공 — 저장 없음. UI 는 일반 성공처럼 보이되 접수번호는 없다. */
+  /**
+   * 허니팟 가짜 성공 — 저장 없음. T2-5(결정 5)부터 완료 화면은 어느 쪽이든 접수번호를 보이지 않는다(같은 화면).
+   * 결과 모양에는 publicCode 가 그대로 남아 있다 — 통합 테스트(reservation-action.e2e)가 이 값으로 저장 행을 찾는다. 모양 정리는 후속 판단.
+   */
   | { ok: true; publicCode: null }
   | { ok: false; code: SubmitErrorCode; messageKey: ReservationErrorKey; fieldErrors?: Record<string, ReservationErrorKey> };
 

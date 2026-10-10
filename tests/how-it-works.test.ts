@@ -107,6 +107,13 @@ describe("홈 '이용 방법' — ko 는 원장 steps(무변경) · en 은 원�
     expect(flow.stepsEn.join(" ").match(/\d[\d,]*/g)).toEqual([deposit.toLocaleString("en-US")]);
   });
 
+  // 릴리스 B 리뷰 P2-3: 확정 문자 '■ 대금' 줄(PAYMENT.sms*)도 숫자·계좌를 따로 적는다 — 원장 값과 어긋나지 않게 잠근다.
+  test("원장 — 확정 문자 대금 줄(PAYMENT.smsDeposit·smsAccount·smsAccountHolder)이 depositKrw·account 와 같다", () => {
+    expect(PAYMENT.smsDeposit).toBe(`계약금: ${PAYMENT.depositKrw / 10000}만원`);
+    expect(PAYMENT.smsAccount).toBe(`입금 계좌: ${PAYMENT.account.bank} ${PAYMENT.account.number}`);
+    expect(PAYMENT.smsAccountHolder).toBe(`(예금주 ${PAYMENT.account.holder})`);
+  });
+
   test("en — 단계 4줄이 원장 stepsEn 과 바이트까지 같다 · 목록에 lang 없음 · 목록 안 한글 0", async () => {
     const html = await render("en");
     const { open, inner } = stepList(html);

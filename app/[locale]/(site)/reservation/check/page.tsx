@@ -2,11 +2,11 @@
  * /reservation/check — 예약확인 (P6-3a · 플랜 P6-3 매핑표 "예약확인"). 서버 컴포넌트, 조회 props 없음(토큰 없음) — 정적 렌더가 가능하고 결과는 서버액션에서만 온다.
  *
  * 여기서 하는 일: 원장 VERBATIM.bookingNotice 와 예약·상담 전화(consultPhone — P1-7)를 읽어 클라이언트 폼(CheckForm)에 props 로 내린다 —
- * 원장은 클라이언트 번들에 싣지 않는다.
+ * 원장은 클라이언트 번들에 싣지 않는다. T2-5(결정 5): 조회 키는 휴대폰 번호 + 예약자 이름이고, Turnstile 사이트 키와 조회 전용 action 도 내린다.
  * 개인정보는 props 로 흐르지 않는다(P3-5 리뷰 N-2 — dev 에서 서버 컴포넌트 props 가 HTML 에 직렬화된다). 프리뷰도 mode 문자열 하나뿐.
  *
  * 개발 전용 분기(production 에서는 죽은 코드 — searchParams 자체를 읽지 않아 정적 유지):
- *   ?previewResult=ok|not_found|ratelimit(|1=ok)  서버액션 대신 mock 결과를 주입해 카드·오류 렌더를 실측한다(원격 DB 에 쓰지 않는다)
+ *   ?previewResult=ok|quick|multi|not_found|ratelimit(|1=ok)  서버액션 대신 mock 결과를 주입해 카드·오류 렌더를 실측한다(원격 DB 에 쓰지 않는다 · 위젯 없음)
  */
 import type { Metadata } from "next";
 import { getTranslations, setRequestLocale } from "next-intl/server";
@@ -14,6 +14,7 @@ import { getTranslations, setRequestLocale } from "next-intl/server";
 import { CheckForm } from "@/components/reservation-check/CheckForm";
 import { parsePreviewResult } from "@/components/reservation-check/preview-result";
 import { consultPhone } from "@/lib/contact-phone";
+import { TURNSTILE_CHECK_ACTION } from "@/lib/guard/turnstile";
 import { ledgerUi, localizeVerbatim } from "@/lib/i18n/ledger-ui";
 import { VERBATIM } from "@/lib/legal/disclosures";
 import { pageAlternates } from "@/lib/site-url";
@@ -54,7 +55,14 @@ export default async function ReservationCheckPage({ params, searchParams }: { p
             <p className={s.sub}>{t("sub")}</p>
           </header>
 
-          <CheckForm bookingNotice={localizeVerbatim(locale, VERBATIM.bookingNotice)} tel={consultPhone(locale)} previewResult={previewResult} />
+          {/* T2-5: 조회에도 Turnstile — 사이트 키(빌드 시 인라인되는 공개 키)와 조회 전용 action('check' — 접수 'reserve' 와 다르다). */}
+          <CheckForm
+            bookingNotice={localizeVerbatim(locale, VERBATIM.bookingNotice)}
+            tel={consultPhone(locale)}
+            turnstileSiteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? ""}
+            turnstileAction={TURNSTILE_CHECK_ACTION}
+            previewResult={previewResult}
+          />
         </div>
       </div>
     </main>

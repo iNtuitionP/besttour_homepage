@@ -584,24 +584,9 @@ textarea.control {
   font-weight: 800;
   color: var(--text-brand);
 }
-.doneCodeLabel {
-  margin: var(--space-stack-md) 0 0;
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
-.doneCode {
-  margin: var(--space-stack-xs) 0 0;
-  font-size: clamp(30px, 8vw, 44px);
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  color: var(--text-brand);
-  font-variant-numeric: tabular-nums;
-}
+/* T2-5 — 접수번호 표시(.doneCodeLabel·.doneCode)를 지웠다. 완료 화면은 조회 안내 한 줄(휴대폰 번호 + 예약자 이름)이다. */
 .doneHint {
-  margin: var(--space-stack-xs) 0 0;
+  margin: var(--space-stack-md) 0 0;
   font-size: 14.5px;
   line-height: 1.6;
   color: var(--text-secondary);

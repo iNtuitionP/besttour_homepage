@@ -28,7 +28,7 @@ export * from "./types";
 export { HONEYPOT_FIELD, checkHoneypot } from "./honeypot";
 export { FORM_MAX_AGE_MS, FORM_MIN_MS, issueFormToken, verifyFormToken } from "./timetrap";
 export { IP_KEY_LENGTH, UNKNOWN_IP_BUCKET, clientIp, clientIpKey, hashIpKey } from "./ipKey";
-export { TURNSTILE_ACTION, TURNSTILE_SITEVERIFY_URL, TURNSTILE_TIMEOUT_MS, verifyTurnstile } from "./turnstile";
+export { TURNSTILE_ACTION, TURNSTILE_CHECK_ACTION, TURNSTILE_SITEVERIFY_URL, TURNSTILE_TIMEOUT_MS, verifyTurnstile } from "./turnstile";
 export { RATE_LIMITS, RATE_LIMIT_TIMEOUT_MS, RATE_WINDOWS, checkRateLimit, type RateWindowDuration } from "./rateLimit";
 
 /**

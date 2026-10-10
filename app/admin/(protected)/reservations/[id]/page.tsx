@@ -7,7 +7,7 @@ import { ReservationActions } from "@/components/admin/ReservationActions";
 import { ReservationProcess } from "@/components/admin/ReservationProcess";
 import { SheetTrigger } from "@/components/admin/SheetTrigger";
 import { StatusBadge } from "@/components/admin/StatusBadge";
-import { dayParts, detailPhoneText, receivedAt, smsHref, splitNameTemplate, type DayParts } from "@/components/admin/reservation-detail";
+import { dayParts, receivedAt, smsHref, splitNameTemplate, type DayParts } from "@/components/admin/reservation-detail";
 import { backToListHref, elapsedSince, stayNights, telHref } from "@/components/admin/reservation-list";
 import { PROCESS_REGION_ATTR } from "@/components/admin/reservation-panel";
 import { CUSTOMER_NAME_ELEMENT_ID, fillTemplate, type ReservationSummary } from "@/components/admin/reservation-sheet";
@@ -20,6 +20,7 @@ import { routing } from "@/i18n/routing";
 import { LEGACY_CONTACT_METHODS, LEGACY_PAYMENT_METHODS, getReservation, isUuid, type ReservationDetailRow } from "@/lib/admin/reservations";
 import { requireAdmin } from "@/lib/auth/requireAdmin";
 import { PURPOSES, isLocationCode, locationLabelKo } from "@/lib/codes";
+import { domesticPhoneText } from "@/lib/phone-format";
 import { getVehicles } from "@/lib/queries";
 import { TRIP_TYPES } from "@/lib/reservation-check/view";
 
@@ -266,7 +267,7 @@ export default async function AdminReservationDetailPage({ params, searchParams 
                 {icon("user", a.detailCardIcon)}
                 {t("contact.title")}
               </h2>
-              <p className={a.contactNum}>{detailPhoneText(row.phone)}</p>
+              <p className={a.contactNum}>{domesticPhoneText(row.phone)}</p>
               {tel !== null && sms !== null ? (
                 <div className={a.contactBtns}>
                   <a className={`${a.btnSecondary} ${a.btnLink}`} href={tel} data-testid="admin-call">

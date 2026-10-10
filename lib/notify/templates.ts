@@ -18,7 +18,7 @@
  *    반대로 `(광고)`·수신거부 문구를 정보성 문자에 미리 붙여 두지도 않는다 — 붙이는 순간 광고로 읽힌다.
  * 3. **법정 문구·회사 정보 리터럴 0.** 대표전화·결제 안내·상호를 여기 다시 타이핑하지 않는다. 전부 원장 상수다.
  *    안내 문장(법정 문구가 아닌 것)은 여기 두어도 된다 — 그것이 이 파일의 일이다.
- * 4. **개인정보는 사장님 템플릿에만.** 고객 문자는 `CustomerVars`(접수번호·원점)만 받는다 — 타입에 이름·번호가 없어
+ * 4. **개인정보는 사장님 템플릿에만.** 고객 문자는 `CustomerVars`(접수번호·원점 — 접수번호는 T2-5 부터 고객 문안에 쓰지 않는다)만 받는다 — 타입에 이름·번호가 없어
  *    다른 사람의 정보가 흘러들 자리 자체가 없다. 사장님 문자는 반대로 마스킹하지 않는다: 전화를 걸어야 하기 때문이다.
  *
  * SMS / LMS 선택 — 왜 UTF-8 바이트인가
@@ -30,11 +30,20 @@
  * 그 대가를 눈에 보이게 하려고 `kscByteLength()`(EUC-KR 추정)를 같이 계산해 `RenderedMessage.kscBytes` 로 싣는다 —
  * **선택에는 쓰지 않는다.** 요금 판단과 P4-2 의 제공자 대조용 숫자다.
  *
- * 실제 결과: 고객 접수 문자는 접수번호 · verbatim(UTF-8 36바이트 — 2026-10-10 새 문장) · 예약확인 링크 · 문의 전화를 다 담으면
+ * 실제 결과: 고객 접수 문자는 verbatim(UTF-8 36바이트 — 2026-10-10 새 문장) · 예약확인 링크 · 문의 전화를 다 담으면
  * 90바이트를 넘고, 고객 확정 문자는 약관 제8조 고지 줄 때문에, 사장님 문자 2종은 필수 항목이 많아서 **전부 LMS 로 나간다.**
  * 줄일 수 있는 것은 이미 줄였고, 남은 것은 규약이 요구하는 내용뿐이다(옛 verbatim 은 81바이트였다).
+ *
+ * 블록 서식 (T2-4 · 사장님 요청 8 · 결정 12 — 2026-10-10 사용자 승인 초안 그대로)
+ * ---------------------------------------------------------------------------
+ * 손님 접수·확정 · 사장님 접수 알림(문자·메일 폴백) · 알림톡 2종이 같은 틀이다: 첫 줄 `[브랜드] 제목` → `■ 섹션` → `- 라벨: 값`.
+ * 기호는 KS X 1001 에 있는 것(■ · - · → · 가운뎃점)만 쓰고 이모지는 쓰지 않는다 — 제공자가 EUC-KR 로 바꿀 때 깨지지 않게.
+ * 위 사정(어느 문안도 90바이트에 들어가지 않는다) 때문에 **SMS 판과 LMS 판이 같은 본문**이다 — 보낼 한 통이 곧 승인 초안이다.
+ * LMS 제목은 따로 두지 않았다(위험 #12 — 둔다면 `subject` 가 아니라 별도 필드여야 한다. `subject` 는 메일 가드가 본다).
  */
 import { CANCELLATION, COMPANY, PAYMENT, VERBATIM, WITHDRAWAL } from "../legal/disclosures";
+import { domesticPhoneText } from "../phone-format";
+import { formatPublicDate, type PublicDateLabels } from "../public-date";
 import { FALLBACK_SITE_ORIGIN } from "../site-url";
 import type { NotifyEvent } from "../types";
 import { ALL_TEMPLATE_KEYS, MAX_ATTEMPTS, type TemplateKey } from "./outbox";
@@ -49,7 +58,7 @@ export const SMS_BYTE_LIMIT = 90;
 /** 장문(LMS) 상한. 넘으면 자르지 않고 throw 한다 — verbatim 을 잘라 보내는 것보다 보내지 않는 편이 낫다. */
 export const LMS_BYTE_LIMIT = 2000;
 
-/** 예약확인 화면 경로 — app/[locale]/(site)/reservation/check/page.tsx. 접수번호 + 휴대폰 뒷 4자리로 조회한다. */
+/** 예약확인 화면 경로 — app/[locale]/(site)/reservation/check/page.tsx. 휴대폰 번호 + 예약자 이름으로 조회한다(T2-5). */
 export const RESERVATION_CHECK_PATH = "/reservation/check";
 
 /** 이용안내 경로 — app/[locale]/(legal)/guide/page.tsx. 취소·환불 규정과 청약철회 제한 고지 전문이 있다(확정 통지의 링크 — P1-7 R2). */
@@ -113,7 +122,10 @@ export function chooseFormat(text: string): MessageFormat {
  * `origin` 은 호출부(P4-2)가 lib/site-url.ts `siteOrigin()` 으로 얻어 넘긴다. 이 모듈은 env 를 보지 않는다.
  */
 export interface CustomerVars {
-  /** reservations.public_code — 고객이 예약확인에 입력하는 8자 코드. */
+  /**
+   * reservations.public_code — 8자 내부 식별자. T2-5(결정 5)부터 **고객 문안에는 쓰지 않는다**(예약확인은 휴대폰 번호 + 예약자 이름).
+   * 사장님 알림(OwnerVars 가 상속)과 사장님 발송 실패 알림이 어느 예약인지 가리키는 데 쓴다.
+   */
   publicCode: string;
   /** `https://…` 형식의 사이트 원점(끝 슬래시 없음). */
   origin: string;
@@ -127,7 +139,8 @@ export interface OwnerVars extends CustomerVars {
   phone: string;
   /**
    * 접수 경로(0023). `quick`(홈 간편 견적 — P3-8)은 차종·여행 구분·출발 시각·왕복 구분·대수를 받지 않았다 —
-   * 문안은 그 사실과 **전화로 확인할 항목**을 적고, 날짜만 싣는다. `wizard`(옛 6단계 접수분)는 옛 문안 그대로다.
+   * 문안은 제목에 "(간편 접수)" 를 적고 날짜만 싣는다. `wizard`(옛 6단계 접수분)는 "(상세 접수)" 와 시각·차량·대수를 싣는다.
+   * (T2-4 · 사장님 요청 11 — 옛 "전화로 확인할 것" 줄은 뺐다.)
    */
   intake: "wizard" | "quick";
   /** 표시용 차량 라벨(vehicles.name_ko). 코드가 아니라 사람이 읽는 값이다. 간편 접수는 null(차종 미정). */
@@ -200,141 +213,187 @@ const checkLink = (v: CustomerVars): string => link(v.origin, RESERVATION_CHECK_
 const guideLink = (v: CustomerVars): string => link(v.origin, GUIDE_PATH);
 const adminLink = (v: OwnerVars): string => `${link(v.origin, ADMIN_RESERVATIONS_PATH)}/${v.reservationId}`;
 
-/** 대수 · 인원. 인원 미입력이면 대수만. (위저드 접수분 전용 — 간편 접수는 차종·대수가 없다.) */
-const fleetLine = (v: OwnerVars): string =>
-  v.passengers === null ? `${v.vehicleLabel} ${v.busCount}대` : `${v.vehicleLabel} ${v.busCount}대 · ${v.passengers}명`;
+// ── 블록 서식 조각 (T2-4) ──────────────────────────────────────────────────
 
-const route = (v: OwnerVars): string => `${v.originLabel} → ${v.destinationLabel}`;
-
-/**
- * 간편 접수(P3-8)에서 사장님이 **전화로 확인할 항목**. 손님이 고르지 않은 것들이다 — 문안이 이 목록을 그대로 적어,
- * 사장님이 "무엇을 물어야 하는지" 를 문자만 보고 안다(관리자 화면의 "미정(전화 확인)" 과 같은 목록).
- */
-export const QUICK_CONFIRM_BY_PHONE = "차종·대수·출발 시각·여행 구분·왕복 여부";
-
-/** 간편 접수의 운행일 — 같은 날이면 `날짜 (당일)`, 다르면 `출발일 ~ 도착일`. 시각은 싣지 않는다(자리값). */
-const quickDates = (v: OwnerVars): string => (v.returnDateKst === null ? `${v.departAtKst} (당일)` : `${v.departAtKst} ~ ${v.returnDateKst}`);
-
-/** 간편 접수의 인원 — 필수 항목이지만 타입이 null 을 허용하므로 없으면 줄에서 뺀다(지어내지 않는다). */
-const quickPax = (v: OwnerVars): string | null => (v.passengers === null ? null : `${v.passengers}명`);
+/** 섹션 머리 `■ 제목`. ■ 는 KS X 1001(0xA1E1)에 있다. */
+const section = (title: string): string => `■ ${title}`;
+/** 항목 `- 값`. */
+const item = (text: string): string => `- ${text}`;
+/** 라벨 항목 `- 라벨: 값`. */
+const labeled = (label: string, value: string): string => item(`${label}: ${value}`);
 
 /**
- * 사장님 접수 알림 — 간편 접수(P3-8 · 0023 intake='quick').
- * 차종·시각 대신 **간편 접수임**과 **전화로 확인할 항목**을 적는다. 날짜만 · 인원 · 구간 · 고객 연락처 · 관리자 링크.
- * verbatim 은 넣지 않는다(아래 위저드 판과 같은 이유). 이 판도 언제나 90바이트를 넘어 LMS 로 나간다.
+ * 한 통의 본문이 SMS 판·LMS 판 두 벌로 같다(헤더 "블록 서식" — 어느 문안도 90바이트에 들어가지 않는다).
+ * 선택 규칙(renderTemplate)은 그대로 두고 두 판에 같은 본문을 넣는다 — 그래서 보낼 한 통이 언제나 승인 초안이다.
  */
-function quickOwnerVariants(v: OwnerVars): MessageVariants {
-  const pax = quickPax(v);
-  return {
-    sms: [`${BRAND} 간편 접수 ${v.publicCode}`, v.name, v.phone, quickDates(v), route(v), pax, `차종·시각 전화 확인`, adminLink(v)]
-      .filter((p): p is string => p !== null)
-      .join(" "),
-    lms: lines(
-      `${BRAND} 새 견적 신청이 접수되었습니다(간편 접수).`,
-      "",
-      `접수번호 ${v.publicCode}`,
-      `고객 ${v.name} ${v.phone}`,
-      `운행일 ${quickDates(v)}`,
-      `구간 ${route(v)}`,
-      pax === null ? null : `인원 ${pax}`,
-      `전화로 확인할 것: ${QUICK_CONFIRM_BY_PHONE}`,
-      "",
-      `확인 ${adminLink(v)}`,
-    ),
-  };
+const sameBody = (body: string): MessageVariants => ({ sms: body, lms: body });
+
+/** 같은 문자에서 줄을 나누거나 줄을 재배치할 수 있는 코드 포인트(C0·DEL·C1 밖의 것). C0·DEL·C1 은 아래 범위 검사가 잡는다. */
+const LINE_FORGERS = new Set([
+  0x2028, // LINE SEPARATOR
+  0x2029, // PARAGRAPH SEPARATOR
+  0x200b, 0x200c, 0x200d, 0x200e, 0x200f, // 제로폭 · 방향 표시
+  0x202a, 0x202b, 0x202c, 0x202d, 0x202e, // 방향 덮어쓰기
+  0x2060, 0x2066, 0x2067, 0x2068, 0x2069, // 단어 잇기 · 방향 고립
+  0xfeff, // BOM
+]);
+
+/**
+ * 한 줄로 접는다 — 줄바꿈·탭·제어문자(C0·DEL·C1)·줄 구분자·방향 제어 문자를 공백으로 바꾸고, 이어진 공백은 하나로, 양끝은 걷는다.
+ * **줄 위조 방지**(T2-4 · 계획 위험 표): 이름 입력(lib/types.ts — 길이 말고 문자 제한이 없다)에 줄바꿈을 넣어 `■ 운행` · `접수번호 …` 같은
+ * 가짜 줄을 사장님 알림에 끼워 넣지 못하게 한다. 저장값은 바꾸지 않는다 — 보내는 글자만 접는다(이미 저장된 행에도 듣는다).
+ */
+export function oneLine(raw: string): string {
+  let out = "";
+  for (const ch of raw ?? "") {
+    const c = ch.codePointAt(0) ?? 0;
+    out += c < 0x20 || (c >= 0x7f && c <= 0x9f) || LINE_FORGERS.has(c) ? " " : ch;
+  }
+  return out.replace(/ {2,}/g, " ").trim();
 }
 
 /**
- * 사장님 접수 알림 — 접수번호·성명·연락처·차량·운행일·구간·인원·관리자 링크(브리프 Part 1).
+ * 문자의 날짜 틀 — 공개 화면 날짜 헬퍼(lib/public-date.ts formatPublicDate — KST 벽시계를 그대로 읽는다)에 넘긴다.
+ * 승인 초안 모양 "11월 3일(화)"(괄호 앞 붙임 — 문자는 한 줄이 짧아서)이라 카탈로그 common.dates 의 틀("11월 3일 (화)")과 빈칸 하나가 다르다.
+ * **연도는 싣지 않는다**(dayYear = day): 이 모듈에는 시계가 없다(순수 — 같은 입력은 언제나 같은 바이트). 그래서 헬퍼의 "올해" 판정도
+ * 고정 시각(NO_CLOCK)으로 막아 둔다 — 어느 쪽 틀이 골라져도 글자는 같다. 날짜를 잘못 읽을 일은 요일과 관리자 링크가 막는다.
+ */
+const SMS_DATE_LABELS: PublicDateLabels = {
+  weekdays: ["일", "월", "화", "수", "목", "금", "토"],
+  months: Array.from({ length: 12 }, (_, i) => String(i + 1)),
+  day: "{month}월 {day}일({weekday})",
+  dayYear: "{month}월 {day}일({weekday})",
+  date: "{month}월 {day}일",
+  time: "{hour}:{minute}",
+  dateTime: "{date} {time}",
+};
+const NO_CLOCK = new Date(0);
+
+/** KST 벽시계(`YYYY-MM-DD` · `YYYY-MM-DD HH:mm`) → "11월 3일(화)" · 시각을 달면 "10월 3일(토) 08:00". 읽을 수 없으면 원래 값 그대로. */
+const smsDate = (kst: string, withTime: boolean): string =>
+  formatPublicDate(kst, SMS_DATE_LABELS, { style: "schedule", time: withTime, now: NO_CLOCK }) ?? kst;
+
+const route = (v: OwnerVars): string => `${oneLine(v.originLabel)} → ${oneLine(v.destinationLabel)}`;
+
+/** 운행 날짜 — 간편 접수는 날짜만(같은 날이면 "… 당일", 다르면 "… ~ …" · 저장된 00:00 은 자리값), 위저드는 출발 일시. */
+const tripDate = (v: OwnerVars): string => {
+  if (v.intake !== "quick") return smsDate(v.departAtKst, true);
+  const from = smsDate(v.departAtKst, false);
+  return v.returnDateKst === null ? `${from} 당일` : `${from} ~ ${smsDate(v.returnDateKst, false)}`;
+};
+
+/** 제목의 접수 경로 — 관리자 상세의 낱말과 같다(admin 카탈로그 intakeWizard "상세 접수" · quickBadge "간편 접수"). */
+const INTAKE_LABEL: Record<OwnerVars["intake"], string> = { quick: "간편 접수", wizard: "상세 접수" };
+
+/** 사장님 알림의 첫 줄 — 문자·메일 본문의 맨 위이자 메일 제목의 앞부분. */
+const ownerHeadline = (v: OwnerVars): string => `${BRAND} 새 견적 신청 (${INTAKE_LABEL[v.intake]})`;
+
+/**
+ * 사장님 접수 알림 — 간편 접수 · 위저드 접수 · 메일 폴백이 같은 본문(T2-4 · 결정 12 · 승인 초안).
+ *   [브랜드] 새 견적 신청 (간편 접수|상세 접수)
+ *   ■ 고객  - 이름 / 010-xxxx-xxxx            (이름은 한 줄로 접는다 · 국내 휴대폰은 국내 표기, 해외 번호는 그대로 — 마스킹하지 않는다)
+ *   ■ 운행  - 날짜 · 구간 · (위저드만) 차량 대수 · 인원(미입력이면 줄을 뺀다)
+ *   관리자에서 보기 / 링크 / 접수번호(내부 식별자 — 사장님 알림에만 남는다)
+ * 간편 접수는 차종·대수·시각을 받지 않았으므로 그 줄이 없다 — 지어내지 않는다. 옛 "전화로 확인할 것" 줄은 뺐다(사장님 요청 11).
  * verbatim 은 넣지 않는다: "확인 후 연락드리겠습니다" 는 고객에게 하는 약속이고, 사장님에게 되돌려 보내면 뜻이 뒤집힌다.
- * SMS 판은 같은 항목을 한 줄로 붙인 최소형이다 — 이 항목들을 더 뺄 수 없어 실제로는 언제나 LMS 로 나간다.
- * P3-8: 간편 접수는 quickOwnerVariants 로 간다. 아래 위저드 판은 옛 접수분(통지가 아직 대기열에 있는 행)을 위해 한 글자도 바꾸지 않았다.
  */
 function ownerVariants(v: OwnerVars): MessageVariants {
-  if (v.intake === "quick") return quickOwnerVariants(v);
-  return {
-    sms: `${BRAND} 접수 ${v.publicCode} ${v.name} ${v.phone} ${v.departAtKst} ${route(v)} ${fleetLine(v)} ${adminLink(v)}`,
-    lms: lines(
-      `${BRAND} 새 예약이 접수되었습니다.`,
+  const wizard = v.intake !== "quick";
+  return sameBody(
+    lines(
+      ownerHeadline(v),
       "",
+      section("고객"),
+      item(`${oneLine(v.name)} / ${oneLine(domesticPhoneText(v.phone))}`),
+      section("운행"),
+      labeled("날짜", tripDate(v)),
+      labeled("구간", route(v)),
+      wizard ? labeled("차량", `${oneLine(v.vehicleLabel ?? "")} ${v.busCount}대`) : null,
+      v.passengers === null ? null : labeled("인원", `${v.passengers}명`),
+      "",
+      "관리자에서 보기",
+      adminLink(v),
       `접수번호 ${v.publicCode}`,
-      `고객 ${v.name} ${v.phone}`,
-      `운행 ${v.departAtKst}`,
-      `구간 ${route(v)}`,
-      `차량 ${fleetLine(v)}`,
-      "",
-      `확인 ${adminLink(v)}`,
     ),
-  };
+  );
 }
 
 /**
- * 고객 접수 확인 — 접수번호 + verbatim + 예약확인 안내 + 예약·상담 전화(브리프 Part 1 · P1-7).
+ * 예약확인 방법 한 항목 — 손님 접수 문자·접수 알림톡의 `■ 예약 확인` 블록(T2-5 · 결정 5 → T2-4 블록 서식).
+ * 예약확인은 **휴대폰 번호와 예약자 이름**으로 조회한다(app/[locale]/(site)/reservation/check). 접수번호는 손님에게 보이지 않는
+ * 내부 식별자다(사장님 알림·실패 알림에만 있다). T2-4 전에는 문장 꼬리 CHECK_GUIDE_TAIL("…확인하실 수 있습니다.")이었다.
+ */
+export const CHECK_GUIDE_ITEM = "휴대폰 번호와 예약자 이름으로 조회";
+
+/**
+ * 고객 접수 확인 — 승인 초안: [브랜드] 견적 신청 접수 / verbatim / ■ 예약 확인(주소 · 조회 방법) / ■ 문의(전화).
  * verbatim("확인 후 연락드리겠습니다.")은 여기 남긴다(T2-2 판단, 2026-10-10): 접수 직후에 보내는 문자라 "확인한 뒤 연락한다" 는 뜻이
- * 사실과 맞는다. 사이트의 완료 화면·예약 확인 카드(접수 상태)와 같은 말이다.
- * 예약확인은 접수번호와 휴대폰 뒷 4자리로 조회한다(app/[locale]/(site)/reservation/check). 문구는 그 화면과 같은 말을 쓴다.
+ * 사실과 맞는다. 사이트의 완료 화면·예약 확인 카드(접수 상태)와 같은 말이다. 줄 전체로 한 번 — 바이트 그대로.
+ * 주소는 지금 문자와 같은 형식(origin + 경로 = `https://…`)을 유지한다 — 문자앱이 링크로 알아본다(초안은 `https://` 를 줄여 적었다).
  * 전화는 원장 COMPANY.consultTel — 손님에게 "여기로 전화하라" 고 안내하는 번호다(사이트의 전화번호는 이것 하나 — P7-5).
  */
 function createdCustomerVariants(v: CustomerVars): MessageVariants {
-  return {
-    sms: lines(`${BRAND} 접수 ${v.publicCode}`, VERBATIM.bookingNotice, `확인 ${checkLink(v)} · 문의 ${COMPANY.consultTel}`),
-    lms: lines(
-      `${BRAND} 견적 신청이 접수되었습니다.`,
+  return sameBody(
+    lines(
+      `${BRAND} 견적 신청 접수`,
       "",
-      `접수번호 ${v.publicCode}`,
       VERBATIM.bookingNotice,
       "",
-      `접수 내용은 ${checkLink(v)} 에서 접수번호와 휴대폰 뒷 4자리로 확인하실 수 있습니다.`,
-      `문의 ${COMPANY.consultTel}`,
+      section("예약 확인"),
+      item(checkLink(v)),
+      item(CHECK_GUIDE_ITEM),
+      section("문의"),
+      item(COMPANY.consultTel),
     ),
-  };
+  );
 }
 
 /**
- * 확정 사실을 알리는 문장 — 확정 문자·알림톡의 맨 위(일어난 일).
- * 예전에는 verbatim 이 확정 문자 맨 아래에 붙어 있어 "확정됐다" 와 부딪히지 않게 떼어 놓는 배치 잠금이 있었다. 새 verbatim
- * "확인 후 연락드리겠습니다." 는 어디에 두어도 확정 통지의 뜻을 뒤집으므로 확정 문자·알림톡에서 아예 뺐다(사장님 요청 7 · 결정 3-2,
- * 2026-10-10 · T2-2). tests/notify-templates.test.ts §1 · tests/booking-notice-t2-2.test.ts 가 그 부재를 잠근다.
+ * 확정 문자·알림톡의 제목 — 첫 줄 `[브랜드] 예약 확정 안내`(승인 초안). T2-4 전에는 문장 "예약이 확정되었습니다." 였다.
+ * verbatim("확인 후 연락드리겠습니다.")은 확정 문자·알림톡에 넣지 않는다 — 확정 통지에 붙으면 아직 확정 전인 것처럼 읽힌다
+ * (사장님 요청 7 · 결정 3-2, 2026-10-10 · T2-2). tests/notify-templates.test.ts §1 · tests/booking-notice-t2-2.test.ts 가 그 부재를 잠근다.
  */
-export const CONFIRMED_HEADLINE = "예약이 확정되었습니다.";
+export const CONFIRMED_HEADLINE = "예약 확정 안내";
+
+/** 확정 통지의 `■ 대금` · `■ 취소·환불` 블록 — 문자·알림톡이 같다. 줄은 전부 원장에서 온다(지어내지 않는다). */
+const confirmedNoticeBlocks = (): string[] => [
+  section("대금"),
+  item(PAYMENT.smsDeposit),
+  item(PAYMENT.smsBalance),
+  item(PAYMENT.smsAccount),
+  // 예금주는 계좌 항목의 이어지는 줄(들여쓰기 두 칸) — 승인 초안 모양
+  `  ${PAYMENT.smsAccountHolder}`,
+  "",
+  section("취소·환불"),
+  // 원장 smsItem = smsLine 에서 머리말 "취소·환불 : " 만 뺀 같은 문장 — 섹션 제목과 낱말이 두 번 나오지 않게(T2-4 후속, 컨트롤러 원장 추가).
+  item(CANCELLATION.smsItem),
+  item(WITHDRAWAL.smsLine),
+];
 
 /**
- * 고객 확정 안내 — 접수번호 + 확정 사실 + 결제 안내 + 약관 제8조 고지(브리프 Part 1).
+ * 고객 확정 안내 — 승인 초안: [브랜드] 예약 확정 안내 / ■ 대금 / ■ 취소·환불 / ■ 예약 확인·변경 / 운영: 합자회사 베스트투어.
+ * 접수번호 줄은 없다(T2-5). 운행일·구간·인원은 넣지 않는다(결정 12 · 위험 #11 — 관리자가 고칠 수 없는 접수값이 확정 내용처럼 나간다).
  *
- * 읽는 순서를 "일어난 일 → 앞으로 할 일 → 계약 주체" 로 짰다.
- *   1. 일어난 일   : `[베스트모빌리티] 예약이 확정되었습니다.` + 접수번호
- *   2. 앞으로 할 일: 대금 지급 조건(원장 PAYMENT.line 그대로 — **지어내지 않는다**) · 예약확인 방법 · 변경·취소 연락처
- *   3. 맨 아래     : 계약 주체 줄(CONTRACT_PARTY_LINE — '운영: 합자회사 베스트투어', T2-1). 서명처럼 마지막에 둔다.
- * verbatim 은 넣지 않는다(T2-2 — 위 CONFIRMED_HEADLINE 주석). 사이트의 예약 확인 카드도 확정 상태에서는 그 문장을 보이지 않는다.
- * 변경·취소 안내 문구는 예약확인 화면(`reservationCheck.card.help`)과 같은 말을 쓴다.
- *
- * P1-7 R2 [P1-4] — 약관 제8조가 약속한 "예약 확정 통지에서의 고지": 결제 안내 바로 다음에 원장 줄 셋(취소·환불 · 청약철회 제한 ·
- * 입금 계좌)과 자세한 내용 링크(이용안내 — 절대 URL)를 둔다. 이 줄들을 빼서 90바이트 SMS 에 맞추지 않는다 — SMS 판에도 같은 줄이 다
- * 들어 있어 언제나 90바이트를 넘고, 그래서 확정 통지는 **LMS 로만** 나간다(renderTemplate 의 선택 규칙 그대로 · 테스트가 잠근다).
+ * 약관 제8조가 약속한 "예약 확정 통지에서의 고지"(P1-7 R2 [P1-4] · 위험 #9): verbatim 만 빠지고 대금 · 입금 계좌 · 취소·환불 ·
+ * 청약철회 제한 · 이용안내(절대 URL) 줄은 모두 남는다. 대금 줄은 원장 PAYMENT.sms*(약관 제6조와 같은 뜻 — 컨트롤러 원장 작성),
+ * 취소 줄은 원장 CANCELLATION.smsItem(smsLine 에서 머리말만 뺀 같은 문장), 청약철회 줄은 원장 WITHDRAWAL.smsLine 그대로. 맨 아래는 계약 주체 줄(CONTRACT_PARTY_LINE — T2-1) — 서명처럼 마지막에 둔다.
+ * 이 줄들을 빼서 90바이트 SMS 에 맞추지 않는다 — 확정 통지는 **LMS 로만** 나간다(renderTemplate 의 선택 규칙 그대로 · 테스트가 잠근다).
  */
 function confirmedCustomerVariants(v: CustomerVars): MessageVariants {
-  const notices = [CANCELLATION.smsLine, WITHDRAWAL.smsLine, PAYMENT.accountLine, `자세한 내용 ${guideLink(v)}`];
-  return {
-    sms: lines(
-      `${BRAND} 확정 ${v.publicCode}`,
-      PAYMENT.line,
-      ...notices,
-      `문의 ${COMPANY.consultTel}`,
-      CONTRACT_PARTY_LINE,
-    ),
-    lms: lines(
+  return sameBody(
+    lines(
       `${BRAND} ${CONFIRMED_HEADLINE}`,
       "",
-      `접수번호 ${v.publicCode}`,
-      PAYMENT.line,
-      ...notices,
+      ...confirmedNoticeBlocks(),
       "",
-      `예약 내용은 ${checkLink(v)} 에서 접수번호와 휴대폰 뒷 4자리로 확인하실 수 있습니다.`,
-      `예약 변경·취소는 ${COMPANY.consultTel} 로 전화 주시면 도와드립니다.`,
+      section("예약 확인·변경"),
+      labeled("확인", checkLink(v)),
+      labeled("변경·취소", COMPANY.consultTel),
+      labeled("이용안내", guideLink(v)),
       "",
       CONTRACT_PARTY_LINE,
     ),
-  };
+  );
 }
 
 /**
@@ -380,10 +439,10 @@ type BuilderMap = { [K in TemplateKey]: (vars: TemplateVarsByKey[K]) => MessageV
 
 const BUILDERS: BuilderMap = {
   "created.owner.sms": ownerVariants,
-  // 사장님 번호가 없을 때의 폴백(outbox.ts planNotifications). 본문은 같고 제목만 더 붙는다.
+  // 사장님 번호가 없을 때의 폴백(outbox.ts planNotifications). 본문은 같고 제목만 더 붙는다 — 제목 = 본문 첫 줄 + 접수번호(T2-4).
   "created.owner.email": (v) => ({
     ...ownerVariants(v),
-    subject: v.intake === "quick" ? `${BRAND} 새 견적 신청(간편 접수) ${v.publicCode}` : `${BRAND} 새 예약 접수 ${v.publicCode}`,
+    subject: `${ownerHeadline(v)} ${v.publicCode}`,
   }),
   "created.customer.sms": createdCustomerVariants,
   "confirmed.customer.sms": confirmedCustomerVariants,
@@ -435,22 +494,30 @@ export function renderTemplate<K extends TemplateKey>(key: K, vars: TemplateVars
  * 알림톡은 문자와 달리 **본문을 미리 카카오에 등록하고 심사를 받는다.** 심사에 내는 형태는 변수 자리를 `#{변수명}` 으로
  * 적은 원문이고, 발송 시 그 자리에 값을 채워 보낸다. 아래 `body` 가 **그대로 심사 제출본**이다(별도 사본을 만들지 않는다).
  *
- * created 의 심사 제출본은 이렇게 생겼다(접두는 원장 brandName — 2026-10-10 간판 변경):
- *   [베스트모빌리티] 견적 신청이 접수되었습니다.
+ * created 의 심사 제출본은 이렇게 생겼다(접두는 원장 brandName — 2026-10-10 간판 변경 · T2-4 블록 서식 — 문자와 같은 순서):
+ *   [베스트모빌리티] 견적 신청 접수
  *
- *   접수번호 #{접수번호}
  *   확인 후 연락드리겠습니다.
  *
- *   접수 내용은 예약확인 화면에서 접수번호와 휴대폰 뒷 4자리로 확인하실 수 있습니다.
- *   문의 #{상담전화}
+ *   ■ 예약 확인
+ *   - 아래 '예약확인' 버튼
+ *   - 휴대폰 번호와 예약자 이름으로 조회
+ *   ■ 문의
+ *   - #{상담전화}
+ *
+ * 문자의 주소 줄 자리에는 **버튼 이름**을 적는다(아래 본문 URL 금지 규칙) — 그 이름은 buttons 의 name 과 같은 상수에서 온다.
+ * 아직 카카오 심사 전이라 재심사 비용 없이 바꿀 수 있다(계획 T2-4).
+ *
+ * T2-5(결정 5, 2026-10-10): 접수번호 줄과 변수 `#{접수번호}` 를 뺐다 — 손님은 휴대폰 번호와 이름으로 조회한다(접수번호는 내부 식별자).
+ * 아직 카카오 심사 전이라 변수 목록을 바꿀 수 있다. 남은 변수는 `#{상담전화}` 하나다.
  *
  * 링크는 본문 URL 이 아니라 **버튼(웹링크)** 으로 붙인다 — 심사에서 본문 URL 은 광고성으로 걸리기 쉽고, 버튼은
  * 템플릿 등록 시 고정 URL 로 심사받는다. 그래서 본문에는 경로를 적지 않는다. **버튼 정의는 이 파일의 `buttons` 다**
  * (R3 [P2-H] — 예전에는 "콘솔에서 등록한다" 는 주석뿐이어서 초안만으로는 심사에 낼 수 없었다). 콘솔 등록 때 이 값을 그대로 옮긴다.
  * 대체(실패 시 문자) 문안은 위 renderTemplate 의 같은 이벤트 문안을 그대로 쓴다.
  *
- * P1-7 R2 [P1-4] — 확정 알림톡에도 문자와 같은 원장 줄 셋(취소·환불 · 청약철회 제한 · 입금 계좌)을 결제 안내 바로 다음에 둔다.
- * 문자의 "자세한 내용" 링크(이용안내 GUIDE_PATH)는 알림톡에서는 버튼(웹링크)으로 등록한다(위 규칙 — P4-2 연동 때 콘솔에).
+ * P1-7 R2 [P1-4] — 확정 알림톡에도 문자와 같은 원장 줄(대금 · 입금 계좌 · 취소·환불 · 청약철회 제한)을 같은 블록(confirmedNoticeBlocks)으로 둔다.
+ * 문자의 "이용안내" 링크(GUIDE_PATH)는 알림톡에서는 버튼(웹링크)으로 등록한다(위 규칙 — P4-2 연동 때 콘솔에).
  * 전화 자리 이름은 `#{상담전화}`(옛 `#{대표전화}` — 심사 전이라 바꿨다). 채우는 값은 원장 COMPANY.consultTel 이다.
  */
 /**
@@ -478,7 +545,12 @@ export interface AlimtalkTemplate {
   buttons: readonly AlimtalkButton[];
 }
 
-const ALIMTALK_VARIABLES = ["접수번호", "상담전화"] as const;
+const ALIMTALK_VARIABLES = ["상담전화"] as const;
+
+/** 버튼 이름 — 버튼 정의와 본문의 "아래 '…' 버튼" 이 같은 상수를 쓴다(이름이 갈리면 손님이 버튼을 못 찾는다). */
+const CHECK_BUTTON = "예약확인";
+const GUIDE_BUTTON = "이용안내";
+const below = (button: string): string => `아래 '${button}' 버튼`;
 
 /** 고정 URL 웹링크 버튼 하나. */
 const webLink = (name: string, pathname: string): AlimtalkButton => ({
@@ -492,45 +564,46 @@ export const ALIMTALK_TEMPLATES: readonly AlimtalkTemplate[] = [
   {
     event: "created",
     name: "견적 신청 접수 안내",
+    // 문자 접수본과 같은 순서(T2-4) — 주소 줄 자리에 버튼 이름, 전화 자리에 #{상담전화}.
     body: lines(
-      `${BRAND} 견적 신청이 접수되었습니다.`,
+      `${BRAND} 견적 신청 접수`,
       "",
-      "접수번호 #{접수번호}",
       VERBATIM.bookingNotice,
       "",
-      "접수 내용은 예약확인 화면에서 접수번호와 휴대폰 뒷 4자리로 확인하실 수 있습니다.",
-      "문의 #{상담전화}",
+      section("예약 확인"),
+      item(below(CHECK_BUTTON)),
+      item(CHECK_GUIDE_ITEM),
+      section("문의"),
+      item("#{상담전화}"),
     ),
     variables: ALIMTALK_VARIABLES,
-    buttons: [webLink("예약확인", RESERVATION_CHECK_PATH)],
+    buttons: [webLink(CHECK_BUTTON, RESERVATION_CHECK_PATH)],
   },
   {
     event: "confirmed",
-    // 문자 확정본과 같은 순서다: 일어난 일 → 앞으로 할 일 → 맨 아래 계약 주체 줄(T2-1).
+    // 문자 확정본과 같은 순서다(T2-4): 제목 → ■ 대금 → ■ 취소·환불 → ■ 예약 확인·변경 → 맨 아래 계약 주체 줄(T2-1).
     // verbatim("확인 후 연락드리겠습니다.")은 넣지 않는다 — 확정 통지에 붙으면 아직 확정 전인 것처럼 읽힌다(T2-2 · 결정 3-2). 채널이 달라도 같다.
     name: "예약 확정 안내",
     body: lines(
       `${BRAND} ${CONFIRMED_HEADLINE}`,
       "",
-      "접수번호 #{접수번호}",
-      PAYMENT.line,
-      CANCELLATION.smsLine,
-      WITHDRAWAL.smsLine,
-      PAYMENT.accountLine,
+      ...confirmedNoticeBlocks(),
       "",
-      "예약 내용은 예약확인 화면에서 접수번호와 휴대폰 뒷 4자리로 확인하실 수 있습니다.",
-      "예약 변경·취소는 #{상담전화} 로 전화 주시면 도와드립니다.",
+      section("예약 확인·변경"),
+      labeled("확인", below(CHECK_BUTTON)),
+      labeled("변경·취소", "#{상담전화}"),
+      labeled("이용안내", below(GUIDE_BUTTON)),
       "",
       CONTRACT_PARTY_LINE,
     ),
     variables: ALIMTALK_VARIABLES,
-    // R3 [P2-H]: 문자의 "자세한 내용 <origin>/guide" 에 해당하는 링크를 **버튼으로** 담는다(본문 URL 금지 규칙은 그대로).
-    buttons: [webLink("예약확인", RESERVATION_CHECK_PATH), webLink("이용안내", GUIDE_PATH)],
+    // R3 [P2-H]: 문자의 "이용안내: <origin>/guide" 에 해당하는 링크를 **버튼으로** 담는다(본문 URL 금지 규칙은 그대로).
+    buttons: [webLink(CHECK_BUTTON, RESERVATION_CHECK_PATH), webLink(GUIDE_BUTTON, GUIDE_PATH)],
   },
 ];
 
 /**
- * 심사 제출본의 `#{…}` 자리를 채운다. 채우지 못한 자리가 남으면 throw — `#{접수번호}` 가 그대로 나간 문자는
+ * 심사 제출본의 `#{…}` 자리를 채운다. 채우지 못한 자리가 남으면 throw — `#{상담전화}` 가 그대로 나간 문자는
  * 고객에게는 오류로 보이고, 카카오에는 템플릿 불일치로 보인다.
  */
 export function renderAlimtalk(event: NotifyEvent, values: Record<string, string>): string {

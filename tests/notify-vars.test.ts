@@ -162,7 +162,8 @@ describe("1. 타입 격리 — 고객 변수는 개인정보를 담을 자리 �
     ]);
   });
 
-  test("CUSTOMER_VARS_KEYS 는 접수번호·원점 둘뿐 — 차량·구간·운행일도 없다(고객 문자는 접수번호만 쓴다)", () => {
+  // T2-5: 손님 문자는 접수번호를 더 싣지 않지만, 같은 변수를 받는 사장님 발송 실패 알림이 접수번호로 예약을 가리키므로 키는 그대로다.
+  test("CUSTOMER_VARS_KEYS 는 접수번호·원점 둘뿐 — 차량·구간·운행일도 없다(접수번호는 발송 실패 알림이 쓴다)", () => {
     expect([...CUSTOMER_VARS_KEYS].sort()).toEqual(["origin", "publicCode"]);
   });
 
@@ -670,7 +671,9 @@ describe("8. 어댑터 결합", () => {
     for (const key of TEMPLATE_KEYS) {
       const rendered = key.includes(".owner.") ? renderTemplate(key, owner as OwnerVars) : renderTemplate(key, customer as CustomerVars);
       expect(rendered.text.length).toBeGreaterThan(0);
-      expect(rendered.text).toContain(ROW.public_code);
+      // T2-5(결정 5): 손님 문자 2종은 접수번호를 싣지 않는다(예약확인 = 휴대폰 번호 + 예약자 이름). 사장님 문안은 그대로 싣는다.
+      if (key.includes(".customer.")) expect(rendered.text).not.toContain(ROW.public_code);
+      else expect(rendered.text).toContain(ROW.public_code);
     }
   });
 

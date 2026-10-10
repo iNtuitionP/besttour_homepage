@@ -457,7 +457,6 @@ describe("4-a. formatPublicDate — 순수 (ko · en · 경계 · 연도)", () =
 });
 
 const CARD_ROW: ReservationCheckRow = {
-  public_code: "A2B3C4D5",
   name: "홍길동",
   phone: "+821012345678",
   status: "confirmed",
@@ -666,14 +665,15 @@ describe("7-a. 예약확인 — 영문 화면은 영문 지명·차종", () => {
     expect(toReservationView({ ...CARD_ROW, origin_code: "XYZ" }, VEHICLE, "en").originLabel).toBe("XYZ");
   });
 
+  // T2-5: 조회 키가 휴대폰 번호 + 예약자 이름이 됐고(포트 findByPhones), 결과는 목록(views)이다. "오늘" 은 deps.now — 픽스처 운행일(10/1) 이전 시각.
   test("lookupReservation — deps.locale 로 뷰 라벨을 고르고, 차량 이름(ko·en)은 일치했을 때만 한 번 읽는다", async () => {
     const vehicleNames = vi.fn(async () => VEHICLE);
-    const db = { findByPublicCode: vi.fn(async () => CARD_ROW), vehicleNames };
-    const out = await lookupReservation({ publicCode: "A2B3C4D5", phoneLast4: "5678" }, { db, locale: "en" });
+    const db = { findByPhones: vi.fn(async () => [CARD_ROW]), vehicleNames };
+    const out = await lookupReservation({ phone: "+821012345678", name: "홍길동" }, { db, now: new Date("2026-09-13T03:00:00.000Z"), locale: "en" });
     expect(out.found).toBe(true);
     if (!out.found) throw new Error("unreachable");
-    expect(out.view.originLabel).toBe("Seoul");
-    expect(out.view.vehicleLabel).toBe("45-seat Coach");
+    expect(out.views[0].originLabel).toBe("Seoul");
+    expect(out.views[0].vehicleLabel).toBe("45-seat Coach");
     expect(vehicleNames).toHaveBeenCalledTimes(1);
     expect(vehicleNames).toHaveBeenCalledWith("bus45");
   });

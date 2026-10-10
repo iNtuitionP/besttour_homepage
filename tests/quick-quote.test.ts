@@ -480,19 +480,21 @@ describe("4. 렌더 — 모달 열림 조건 · 요약 · 동의 · verbatim · 
     expect(hp).toMatch(/autoComplete="off"|autocomplete="off"/);
   });
 
-  test("완료 화면 — 접수번호 · verbatim · 예약 확인 링크(/reservation/check) · 예약·상담 전화", () => {
-    const html = withIntl(createElement(QuickQuoteDone, { code: "ABCD2345", bookingNotice: VERBATIM.bookingNotice, tel, onClose: () => {}, titleId: "t" }));
-    expect(html).toContain("ABCD2345");
+  // T2-5(사장님 요청 1 · 결정 5, 2026-10-10): 완료 화면은 접수번호를 보이지 않는다 — 예약 확인은 휴대폰 번호 + 예약자 이름으로 한다.
+  // 예전 두 단언(접수번호가 보인다 / 허니팟이면 번호 자리 대신 noCode)을 하나로 합쳤다 — 이제 진짜 접수와 허니팟의 화면이 같다.
+  test("완료 화면 — 접수번호 없음 · '예약 확인에서 휴대폰 번호와 이름으로' 안내 · verbatim · 예약 확인 링크(/reservation/check) · 예약·상담 전화", () => {
+    const html = withIntl(createElement(QuickQuoteDone, { bookingNotice: VERBATIM.bookingNotice, tel, onClose: () => {}, titleId: "t" }));
+    expect(html).toContain('data-testid="quick-quote-check-hint"');
+    expect(html).toContain("휴대폰 번호와 예약자 이름으로 확인하실 수 있습니다.");
+    expect(html).not.toContain('data-testid="quick-quote-code"');
+    expect(html).not.toContain('data-testid="quick-quote-nocode"');
+    expect(html).not.toContain("접수번호");
     expect(html).toContain(VERBATIM.bookingNotice);
     expect(html).toMatch(/href="\/reservation\/check"/);
     expect(html).toContain(tel.href);
     expect(html).toContain(tel.display);
-  });
-
-  test("완료 화면(허니팟 가짜 성공 — 접수번호 없음) → 번호 자리 없이 안내만", () => {
-    const html = withIntl(createElement(QuickQuoteDone, { code: null, bookingNotice: VERBATIM.bookingNotice, tel, onClose: () => {}, titleId: "t" }));
-    expect(html).not.toContain('data-testid="quick-quote-code"');
-    expect(html).toContain('data-testid="quick-quote-nocode"');
+    // 완료 화면 컴포넌트는 접수번호를 받지 않는다(진짜 접수와 허니팟 가짜 성공의 화면이 같다)
+    expect(codeOf("components/quote/QuickQuoteModal.tsx")).not.toMatch(/result\.publicCode|code=\{/);
   });
 });
 
