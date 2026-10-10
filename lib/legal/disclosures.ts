@@ -112,6 +112,29 @@ export const CANCELLATION = {
   source: "사장님 답변 2026-09-21 A-1 (사용자 경유)",
 } as const;
 
+// ── 취소·환불 개정(사장님 요청 16 · 결정 4 B안 · 2026-10-10 컨트롤러 작성 · 독립 리뷰 서명 대상) ─────────────────
+// 손님에게 불리한 변경이라 약관 제3조(불리한 변경은 30일 전 공지)에 따라 **개정 공지 게시일 + 30일** 부터 적용한다.
+// 시행일 전 접수분은 위 CANCELLATION·WITHDRAWAL(옛 규정)을 그대로 적용한다 — 고르는 로직은 lib/legal 밖의 헬퍼가 맡는다
+// (이 파일은 상수만 · 함수 export 0). 청약철회 제한 시작점은 '운행일 2일 전부터' 그대로다(B안 — 6일 전으로 옮기면
+// 운행 6일 이내에 확정된 예약은 법정 7일 청약철회권이 통째로 막힌다: 2026-09-11 리뷰 M2 와 같은 구조).
+// 공지 게시일이 바뀌면 이 날짜도 함께 바꾼다(게시일 + 30일).
+export const REFUND_POLICY_EFFECTIVE_FROM = "2026-11-09" as const;
+
+export const CANCELLATION_NEXT = {
+  basis: "deposit",
+  tiers: [
+    { when: "운행일 7일 전까지", refundPct: 100, label: "계약금 전액 환불" },
+    { when: "운행일 6일 전부터 운행 당일까지", refundPct: 0, label: "계약금 환불 불가" },
+  ],
+  referenceTime: "기준은 운행일의 날짜(한국 시간)입니다. 예) 20일 운행이면 13일 23시 59분까지 취소하시면 계약금 전액을 돌려드리고, 14일부터는 돌려드리지 않습니다.",
+  depositNote: "계약금은 10만원이며, 잔금과 지급 방법은 예약 확정 시 안내드립니다.",
+  scope:
+    "위 규정은 고객 사정으로 취소하시는 경우에 적용되며, 계약 후 7일 이내의 청약철회 등 법에 따른 권리와, 제공된 서비스가 표시·광고 또는 계약 내용과 다른 경우의 권리에는 영향을 주지 않습니다.",
+  smsLine: "취소·환불 : 운행일 7일 전까지 취소 시 계약금 전액 환불, 6일 전부터는 계약금 환불 불가(고객 사정으로 취소하는 경우)",
+  smsItem: "운행일 7일 전까지 취소 시 계약금 전액 환불, 6일 전부터는 계약금 환불 불가(고객 사정으로 취소하는 경우)",
+  source: "사장님 요청 16(2026-10-10, 사용자 경유) · 결정 4 B안 · 약관 제3조 30일 공지",
+} as const;
+
 // ── 청약철회 제한 — 전자상거래법 §17②·③·⑥. 홈 간편 견적 모달(필수 체크, P3-8) · 이용안내 · 약관 · 확정 통지에 싣는다 ──
 // P1-7 R2 [P1-1]: 제한은 실제 손해가 나는 운행 2일 전부터로 좁히고 조건부로 쓴다. §17③ 권리(표시·광고·계약과 다른 경우)를 남긴다.
 // 영문 화면은 noticeEn(번역본 — 한국어가 법적 원문이라는 문장이 그 안에 있다)을 보여 주고 한국어 원문을 lang="ko" 로 함께 둔다.
@@ -140,6 +163,33 @@ export const WITHDRAWAL = {
     restriction: "From 2 days before the travel date, your right of withdrawal may be restricted even within 7 days of booking.",
   },
   source: "사장님 답변 2026-09-21 A-2 · 전자상거래법 §17②·③·⑥ · astra P1-7 리뷰 반영 · summaryEn: 컨트롤러 2026-09-27(P7-3, 독립 리뷰 서명)",
+} as const;
+
+// 개정 규정(REFUND_POLICY_EFFECTIVE_FROM 부터 접수분)의 청약철회 고지 — WITHDRAWAL 과 같은 모양.
+// 제한 시작점(운행일 2일 전)과 동의 문구는 그대로다. 달라진 것: 환불 구간이 7일 전까지로 바뀌어, 6일 전 ~ 3일 전 사이에도
+// 계약 후 7일 이내라면 법정 청약철회(§17①)로 지급한 대금 전액을 돌려받을 수 있다는 사실을 밝힌다(규정 표만 보면 "환불 불가"로 읽히므로).
+export const WITHDRAWAL_NEXT = {
+  notice:
+    "이 서비스는 고객이 정한 운행일에 맞춰 차량을 따로 배차하는 전세버스 대절 알선 서비스입니다. 운행일 7일 전까지는 계약 시기와 관계없이 언제든 취소하시면 계약금 전액을 돌려드립니다. 운행일 6일 전부터 취소하시면 계약금을 돌려드리지 않지만, 계약 후 7일 이내라면 운행일 3일 전까지는 「전자상거래 등에서의 소비자보호에 관한 법률」 제17조 제1항에 따라 청약을 철회하고 지급하신 대금 전액을 돌려받으실 수 있습니다. 운행일 2일 전부터는 배차한 차량을 다시 배정하기 어려워 같은 법 제17조 제2항에 따라 청약철회가 제한될 수 있으며, 그 경우 계약 후 7일 이내라도 위 취소·환불 규정이 적용됩니다. 다만 제공된 서비스가 표시·광고 또는 계약 내용과 다른 경우에는 법에 따라 청약철회 등을 하실 수 있습니다.",
+  noticeEn:
+    "This charter is arranged individually for the travel date you choose. If you cancel at least 7 days before the travel date, we refund your full deposit, no matter when you booked. If you cancel from 6 days before the travel date, the deposit is not refunded; however, within 7 days of your booking being confirmed you may still withdraw and get back everything you paid up to 3 days before the travel date, under Article 17(1) of Korea's Act on the Consumer Protection in Electronic Commerce. Days are counted by calendar date in Korea time. From 2 days before the travel date, the vehicle assigned to you is hard to reassign, so your right of withdrawal may be restricted under Article 17(2) of the same Act; in that case the refund policy above applies even within 7 days of booking. The policy above covers cancellations you request; it does not affect your rights under the law, for example if the service provided differs from what was advertised or agreed. The Korean text is the legally binding version.",
+  consentLabel: "위 청약철회 제한 내용을 확인했으며, 취소·환불이 위 규정에 따르는 데 동의합니다. (필수)",
+  consentLabelEn: "I have read the restriction on withdrawal above and agree that cancellations and refunds follow the policy above. (required)",
+  // 릴리스 C 리뷰 P1-1: 개정 판은 환불 구간(7일 전)과 철회 제한(2일 전) 사이에 6~3일 전 구간이 생긴다. 확정 문자(계약 내용 서면)가
+  // 그 구간의 §17① 철회권을 지우지 않게 한 줄에 함께 적는다(옛 판은 3일/2일이 맞닿아 이 문장이 필요 없었다).
+  smsLine: "계약 후 7일 이내라면 운행일 3일 전까지는 청약을 철회하고 지급하신 대금 전액을 돌려받으실 수 있으며, 운행일 2일 전부터는 청약철회가 제한될 수 있습니다.",
+  summaryEn: {
+    tiers: [
+      "At least 7 days before the travel date: full deposit refund",
+      "From 6 days before the travel date through the travel day: no deposit refund",
+    ],
+    referenceTime:
+      "Days are counted by calendar date in Korea time. For example, for a trip on the 20th, you get your full deposit back if you cancel by 11:59 pm on the 13th; from the 14th, the deposit is not refunded.",
+    scope:
+      "These rules cover cancellations you request. They do not affect your legal rights, such as withdrawal within 7 days of booking, or your rights if the service provided differs from what was advertised or agreed.",
+    restriction: "From 2 days before the travel date, your right of withdrawal may be restricted even within 7 days of booking.",
+  },
+  source: "사장님 요청 16(2026-10-10) · 결정 4 B안 · 전자상거래법 §17①·②·③ · 컨트롤러 작성(독립 리뷰 서명 대상)",
 } as const;
 
 // ── 개인정보 수집·이용 4대 고지 (PIPA §15②) ─────────────────────────────

@@ -40,6 +40,7 @@ import {
 } from "@/lib/notify/templates";
 import { domesticPhoneText } from "@/lib/phone-format";
 
+import { CREATED_BEFORE_REFUND_CHANGE } from "./helpers/refund-policy-fixtures";
 import { RETIRED_PHONE } from "./helpers/retired-phones";
 import { stripComments } from "./helpers/strip-comments";
 
@@ -64,7 +65,9 @@ const BM_WORDS = new RegExp(["나가는 " + "버스", "태우고 " + "나가", "
 
 const ORIGIN = "https://bestour.co.kr";
 
-const CUSTOMER: CustomerVars = { publicCode: "BT12ABCD", origin: ORIGIN };
+// OF-T2-3: 고객 변수에 접수 시각이 생겼다. 이 파일의 기존 단언(원장 CANCELLATION.smsItem · WITHDRAWAL.smsLine 줄)은 옛 규정을 잠그므로
+// 시행일 전 접수로 박는다 — 오늘 날짜와 무관하게 같은 판. 개정 판은 tests/refund-policy.test.ts 가 같은 강도로 본다.
+const CUSTOMER: CustomerVars = { publicCode: "BT12ABCD", origin: ORIGIN, createdAt: CREATED_BEFORE_REFUND_CHANGE };
 
 /** 옛 위저드 접수분(intake='wizard') — 문안이 바뀌지 않았음을 이 픽스처로 잠근다. */
 const OWNER: OwnerVars = {
@@ -166,9 +169,9 @@ describe("1. verbatim 보존", () => {
 
   test("변수 치환 뒤에도 — 접수 문자의 verbatim 은 그대로, 확정 문자에는 생기지 않는다", () => {
     const odd: CustomerVars[] = [
-      { publicCode: "", origin: "" },
-      { publicCode: "확인 후", origin: "https://example.test/a?b=c&d=e" },
-      { publicCode: "A".repeat(200), origin: ORIGIN },
+      { publicCode: "", origin: "", createdAt: CREATED_BEFORE_REFUND_CHANGE },
+      { publicCode: "확인 후", origin: "https://example.test/a?b=c&d=e", createdAt: CREATED_BEFORE_REFUND_CHANGE },
+      { publicCode: "A".repeat(200), origin: ORIGIN, createdAt: CREATED_BEFORE_REFUND_CHANGE },
     ];
     for (const vars of odd) {
       const where = vars.publicCode.slice(0, 12);
@@ -287,7 +290,9 @@ describe("2. SMS/LMS 선택", () => {
 
   // T2-5: 고객 접수 문자는 접수번호를 더 싣지 않으므로, 길이를 부풀리는 변수를 접수번호 대신 원점(링크)으로 바꿨다(단언은 그대로).
   test("LMS 상한을 넘기면 조용히 자르지 않고 throw 한다 — verbatim 을 잘라 보내는 일은 없다", () => {
-    expect(() => renderTemplate("created.customer.sms", { publicCode: "BT12ABCD", origin: `https://${"a".repeat(LMS_BYTE_LIMIT)}.test` })).toThrow(/LMS/);
+    expect(() =>
+      renderTemplate("created.customer.sms", { publicCode: "BT12ABCD", origin: `https://${"a".repeat(LMS_BYTE_LIMIT)}.test`, createdAt: CREATED_BEFORE_REFUND_CHANGE }),
+    ).toThrow(/LMS/);
   });
 });
 
@@ -719,14 +724,16 @@ describe("7. 알림톡 템플릿", () => {
     const values = { 접수번호: "BT12ABCD", 상담전화: COMPANY.consultTel };
     for (const t of ALIMTALK_TEMPLATES) {
       expect([...t.variables], t.event).toEqual(["상담전화"]);
-      const out = renderAlimtalk(t.event, values);
+      // OF-T2-3: 접수 시각(created_at)을 함께 넘긴다 — 확정 알림톡은 접수일 판의 제출본을 고른다(시행일 전 접수 = ALIMTALK_TEMPLATES).
+      const out = renderAlimtalk(t.event, values, CREATED_BEFORE_REFUND_CHANGE);
+      expect(out).toBe(t.variables.reduce((body, name) => body.split(`#{${name}}`).join(values[name as "상담전화"]), t.body));
       expect(out).not.toMatch(/#\{/);
       if (t.event === "created") expect(hex(out), t.event).toContain(hex(VERBATIM.bookingNotice));
       else expect(hex(out), t.event).not.toContain(hex(VERBATIM.bookingNotice));
       expect(out).not.toContain("BT12ABCD");
       expect(out).toContain(COMPANY.consultTel);
     }
-    expect(() => renderAlimtalk("created", {})).toThrow();
+    expect(() => renderAlimtalk("created", {}, CREATED_BEFORE_REFUND_CHANGE)).toThrow(/채우지 못한 변수/);
   });
 
   test("알림톡 본문은 1,000자 이하다 (카카오 심사 상한)", () => {
@@ -1051,7 +1058,7 @@ describe("T2-4. 블록 서식 — 승인 초안과 줄 단위 일치", () => {
     for (const t of ALIMTALK_TEMPLATES) {
       for (const m of t.body.matchAll(/아래 '([^']+)' 버튼/g)) expect(t.buttons.map((b) => b.name), `${t.event}: ${m[1]}`).toContain(m[1]);
     }
-    expect(renderAlimtalk("created", { 상담전화: COMPANY.consultTel }).split("\n")).toContain(`- ${COMPANY.consultTel}`);
+    expect(renderAlimtalk("created", { 상담전화: COMPANY.consultTel }, CREATED_BEFORE_REFUND_CHANGE).split("\n")).toContain(`- ${COMPANY.consultTel}`);
   });
 
   test("LMS 상한 — 최대 입력(성명 30자 · 차량 40자 · 인원 3자리)에서도 2,000바이트 아래", () => {

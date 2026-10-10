@@ -32,7 +32,7 @@ import { withdrawalParagraphs } from "@/components/legal/withdrawal-text";
 import { F } from "@/components/quote/fields";
 import { submitBlock } from "@/components/quote/submit-gate";
 import { ledgerUi } from "@/lib/i18n/ledger-ui";
-import { CANCELLATION, TERMS, WITHDRAWAL } from "@/lib/legal/disclosures";
+import { CANCELLATION, CANCELLATION_NEXT, TERMS, WITHDRAWAL, WITHDRAWAL_NEXT } from "@/lib/legal/disclosures";
 import { consentFields } from "@/lib/reservations/consent";
 import { createReservation, type ReservationDb } from "@/lib/reservations/create";
 import { BOOLEAN_FORM_FIELDS, RESERVATION_FORM_FIELDS, formDataToRaw } from "@/lib/reservations/formData";
@@ -192,8 +192,11 @@ describe("2. 간편 견적 모달 — 체크하지 않으면 제출할 수 없�
   });
 
   test("고지 — 위저드는 원장 WITHDRAWAL.notice·noticeEn 을 취소·환불 규정 바로 아래에서 로케일에 맞춰 렌더한다", () => {
+    // OF-T2-3: 문구는 렌더 시각의 판(refundPolicyAt → withdrawal)에서 온다 — 시행일 전 WITHDRAWAL, 그날부터 WITHDRAWAL_NEXT.
     const src = stripComments(read("components/quote/WithdrawalNotice.tsx"), "WithdrawalNotice.tsx");
-    expect(src).toMatch(/<WithdrawalRestrictionText[\s\S]*?notice=\{WITHDRAWAL\.notice\}[\s\S]*?noticeEn=\{WITHDRAWAL\.noticeEn\}[\s\S]*?locale=\{locale\}/);
+    expect(src).toMatch(/const \{ cancellation, withdrawal \} = policy;/);
+    expect(src).toMatch(/const policy = refundPolicyAt\(at\);/);
+    expect(src).toMatch(/<WithdrawalRestrictionText[\s\S]*?notice=\{withdrawal\.notice\}[\s\S]*?noticeEn=\{withdrawal\.noticeEn\}[\s\S]*?locale=\{locale\}/);
     const iCancel = src.indexOf('data-legal="cancellation"');
     const iNotice = src.indexOf("<WithdrawalRestrictionText");
     expect(iCancel).toBeGreaterThan(-1);
@@ -211,11 +214,13 @@ describe("2. 간편 견적 모달 — 체크하지 않으면 제출할 수 없�
     ]);
   });
 
-  test("위저드·이용안내·약관이 같은 컴포넌트로 같은 원장 문구를 렌더한다 (세 곳이 갈라지지 않는다)", () => {
+  // OF-T2-3: 세 곳 모두 같은 판 고르기(refundPolicyAt)의 withdrawal 을 같은 컴포넌트로 렌더한다 — 판이 갈라지지도 않는다.
+  test("위저드·이용안내·약관이 같은 컴포넌트로 같은 원장 문구(렌더 시각의 판)를 렌더한다 (세 곳이 갈라지지 않는다)", () => {
     for (const f of ["components/quote/WithdrawalNotice.tsx", "app/[locale]/(legal)/guide/page.tsx", "app/[locale]/(legal)/terms/page.tsx"]) {
       const src = stripComments(read(f), f);
-      expect(src, f).toMatch(/notice=\{WITHDRAWAL\.notice\}/);
-      expect(src, f).toMatch(/noticeEn=\{WITHDRAWAL\.noticeEn\}/);
+      expect(src, f).toMatch(/notice=\{withdrawal\.notice\}/);
+      expect(src, f).toMatch(/noticeEn=\{withdrawal\.noticeEn\}/);
+      expect(src, f).toMatch(/refundPolicyAt\((now|at)\)/);
     }
   });
 });
@@ -273,6 +278,59 @@ describe("2-c. 청약철회·취소환불 문구 — 절대 표현 0 · 조건�
   });
 
   // ---------------------------------------------------------------------------
+  // OF-T2-3 — 개정 판(CANCELLATION_NEXT · WITHDRAWAL_NEXT, 2026-11-09 접수분부터)도 같은 강도로 잠근다.
+  // B안: 환불 구간만 7일/6일로 바뀌고 청약철회 제한 시작점은 운행일 2일 전 그대로 — 6일~3일 전에는 §17① 철회권이 살아 있다고 밝힌다.
+  // ---------------------------------------------------------------------------
+  const nextTexts: Array<[string, string]> = [
+    ["WITHDRAWAL_NEXT.notice", WITHDRAWAL_NEXT.notice],
+    ["WITHDRAWAL_NEXT.smsLine", WITHDRAWAL_NEXT.smsLine],
+    ["CANCELLATION_NEXT.referenceTime", CANCELLATION_NEXT.referenceTime],
+    ["CANCELLATION_NEXT.depositNote", CANCELLATION_NEXT.depositNote],
+    ["CANCELLATION_NEXT.smsLine", CANCELLATION_NEXT.smsLine],
+    ["CANCELLATION_NEXT.scope", CANCELLATION_NEXT.scope],
+    ...CANCELLATION_NEXT.tiers.map((t, i) => [`CANCELLATION_NEXT.tiers[${i}]`, `${t.when} ${t.label}`] as [string, string]),
+  ];
+
+  test.for(nextTexts)("개정 판 %s — 절대 표현이 없다", ([, text]) => {
+    for (const w of ABSOLUTE) expect(text.includes(w), w).toBe(false);
+  });
+
+  test("개정 판 — 조건부(제17조 제2항 · '제한될 수 있으며' · '그 경우') · §17③ 권리 · §17① 철회권(6일~3일 전) 명시", () => {
+    expect(WITHDRAWAL_NEXT.notice).toContain("제17조 제2항에 따라 청약철회가 제한될 수 있으며, 그 경우");
+    expect(WITHDRAWAL_NEXT.notice).toContain("표시·광고 또는 계약 내용과 다른 경우에는 법에 따라 청약철회 등을 하실 수 있습니다");
+    expect(WITHDRAWAL_NEXT.notice).toContain("계약 후 7일 이내라면 운행일 3일 전까지는");
+    // 릴리스 C 리뷰 P2-1: §18① — 철회 때 돌려줄 것은 계약금이 아니라 지급받은 대금 전부
+    expect(WITHDRAWAL_NEXT.notice).toContain("제17조 제1항에 따라 청약을 철회하고 지급하신 대금 전액을 돌려받으실 수 있습니다");
+    expect(WITHDRAWAL_NEXT.noticeEn).toContain("get back everything you paid");
+    expect(WITHDRAWAL_NEXT.noticeEn).toContain("within 7 days of your booking being confirmed");
+    expect(WITHDRAWAL_NEXT.noticeEn).toContain("Article 17(1)");
+    expect(WITHDRAWAL_NEXT.noticeEn).toContain("it does not affect your rights under the law, for example if the service provided differs from what was advertised or agreed");
+    expect(WITHDRAWAL_NEXT.noticeEn.endsWith("The Korean text is the legally binding version.")).toBe(true);
+  });
+
+  test("개정 판 — 기한이 서로 같다: 7일 전까지 전액 · 6일 전부터 불가 · 제한은 2일 전부터(B안)", () => {
+    expect(CANCELLATION_NEXT.tiers[0].when).toBe("운행일 7일 전까지");
+    expect(CANCELLATION_NEXT.tiers[1].when.startsWith("운행일 6일 전부터")).toBe(true);
+    expect(WITHDRAWAL_NEXT.notice).toContain("운행일 7일 전까지는");
+    expect(WITHDRAWAL_NEXT.notice).toContain("운행일 6일 전부터 취소하시면");
+    expect(WITHDRAWAL_NEXT.notice).toContain("운행일 2일 전부터는");
+    // 릴리스 C 리뷰 P1-1: 개정 판 문자 한 줄은 §17① 구간(3일 전까지 철회)을 먼저, 제한(2일 전부터)을 뒤에 — 둘 다 문장 안에 있다
+    expect(WITHDRAWAL_NEXT.smsLine).toContain("계약 후 7일 이내라면 운행일 3일 전까지는 청약을 철회하고 지급하신 대금 전액을 돌려받으실 수 있으며");
+    expect(WITHDRAWAL_NEXT.smsLine.endsWith("운행일 2일 전부터는 청약철회가 제한될 수 있습니다.")).toBe(true);
+    expect(CANCELLATION_NEXT.smsLine).toContain("운행일 7일 전까지 취소 시 계약금 전액 환불");
+    expect(CANCELLATION_NEXT.smsLine).toContain("6일 전부터는 계약금 환불 불가");
+    expect(WITHDRAWAL_NEXT.noticeEn).toContain("at least 7 days before the travel date");
+    expect(WITHDRAWAL_NEXT.noticeEn).toContain("From 2 days before the travel date");
+  });
+
+  test("🔴 개정 판 범위 문장 — 고객 사정 취소에 적용 · 7일 이내 청약철회 등 법정 권리 영향 없음 · 문자 한 줄에도 범위", () => {
+    expect(CANCELLATION_NEXT.scope).toContain("고객 사정으로 취소하시는 경우에 적용되며");
+    expect(CANCELLATION_NEXT.scope).toContain("계약 후 7일 이내의 청약철회 등 법에 따른 권리");
+    expect(CANCELLATION_NEXT.scope).toContain("권리에는 영향을 주지 않습니다");
+    expect(CANCELLATION_NEXT.smsLine).toContain("고객 사정으로 취소하는 경우");
+  });
+
+  // ---------------------------------------------------------------------------
   // R3 [P2-F] — 표·요약은 그 자체로 절대적으로 읽힌다("계약금 환불 불가"). 범위 문장이 표 바로 아래에 함께 있어야 한다.
   // ---------------------------------------------------------------------------
   test("🔴 취소·환불 범위 문장 — 고객 사정 취소에 적용 · 법에 따른 권리는 영향 없음", () => {
@@ -286,20 +344,23 @@ describe("2-c. 청약철회·취소환불 문구 — 절대 표현 0 · 조건�
   test("🔴 취소·환불 표가 나오는 화면마다 표 바로 아래 범위 문장이 있다 (간편 견적 모달 · /guide · 약관 제7조)", () => {
     // P7-3: 모달은 접힌 상태에 2단계 목록과 **그 바로 아래** 범위 문장만 보인다. 날짜 기준(referenceTime)은 "자세히 보기" 안으로 갔다 —
     // 그래서 모달에서 범위 문장 바로 위는 기준 시각이 아니라 목록이다(렌더 결과의 인접성은 tests/quote-disclosure.test.ts §3).
+    // OF-T2-3: 원장 CANCELLATION 대신 렌더 시각의 판(refundPolicyAt → cancellation)을 읽는다 — 소스 바늘을 그 이름으로 바꿨다(자리 단언은 그대로).
+    // /guide 의 시행일 전 '변경 예정' 묶음도 같은 순서(표 → 기준 → 범위)다 — 렌더 순서는 tests/refund-policy.test.ts §5-c.
     const wizard = stripComments(read("components/quote/WithdrawalNotice.tsx"), "WithdrawalNotice.tsx");
-    expect(wizard).toMatch(/CANCELLATION\.scope/);
-    expect(wizard.indexOf("CANCELLATION.tiers")).toBeLessThan(wizard.indexOf("CANCELLATION.scope"));
-    expect(wizard).toMatch(/CANCELLATION\.referenceTime/);
-    expect(wizard.indexOf("CANCELLATION.scope")).toBeLessThan(wizard.indexOf("<WithdrawalRestrictionText"));
+    expect(wizard).toMatch(/cancellation\.scope/);
+    expect(wizard.indexOf("cancellation.tiers")).toBeLessThan(wizard.indexOf("cancellation.scope"));
+    expect(wizard).toMatch(/cancellation\.referenceTime/);
+    expect(wizard.indexOf("cancellation.scope")).toBeLessThan(wizard.indexOf("<WithdrawalRestrictionText"));
 
     const guide = stripComments(read("app/[locale]/(legal)/guide/page.tsx"), "guide/page.tsx");
-    expect(guide).toMatch(/CANCELLATION\.scope/);
-    expect(guide.indexOf("CANCELLATION.referenceTime")).toBeLessThan(guide.indexOf("CANCELLATION.scope"));
-    expect(guide.indexOf("CANCELLATION.scope")).toBeLessThan(guide.indexOf("<WithdrawalRestrictionText"));
+    expect(guide).toMatch(/cancellation\.scope/);
+    expect(guide.indexOf("cancellation.referenceTime")).toBeLessThan(guide.indexOf("cancellation.scope"));
+    expect(guide.indexOf("cancellation.scope")).toBeLessThan(guide.indexOf("<WithdrawalRestrictionText"));
+    expect(guide.indexOf("next.cancellation.referenceTime")).toBeLessThan(guide.indexOf("next.cancellation.scope"));
 
     // 약관에는 표가 없고 제7조가 "이용안내에 게시된 취소·환불 규정에 따릅니다" 라고만 한다 — 그 조 아래에 같은 범위 문장을 붙인다
     const terms = stripComments(read("app/[locale]/(legal)/terms/page.tsx"), "terms/page.tsx");
-    expect(terms).toMatch(/CANCELLATION\.scope/);
+    expect(terms).toMatch(/cancellation\.scope/);
     expect(terms).toMatch(/CANCEL_ARTICLE_NO\s*=\s*7/);
 
     // 세 곳 모두 같은 data-legal 로 표시해 렌더 실측이 찾을 수 있게 한다

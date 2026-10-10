@@ -37,6 +37,7 @@ import type { NewOutboxRow, OutboxRow } from "@/lib/types";
 import type { TemplateVarsPort } from "@/lib/notify/solapi";
 import { renderTemplate, type CustomerVars, type OwnerVars } from "@/lib/notify/templates";
 
+import { CREATED_BEFORE_REFUND_CHANGE } from "./helpers/refund-policy-fixtures";
 import { stripComments } from "./helpers/strip-comments";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
@@ -53,9 +54,11 @@ const RID = "00000000-0000-4000-8000-000000000042";
 const CUSTOMER_NAME = "홍길동";
 const CUSTOMER_PHONE_IN_BODY = "010-1234-5678";
 
-const CUSTOMER_VARS: CustomerVars = { publicCode: "ABCD2345", origin: "https://example.test" };
+// OF-T2-3: 고객 변수에 접수 시각이 생겼다. 사장님 변수는 그것을 상속하지 않으므로 펼칠 때 뺀다.
+const CUSTOMER_VARS: CustomerVars = { publicCode: "ABCD2345", origin: "https://example.test", createdAt: CREATED_BEFORE_REFUND_CHANGE };
 const OWNER_VARS: OwnerVars = {
-  ...CUSTOMER_VARS,
+  publicCode: CUSTOMER_VARS.publicCode,
+  origin: CUSTOMER_VARS.origin,
   reservationId: RID,
   name: CUSTOMER_NAME,
   phone: CUSTOMER_PHONE_IN_BODY,

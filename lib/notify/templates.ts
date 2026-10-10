@@ -41,9 +41,16 @@
  * 위 사정(어느 문안도 90바이트에 들어가지 않는다) 때문에 **SMS 판과 LMS 판이 같은 본문**이다 — 보낼 한 통이 곧 승인 초안이다.
  * LMS 제목은 따로 두지 않았다(위험 #12 — 둔다면 `subject` 가 아니라 별도 필드여야 한다. `subject` 는 메일 가드가 본다).
  */
-import { CANCELLATION, COMPANY, PAYMENT, VERBATIM, WITHDRAWAL } from "../legal/disclosures";
+import { COMPANY, PAYMENT, VERBATIM } from "../legal/disclosures";
 import { domesticPhoneText } from "../phone-format";
 import { formatPublicDate, type PublicDateLabels } from "../public-date";
+import {
+  REFUND_POLICY_EFFECTIVE_DATE,
+  refundPolicyAt,
+  refundPolicyFor,
+  type RefundPolicy,
+  type RefundPolicyEdition,
+} from "../refund-policy";
 import { FALLBACK_SITE_ORIGIN } from "../site-url";
 import type { NotifyEvent } from "../types";
 import { ALL_TEMPLATE_KEYS, MAX_ATTEMPTS, type TemplateKey } from "./outbox";
@@ -129,10 +136,19 @@ export interface CustomerVars {
   publicCode: string;
   /** `https://…` 형식의 사이트 원점(끝 슬래시 없음). */
   origin: string;
+  /**
+   * reservations.created_at — 접수 시각(시간대가 붙은 ISO 인스턴트, DB 값 그대로). OF-T2-3: 확정 문자·확정 알림톡의 취소·환불 줄은
+   * **이 시각의 KST 날짜**로 옛/개정 규정을 고른다(lib/refund-policy.ts refundPolicyAt) — 보내는 날이 아니라 손님이 동의하고 접수한 날이다.
+   * 개인정보가 아니다(시각 하나). 읽을 수 없는 값이면 확정 문안이 throw 한다(판을 짐작하지 않는다).
+   */
+  createdAt: string;
 }
 
-/** 사장님 접수 알림이 받는 것. 여기만 원문 개인정보를 싣는다 — 사장님은 전화를 걸어야 한다(마스킹하지 않는다). */
-export interface OwnerVars extends CustomerVars {
+/**
+ * 사장님 접수 알림이 받는 것. 여기만 원문 개인정보를 싣는다 — 사장님은 전화를 걸어야 한다(마스킹하지 않는다).
+ * 접수 시각(createdAt)은 상속하지 않는다 — 사장님 문안은 취소·환불 줄이 없어 쓰지 않고, 쓰지 않는 값은 읽지 않는다(vars.ts).
+ */
+export interface OwnerVars extends Omit<CustomerVars, "createdAt"> {
   /** reservations.id (uuid) — 관리자 상세 링크에 쓴다. */
   reservationId: string;
   name: string;
@@ -158,12 +174,13 @@ export interface OwnerVars extends CustomerVars {
 }
 
 /**
- * 키 → 그 키가 요구하는 입력. 고객 키에 OwnerVars 를 넘길 수는 있어도 그 반대는 컴파일이 막는다.
+ * 키 → 그 키가 요구하는 입력. 고객 키에 OwnerVars 를 넘기는 것도, 그 반대도 컴파일이 막는다
+ * (OF-T2-3 — 고객 변수에 접수 시각 createdAt 이 생겼고 사장님 변수는 그것을 상속하지 않는다).
  *
  * 실패 알림 2종(P4-4)이 `OwnerVars` 가 아니라 **`CustomerVars`** 인 것은 실수가 아니라 이 태스크의 핵심이다:
  * 그 문안은 사장님께 가지만 *"무엇이 실패했는지"* 만 말하므로 고객 이름·전화를 다시 실을 이유가 없고,
  * `CustomerVars` 에는 그 필드가 **타입에 없어** 실릴 자리 자체가 없다(lib/notify/vars.ts 와 같은 수법 —
- * 규율이 아니라 구조로 막는다). 부수 효과로 어댑터가 사장님 조회(9컬럼)를 하지 않고 `public_code` 한 컬럼만 읽는다.
+ * 규율이 아니라 구조로 막는다). 부수 효과로 어댑터가 사장님 조회(9컬럼)를 하지 않고 `public_code`·`created_at` 두 컬럼만 읽는다(created_at 은 OF-T2-3).
  */
 export interface TemplateVarsByKey {
   "created.owner.sms": OwnerVars;
@@ -355,8 +372,12 @@ function createdCustomerVariants(v: CustomerVars): MessageVariants {
  */
 export const CONFIRMED_HEADLINE = "예약 확정 안내";
 
-/** 확정 통지의 `■ 대금` · `■ 취소·환불` 블록 — 문자·알림톡이 같다. 줄은 전부 원장에서 온다(지어내지 않는다). */
-const confirmedNoticeBlocks = (): string[] => [
+/**
+ * 확정 통지의 `■ 대금` · `■ 취소·환불` 블록 — 문자·알림톡이 같다. 줄은 전부 원장에서 온다(지어내지 않는다).
+ * OF-T2-3: 취소·환불 줄은 **그 예약의 접수일 판**(policy — 문자는 refundPolicyAt(createdAt), 알림톡은 판별 제출본)이다.
+ * 청약철회 줄(smsLine)은 두 판이 같은 문장이지만 같은 판에서 읽는다(한쪽만 바뀌는 날 어긋나지 않게).
+ */
+const confirmedNoticeBlocks = ({ cancellation, withdrawal }: RefundPolicy): string[] => [
   section("대금"),
   item(PAYMENT.smsDeposit),
   item(PAYMENT.smsBalance),
@@ -366,8 +387,8 @@ const confirmedNoticeBlocks = (): string[] => [
   "",
   section("취소·환불"),
   // 원장 smsItem = smsLine 에서 머리말 "취소·환불 : " 만 뺀 같은 문장 — 섹션 제목과 낱말이 두 번 나오지 않게(T2-4 후속, 컨트롤러 원장 추가).
-  item(CANCELLATION.smsItem),
-  item(WITHDRAWAL.smsLine),
+  item(cancellation.smsItem),
+  item(withdrawal.smsLine),
 ];
 
 /**
@@ -378,13 +399,16 @@ const confirmedNoticeBlocks = (): string[] => [
  * 청약철회 제한 · 이용안내(절대 URL) 줄은 모두 남는다. 대금 줄은 원장 PAYMENT.sms*(약관 제6조와 같은 뜻 — 컨트롤러 원장 작성),
  * 취소 줄은 원장 CANCELLATION.smsItem(smsLine 에서 머리말만 뺀 같은 문장), 청약철회 줄은 원장 WITHDRAWAL.smsLine 그대로. 맨 아래는 계약 주체 줄(CONTRACT_PARTY_LINE — T2-1) — 서명처럼 마지막에 둔다.
  * 이 줄들을 빼서 90바이트 SMS 에 맞추지 않는다 — 확정 통지는 **LMS 로만** 나간다(renderTemplate 의 선택 규칙 그대로 · 테스트가 잠근다).
+ *
+ * OF-T2-3 — 취소·환불 줄은 **접수 시각(v.createdAt)의 KST 날짜**로 판을 고른다: 시행일(원장 REFUND_POLICY_EFFECTIVE_FROM) 전 접수분은
+ * 옛 규정(3일/2일), 시행일부터 접수분은 개정 규정(7일/6일). 확정이 시행일 뒤여도 옛 규정에 동의한 손님은 옛 문장을 받는다.
  */
 function confirmedCustomerVariants(v: CustomerVars): MessageVariants {
   return sameBody(
     lines(
       `${BRAND} ${CONFIRMED_HEADLINE}`,
       "",
-      ...confirmedNoticeBlocks(),
+      ...confirmedNoticeBlocks(refundPolicyAt(v.createdAt)),
       "",
       section("예약 확인·변경"),
       labeled("확인", checkLink(v)),
@@ -560,7 +584,19 @@ const webLink = (name: string, pathname: string): AlimtalkButton => ({
   linkPc: `${FALLBACK_SITE_ORIGIN}${pathname}`,
 });
 
-export const ALIMTALK_TEMPLATES: readonly AlimtalkTemplate[] = [
+/** 확정 알림톡의 목록 이름 — 판마다 따로 심사받으므로 이름이 갈려야 한다(OF-T2-3). 개정 판은 시행일(KST 날짜)을 붙인다. */
+const CONFIRMED_ALIMTALK_NAME: Readonly<Record<RefundPolicyEdition, string>> = {
+  current: "예약 확정 안내",
+  next: `예약 확정 안내 (${REFUND_POLICY_EFFECTIVE_DATE} 접수분부터)`,
+};
+
+/**
+ * 판별 심사 제출본 (OF-T2-3). 접수 알림톡은 두 판이 같고, 확정 알림톡은 `■ 취소·환불` 줄만 다르다(confirmedNoticeBlocks(policy)).
+ * 알림톡 본문은 심사받은 글자 그대로만 나갈 수 있어 규정 문장을 변수로 바꿔 끼우지 않는다 — **확정 알림톡은 두 판을 모두 심사에 낸다**(P4-0).
+ * 시행일 전에 접수한 예약이 시행일 뒤에 확정될 수 있으므로 옛 판도 계속 필요하다.
+ */
+export function alimtalkTemplatesFor(edition: RefundPolicyEdition): readonly AlimtalkTemplate[] {
+  return [
   {
     event: "created",
     name: "견적 신청 접수 안내",
@@ -583,11 +619,11 @@ export const ALIMTALK_TEMPLATES: readonly AlimtalkTemplate[] = [
     event: "confirmed",
     // 문자 확정본과 같은 순서다(T2-4): 제목 → ■ 대금 → ■ 취소·환불 → ■ 예약 확인·변경 → 맨 아래 계약 주체 줄(T2-1).
     // verbatim("확인 후 연락드리겠습니다.")은 넣지 않는다 — 확정 통지에 붙으면 아직 확정 전인 것처럼 읽힌다(T2-2 · 결정 3-2). 채널이 달라도 같다.
-    name: "예약 확정 안내",
+    name: CONFIRMED_ALIMTALK_NAME[edition],
     body: lines(
       `${BRAND} ${CONFIRMED_HEADLINE}`,
       "",
-      ...confirmedNoticeBlocks(),
+      ...confirmedNoticeBlocks(refundPolicyFor(edition)),
       "",
       section("예약 확인·변경"),
       labeled("확인", below(CHECK_BUTTON)),
@@ -600,14 +636,21 @@ export const ALIMTALK_TEMPLATES: readonly AlimtalkTemplate[] = [
     // R3 [P2-H]: 문자의 "이용안내: <origin>/guide" 에 해당하는 링크를 **버튼으로** 담는다(본문 URL 금지 규칙은 그대로).
     buttons: [webLink(CHECK_BUTTON, RESERVATION_CHECK_PATH), webLink(GUIDE_BUTTON, GUIDE_PATH)],
   },
-];
+  ];
+}
+
+/** 옛 규정 판(시행일 전 접수분) — 지금까지의 심사 제출본 그대로(접수 · 확정 두 건). */
+export const ALIMTALK_TEMPLATES: readonly AlimtalkTemplate[] = alimtalkTemplatesFor("current");
+/** 개정 규정 판(시행일부터 접수분) — 확정 알림톡의 취소·환불 줄과 목록 이름만 다르다(OF-T2-3). */
+export const ALIMTALK_TEMPLATES_NEXT: readonly AlimtalkTemplate[] = alimtalkTemplatesFor("next");
 
 /**
  * 심사 제출본의 `#{…}` 자리를 채운다. 채우지 못한 자리가 남으면 throw — `#{상담전화}` 가 그대로 나간 문자는
  * 고객에게는 오류로 보이고, 카카오에는 템플릿 불일치로 보인다.
+ * `createdAt` = 그 예약의 reservations.created_at — 확정 알림톡은 접수일 판의 제출본을 고른다(OF-T2-3 · 문자와 같은 규칙).
  */
-export function renderAlimtalk(event: NotifyEvent, values: Record<string, string>): string {
-  const template = ALIMTALK_TEMPLATES.find((t) => t.event === event);
+export function renderAlimtalk(event: NotifyEvent, values: Record<string, string>, createdAt: Date | string): string {
+  const template = alimtalkTemplatesFor(refundPolicyAt(createdAt).edition).find((t) => t.event === event);
   // 문구에 "이벤트" 라는 낱말을 쓰지 않는다 — 광고 표현 정적 검사(tests/notify-templates.test.ts §5)가 소스 전체를 본다.
   if (!template) throw new Error(`renderAlimtalk: 등록되지 않은 알림 종류다 (${event})`);
   const missing = template.variables.filter((v) => typeof values[v] !== "string" || values[v] === "");

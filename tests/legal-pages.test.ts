@@ -32,6 +32,7 @@ import {
   PROCESSORS,
   TERMS,
 } from "@/lib/legal/disclosures";
+import { refundPolicyAt } from "@/lib/refund-policy";
 
 import { stripComments } from "./helpers/strip-comments";
 
@@ -53,6 +54,7 @@ const COMPONENT_FILES = [
   "components/legal/LegalTable.tsx",
   "components/legal/LegalPageHeader.tsx",
   "components/legal/OfficialKoreanNotice.tsx",
+  "components/legal/RefundPolicyChangeNotice.tsx", // OF-T2-3 — 취소·환불 개정 예고 상자(/guide · /terms)
   "components/legal/legal.module.css",
 ] as const;
 type PagePath = "/privacy" | "/terms" | "/guide" | "(legal)/layout";
@@ -84,6 +86,9 @@ function ledgerImports(src: string): string[] {
   }
   return names;
 }
+
+/** OF-T2-3 — 페이지가 lib/refund-policy.ts(판 고르기)를 거쳐 렌더하는 원장 상수. 매핑표 §2 가 그 사슬을 따로 단언한다. */
+const REFUND_POLICY_SYMBOLS = new Set(["CANCELLATION", "WITHDRAWAL", "CANCELLATION_NEXT", "WITHDRAWAL_NEXT", "REFUND_POLICY_EFFECTIVE_FROM"]);
 
 /** "PRIVACY_NOTICE.purpose" 같은 점 경로를 원장 네임스페이스에서 해석한다 */
 function resolveKey(keyPath: string): unknown {
@@ -221,12 +226,16 @@ describe("1. 원장 소스 — 새 상수 4종", () => {
   test("P1-7 — 청약철회 제한 고지(WITHDRAWAL.notice · 영문 noticeEn)가 이용안내 취소·환불 절과 약관 제8조 아래에 실린다", () => {
     const art8 = TERMS.articles.find((a) => a.no === 8);
     expect(art8?.title).toBe("청약철회");
+    // OF-T2-3: 고지는 렌더 시각의 판(refundPolicyAt → { withdrawal })에서 온다 — 옛 판이면 WITHDRAWAL.notice, 시행일부터 WITHDRAWAL_NEXT.notice.
+    // 렌더 결과는 tests/refund-policy.test.ts §5 가 두 판 모두 본다. 여기서는 자리(제8조 아래 · 취소·환불 절 안)만 소스로 잠근다.
     const terms = read(PAGE_FILES.terms);
     expect(terms).toMatch(/const WITHDRAWAL_ARTICLE_NO = 8;/);
-    expect(terms).toMatch(/notice=\{WITHDRAWAL\.notice\}/);
+    expect(terms).toMatch(/notice=\{withdrawal\.notice\}/);
+    expect(terms).toMatch(/const \{ cancellation, withdrawal \} = refundPolicyAt\(now\);/);
     const guide = read(PAGE_FILES.guide);
     const iCancel = guide.indexOf('case "cancel":');
-    const iNotice = guide.indexOf("notice={WITHDRAWAL.notice}");
+    const iNotice = guide.indexOf("notice={withdrawal.notice}");
+    expect(guide.slice(iCancel, iNotice)).toMatch(/const \{ cancellation, withdrawal \} = refundPolicyAt\(now\);/);
     const iNext = guide.indexOf('case "insurance":');
     expect(iCancel).toBeGreaterThan(-1);
     expect(iNotice).toBeGreaterThan(iCancel);
@@ -288,6 +297,11 @@ export const LEGAL_MAPPING: readonly MappingRow[] = [
   { law: "전자상거래법 §17⑥ — 청약철회 제한 사전 고지(취소·환불 절 아래 · P1-7)", ledgerKey: "WITHDRAWAL.notice", page: "/guide" },
   { law: "전자상거래법 §13②5호 — 환불 기준액(계약금) 고지", ledgerKey: "CANCELLATION.depositNote", page: "/guide" },
   { law: "전자상거래법 §17③ — 취소·환불 표의 적용 범위(고객 사정 취소 · 법정 권리 보존 · P1-7 R3)", ledgerKey: "CANCELLATION.scope", page: "/guide" },
+  // OF-T2-3(사장님 요청 16 · 결정 4 B안): 개정 규정 — 시행일 전에는 '변경 예정' 으로, 시행일부터는 현행으로 같은 절에 실린다.
+  { law: "약관 제3조 — 불리한 변경 30일 전 공지(취소·환불 개정 시행일 · OF-T2-3)", ledgerKey: "REFUND_POLICY_EFFECTIVE_FROM", page: "/guide" },
+  { law: "전자상거래법 §13②5호 — 개정 취소·환불 조건(7일/6일 · OF-T2-3)", ledgerKey: "CANCELLATION_NEXT.tiers", page: "/guide" },
+  { law: "전자상거래법 §17①·②·⑥ — 개정 청약철회 고지(제한 시작점 2일 전 유지 · OF-T2-3)", ledgerKey: "WITHDRAWAL_NEXT.notice", page: "/guide" },
+  { law: "전자상거래법 §17①·②·⑥ — 개정 청약철회 고지(제8조 아래 · OF-T2-3)", ledgerKey: "WITHDRAWAL_NEXT.notice", page: "/terms" },
   { law: "전자상거래법 §13②8호 — 소비자 불만·분쟁 처리 절차", ledgerKey: "DISPUTE", page: "/guide" },
   { law: "전자상거래법 §13③ / PIPA §22조의2 — 만 14세 미만 제한", ledgerKey: "MINORS.line", page: "/guide" },
   { law: "확인시트 ★2 — 차량 보험 안내(기존 문구 계승)", ledgerKey: "INSURANCE.body", page: "/guide" },
@@ -333,11 +347,22 @@ describe("2. 조문 ↔ 원장 키 ↔ 페이지 경로 매핑표", () => {
     },
   );
 
+  // OF-T2-3: 취소·환불 상수(옛 CANCELLATION·WITHDRAWAL · 개정 *_NEXT · 시행일)는 페이지가 직접 import 하지 않고
+  // lib/refund-policy.ts(판 고르기 — 원장은 함수 export 0 이라 밖에 둔다)를 거친다. 그 경우 "페이지가 판 고르기를 import 하고,
+  // 판 고르기가 그 상수를 원장에서 import 한다" 를 단언한다 — 사슬의 두 고리를 다 본다(약화가 아니라 경로가 하나 늘었다).
   test.for(LEGAL_MAPPING.map((r) => [`${r.page} ← ${r.ledgerKey}`, r] as const))(
-    "%s — 페이지 소스가 그 최상위 상수를 원장에서 import 한다",
+    "%s — 페이지 소스가 그 최상위 상수를 원장에서 import 한다 (취소·환불은 lib/refund-policy 경유)",
     ([, row]) => {
       const src = read(PATH_TO_FILE[row.page]);
       const top = row.ledgerKey.split(".")[0];
+      if (REFUND_POLICY_SYMBOLS.has(top)) {
+        expect(src, `${PATH_TO_FILE[row.page]} 이 판 고르기(lib/refund-policy)를 import 하지 않는다`).toMatch(
+          /import\s*\{[^}]*\b(refundPolicyAt|upcomingRefundPolicy)\b[^}]*\}\s*from\s*["']@\/lib\/refund-policy["']/,
+        );
+        expect(ledgerImports(read("lib/refund-policy.ts").replace(/from\s*["']\.\/legal\/disclosures["']/g, 'from "@/lib/legal/disclosures"')), `lib/refund-policy.ts 에 ${top} import 없음`).toContain(top);
+        expect(ledgerImports(src), `${PATH_TO_FILE[row.page]} 이 ${top} 을 직접 import 한다 — 판을 거치지 않으면 시행일에 어긋난다`).not.toContain(top);
+        return;
+      }
       expect(ledgerImports(src), `${PATH_TO_FILE[row.page]} 에 ${top} import 없음`).toContain(top);
     },
   );
@@ -488,8 +513,11 @@ describe.runIf(Boolean(BASE))("5. dev 서버 — 200/404", { timeout: GATE_TIMEO
     expect(guide).toContain(ledger.VERBATIM.showcaseNotice);
     expect(guide).toContain(ledger.PAYMENT.line);
     expect(CANCELLATION.tiers.length).toBe(2); // P1-7 — 사장님 답변 2026-09-21 A-1 로 2단계
-    expect(guide).toContain(ledger.WITHDRAWAL.notice);
-    expect(terms).toContain(ledger.WITHDRAWAL.notice);
+    // OF-T2-3: 서버는 렌더 시각의 판을 싣는다 — 시행일(2026-11-09 KST) 전에는 WITHDRAWAL.notice, 그날부터 WITHDRAWAL_NEXT.notice.
+    // 옛 상수를 박아 두면 이 HTTP 블록(CI legal-pages-http)이 시행일에 저절로 빨개진다. 지금 판을 같은 함수로 구해 대조한다.
+    const live = refundPolicyAt(new Date());
+    expect(guide).toContain(live.withdrawal.notice);
+    expect(terms).toContain(live.withdrawal.notice);
     expect(guide).toContain(ledger.PAYMENT.accountLine); // R2
     expect(guide).toContain(ledger.RELATED_COMPANY.note); // R2
   });

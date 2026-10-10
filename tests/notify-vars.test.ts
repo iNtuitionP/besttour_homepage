@@ -77,6 +77,8 @@ const ROW = {
   depart_at: DEPART_AT_UTC,
   bus_count: 2,
   passengers: 40,
+  // OF-T2-3: 접수 시각 — PostgREST 가 돌려주는 timestamptz 모양 그대로(마이크로초 · +00:00). 고객 변수가 읽는다(확정 문자의 판).
+  created_at: "2026-10-01T03:00:00.123456+00:00",
   // 아래 4개는 고객 select 에 없지만, 클라이언트가 그래도 돌려줬다고 가정한다 —
   // 누출 방지가 "select 를 잘 썼다"가 아니라 **결과를 만드는 코드**에서 구조적으로 성립하는지 보기 위해서다.
   ...RAW_PII,
@@ -163,8 +165,9 @@ describe("1. 타입 격리 — 고객 변수는 개인정보를 담을 자리 �
   });
 
   // T2-5: 손님 문자는 접수번호를 더 싣지 않지만, 같은 변수를 받는 사장님 발송 실패 알림이 접수번호로 예약을 가리키므로 키는 그대로다.
-  test("CUSTOMER_VARS_KEYS 는 접수번호·원점 둘뿐 — 차량·구간·운행일도 없다(접수번호는 발송 실패 알림이 쓴다)", () => {
-    expect([...CUSTOMER_VARS_KEYS].sort()).toEqual(["origin", "publicCode"]);
+  // OF-T2-3: 접수 시각(createdAt)을 더했다 — 확정 문자의 취소·환불 줄이 접수일 판을 고른다. 개인정보가 아니다.
+  test("CUSTOMER_VARS_KEYS 는 접수번호·원점·접수 시각 셋뿐 — 차량·구간·운행일도 없다(접수번호는 발송 실패 알림이 쓴다)", () => {
+    expect([...CUSTOMER_VARS_KEYS].sort()).toEqual(["createdAt", "origin", "publicCode"]);
   });
 
   test("OWNER_VARS_KEYS 는 사장님 문안이 요구하는 13개(P3-8: 접수 경로·도착일 추가) — email·message 는 없다", () => {
@@ -211,7 +214,7 @@ describe("1. 타입 격리 — 고객 변수는 개인정보를 담을 자리 �
  * 기대 목록은 **여기 리터럴로 적는다.** 모듈의 상수와 비교하면 상수를 넓히는 순간 테스트도 같이 넓어져
  * 아무것도 잡지 못한다(실측: CUSTOMER_VARS_COLUMNS 에 name·email 을 끼워 넣어도 이 단언은 green 이었다).
  */
-const EXPECTED_CUSTOMER_COLUMNS = ["public_code"];
+const EXPECTED_CUSTOMER_COLUMNS = ["public_code", "created_at"];
 const EXPECTED_OWNER_COLUMNS = [
   "public_code",
   "intake",
@@ -227,7 +230,7 @@ const EXPECTED_OWNER_COLUMNS = [
 ];
 
 describe("2. select 화이트리스트", () => {
-  test("고객 조회는 reservations 에서 public_code 한 컬럼만 읽는다 (문안이 그것만 쓴다)", async () => {
+  test("고객 조회는 reservations 에서 public_code · created_at 두 컬럼만 읽는다 (문안이 그것만 쓴다 — created_at 은 OF-T2-3)", async () => {
     const { client, calls } = fakeClient();
     await templateVars({ client, origin: ORIGIN }).customerVars(RID);
     const reservations = calls.filter((c) => c.table === "reservations");
@@ -279,10 +282,20 @@ describe("2. select 화이트리스트", () => {
     expect(OWNER_VARS_COLUMNS as readonly string[]).not.toContain(col);
   });
 
-  test("고객 목록은 사장님 목록의 부분집합이다 (같은 컬럼을 두 이름으로 부르지 않는다)", () => {
-    for (const col of CUSTOMER_VARS_COLUMNS) {
-      expect(OWNER_VARS_COLUMNS as readonly string[]).toContain(col);
-    }
+  // OF-T2-3: 고객 목록에 created_at 이 생겼고 사장님 목록에는 넣지 않았다(사장님 문안은 쓰지 않는다 — 쓰지 않는 값은 읽지 않는다).
+  // 그래서 "부분집합" 을 "접수 시각 하나를 뺀 부분집합" 으로 바꿨다. 뜻(같은 컬럼을 두 이름으로 부르지 않는다)은 그대로이고, 예외는 정확히 하나다.
+  test("고객 목록은 접수 시각(created_at) 하나를 빼면 사장님 목록의 부분집합이다 (같은 컬럼을 두 이름으로 부르지 않는다)", () => {
+    const customerOnly = (CUSTOMER_VARS_COLUMNS as readonly string[]).filter((c) => !(OWNER_VARS_COLUMNS as readonly string[]).includes(c));
+    expect(customerOnly).toEqual(["created_at"]);
+  });
+
+  test("customerVars: 접수 시각이 시간대 없는 값이면 throw — 판(옛/개정 취소 규정)을 짐작해 보내지 않는다 (값은 오류 문구에 없다)", async () => {
+    const { client } = fakeClient({ reservation: { ...ROW, created_at: "2026-11-09 00:00" } });
+    await expect(templateVars({ client, origin: ORIGIN }).customerVars(RID)).rejects.toThrow(/created_at/);
+    await expect(templateVars({ client, origin: ORIGIN }).customerVars(RID)).rejects.not.toThrow(/2026-11-09/);
+    // 릴리스 C 리뷰 P2-6: 날짜만인 값의 끝 "-08" 을 시간대로 읽지 않는다 — 로더 단계에서 막는다
+    const dateOnly = fakeClient({ reservation: { ...ROW, created_at: "2026-11-08" } });
+    await expect(templateVars({ client: dateOnly.client, origin: ORIGIN }).customerVars(RID)).rejects.toThrow(/created_at/);
   });
 });
 
@@ -297,7 +310,7 @@ describe("3. 누출", () => {
     for (const [key, value] of Object.entries(RAW_PII)) {
       expect(json.includes(value), `${key} 가 고객 결과에 새어 나왔다`).toBe(false);
     }
-    expect(v).toEqual({ publicCode: ROW.public_code, origin: ORIGIN });
+    expect(v).toEqual({ publicCode: ROW.public_code, origin: ORIGIN, createdAt: ROW.created_at });
   });
 
   test("customerVars: 차량·구간·운행일도 담지 않는다 (고객 문안이 쓰지 않는 값은 메모리에도 올리지 않는다)", async () => {

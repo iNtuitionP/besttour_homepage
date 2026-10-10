@@ -64,6 +64,7 @@ import {
 import { ALL_TEMPLATE_KEYS, type TemplateKey } from "@/lib/notify/outbox";
 import { OG_IMAGE_PATH, shareMetadata } from "@/lib/share-meta";
 
+import { CREATED_BEFORE_REFUND_CHANGE } from "./helpers/refund-policy-fixtures";
 import { stripComments } from "./helpers/strip-comments";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
@@ -488,7 +489,8 @@ describe("8. ledgerUi — relatedRole · labels.footer.operator 없음", () => {
 // =============================================================================
 // 9. 확정 문자 · 알림톡 — 맨 아래 '운영: 합자회사 베스트투어' (접두가 베스트모빌리티로 바뀌어도 계약 상대가 문자에 남게)
 // =============================================================================
-const CUSTOMER: CustomerVars = { publicCode: "BT12ABCD", origin: "https://bestour.co.kr" };
+// OF-T2-3: 고객 변수에 접수 시각이 생겼다(시행일 전 접수 — 이 블록은 판과 무관한 계약 주체 줄을 본다).
+const CUSTOMER: CustomerVars = { publicCode: "BT12ABCD", origin: "https://bestour.co.kr", createdAt: CREATED_BEFORE_REFUND_CHANGE };
 const OWNER: OwnerVars = {
   ...CUSTOMER,
   reservationId: "3f2b9c14-5f0a-4a2e-9c1b-8d7e6f5a4b3c",

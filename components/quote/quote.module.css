@@ -462,6 +462,18 @@ textarea.control {
   font-weight: 800;
   line-height: 1.5;
 }
+/* 취소·환불 개정 예고 한 줄(OF-T2-3) — 시행일 전에만, 접힌 자리 맨 아래. 지금 규정과 섞여 읽히지 않게 상자로 가른다.
+ * 본문 크기·본문색(적용 범위 문장과 같은 위계) — 보조 글씨로 낮추지 않는다(손님에게 불리한 변경의 예고다). */
+.policyChange {
+  margin: var(--space-stack-sm) 0 0;
+  padding: var(--space-stack-xs) var(--space-inline-xs);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-control);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-primary);
+}
 /* 청약철회 제한 고지 전문(원장 WITHDRAWAL.notice · en 은 noticeEn 도) — 자세히 보기 안, 동의 대상이라 본문색·굵게 */
 .moreBody .withdrawalLaw {
   margin-top: var(--space-stack-sm);

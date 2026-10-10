@@ -59,6 +59,7 @@ import { LEDGER_UI_KO, ledgerUi } from "@/lib/i18n/ledger-ui";
 import { CANCELLATION, LEGAL_LINKS, PAYMENT, PRIVACY_NOTICE, QUOTE_BASIS, VERBATIM, WITHDRAWAL } from "@/lib/legal/disclosures";
 
 import { findElements, findText, findUnmarkedHangul, HANGUL, type FoundText } from "./helpers/hangul-html";
+import { BEFORE_REFUND_CHANGE } from "./helpers/refund-policy-fixtures";
 import { stripComments } from "./helpers/strip-comments";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -94,7 +95,9 @@ function render(node: ReactNode, locale: "ko" | "en"): string {
 }
 async function withdrawalHtml(locale: "ko" | "en"): Promise<{ node: ReactNode; html: string }> {
   intl.locale = locale;
-  const node = await WithdrawalNotice();
+  // OF-T2-3: 판(옛/개정 취소 규정)을 렌더 시각이 고른다 — 이 파일은 옛 규정(CANCELLATION·WITHDRAWAL)을 잠그므로 시행일 전으로 박는다.
+  // 예고 한 줄이 더해지는 것 말고는 마크업이 같다. 개정 판은 tests/refund-policy.test.ts §5-b 가 같은 강도로 본다.
+  const node = await WithdrawalNotice({ now: BEFORE_REFUND_CHANGE });
   return { node, html: render(node, locale) };
 }
 const hiddenAncestor = (o: { ancestors: FoundText["ancestors"] }) => o.ancestors.some((a) => a.attrs.has("hidden"));
@@ -701,7 +704,9 @@ describe("7. 정적 — 경계 · messages · 원장", () => {
 
   test("영문 요약은 서버가 원장에서 읽는다 — WithdrawalNotice(청약철회) · Hero(개인정보) · 클라이언트 트리는 원장을 import 하지 않는다", () => {
     const w = codeOf(WITHDRAWAL_FILE);
-    for (const k of ["tiers", "referenceTime", "scope", "restriction"]) expect(w, k).toMatch(new RegExp(`WITHDRAWAL\\.summaryEn\\.${k}`));
+    // OF-T2-3: 원장 WITHDRAWAL 대신 렌더 시각의 판(refundPolicyAt → withdrawal)에서 읽는다 — 바늘을 그 이름으로 바꿨다.
+    for (const k of ["tiers", "referenceTime", "scope", "restriction"]) expect(w, k).toMatch(new RegExp(`\\bwithdrawal\\.summaryEn\\.${k}`));
+    expect(w).toMatch(/const policy = refundPolicyAt\(at\);/);
     expect(w).toMatch(/ledgerUi\(locale\)\.officialNoticeCollapsed/);
     expect(/^\s*["']use client["']/m.test(read(WITHDRAWAL_FILE))).toBe(false);
     for (const f of QUOTE_CLIENT_TREE) expect(codeOf(f), f).not.toMatch(/@\/lib\/legal\/disclosures/);

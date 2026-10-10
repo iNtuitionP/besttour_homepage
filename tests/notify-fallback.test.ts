@@ -52,6 +52,7 @@ import {
 import { consentFields } from "@/lib/reservations/consent";
 import type { NewOutboxRow, NotifyEvent, OutboxRow } from "@/lib/types";
 import { withNotificationsLock } from "./helpers/db-lock";
+import { CREATED_BEFORE_REFUND_CHANGE } from "./helpers/refund-policy-fixtures";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
@@ -497,7 +498,8 @@ describe("3. 워커 — give_up 에서만 · 재귀 차단 · 묶임 · OWNER_EM
 // =============================================================================
 describe("4. 문안", () => {
   const ORIGIN = "https://bestour.co.kr";
-  const CUSTOMER: CustomerVars = { publicCode: "BT12ABCD", origin: ORIGIN };
+  // OF-T2-3: 고객 변수에 접수 시각이 생겼다(실패 알림은 쓰지 않는다 — 모양만 맞춘다).
+  const CUSTOMER: CustomerVars = { publicCode: "BT12ABCD", origin: ORIGIN, createdAt: CREATED_BEFORE_REFUND_CHANGE };
 
   test("실패 알림 2종이 렌더된다 — 접수번호 · 어떤 통지인지 · 발송 내역 링크 · 제목", () => {
     const labels: Record<string, string> = { "created.owner.failure.email": "접수", "confirmed.owner.failure.email": "확정" };
