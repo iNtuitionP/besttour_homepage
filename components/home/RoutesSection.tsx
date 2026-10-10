@@ -2,6 +2,8 @@
  * 섹션 2 — 대표 노선 (#routes, 목업 variant-08 §01). 서버 컴포넌트.
  * 헤드만 여기서 그리고 지도·카드·verbatim 고지는 <KrMap routes> 가 전부 갖고 있다 — 고지를 여기서 다시 렌더하지 않는다.
  * 설명문의 "다섯 개 노선"(지금은 16개)·카드 hover 로 지도 강조(KrMap 은 정적 카드) 문장은 사실과 달라 뺐다(보고서 §UIUX 요청).
+ * 사장님 요청 17(2026-10-10 · T1-1): 남아 있던 설명 문단도 통째로 지웠다(지도 아래 verbatim 고지가 같은 뜻을 전한다).
+ * 설명이 없으므로 split={false} — 2열 격자(.headSplit)를 그대로 두면 960px 이상에서 제목이 왼쪽 1.1fr 칸에 갇힌다.
  */
 import { getTranslations } from "next-intl/server";
 
@@ -17,7 +19,7 @@ export async function RoutesSection({ routes }: { routes: readonly ShowcaseRoute
   return (
     <section id="routes" className={`${h.section} ${h.toneWhite}`} aria-labelledby="routes-h" data-section="routes">
       <div className={h.wrap}>
-        <SectionHead id="routes-h" eyebrow={t("eyebrow")} title={t.rich("title", RICH)} desc={t.rich("desc", RICH)} />
+        <SectionHead id="routes-h" eyebrow={t("eyebrow")} title={t.rich("title", RICH)} split={false} />
         <KrMap routes={routes} />
       </div>
     </section>

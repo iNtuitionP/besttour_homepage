@@ -1,5 +1,5 @@
 /**
- * 서브페이지 머리 — 브레드크럼(홈 → [중간] → 현재) + eyebrow + h1 [+ 설명] (P6-3).
+ * 서브페이지 머리 — 브레드크럼(홈 → [중간] → 현재) + [eyebrow] + h1 [+ 설명] (P6-3). eyebrow 는 선택이다(/about 은 없음).
  * 스타일은 홈 섹션 헤드(home.module.css .eyebrow/.title/.desc)를 그대로 쓰고, 브레드크럼만 pages.module.css.
  * 문구는 props 로만 받는다 — 이 파일에 한글 리터럴 없음. 링크는 i18n Link(로케일 프리픽스).
  * `contentLang`(P7-4): 현재 위치·제목·설명이 사장님이 쓴 글(공지 제목 · 앨범 제목·설명)일 때, 영문 화면에서 그 세 자리에 lang="ko" 를 단다
@@ -35,7 +35,11 @@ export function PageHeader({
   crumbs?: readonly Crumb[];
   /** 현재 페이지 라벨 — 옛 메뉴 텍스트 그대로 */
   current: string;
-  eyebrow: string;
+  /**
+   * h1 위 작은 글씨 소제목. 넘기지 않거나 빈 문자열이면 그리지 않는다(빈 <p> 도 남기지 않는다).
+   * /about 은 넘기지 않는다 — 사장님 요청 3(2026-10-10): 메뉴 라벨과 같은 "회사소개" 가 h1 위에 겹쳐 보였다.
+   */
+  eyebrow?: string;
   title: ReactNode;
   desc?: ReactNode;
   /** 현재 위치·제목·설명이 화면 언어와 다른 글(사장님이 쓴 한국어)일 때 그 언어 — koLang(locale). */
@@ -65,7 +69,7 @@ export function PageHeader({
             </li>
           </ol>
         </nav>
-        <p className={h.eyebrow}>{eyebrow}</p>
+        {eyebrow ? <p className={h.eyebrow}>{eyebrow}</p> : null}
         <h1 className={h.title} lang={contentLang}>
           {title}
         </h1>

@@ -17,10 +17,13 @@ export interface MapSvgProps {
   description: string;
 }
 
-/** 핀 반지름 — 목업(variant-08 §대표 노선)의 halo/dot 실측값. 허브 15/7.5 · 골드 13/6.5 · 기본 12/6. */
+/**
+ * 핀 반지름 — 목업(variant-08 §대표 노선)의 halo/dot 실측값. 허브 15/7.5 · 기본 12/6.
+ * 골드 핀(13/6.5 · .pinAccent)은 사장님 요청 10(2026-10-10)으로 없앴다 — KrMap 이 입구에서 강조를 꺼 톤은 언제나 brand 다.
+ * data-tone 은 남겨 둔다(톤 모델의 결과를 DOM 에서 확인하는 표지 — tests/home-owner-requests.test.ts §10).
+ */
 function radii(pin: MapPin): { halo: number; dot: number } {
   if (pin.hub) return { halo: 15, dot: 7.5 };
-  if (pin.tone === "accent") return { halo: 13, dot: 6.5 };
   return { halo: 12, dot: 6 };
 }
 
@@ -28,7 +31,7 @@ function Pin({ pin }: { pin: MapPin }) {
   const r = radii(pin);
   return (
     <g
-      className={pin.tone === "accent" ? s.pinAccent : s.pin}
+      className={s.pin}
       data-pin={pin.code}
       data-tone={pin.tone}
       data-hub={pin.hub || undefined}
@@ -43,8 +46,9 @@ export function MapSvg({ geometry, id = "krmap", title, description }: MapSvgPro
   const titleId = `${id}-title`;
   const descId = `${id}-desc`;
 
-  // 그리기 순서 = 겹침 순서: 일반 노선 → 강조 노선(골드가 위) / 일반 핀 → 허브 핀(허브가 위).
-  const paths = [...geometry.paths].sort((a, b) => Number(a.highlight) - Number(b.highlight));
+  // 그리기 순서 = 겹침 순서: 노선은 데이터 순서 그대로(골드 강조 노선을 위로 올리던 정렬은 사장님 요청 10 으로 뺐다) /
+  // 일반 핀 → 허브 핀(허브가 위).
+  const paths = geometry.paths;
   const pins = [...geometry.pins].sort((a, b) => Number(a.hub) - Number(b.hub));
 
   return (
@@ -65,7 +69,7 @@ export function MapSvg({ geometry, id = "krmap", title, description }: MapSvgPro
         {paths.map((p) => (
           <path
             key={p.routeId}
-            className={p.highlight ? s.routeAccent : s.route}
+            className={s.route}
             d={p.d}
             data-route={p.routeId}
             data-tone={p.highlight ? "accent" : "brand"}

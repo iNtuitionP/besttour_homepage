@@ -1,5 +1,5 @@
 /*
- * 홈 팝업 — "오늘 하루 보지 않기" 모달 (목업 variant-08 .ov/.modal/.pop__*).
+ * 홈 팝업 — "오늘 하루 보지 않기" 모달 (목업 variant-08 .ov/.modal/.pop__*). PC 폭의 창 위치만 목업(가운데)과 다르다 — 아래 1024px 규칙.
  * 색·간격·라운드·고도는 역할 토큰만, 간격 px 0건(home.module.css 헤더 참조).
  * z-index 120 — 헤더(80)·플로팅 문의(70) 위.
  */
@@ -28,6 +28,22 @@
   box-shadow: var(--elevation-overlay);
   word-break: keep-all;
   overflow-wrap: anywhere;
+}
+
+/* PC(1024px 이상)는 창을 화면 왼쪽 위에 둔다 — 사장님 요청 22(OF-T1-3). 휴대폰·태블릿은 위 기본 규칙대로 가운데.
+ * 위치만 바꾼다: 어두운 배경·닫기·배경 스크롤 잠금·포커스 가두기는 그대로인 모달이다.
+ * 위 여백 = 붙어 있는 머리글 높이(역할 토큰 — 1280px 이상에서 커진다) + 16px. 머리글은 어두운 배경 아래 그대로 보이고, 창은 그 밑에서 시작한다.
+ * 왼쪽 여백 = 머리글 줄과 같은 페이지 좌우 여백(1280px 까지는 로고 왼쪽 끝과 같은 선). 아래 여백은 기본 규칙의 값 그대로(긴 창은 배경 안에서 스크롤). */
+@media (min-width: 1024px) {
+  .overlay {
+    align-items: flex-start;
+    justify-content: flex-start;
+    padding-top: calc(var(--layout-header-h) + var(--space-stack-sm));
+    padding-left: var(--space-page-x);
+  }
+  .modal {
+    margin: 0;
+  }
 }
 
 /* 닫기 X — 누르는 영역 44×44(P7-4 · 목업 34px 에서 키움 — 보고서 ④) */

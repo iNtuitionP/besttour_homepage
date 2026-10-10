@@ -387,13 +387,14 @@ describe("7. /dev/krmap 삭제", () => {
 });
 
 // =============================================================================
-// 8. 페이지 조립 — 섹션 9개 순서 · data-section · 정적 렌더 조건 · 메타데이터
+// 8. 페이지 조립 — 섹션 8개 순서 · data-section · 정적 렌더 조건 · 메타데이터
 // =============================================================================
+// 사장님 요청 23(2026-10-10 · T1-1): 신뢰 바와 이용 방법 사이의 "베스트투어 강점" 띠(ServiceStrip)를 섹션째 지웠다.
+// 부재는 tests/home-owner-requests.test.ts §23 이 파일·카탈로그·CSS 까지 잠근다.
 const SECTIONS: ReadonlyArray<[component: string, dataSection: string]> = [
   ["Hero", "hero"],
   ["RoutesSection", "routes"],
   ["TrustBar", "trust"],
-  ["ServiceStrip", "services"],
   ["HowItWorks", "how"],
   ["FleetSection", "fleet"],
   ["CompanyIntro", "company"],
@@ -404,7 +405,8 @@ const SECTIONS: ReadonlyArray<[component: string, dataSection: string]> = [
 describe("8. app/[locale]/(site)/page.tsx", () => {
   const page = codeOf(PAGE);
 
-  test("섹션 9개를 목업 DOM 순서대로 렌더한다", () => {
+  test("섹션 8개를 목업 DOM 순서대로 렌더한다 (강점 띠 없음 — 신뢰 바 바로 뒤가 이용 방법)", () => {
+    expect(SECTIONS).toHaveLength(8);
     let last = -1;
     for (const [name] of SECTIONS) {
       const at = page.search(new RegExp(`<${name}[\\s/>]`));
@@ -412,6 +414,8 @@ describe("8. app/[locale]/(site)/page.tsx", () => {
       last = at;
     }
     expect(page).toMatch(/<HomePopup\s/);
+    expect(page).toMatch(/<TrustBar\s*\/>\s*<HowItWorks\s*\/>/);
+    expect(page).not.toMatch(/<ServiceStrip[\s/>]/);
   });
 
   test.for(SECTIONS.map(([c, d]) => [c, d] as const))("%s 소스에 data-section=\"%s\"", ([component, dataSection]) => {

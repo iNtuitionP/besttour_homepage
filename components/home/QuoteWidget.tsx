@@ -12,7 +12,7 @@
  *   - `id="quote"` — 대표 노선 카드·헤더 메뉴·옛 /quote 리디렉트가 `/#quote` 로 여기를 가리킨다.
  *   - 닫히면 여는 버튼으로, [수정]이면 첫 칸으로 포커스를 돌려준다.
  *   - 선택지·라벨·법정 문구(verbatim·동의·청약철회)는 서버 Hero 가 props 로 넣는다. 이 파일에 한글 리터럴·원장 import 없음.
- * 인천공항이 출발 또는 도착이면 공항 안내 한 줄을 보인다(목업 .quote__air).
+ * 인천공항을 고르면 보이던 공항 안내 한 줄(목업 .quote__air)은 사장님 요청 12(2026-10-10)로 지웠다 — 목업과 다르다.
  */
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
@@ -44,13 +44,10 @@ export interface QuoteWidgetLabels {
   cta: string;
 }
 
-const AIRPORT_CODE = "ICN";
-
 export function QuoteWidget({
   labels,
   groups,
   defaults,
-  airNote,
   paymentNote,
   bookingNotice,
   locale,
@@ -61,7 +58,6 @@ export function QuoteWidget({
   labels: QuoteWidgetLabels;
   groups: QuoteGroup[];
   defaults: { origin: string; dest: string };
-  airNote: ReactNode;
   paymentNote: string;
   bookingNotice: string;
   locale: string;
@@ -121,7 +117,6 @@ export function QuoteWidget({
   }, [defaults]);
 
   const labelOf = (code: string) => groups.flatMap((g) => g.options).find((o) => o.value === code)?.label ?? code;
-  const isAirport = fields.originCode === AIRPORT_CODE || fields.destinationCode === AIRPORT_CODE;
 
   const renderOptions = () =>
     groups.map((g) => (
@@ -247,16 +242,6 @@ export function QuoteWidget({
           true,
         )}
       </div>
-
-      {isAirport ? (
-        <p className={s.quoteAir} data-testid="quote-air">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 3.5 4.5 6.7v5.4c0 4.3 3 7.5 7.5 8.4 4.5-.9 7.5-4.1 7.5-8.4V6.7z" />
-            <path d="m9 12 2.1 2.1L15.4 9.8" />
-          </svg>
-          <span>{airNote}</span>
-        </p>
-      ) : null}
 
       <div className={s.quoteFoot}>
         <button

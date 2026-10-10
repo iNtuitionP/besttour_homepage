@@ -48,7 +48,6 @@ const ROUTES: ShowcaseRouteView[] = SHOWCASE_ROUTE_SEED.map((s, i) => ({
 
 const COPY: RouteExplorerCopy = {
   listLabel: "LIST",
-  airport: "AIRPORT",
   empty: "EMPTY",
   showAll: "SHOW-ALL",
   showLess: "SHOW-LESS",
@@ -59,7 +58,6 @@ function renderExplorer(tips: RouteTip[], copy: RouteExplorerCopy = COPY, collap
   return renderToStaticMarkup(
     createElement(RouteExplorer, {
       map: createElement("svg", { "data-testid": "map-slot" }),
-      legend: null,
       cta: createElement("a", { href: "/#quote", "data-testid": "cta-slot" }, "CTA"),
       tips,
       copy,
@@ -139,18 +137,21 @@ describe("routeMidpoint — 2차 베지어 t=0.5", () => {
 });
 
 // =============================================================================
-// 4. 말풍선 문구 — 카드와 같은 포맷 · 라벨 숨김 폴백 · 공항 배지 · 로케일 지명
+// 4. 말풍선 문구 — 카드와 같은 포맷 · 라벨 숨김 폴백 · 로케일 지명 (공항 배지는 사장님 요청 10 으로 없앴다)
 // =============================================================================
 describe("toRouteTips — 서버가 카드·말풍선에 같이 내려 주는 노선 문구", () => {
   test("16노선 전부, 순서 그대로(sort_order)", () => {
     const tips = toRouteTips(ROUTES, "ko");
     expect(tips.map((t) => t.id)).toEqual(ROUTES.map((r) => r.id));
   });
-  test("ko: name_ko · '40만원' · 인천공항 노선만 airport", () => {
-    const [first, second] = toRouteTips(ROUTES, "ko");
-    expect(first).toMatchObject({ from: ROUTES[0].origin.nameKo, to: ROUTES[0].destination.nameKo, amount: "40만원", airport: true });
-    expect(second).toMatchObject({ airport: false });
-    expect(toRouteTips(ROUTES, "ko").filter((t) => t.airport)).toHaveLength(1);
+  // 사장님 요청 10(2026-10-10 · T1-1): 공항 배지를 카드·말풍선에서 뺐다 — 배지를 켜던 airport 필드도 데이터에서 없앴다.
+  test("ko: name_ko · '40만원' · 공항 노선(1번)도 다른 노선과 같은 필드 — airport 필드 없음", () => {
+    const tips = toRouteTips(ROUTES, "ko");
+    const [first, second] = tips;
+    expect(ROUTES[0].origin.kind).toBe("airport");
+    expect(first).toMatchObject({ from: ROUTES[0].origin.nameKo, to: ROUTES[0].destination.nameKo, amount: "40만원" });
+    expect(Object.keys(first).sort()).toEqual(Object.keys(second).sort());
+    for (const t of tips) expect(t).not.toHaveProperty("airport");
   });
   test("en: name_en · 'KRW 400,000'", () => {
     const [first] = toRouteTips(ROUTES, "en");
@@ -180,27 +181,29 @@ describe("toRouteTips — 서버가 카드·말풍선에 같이 내려 주는 �
 
 describe("RouteTooltip — 렌더", () => {
   const tipsKo = toRouteTips(ROUTES, "ko");
-  test("출발 → 도착 · 가격 줄 · 공항 배지", () => {
-    const html = renderToStaticMarkup(createElement(RouteTooltip, { tip: tipsKo[0], airportLabel: "AIRPORT" }));
+  test("출발 → 도착 · 가격 줄 (공항 노선도 배지 없음 — 사장님 요청 10)", () => {
+    const html = renderToStaticMarkup(createElement(RouteTooltip, { tip: tipsKo[0] }));
     expect(html).toContain(`${tipsKo[0].from} → ${tipsKo[0].to}`);
     expect(html).toContain("data-tip-amount");
     expect(html).toContain("40만원");
-    expect(html).toContain("AIRPORT");
     expect(html).toContain('aria-hidden="true"');
+    expect(html).not.toMatch(/<em[\s>]/);
   });
   test("가격 없음 → 가격 줄 자체가 없다", () => {
     const [tip] = toRouteTips([{ ...ROUTES[1], priceFrom: null }], "ko");
-    const html = renderToStaticMarkup(createElement(RouteTooltip, { tip, airportLabel: "AIRPORT" }));
+    const html = renderToStaticMarkup(createElement(RouteTooltip, { tip }));
     expect(html).not.toContain("data-tip-amount");
     expect(html).not.toContain("만원");
   });
-  test("공항 노선이 아니면 배지 없음", () => {
-    const html = renderToStaticMarkup(createElement(RouteTooltip, { tip: tipsKo[1], airportLabel: "AIRPORT" }));
-    expect(html).not.toContain("AIRPORT");
+  test("공항 노선(1번)과 일반 노선(2번)의 말풍선은 같은 마크업 구조다 — 지명·금액만 다르다", () => {
+    const shape = (html: string) => html.replace(/>[^<]*</g, "><").replace(/data-(tip-route|align|side)="[^"]*"|style="[^"]*"/g, "");
+    expect(shape(renderToStaticMarkup(createElement(RouteTooltip, { tip: tipsKo[0] })))).toBe(
+      shape(renderToStaticMarkup(createElement(RouteTooltip, { tip: tipsKo[1] }))),
+    );
   });
   test("en → name_en", () => {
     const [tip] = toRouteTips(ROUTES, "en");
-    const html = renderToStaticMarkup(createElement(RouteTooltip, { tip, airportLabel: "AIRPORT" }));
+    const html = renderToStaticMarkup(createElement(RouteTooltip, { tip }));
     expect(html).toContain(`${ROUTES[0].origin.nameEn} → ${ROUTES[0].destination.nameEn}`);
     expect(html).toContain("KRW 400,000");
   });

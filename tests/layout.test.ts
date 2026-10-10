@@ -329,13 +329,11 @@ const SPACING_PROP = /^(margin|padding|gap|row-gap|column-gap|inset|top|right|bo
  */
 const PX_ALLOW: ReadonlyArray<{ file: string; decl: string; why: string }> = [
   // ── KrMap (목업 variant-08 §대표 노선) ──
-  { file: "components/KrMap/KrMap.module.css", decl: "margin-top: 10px", why: "범례 여백 — 목업 .krmap" },
-  { file: "components/KrMap/KrMap.module.css", decl: "margin-right: 6px", why: "견본·불릿 간격 — 목업 .routes__disc" },
-  { file: "components/KrMap/KrMap.module.css", decl: "border-radius: 2px", why: "10px 견본 사각형 — --r-xs(4px)면 원에 가까워진다" },
+  // 사장님 요청 10(2026-10-10 · T1-1): 골드 범례(.caption · .swatch)와 공항 배지(.cardBadge)를 규칙째 지워
+  // "margin-top: 10px" · "margin-right: 6px" · "border-radius: 2px" · "margin-top: 2px" 네 항목을 뺐다(아래 죽은 항목 검사가 요구한다).
   { file: "components/KrMap/KrMap.module.css", decl: "gap: 10px", why: "카드 리스트 간격 — 목업 .rcard" },
   { file: "components/KrMap/KrMap.module.css", decl: "gap: 12px", why: "카드 내부 3열 간격 — 목업 .rcard" },
   { file: "components/KrMap/KrMap.module.css", decl: "padding: 12px 14px", why: "카드 패딩 — 목업 .rcard" },
-  { file: "components/KrMap/KrMap.module.css", decl: "margin-top: 2px", why: "배지 한 줄 내림 — 목업 .rcard b" },
   { file: "components/KrMap/KrMap.module.css", decl: "margin-top: 14px", why: "CTA 여백 — 목업 .routes CTA" },
   { file: "components/KrMap/KrMap.module.css", decl: "padding: 12px 24px", why: "버튼 패딩 — 목업 .btn" },
   { file: "components/KrMap/KrMap.module.css", decl: "padding: 20px 16px", why: "빈 상태 패딩" },

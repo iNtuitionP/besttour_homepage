@@ -959,6 +959,81 @@ describe("10. 최소 글자 12px · 터치 영역 44px", () => {
 });
 
 // =============================================================================
+// 10-b. 홈 팝업 위치 — PC(1024px 이상)만 왼쪽 위 · 휴대폰·태블릿은 가운데 그대로 · 모달 유지 (사장님 요청 22 · OF-T1-3)
+// 관리자 팝업 미리보기(app/admin/(protected)/popups/[id]/page.tsx → PopupSample)도 같은 HomePopup 을 그대로 쓴다 — 사본 CSS 가 없다.
+// =============================================================================
+describe("10-b. 홈 팝업 위치 — PC 만 왼쪽 위(머리글 아래) · 모달 유지", () => {
+  const FILE = "components/home/Popup.module.css";
+  const DESKTOP = /^@media\s*\(min-width:\s*1024px\)$/;
+  const blocks = cssBlocks(FILE);
+  const base = (cls: string) => blocks.filter((b) => b.media === null && b.selector === `.${cls}`);
+  const desktop = (cls: string) => blocks.filter((b) => b.media !== null && DESKTOP.test(b.media) && b.selector === `.${cls}`);
+
+  test("기본 규칙(1024px 미만) — 어두운 배경 모달이 화면 가운데: overlay 는 고정·전체 덮기·가운데 정렬, modal 은 margin auto", () => {
+    const overlay = base("overlay");
+    expect(overlay).toHaveLength(1);
+    const o = overlay[0].body;
+    expect(decl(o, "position")).toEqual(["fixed"]);
+    expect(decl(o, "inset")).toEqual(["0"]);
+    expect(decl(o, "z-index")).toEqual(["120"]);
+    expect(decl(o, "display")).toEqual(["flex"]);
+    expect(decl(o, "align-items")).toEqual(["center"]);
+    expect(decl(o, "justify-content")).toEqual(["center"]);
+    expect(decl(o, "padding")).toEqual(["var(--space-inline-sm)"]);
+    expect(decl(o, "background")).toEqual(["var(--overlay-medium)"]);
+    expect(decl(o, "overflow-y")).toEqual(["auto"]);
+    const modal = base("modal");
+    expect(modal).toHaveLength(1);
+    expect(decl(modal[0].body, "margin")).toEqual(["auto"]);
+    expect(decl(modal[0].body, "max-width")).toEqual(["432px"]);
+  });
+
+  test("1024px 이상 — 왼쪽 위: 두 축 flex-start · 위 여백 = 머리글 높이 + 간격 토큰 · 왼쪽 = 페이지 좌우 여백 · modal margin 0", () => {
+    const overlay = desktop("overlay");
+    expect(overlay, "1024px 미디어 쿼리 안의 .overlay").toHaveLength(1);
+    const o = overlay[0].body;
+    expect(decl(o, "align-items")).toEqual(["flex-start"]);
+    expect(decl(o, "justify-content")).toEqual(["flex-start"]);
+    // 머리글(z-index 80)은 어두운 배경(120) 아래에 그대로 보인다 — 창은 그 아래에서 시작한다. 높이는 폭에 따라 바뀌는 역할 토큰 하나(61px · 1280px 이상 77px).
+    expect(decl(o, "padding-top")).toEqual(["calc(var(--layout-header-h) + var(--space-stack-sm))"]);
+    // 왼쪽은 머리글 줄(.inner)의 좌우 여백과 같은 토큰 — 1280px 까지는 로고 왼쪽 끝과 같은 선이다.
+    expect(decl(o, "padding-left")).toEqual(["var(--space-page-x)"]);
+    const modal = desktop("modal");
+    expect(modal, "1024px 미디어 쿼리 안의 .modal").toHaveLength(1);
+    expect(decl(modal[0].body, "margin")).toEqual(["0"]);
+  });
+
+  test("PC 규칙은 위치만 바꾼다 — 어두운 배경·고정·덮기·z-index·스크롤·폭·모양 선언을 덮어쓰지 않는다", () => {
+    const POSITION_ONLY = new Set(["align-items", "justify-content", "padding-top", "padding-left", "margin"]);
+    const touched = [...desktop("overlay"), ...desktop("modal")].flatMap((b) => [...b.body.matchAll(/([-a-z]+)\s*:/g)].map((m) => m[1]));
+    expect(touched.length).toBeGreaterThan(0);
+    expect(touched.filter((p) => !POSITION_ONLY.has(p))).toEqual([]);
+  });
+
+  test("미디어 쿼리는 PC 하나뿐 — 휴대폰·태블릿 폭에서 위치를 바꾸는 규칙이 없다", () => {
+    const media = [...new Set(blocks.filter((b) => b.media !== null).map((b) => b.media))];
+    expect(media).toHaveLength(1);
+    expect(media[0]).toMatch(DESKTOP);
+    // 그 미디어 쿼리 안에는 overlay·modal 두 규칙뿐 — 닫기 X·사진·본문·아래 띠는 모든 폭에서 같다
+    expect(blocks.filter((b) => b.media !== null).map((b) => b.selector).sort()).toEqual([".modal", ".overlay"]);
+  });
+
+  test("모달 동작은 그대로 — dialog · aria-modal · ESC · 배경 클릭 · 문서 스크롤 잠금 · 포커스 트랩", () => {
+    const src = codeOf("components/home/Popup.tsx");
+    expect(src).toMatch(/role="dialog"/);
+    expect(src).toMatch(/aria-modal="true"/);
+    expect(src).toMatch(/"Escape"/);
+    expect(src).toMatch(/onMouseDown=\{onBackdrop\}/);
+    expect(src).toMatch(/event\.target === event\.currentTarget/);
+    expect(src).toMatch(/lockDocumentScroll\(\)/);
+    expect(src).toMatch(/"Tab"/);
+    // 관리자 미리보기는 홈 팝업을 그대로 감싼다(사본 없음) — 같은 CSS 가 같은 자리에 둔다
+    expect(codeOf("app/admin/(protected)/popups/[id]/page.tsx")).toMatch(/<PopupSample[\s\S]*?<HomePopup\s/);
+    expect(codeOf("components/home/HomePopup.tsx")).toMatch(/<Popup\s/);
+  });
+});
+
+// =============================================================================
 // 11. 브라우저 탭 아이콘 — 브랜드 심볼(스캐폴드 favicon 교체)
 // =============================================================================
 const pngSize = (rel: string) => {

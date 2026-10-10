@@ -9,9 +9,10 @@
  *   3. 진입 버튼(SheetTrigger) — 시트를 **열기만** 한다(서버액션 0) · 처리 중에는 disabled 대신 aria-disabled(P5-21 PendingButton)
  *   4. 처리 카드(ReservationProcess) — 확정(주 버튼) · 안내 · 구분선 · 취소(글자 버튼) · 안내 / 확정 상태면 운행 완료. 메모는 따로(시안).
  *      휴대폰 맨 아래 칸 — 취소(와 확정 상태면 운행 완료)만. 확정은 아래 고정 행동 바가 맡는다.
- *   5. 처리 영역(ReservationActions) — 간편 접수(새 접수)의 "전화로 확인할 것" 체크 4개 · n/4 · 저장하지 않는다는 안내 · 메모 카드 ·
- *      메모 저장은 PendingButton · 진입 버튼은 여기 없다(채널로 연다)
- *   6. 확정 시트의 확인 경고 — 간편 접수이고 체크가 4개 미만일 때만 · 막지 않는다 · aria-describedby 에 함께 읽힌다
+ *   5. 처리 영역(ReservationActions) — 메모 카드 · 메모 저장은 PendingButton · 진입 버튼은 여기 없다(채널로 연다).
+ *      간편 접수의 "전화로 확인할 것" 점검표 카드(P5-22)는 **없다** — 사장님 요청 11(2026-10-10 · 결정 13: 카드와 확정 경고만 지우고
+ *      운행 카드의 미정 칸 "전화로 확인" 은 남긴다). 체크 칸 · 진행 표시 · 옛 점검표 문구 · 카탈로그 키가 다시 들어오지 않게 잠근다.
+ *   6. 확정 시트 — 점검표 확인 경고가 **없다**(요청 11) · 설명(aria-describedby)은 본문 하나 · 간편 접수 요약 한 줄(quickNote)은 남는다
  *
  * vitest 는 node 환경이다(DOM 패키지 없음 · 새 패키지 금지) — 컴포넌트는 renderToStaticMarkup 으로 첫 화면을, 배선은 소스 정적 검사로,
  * 채널은 순수 모듈을 그대로 불러 본다(P5-19 tests/admin-confirm-sheet.test.ts 와 같은 나눔). 실제 클릭·포커스는 브라우저 실측(보고서 ⑤).
@@ -61,12 +62,10 @@ import {
 import { MAX_LIST_PAGES, backToListHref, detailHref, listHref } from "@/components/admin/reservation-list";
 import { IDLE_SNAPSHOT, PROCESS_REGION_ATTR, createPanelChannels, firstVisible } from "@/components/admin/reservation-panel";
 import { getReservationActionLabels } from "@/components/admin/reservationActionLabels";
+import * as sheetModule from "@/components/admin/reservation-sheet";
 import {
-  countChecked,
   focusRescue,
   initialPanelState,
-  sheetCheckWarning,
-  type ChecklistState,
   type PanelState,
   type ReservationActionLabels,
   type ReservationSummary,
@@ -83,7 +82,8 @@ const HANGUL = /[ᄀ-ᇿ㄰-㆏가-힯]/;
 const ko = JSON.parse(read("messages/ko.json")) as { admin: Record<string, Record<string, unknown>> };
 const detail = ko.admin.detail as Record<string, unknown> & Record<string, string>;
 const obj = (k: string) => detail[k] as unknown as Record<string, unknown>;
-const fill = (tpl: string, v: Record<string, string | number>) => tpl.replace(/\{(\w+)\}/g, (_, k: string) => String(v[k]));
+/** 정규식에 넣을 글자(useId 값 등)를 문자 그대로 읽게 한다. */
+const esc = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const ACTIONS_UI = "components/admin/ReservationActions.tsx";
 const TRIGGER = "components/admin/SheetTrigger.tsx";
@@ -119,6 +119,22 @@ async function labels(): Promise<ReservationActionLabels> {
 /** 요약 상자 조각 — 페이지와 같은 날짜 표기(P5-22 수정 라운드 · 컨트롤러 결정). */
 const QUICK: ReservationSummary = { parts: ["인천공항 → 서울", "10월 1일 (목)", "30명"], quick: true };
 const WIZARD: ReservationSummary = { parts: ["서울 → 부산", "10월 1일 (목) 08:30"], quick: false };
+
+/**
+ * 사장님 요청 11 로 지운 점검표 카드 · 확정 경고의 옛 문구(P5-22 카탈로그 원문). 카탈로그 키가 없어졌으니 리터럴로 든다 —
+ * 처리 영역·확정 시트 어디에도 다시 나오면 안 된다. 운행 카드의 미정 칸 "전화로 확인"(trip.undecided)은 남는 문구라 여기 없다
+ * ("전화로 확인할 것" 은 그것을 포함하지만 그 반대는 아니다).
+ */
+const REMOVED_CHECKLIST_COPY = [
+  "전화로 확인할 것",
+  "차량 종류와 대수",
+  "출발 시각과 타는 곳",
+  "왕복인지 편도인지",
+  "여행 목적 (예: 워크숍 · 가족 여행)",
+  "체크는 저장되지 않아요",
+  "확인한 내용은 아래 메모에 적어 두세요",
+  "통화로 확인하셨나요",
+] as const;
 
 // =============================================================================
 // 1. 순수 — 돌아가는 주소 · 제목 틀 · 번호 · 시각
@@ -404,35 +420,53 @@ describe("4. 처리 카드(ReservationProcess) — 데스크톱 오른쪽 · 휴
 // =============================================================================
 // 5. 처리 영역 — 체크리스트 · 메모 카드
 // =============================================================================
-describe("5. 처리 영역(ReservationActions) — '전화로 확인할 것' · 메모 카드 · 진입 버튼은 여기 없다", () => {
+describe("5. 처리 영역(ReservationActions) — 메모 카드 · 진입 버튼은 여기 없다 · '전화로 확인할 것' 점검표 카드도 없다(요청 11)", () => {
   const render = async (status: "new" | "confirmed" | "done" | "cancelled", summary: ReservationSummary = QUICK, memo = "") =>
     renderToStaticMarkup(createElement(ReservationActions, { id: ID, status, initialMemo: memo, summary, labels: await labels() }));
-  const checklistKo = obj("checklist") as Record<string, unknown>;
 
-  test("🔴 간편 접수 · 새 접수 — 체크 4개(시안 문구) · '0/4 확인' · 저장하지 않는다는 안내 · '확인한 내용은 아래 메모에' · 메모 카드보다 앞", async () => {
-    const html = await render("new");
-    const items = checklistKo.items as string[];
-    expect(items).toEqual(["차량 종류와 대수", "출발 시각과 타는 곳", "왕복인지 편도인지", "여행 목적 (예: 워크숍 · 가족 여행)"]);
-    const boxes = [...html.matchAll(/<input[^>]*type="checkbox"[^>]*>/g)].map((m) => m[0]);
-    expect(boxes).toHaveLength(4);
-    for (const b of boxes) expect(/ checked=""/.test(b), "처음에는 아무것도 체크하지 않는다").toBe(false);
-    const t = text(html);
-    for (const item of items) expect(t).toContain(item);
-    expect(text(/data-testid="admin-check-progress"[^>]*>([\s\S]*?)</.exec(html)![1])).toBe(fill(checklistKo.progress as string, { n: 0, total: 4 }));
-    expect(t).toContain(checklistKo.note as string);
-    expect(t).toContain(checklistKo.memoHint as string);
-    expect(checklistKo.memoHint).toBe("확인한 내용은 아래 메모에 적어 두세요.");
-    // 저장하지 않는 화면 안내용 — 그 사실을 한 줄로
-    expect(checklistKo.note as string).toMatch(/저장되지 않아요/);
-    expect(html.indexOf('data-testid="admin-checklist"')).toBeLessThan(html.indexOf('id="admin-memo"'));
-    // 체크 칸 하나하나는 48px 줄(누를 자리) — 라벨이 체크를 감싼다
-    expect(html).toMatch(/<label[^>]*><input[^>]*type="checkbox"/);
+  /**
+   * 사장님 요청 11(2026-10-10) — P5-22 의 점검표 카드는 간편 접수의 새 접수에서만 보였다. 그 경우를 포함해 **어느 상태·접수 방식에서도**
+   * 체크 칸 · 진행 표시 · 옛 점검표 문구가 없어야 한다. 메모 카드가 처리 영역의 첫 카드다(점검표가 그 앞에 서던 자리).
+   */
+  test("🔴 요청 11 — 간편 접수 · 새 접수에도(옛 카드가 보이던 유일한 경우) 점검표가 없다: 체크 칸 0 · 진행 표시 0 · 옛 문구 0 · 메모 카드가 첫 카드", async () => {
+    const cases = [
+      ["new", QUICK],
+      ["new", WIZARD],
+      ["confirmed", QUICK],
+      ["done", QUICK],
+      ["cancelled", QUICK],
+    ] as const;
+    for (const [status, summary] of cases) {
+      const html = await render(status, summary);
+      const where = `${status}/${summary.quick ? "quick" : "wizard"}`;
+      expect(html.match(/<input[^>]*type="checkbox"/g) ?? [], `${where}: 체크 칸`).toEqual([]);
+      for (const id of ["admin-checklist", "admin-check-progress", "admin-check-0"]) {
+        expect(html, `${where}: ${id}`).not.toContain(`data-testid="${id}"`);
+      }
+      const t = text(html);
+      for (const line of REMOVED_CHECKLIST_COPY) expect(t, `${where}: ${line}`).not.toContain(line);
+      // 처리 영역이 그리는 첫 카드는 메모 카드다
+      expect(html.indexOf("<section"), where).toBe(html.indexOf(openTag(html, "admin-memo-card")));
+    }
   });
 
-  test("체크리스트는 간편 접수의 새 접수에만 — 확정 뒤·상세 접수에는 없다", async () => {
-    expect(await render("confirmed")).not.toContain('data-testid="admin-checklist"');
-    expect(await render("new", WIZARD)).not.toContain('data-testid="admin-checklist"');
-    expect(await render("done")).not.toContain('data-testid="admin-checklist"');
+  test("🔴 카탈로그 · 라벨 — admin.detail.checklist · sheet.checkWarning 이 없다(죽은 문구를 남기지 않는다) · 남기는 것: 미정 칸 '전화로 확인' · 확정 시트 요약의 간편 접수 한 줄(결정 13)", async () => {
+    expect(Object.keys(detail)).not.toContain("checklist");
+    expect(Object.keys(obj("sheet"))).not.toContain("checkWarning");
+    const l = await labels();
+    expect(Object.keys(l)).not.toContain("checklist");
+    expect(Object.keys(l.sheet)).not.toContain("checkWarning");
+    // 결정 13 — 지우는 것은 카드와 확정 경고뿐이다
+    expect((obj("trip") as Record<string, string>).undecided).toBe("전화로 확인");
+    expect(l.sheet.quickNote).toBe("간편 접수 — 차량·시각은 통화로 정한 대로");
+  });
+
+  test("🔴 정적 — 처리 영역·라벨 조립에 점검표의 흔적이 없다(체크 상태 · checkbox · 체크 수 판정 · checklist 라벨)", () => {
+    const ui = codeOf(ACTIONS_UI);
+    expect(ui).not.toMatch(/checklist|checkbox|countChecked|sheetCheckWarning|checkWarning/i);
+    expect(ui).not.toMatch(/useState<boolean\[\]>/);
+    expect(codeOf("components/admin/reservationActionLabels.tsx")).not.toMatch(/checklist|checkWarning/i);
+    expect(codeOf("components/admin/reservation-sheet.ts")).not.toMatch(/checklist|checkWarning|countChecked/i);
   });
 
   test("🔴 메모 카드 — 제목(관리자 메모 = 칸 이름) · P5-19 안내 · 상한 · 예시 자리글 · [메모 저장]은 PendingButton(처리 중 aria-disabled)", async () => {
@@ -515,8 +549,8 @@ describe("5. 처리 영역(ReservationActions) — '전화로 확인할 것' · 
 // =============================================================================
 // 6. 확정 시트의 확인 경고
 // =============================================================================
-describe("6. 확정 시트 — '전화로 확인할 것 4개 중 n개를 확인했어요. 통화로 확인하셨나요?' (간편 접수 · 4개 미만일 때만 · 막지 않는다)", () => {
-  async function renderSheet(sheet: SheetKind, checklist: ChecklistState | null | undefined, summary: ReservationSummary = QUICK, patch: Partial<PanelState> = {}) {
+describe("6. 확정 시트 — 점검표 확인 경고가 없다(요청 11) · 설명은 본문 하나 · 간편 접수 요약 한 줄은 남는다", () => {
+  async function renderSheet(sheet: SheetKind, summary: ReservationSummary = QUICK, patch: Partial<PanelState> = {}) {
     const state: PanelState = { ...initialPanelState(""), sheet, customerName: "예시고객가", ...patch };
     return renderToStaticMarkup(
       createElement(ReservationSheet, {
@@ -526,70 +560,79 @@ describe("6. 확정 시트 — '전화로 확인할 것 4개 중 n개를 확인�
         summary,
         pending: false,
         slow: false,
-        checklist,
         onClose: () => {},
         onSubmit: () => {},
         onPickReason: () => {},
       }),
     );
   }
-  const warnTpl = () => (obj("sheet") as Record<string, string>).checkWarning;
+  const sheetKo = () => obj("sheet") as Record<string, string>;
 
-  test("순수 — 경고는 확정 시트 · 체크리스트가 있고 · 다 채우지 않았을 때만", () => {
-    expect(sheetCheckWarning("confirm", { checked: 2, total: 4 })).toEqual({ checked: 2, total: 4 });
-    expect(sheetCheckWarning("confirm", { checked: 0, total: 4 })).toEqual({ checked: 0, total: 4 });
-    expect(sheetCheckWarning("confirm", { checked: 4, total: 4 })).toBeNull();
-    expect(sheetCheckWarning("confirm", null)).toBeNull();
-    expect(sheetCheckWarning("cancel", { checked: 1, total: 4 })).toBeNull();
-    expect(sheetCheckWarning("complete", { checked: 1, total: 4 })).toBeNull();
-    expect(sheetCheckWarning("confirm", { checked: 0, total: 0 })).toBeNull();
-    expect(countChecked([true, false, true, false])).toBe(2);
-    expect(countChecked([])).toBe(0);
-  });
+  /** 대화상자의 설명 id 들과, 그 id 가 가리키는 요소의 글자. */
+  function descriptions(html: string, name: SheetKind): { ids: string[]; texts: string[] } {
+    const dialog = openTag(html, `admin-sheet-${name}`);
+    const ids = (attr(dialog, "aria-describedby") ?? "").split(" ").filter(Boolean);
+    const texts = ids.map((id) => {
+      const m = new RegExp(`<(\\w+)[^>]*\\sid="${esc(id)}"[^>]*>([\\s\\S]*?)</\\1>`).exec(html);
+      expect(m, `설명 id ${id} 의 요소가 없다`).not.toBeNull();
+      return text(m![2]);
+    });
+    return { ids, texts };
+  }
 
-  test("🔴 2/4 — 요약 상자 다음 · 본문 앞에 경고 · 대화상자의 설명(aria-describedby)에 경고와 본문이 함께 · 실행 버튼은 막히지 않는다", async () => {
-    const html = await renderSheet("confirm", { checked: 2, total: 4 });
-    const warning = fill(warnTpl(), { total: 4, n: 2 });
-    expect(warning).toBe("전화로 확인할 것 4개 중 2개를 확인했어요. 통화로 확인하셨나요?");
-    expect(text(html)).toContain(warning);
-    const warnTag = openTag(html, "admin-sheet-check-warning");
-    const warnId = attr(warnTag, "id");
-    expect(warnId).toBeTruthy();
-    expect(attr(warnTag, "role")).toBeNull(); // 실패 배너가 아니다(role=alert 아님) — 열릴 때 설명으로 함께 읽힌다
-    const dialog = openTag(html, "admin-sheet-confirm");
-    const describedBy = (attr(dialog, "aria-describedby") ?? "").split(" ");
-    expect(describedBy).toHaveLength(2);
-    expect(describedBy[0]).toBe(warnId);
-    expect(html).toContain(`id="${describedBy[1]}"`);
-    const iSummary = html.indexOf('data-testid="admin-sheet-summary"');
-    const iWarn = html.indexOf('data-testid="admin-sheet-check-warning"');
-    const iBody = html.indexOf(`id="${describedBy[1]}"`);
-    expect(iWarn).toBeGreaterThan(iSummary);
-    expect(iBody).toBeGreaterThan(iWarn);
+  test("🔴 간편 접수 확정 시트(옛 경고가 뜨던 자리) — 경고 상자 0 · 옛 경고 문구 0 · 설명은 확정 본문 하나 · 요약 바로 뒤가 본문 · 요약에 간편 접수 한 줄 · 실행 버튼은 막히지 않는다", async () => {
+    const html = await renderSheet("confirm");
+    expect(html).not.toContain("admin-sheet-check-warning");
+    const t = text(html);
+    for (const line of REMOVED_CHECKLIST_COPY) expect(t, line).not.toContain(line);
+    const { ids, texts } = descriptions(html, "confirm");
+    expect(ids).toHaveLength(1);
+    expect(texts).toEqual([sheetKo().confirmBody]);
+    // 요약 상자가 닫히자마자 본문 — 그 사이에 끼는 상자가 없다
+    const summaryOpen = openTag(html, "admin-sheet-summary");
+    const afterSummary = html.slice(html.indexOf(summaryOpen));
+    expect(afterSummary).toMatch(new RegExp(`^<p[^>]*>[\\s\\S]*?</p><p id="${esc(ids[0])}"`));
+    expect(text(/<p[^>]*data-testid="admin-sheet-summary"[^>]*>([\s\S]*?)<\/p>/.exec(html)![1])).toContain(sheetKo().quickNote);
     expect(attr(openTag(html, "admin-sheet-submit"), "disabled")).toBeNull();
   });
 
-  test("4/4 · 체크리스트 없음(상세 접수) · 취소·완료 시트 — 경고 없음 · 설명은 본문 하나(P5-19 그대로)", async () => {
-    for (const html of [
-      await renderSheet("confirm", { checked: 4, total: 4 }),
-      await renderSheet("confirm", null, WIZARD),
-      await renderSheet("confirm", undefined),
-      await renderSheet("cancel", { checked: 1, total: 4 }),
-      await renderSheet("complete", { checked: 1, total: 4 }),
-    ]) {
-      expect(html).not.toContain("admin-sheet-check-warning");
-      const dialogTag = /<div[^>]*role="alertdialog"[^>]*>/.exec(html)![0];
-      expect((attr(dialogTag, "aria-describedby") ?? "").split(" ")).toHaveLength(1);
+  test("상세 접수 확정 · 취소 · 완료 시트 — 경고 없음 · 설명은 본문 하나(P5-19 그대로)", async () => {
+    for (const [name, summary, body] of [
+      ["confirm", WIZARD, sheetKo().confirmBody],
+      ["cancel", QUICK, null],
+      ["complete", QUICK, sheetKo().completeBody],
+    ] as const) {
+      const html = await renderSheet(name, summary);
+      expect(html, name).not.toContain("admin-sheet-check-warning");
+      const { ids, texts } = descriptions(html, name);
+      expect(ids, name).toHaveLength(1);
+      if (body !== null) expect(texts, name).toEqual([body]);
     }
   });
 
-  test("정적 — 경고 상자는 역할 토큰(골드 테두리 = 새 접수 톤 · 흰 면) · AdminSheet 는 추가 설명 id 를 앞에 붙인다", () => {
-    const sheet = codeOf(SHEET_UI);
-    expect(sheet).toMatch(/aria-describedby=\{describedBy \? `\$\{describedBy\} \$\{descId\}` : descId\}/);
+  test("🔴 정적 — ReservationSheet 는 점검표를 받지 않고 추가 설명 id 를 넘기지 않는다 · 시트 모듈은 체크 판정을 내보내지 않는다 · 경고·점검표 CSS 는 지웠다 · AdminSheet 의 추가 설명 규약은 그대로", () => {
+    const ui = codeOf(ACTIONS_UI);
+    const props = /export function ReservationSheet\(\{([^}]*)\}/.exec(ui)?.[1] ?? "";
+    expect(props.split(",").map((p) => p.trim()).filter(Boolean).sort()).toEqual([
+      "labels",
+      "onClose",
+      "onPickReason",
+      "onSubmit",
+      "pending",
+      "sheet",
+      "slow",
+      "state",
+      "summary",
+    ]);
+    expect(ui).not.toMatch(/describedBy=/);
+    const exported = Object.keys(sheetModule);
+    for (const name of ["sheetCheckWarning", "countChecked"]) expect(exported, name).not.toContain(name);
     const css = read("components/admin/admin.module.css").replace(/\/\*[\s\S]*?\*\//g, "");
-    const body = /\.sheetWarn\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
-    expect(body).toMatch(/border:\s*1px solid var\(--status-attention-border\)/);
-    expect(body).toMatch(/background:\s*var\(--bg-surface\)/);
+    for (const cls of ["sheetWarn", "sheetWarnIcon", "callChecklist", "callCheck", "callCheckInput", "callCheckText", "cardAside"]) {
+      expect(css, cls).not.toMatch(new RegExp(`\\.${cls}(?![\\w-])`));
+    }
+    // AdminSheet 의 추가 설명 id 는 범용 규약으로 남는다(지금 쓰는 곳은 없다 — 쓰지 않으면 설명은 본문 하나)
+    expect(codeOf(SHEET_UI)).toMatch(/aria-describedby=\{describedBy \? `\$\{describedBy\} \$\{descId\}` : descId\}/);
   });
 });
 

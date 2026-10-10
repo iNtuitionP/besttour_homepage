@@ -1,5 +1,6 @@
 /**
- * 홈 — 섹션 조립 + 데이터 fetch 만 (P2-4 · ADR-8, 목업 variant-08 DOM 순서 그대로 9개 + 접수 현황(P3-5) + 팝업).
+ * 홈 — 섹션 조립 + 데이터 fetch 만 (P2-4 · ADR-8, 목업 variant-08 DOM 순서 그대로 8개 + 접수 현황(P3-5) + 팝업).
+ * 사장님 요청 23(2026-10-10 · T1-1): 신뢰 바 뒤의 "베스트투어 강점" 띠(옛 ServiceStrip)를 섹션째 지웠다 — 목업과 다르다.
  *
  * 렌더 방식: 빌드 시 정적(SSG) + ISR(revalidate) — 요청 시점 API(headers·cookies·searchParams)를 쓰지 않는다.
  * 데이터는 lib/queries(anon + RLS)로 여기서 한 번에 받아 섹션에 props 로 내린다. 섹션 컴포넌트는 fetch 하지 않는다.
@@ -26,7 +27,6 @@ import { PREVIEW_POPUP } from "@/components/home/popup-preview";
 import { PREVIEW_RECENT_ROWS } from "@/components/home/recent-feed-preview";
 import { RecentFeed } from "@/components/home/RecentFeed";
 import { RoutesSection } from "@/components/home/RoutesSection";
-import { ServiceStrip } from "@/components/home/ServiceStrip";
 import { TrustBar } from "@/components/home/TrustBar";
 import { ledgerUi } from "@/lib/i18n/ledger-ui";
 import { getActivePopup, getGallery, getNotices, getShowcaseRoutes, getVehicles, QUERY_TAGS } from "@/lib/queries";
@@ -109,7 +109,6 @@ export default async function HomePage({ params, searchParams }: { params: Param
       <RoutesSection routes={routes} />
       <RecentFeed items={recent} vehicleLabels={vehicleLabels} />
       <TrustBar />
-      <ServiceStrip />
       <HowItWorks />
       <FleetSection vehicles={vehicles} />
       <CompanyIntro />
