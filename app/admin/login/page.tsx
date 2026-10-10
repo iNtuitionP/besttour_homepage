@@ -6,7 +6,9 @@ import { routing } from "@/i18n/routing";
 import {
   ADMIN_LOGIN_ERROR_CALLBACK,
   ADMIN_LOGIN_ERROR_PARAM,
+  ADMIN_TURNSTILE_ACTION,
   adminEmailAllowlist,
+  adminTurnstileSiteKey,
   type AdminLoginState,
 } from "@/lib/auth/adminLogin";
 import { adminGuardDeps } from "@/lib/guard/deps";
@@ -21,7 +23,11 @@ import s from "./login.module.css";
  *   1. 설정이 갖춰졌는지 확인해 **닫힌 상태를 화면으로 표현한다**(fail-closed 3경로 중 둘).
  *      - ADMIN_EMAILS 가 비었다  → closed:      로그인 자체가 설정되지 않았다
  *      - Upstash·GUARD_SECRET 부재 → unavailable: 방어(rate limit)가 없으면 메일 발송 문을 열지 않는다
+ *      - Turnstile 사이트 키 부재 → unavailable (OF-T3-6): 위젯이 없으면 CAPTCHA 토큰이 없고, 원격 Supabase Auth 의 CAPTCHA 가
+ *        모든 로그인을 거부한다. 죽은 버튼 대신 닫힌 화면을 보인다
  *      세 번째 경로(허용 목록 밖 주소)는 화면이 아니라 액션이 담당한다 — 목록 안과 **같은 응답**이라 화면도 같다.
+ *
+ * OF-T3-6(사장님 요청 13 · 결정 6): 이메일 + 비밀번호가 기본이고, "메일로 로그인 링크 받기"는 보조(비상용)로 아래에 남는다.
  *   2. 문구를 카탈로그에서 읽어 클라이언트 폼에 props 로 내린다. 관리자 영역은 로케일 밖이라
  *      NextIntlClientProvider 가 없다 — 클라이언트에서 useTranslations 를 쓸 수 없다.
  *
@@ -46,18 +52,21 @@ export default async function AdminLoginPage({
       guardReady = false;
     }
   }
-  const ready = !allowlistEmpty && guardReady;
+  const turnstileSiteKey = adminTurnstileSiteKey();
+  const captchaReady = turnstileSiteKey.length > 0;
+  const ready = !allowlistEmpty && guardReady && captchaReady;
 
   const params = await searchParams;
   const callbackFailed = params[ADMIN_LOGIN_ERROR_PARAM] === ADMIN_LOGIN_ERROR_CALLBACK;
 
   let notice: string | null = null;
   if (allowlistEmpty) notice = t("closed");
-  else if (!guardReady) notice = t("unavailable");
+  else if (!guardReady || !captchaReady) notice = t("unavailable");
   else if (callbackFailed) notice = t("callbackFailed");
 
   const messages: Record<AdminLoginState, string> = {
     sent: t("sent"),
+    credentials: t("credentials"),
     closed: t("closed"),
     invalid: t("invalid"),
     ratelimit: t("ratelimit"),
@@ -76,8 +85,19 @@ export default async function AdminLoginPage({
         <AdminLoginForm
           ready={ready}
           notice={notice}
-          labels={{ emailLabel: t("emailLabel"), submit: t("submit"), submitting: t("submitting") }}
+          labels={{
+            emailLabel: t("emailLabel"),
+            passwordLabel: t("passwordLabel"),
+            submit: t("submit"),
+            submitting: t("submitting"),
+            linkHint: t("linkHint"),
+            linkSubmit: t("linkSubmit"),
+            linkSubmitting: t("linkSubmitting"),
+            captchaWaiting: t("captchaWaiting"),
+          }}
           messages={messages}
+          turnstileSiteKey={turnstileSiteKey}
+          turnstileAction={ADMIN_TURNSTILE_ACTION}
         />
       </div>
     </main>

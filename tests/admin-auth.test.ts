@@ -14,6 +14,12 @@
  *   6. 정적 — admin 경로에 서비스 롤 0(게이트 스크립트 red/green 픽스처 포함) · 액션 export 1 · 한글 리터럴 0 · 배선
  *   7. DB 실증 — 로컬 스택 가드 뒤에서만(원격에는 어떤 쓰기도 하지 않는다). CI db-test 에서 돈다
  *
+ * OF-T3-6(비밀번호 로그인 · 결정 6): 액션 이름이 requestAdminLoginLink → signInAdmin(mode=password|link)으로 바뀌었다.
+ *   4   링크 모드 — 옛 단언 그대로 + 폼에 mode=link · CAPTCHA 토큰(없으면 Supabase 0) · captchaToken 전달
+ *   4-b 비밀번호 모드 — 실패 응답 단일화(credentials) · 1초 바닥 · 목록 밖 Supabase 0 · 성공 redirect · 로그에 비밀 0
+ *   6   정적 — 비밀번호 변경 액션의 첫 문장 게이트 · 새 카탈로그 키
+ *   쿠키가 실제로 심어지는지 · 비밀번호 변경 동작 · 화면 렌더는 tests/admin-password-login.test.ts · tests/admin-account.test.ts
+ *
  * tests/ 아래라 게이트 3종의 검사 대상이다 — 금지어·임시값 마커 리터럴은 문자열 결합으로 조립한다.
  */
 import { execFileSync, spawn } from "node:child_process";
@@ -26,16 +32,24 @@ import { afterAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { HONEYPOT_FIELD, type RateLimiterSet } from "@/lib/guard";
 import {
   ADMIN_CALLBACK_PATH,
+  ADMIN_CAPTCHA_FIELD,
+  ADMIN_CAPTCHA_MAX_LENGTH,
   ADMIN_EMAIL_FIELD,
+  ADMIN_HOME_PATH,
   ADMIN_LOGIN_PATH,
   ADMIN_LOGIN_STATES,
+  ADMIN_MODE_FIELD,
+  ADMIN_PASSWORD_FIELD,
+  ADMIN_PASSWORD_INPUT_MAX,
   MIN_LOGIN_RESPONSE_MS,
+  MIN_PASSWORD_RESPONSE_MS,
   adminEmailAllowlist,
   isAdminEmailAllowed,
   parseAdminEmails,
   remainingPadMs,
   type AdminLoginResult,
 } from "@/lib/auth/adminLogin";
+import { ACCOUNT_STATES } from "@/lib/auth/adminAccount";
 import { withNotificationsLock } from "./helpers/db-lock";
 import { expectFunctionPrivilegeDenied, expectRaisedDenied, expectRlsInsertDenied, expectTablePrivilegeDenied } from "./helpers/expect-denied";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
@@ -55,8 +69,9 @@ vi.mock("@/lib/log", () => ({ structuredLog: vi.fn() }));
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { adminGuardDeps } from "@/lib/guard/deps";
+import { structuredLog } from "@/lib/log";
 import { createSsrClient } from "@/lib/supabase/ssr";
-import { requestAdminLoginLink } from "@/actions/admin/auth";
+import { signInAdmin } from "@/actions/admin/auth";
 import { requireAdmin, resolveAdminSession } from "@/lib/auth/requireAdmin";
 
 import { stripComments } from "./helpers/strip-comments";
@@ -87,6 +102,11 @@ const PROTECTED_LAYOUT = "app/admin/(protected)/layout.tsx";
 const PROTECTED_PAGE = "app/admin/(protected)/page.tsx";
 const LOGIN_FORM = "components/admin/AdminLoginForm.tsx";
 const GATE_SCRIPT = "scripts/check-admin-no-service-role.sh";
+// OF-T3-6 — 비밀번호 변경
+const ACCOUNT_ACTION = "actions/admin/account.ts";
+const ACCOUNT_PAGE = "app/admin/(protected)/account/page.tsx";
+const ACCOUNT_FORM = "components/admin/AccountPasswordForm.tsx";
+const ACCOUNT_LIB = "lib/auth/adminAccount.ts";
 
 /**
  * 0001_init.sql 의 정규화(CRLF→LF) sha256 — tests/gallery-albums.test.ts 와 같은 값. 0009 는 0001 을 한 글자도 바꾸지 않는다:
@@ -374,30 +394,68 @@ function limiterSet(success: boolean): { limiters: RateLimiterSet; calls: string
 }
 
 const SECRET = "0123456789abcdef0123456789abcdef0123456789abcdef";
+/** Cloudflare 문서의 시험 토큰 모양(실제 검증은 원격 Supabase Auth 몫 — 여기서는 "있다" 만 본다). */
+const CAPTCHA = "XXXX.DUMMY.TOKEN.XXXX";
 
-function otpForm(email: string, honeypot?: string): FormData {
+/**
+ * 링크 모드 폼. OF-T3-6 부터 mode=link 와 CAPTCHA 토큰을 싣는다(옛 폼은 주소 한 칸뿐이었다).
+ * `captcha: null` 이면 토큰 칸을 빼서 "위젯을 거치지 않은 요청" 을 만든다.
+ */
+function otpForm(email: string, honeypot?: string, captcha: string | null = CAPTCHA): FormData {
   const fd = new FormData();
+  fd.set(ADMIN_MODE_FIELD, "link");
   fd.set(ADMIN_EMAIL_FIELD, email);
+  if (captcha !== null) fd.set(ADMIN_CAPTCHA_FIELD, captcha);
   if (honeypot !== undefined) fd.set(HONEYPOT_FIELD, honeypot);
+  return fd;
+}
+
+/** 비밀번호 모드 폼(OF-T3-6). mode 칸을 빼면(`mode: null`) 기본값(password)으로 읽힌다. */
+function pwForm(
+  email: string,
+  password: string | null,
+  opts: { honeypot?: string; captcha?: string | null; mode?: string | null } = {},
+): FormData {
+  const fd = new FormData();
+  const mode = opts.mode === undefined ? "password" : opts.mode;
+  if (mode !== null) fd.set(ADMIN_MODE_FIELD, mode);
+  fd.set(ADMIN_EMAIL_FIELD, email);
+  if (password !== null) fd.set(ADMIN_PASSWORD_FIELD, password);
+  const captcha = opts.captcha === undefined ? CAPTCHA : opts.captcha;
+  if (captcha !== null) fd.set(ADMIN_CAPTCHA_FIELD, captcha);
+  if (opts.honeypot !== undefined) fd.set(HONEYPOT_FIELD, opts.honeypot);
   return fd;
 }
 
 /** signInWithOtp 에 넘어간 인자 모양 — mock 단언용(실제 매직링크는 보내지 않는다). */
 interface OtpArgs {
   email: string;
-  options: { shouldCreateUser: boolean; emailRedirectTo: string };
+  options: { shouldCreateUser: boolean; emailRedirectTo: string; captchaToken?: string };
 }
 
-/** signInWithOtp 호출을 기록만 하는 가짜 SSR 클라이언트 — 네트워크 0. */
-function fakeSsr(error: { message: string } | null = null) {
+/** signInWithPassword 에 넘어간 인자 모양 — mock 단언용. */
+interface PwArgs {
+  email: string;
+  password: string;
+  options?: { captchaToken?: string };
+}
+
+type PwReply = { data: { session: object | null; user: object | null }; error: { message: string; code?: string } | null };
+
+/** signInWithOtp · signInWithPassword 호출을 기록만 하는 가짜 SSR 클라이언트 — 네트워크 0. */
+function fakeSsr(error: { message: string } | null = null, pw: PwReply = { data: { session: null, user: null }, error: { message: "Invalid login credentials", code: "invalid_credentials" } }) {
   const signInWithOtp = vi.fn<(args: OtpArgs) => Promise<{ data: object; error: { message: string } | null }>>(async () => ({
     data: {},
     error,
   }));
-  return { client: { auth: { signInWithOtp } }, signInWithOtp };
+  const signInWithPassword = vi.fn<(args: PwArgs) => Promise<PwReply>>(async () => pw);
+  return { client: { auth: { signInWithOtp, signInWithPassword } }, signInWithOtp, signInWithPassword };
 }
 
-describe("4. requestAdminLoginLink", () => {
+/** 성공 응답 — 세션이 있다. */
+const PW_OK: PwReply = { data: { session: { access_token: "a" }, user: { id: "u" } }, error: null };
+
+describe("4. signInAdmin — 링크 모드(보조)", () => {
   const savedEmails = process.env.ADMIN_EMAILS;
   const savedSiteUrl = process.env.NEXT_PUBLIC_SITE_URL;
 
@@ -422,7 +480,7 @@ describe("4. requestAdminLoginLink", () => {
     delete process.env.ADMIN_EMAILS;
     const { client, signInWithOtp } = fakeSsr();
     vi.mocked(createSsrClient).mockReturnValue(client as never);
-    expect(await requestAdminLoginLink(otpForm(ALLOWED))).toEqual<AdminLoginResult>({ state: "closed" });
+    expect(await signInAdmin(otpForm(ALLOWED))).toEqual<AdminLoginResult>({ state: "closed" });
     expect(signInWithOtp).not.toHaveBeenCalled();
     expect(createSsrClient).not.toHaveBeenCalled();
     expect(adminGuardDeps).not.toHaveBeenCalled();
@@ -432,7 +490,7 @@ describe("4. requestAdminLoginLink", () => {
     const { client, signInWithOtp } = fakeSsr();
     vi.mocked(createSsrClient).mockReturnValue(client as never);
     for (const bad of ["", "   ", "not-an-email", "a@", "@b.com", "a b@c.com", "a".repeat(250) + "@b.com"]) {
-      expect(await requestAdminLoginLink(otpForm(bad)), bad).toEqual({ state: "invalid" });
+      expect(await signInAdmin(otpForm(bad)), bad).toEqual({ state: "invalid" });
     }
     expect(signInWithOtp).not.toHaveBeenCalled();
     expect(adminGuardDeps).not.toHaveBeenCalled();
@@ -441,7 +499,7 @@ describe("4. requestAdminLoginLink", () => {
   test("허니팟이 채워지면 성공과 같은 응답을 주고 Supabase 는 부르지 않는다", async () => {
     const { client, signInWithOtp } = fakeSsr();
     vi.mocked(createSsrClient).mockReturnValue(client as never);
-    expect(await requestAdminLoginLink(otpForm(ALLOWED, "http://spam.example"))).toEqual({ state: "sent" });
+    expect(await signInAdmin(otpForm(ALLOWED, "http://spam.example"))).toEqual({ state: "sent" });
     expect(signInWithOtp).not.toHaveBeenCalled();
   });
 
@@ -451,12 +509,12 @@ describe("4. requestAdminLoginLink", () => {
 
     const { limiters } = limiterSet(false);
     vi.mocked(adminGuardDeps).mockReturnValue({ now: () => new Date(), secret: SECRET, rateLimit: { limiters, timeoutMs: 5_000 } });
-    expect(await requestAdminLoginLink(otpForm(ALLOWED))).toEqual({ state: "ratelimit" });
+    expect(await signInAdmin(otpForm(ALLOWED))).toEqual({ state: "ratelimit" });
 
     vi.mocked(adminGuardDeps).mockImplementation(() => {
       throw new Error("UPSTASH_REDIS_REST_URL 이 설정되지 않았다");
     });
-    expect(await requestAdminLoginLink(otpForm(ALLOWED))).toEqual({ state: "infra" });
+    expect(await signInAdmin(otpForm(ALLOWED))).toEqual({ state: "infra" });
     expect(signInWithOtp).not.toHaveBeenCalled();
   });
 
@@ -464,11 +522,11 @@ describe("4. requestAdminLoginLink", () => {
     const { client, signInWithOtp } = fakeSsr();
     vi.mocked(createSsrClient).mockReturnValue(client as never);
 
-    const outside = await requestAdminLoginLink(otpForm(OUTSIDE));
+    const outside = await signInAdmin(otpForm(OUTSIDE));
     expect(signInWithOtp).not.toHaveBeenCalled();
     expect(createSsrClient).not.toHaveBeenCalled();
 
-    const inside = await requestAdminLoginLink(otpForm(ALLOWED));
+    const inside = await signInAdmin(otpForm(ALLOWED));
     expect(signInWithOtp).toHaveBeenCalledTimes(1);
 
     expect(outside).toEqual(inside);
@@ -481,34 +539,45 @@ describe("4. requestAdminLoginLink", () => {
     vi.mocked(adminGuardDeps).mockReturnValue({ now: () => new Date(), secret: SECRET, rateLimit: { limiters, timeoutMs: 5_000 } });
     const { client } = fakeSsr();
     vi.mocked(createSsrClient).mockReturnValue(client as never);
-    await requestAdminLoginLink(otpForm(OUTSIDE));
+    await signInAdmin(otpForm(OUTSIDE));
     expect(calls.length).toBeGreaterThan(0);
   });
 
   test("signInWithOtp 인자 — shouldCreateUser:false 가 반드시 있고, emailRedirectTo 는 콜백 경로다. 주소는 정규화돼 나간다", async () => {
     const { client, signInWithOtp } = fakeSsr();
     vi.mocked(createSsrClient).mockReturnValue(client as never);
-    await requestAdminLoginLink(otpForm("  BOSS@Bestour.CO.KR  "));
+    await signInAdmin(otpForm("  BOSS@Bestour.CO.KR  "));
     expect(signInWithOtp).toHaveBeenCalledTimes(1);
     const arg: OtpArgs = signInWithOtp.mock.calls[0][0];
     expect(arg.email).toBe(ALLOWED);
     expect(arg.options.shouldCreateUser).toBe(false);
     expect(arg.options.emailRedirectTo).toBe(`https://admin-test.example${ADMIN_CALLBACK_PATH}`);
+    // OF-T3-6 — 원격 Supabase Auth CAPTCHA 와 호환되게 토큰을 그대로 넘긴다(검증은 원격이 한다)
+    expect(arg.options.captchaToken).toBe(CAPTCHA);
+  });
+
+  test("CAPTCHA 토큰이 없거나 지나치게 길면 Supabase 를 부르지 않고 sent 그대로 (OF-T3-6)", async () => {
+    const { client, signInWithOtp } = fakeSsr();
+    vi.mocked(createSsrClient).mockReturnValue(client as never);
+    expect(await signInAdmin(otpForm(ALLOWED, undefined, null))).toEqual({ state: "sent" });
+    expect(await signInAdmin(otpForm(ALLOWED, undefined, ""))).toEqual({ state: "sent" });
+    expect(await signInAdmin(otpForm(ALLOWED, undefined, "x".repeat(ADMIN_CAPTCHA_MAX_LENGTH + 1)))).toEqual({ state: "sent" });
+    expect(signInWithOtp).not.toHaveBeenCalled();
   });
 
   test("Supabase 가 오류를 내도(미등록 사용자·SMTP 실패) 응답은 sent 그대로 — 주소 존재 여부를 알려주지 않는다", async () => {
     const { client } = fakeSsr({ message: "Signups not allowed for otp" });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
-    expect(await requestAdminLoginLink(otpForm(ALLOWED))).toEqual({ state: "sent" });
+    expect(await signInAdmin(otpForm(ALLOWED))).toEqual({ state: "sent" });
 
     vi.mocked(createSsrClient).mockImplementation(() => {
       throw new Error("NEXT_PUBLIC_SUPABASE_URL 이 설정되지 않았습니다.");
     });
-    expect(await requestAdminLoginLink(otpForm(ALLOWED))).toEqual({ state: "sent" });
+    expect(await signInAdmin(otpForm(ALLOWED))).toEqual({ state: "sent" });
   });
 
-  test("응답 상태는 5종뿐이고 다른 정보를 싣지 않는다", () => {
-    expect([...ADMIN_LOGIN_STATES].sort()).toEqual(["closed", "infra", "invalid", "ratelimit", "sent"]);
+  test("응답 상태는 6종뿐이고 다른 정보를 싣지 않는다 (OF-T3-6 이 credentials 하나를 더했다)", () => {
+    expect([...ADMIN_LOGIN_STATES].sort()).toEqual(["closed", "credentials", "infra", "invalid", "ratelimit", "sent"]);
   });
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -535,7 +604,7 @@ describe("4. requestAdminLoginLink", () => {
 
     const timed = async (email: string, honeypot?: string): Promise<{ ms: number; result: AdminLoginResult }> => {
       const t0 = Date.now();
-      const result = await requestAdminLoginLink(otpForm(email, honeypot));
+      const result = await signInAdmin(otpForm(email, honeypot));
       return { ms: Date.now() - t0, result };
     };
 
@@ -557,21 +626,207 @@ describe("4. requestAdminLoginLink", () => {
     });
     vi.mocked(createSsrClient).mockReturnValue({ auth: { signInWithOtp } } as never);
     const t0 = Date.now();
-    expect(await requestAdminLoginLink(otpForm(ALLOWED))).toEqual({ state: "sent" });
+    expect(await signInAdmin(otpForm(ALLOWED))).toEqual({ state: "sent" });
     expect(Date.now() - t0).toBeGreaterThanOrEqual(SLOW - 20);
   });
 
   test("바닥은 sent 에만 건다 — closed·invalid 는 즉시 돌아온다(주소 존재 여부와 무관한 상태) (M2)", async () => {
     delete process.env.ADMIN_EMAILS;
     let t0 = Date.now();
-    expect(await requestAdminLoginLink(otpForm(ALLOWED))).toEqual({ state: "closed" });
+    expect(await signInAdmin(otpForm(ALLOWED))).toEqual({ state: "closed" });
     expect(Date.now() - t0).toBeLessThan(MIN_LOGIN_RESPONSE_MS);
 
     process.env.ADMIN_EMAILS = ALLOWED;
     t0 = Date.now();
-    expect(await requestAdminLoginLink(otpForm("not-an-email"))).toEqual({ state: "invalid" });
+    expect(await signInAdmin(otpForm("not-an-email"))).toEqual({ state: "invalid" });
     expect(Date.now() - t0).toBeLessThan(MIN_LOGIN_RESPONSE_MS);
   });
+});
+
+// =============================================================================
+// 4-b. actions/admin/auth.ts — 비밀번호 모드 (OF-T3-6 · 결정 6). signInWithPassword 는 mock(네트워크 0).
+//      실제 쿠키가 심어지는지는 tests/admin-password-login.test.ts 가 로컬 스택으로 단언한다.
+// =============================================================================
+describe("4-b. signInAdmin — 비밀번호 모드(기본)", () => {
+  const savedEmails = process.env.ADMIN_EMAILS;
+  const PASSWORD = "  correct horse battery  "; // 앞뒤 공백까지 비밀번호다 — trim 하면 안 된다
+  /** 타이머 해상도(Windows ~15ms) 여유. */
+  const FLOOR = MIN_PASSWORD_RESPONSE_MS - 20;
+
+  beforeEach(() => {
+    vi.mocked(headers).mockResolvedValue({ get: () => null } as unknown as Awaited<ReturnType<typeof headers>>);
+    vi.mocked(cookies).mockResolvedValue({ getAll: () => [], set: () => {} } as unknown as Awaited<ReturnType<typeof cookies>>);
+    const { limiters } = limiterSet(true);
+    vi.mocked(adminGuardDeps).mockReturnValue({ now: () => new Date(), secret: SECRET, rateLimit: { limiters, timeoutMs: 5_000 } });
+    vi.mocked(createSsrClient).mockReset();
+    vi.mocked(redirect).mockClear();
+    vi.mocked(structuredLog).mockClear();
+    process.env.ADMIN_EMAILS = ALLOWED;
+  });
+
+  afterAll(() => {
+    if (savedEmails === undefined) delete process.env.ADMIN_EMAILS;
+    else process.env.ADMIN_EMAILS = savedEmails;
+  });
+
+  test("응답 시간 바닥은 1초 — 링크 모드(300ms)와 따로 둔다", () => {
+    expect(MIN_PASSWORD_RESPONSE_MS).toBe(1_000);
+    expect(remainingPadMs(0, MIN_PASSWORD_RESPONSE_MS)).toBe(1_000);
+    expect(remainingPadMs(400, MIN_PASSWORD_RESPONSE_MS)).toBe(600);
+    expect(remainingPadMs(Number.NaN, MIN_PASSWORD_RESPONSE_MS)).toBe(1_000);
+    expect(remainingPadMs(1_500, MIN_PASSWORD_RESPONSE_MS)).toBe(0);
+  });
+
+  test("🔴 실패 응답 단일화 — 없는 주소 · 틀린 비밀번호 · 허용 목록 밖 · CAPTCHA 실패가 **같은 모양 · 같은 바닥**이다", async () => {
+    const cases: Array<[string, () => FormData, PwReply | "throw" | null]> = [
+      // Supabase 는 미등록 주소와 틀린 비밀번호를 같은 코드로 준다 — 그래도 각각 단언한다(원격 설정이 바뀌어도 응답이 갈리지 않게)
+      ["없는 주소(목록 안 · 미등록)", () => pwForm(ALLOWED, PASSWORD), { data: { session: null, user: null }, error: { message: "Invalid login credentials", code: "invalid_credentials" } }],
+      ["틀린 비밀번호", () => pwForm(ALLOWED, "wrong"), { data: { session: null, user: null }, error: { message: "Invalid login credentials", code: "invalid_credentials" } }],
+      ["허용 목록 밖", () => pwForm(OUTSIDE, PASSWORD), null],
+      ["CAPTCHA 실패(원격 거부)", () => pwForm(ALLOWED, PASSWORD), { data: { session: null, user: null }, error: { message: "captcha protection: request disallowed (timeout-or-duplicate)", code: "captcha_failed" } }],
+      ["CAPTCHA 없음(위젯 우회)", () => pwForm(ALLOWED, PASSWORD, { captcha: null }), null],
+      ["허니팟", () => pwForm(ALLOWED, PASSWORD, { honeypot: "http://spam.example" }), null],
+      ["메일 미확인", () => pwForm(ALLOWED, PASSWORD), { data: { session: null, user: null }, error: { message: "Email not confirmed", code: "email_not_confirmed" } }],
+      ["Supabase 장애(throw)", () => pwForm(ALLOWED, PASSWORD), "throw"],
+      ["오류 없이 세션 없음", () => pwForm(ALLOWED, PASSWORD), { data: { session: null, user: null }, error: null }],
+    ];
+    const shapes: string[] = [];
+    for (const [label, form, reply] of cases) {
+      if (reply === "throw") {
+        vi.mocked(createSsrClient).mockReturnValue({
+          auth: {
+            signInWithPassword: vi.fn(async () => {
+              throw new Error("fetch failed");
+            }),
+          },
+        } as never);
+      } else {
+        vi.mocked(createSsrClient).mockReturnValue(fakeSsr(null, reply ?? PW_OK).client as never);
+      }
+      const t0 = Date.now();
+      const r = await signInAdmin(form());
+      const ms = Date.now() - t0;
+      expect(r, label).toEqual<AdminLoginResult>({ state: "credentials" });
+      expect(ms, `${label}: ${ms}ms`).toBeGreaterThanOrEqual(FLOOR);
+      shapes.push(JSON.stringify(r));
+    }
+    expect(new Set(shapes).size, "모든 실패가 글자 그대로 같은 응답").toBe(1);
+    expect(redirect).not.toHaveBeenCalled();
+  }, 30_000);
+
+  test("허용 목록 밖은 Supabase 를 부르지도 않는다 — 클라이언트 생성 0 · signInWithPassword 0", async () => {
+    const { client, signInWithPassword } = fakeSsr(null, PW_OK);
+    vi.mocked(createSsrClient).mockReturnValue(client as never);
+    expect(await signInAdmin(pwForm(OUTSIDE, PASSWORD))).toEqual({ state: "credentials" });
+    expect(createSsrClient).not.toHaveBeenCalled();
+    expect(signInWithPassword).not.toHaveBeenCalled();
+  });
+
+  test("CAPTCHA 토큰 없음 · 빈 비밀번호 · 거대한 비밀번호도 Supabase 0 (모양이 틀린 요청은 원격까지 보내지 않는다)", async () => {
+    const { client, signInWithPassword } = fakeSsr(null, PW_OK);
+    vi.mocked(createSsrClient).mockReturnValue(client as never);
+    for (const fd of [
+      pwForm(ALLOWED, PASSWORD, { captcha: null }),
+      pwForm(ALLOWED, PASSWORD, { captcha: "" }),
+      pwForm(ALLOWED, null),
+      pwForm(ALLOWED, ""),
+      pwForm(ALLOWED, "x".repeat(ADMIN_PASSWORD_INPUT_MAX + 1)),
+    ]) {
+      expect(await signInAdmin(fd)).toEqual({ state: "credentials" });
+    }
+    expect(signInWithPassword).not.toHaveBeenCalled();
+  }, 30_000);
+
+  test("signInWithPassword 인자 — 주소는 정규화 · 비밀번호는 글자 그대로(trim 없음) · captchaToken 동봉", async () => {
+    const { client, signInWithPassword } = fakeSsr(null, PW_OK);
+    vi.mocked(createSsrClient).mockReturnValue(client as never);
+    await expect(signInAdmin(pwForm("  BOSS@Bestour.CO.KR ", PASSWORD))).rejects.toBeInstanceOf(RedirectSignal);
+    expect(signInWithPassword).toHaveBeenCalledTimes(1);
+    const arg: PwArgs = signInWithPassword.mock.calls[0][0];
+    expect(arg.email).toBe(ALLOWED);
+    expect(arg.password).toBe(PASSWORD);
+    expect(arg.options?.captchaToken).toBe(CAPTCHA);
+  });
+
+  test("성공하면 관리자 홈으로 redirect — try 밖이라 catch 가 삼키지 않는다(실제로 throw 가 밖으로 나온다)", async () => {
+    const { client } = fakeSsr(null, PW_OK);
+    vi.mocked(createSsrClient).mockReturnValue(client as never);
+    const err = await signInAdmin(pwForm(ALLOWED, PASSWORD)).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(RedirectSignal);
+    expect((err as RedirectSignal).to).toBe(ADMIN_HOME_PATH);
+    expect(redirect).toHaveBeenCalledWith(ADMIN_HOME_PATH);
+  });
+
+  test("성공은 바닥을 기다리지 않는다(맞는 비밀번호를 가진 사람에게 감출 것이 없다)", async () => {
+    const { client } = fakeSsr(null, PW_OK);
+    vi.mocked(createSsrClient).mockReturnValue(client as never);
+    const t0 = Date.now();
+    await expect(signInAdmin(pwForm(ALLOWED, PASSWORD))).rejects.toBeInstanceOf(RedirectSignal);
+    expect(Date.now() - t0).toBeLessThan(MIN_PASSWORD_RESPONSE_MS);
+  });
+
+  test("mode 칸이 없거나 모르는 값이면 비밀번호 모드다(엔터 키 = 첫 버튼)", async () => {
+    const { client, signInWithPassword, signInWithOtp } = fakeSsr(null, PW_OK);
+    vi.mocked(createSsrClient).mockReturnValue(client as never);
+    await expect(signInAdmin(pwForm(ALLOWED, PASSWORD, { mode: null }))).rejects.toBeInstanceOf(RedirectSignal);
+    await expect(signInAdmin(pwForm(ALLOWED, PASSWORD, { mode: "admin" }))).rejects.toBeInstanceOf(RedirectSignal);
+    expect(signInWithPassword).toHaveBeenCalledTimes(2);
+    expect(signInWithOtp).not.toHaveBeenCalled();
+  });
+
+  test("closed · invalid · ratelimit · infra 는 비밀번호 모드에서도 그대로이고 즉시 돌아온다(허용 목록 판정보다 앞 단계)", async () => {
+    const { client, signInWithPassword } = fakeSsr(null, PW_OK);
+    vi.mocked(createSsrClient).mockReturnValue(client as never);
+
+    delete process.env.ADMIN_EMAILS;
+    let t0 = Date.now();
+    expect(await signInAdmin(pwForm(ALLOWED, PASSWORD))).toEqual({ state: "closed" });
+    expect(Date.now() - t0).toBeLessThan(MIN_LOGIN_RESPONSE_MS);
+    process.env.ADMIN_EMAILS = ALLOWED;
+
+    t0 = Date.now();
+    expect(await signInAdmin(pwForm("not-an-email", PASSWORD))).toEqual({ state: "invalid" });
+    expect(Date.now() - t0).toBeLessThan(MIN_LOGIN_RESPONSE_MS);
+
+    const { limiters } = limiterSet(false);
+    vi.mocked(adminGuardDeps).mockReturnValue({ now: () => new Date(), secret: SECRET, rateLimit: { limiters, timeoutMs: 5_000 } });
+    expect(await signInAdmin(pwForm(ALLOWED, PASSWORD))).toEqual({ state: "ratelimit" });
+
+    vi.mocked(adminGuardDeps).mockImplementation(() => {
+      throw new Error("UPSTASH_REDIS_REST_URL 이 설정되지 않았다");
+    });
+    expect(await signInAdmin(pwForm(ALLOWED, PASSWORD))).toEqual({ state: "infra" });
+    expect(signInWithPassword).not.toHaveBeenCalled();
+  });
+
+  test("목록 밖·틀린 비밀번호도 rate limit 슬롯을 소비한다 — 대입 시도가 공짜가 아니다", async () => {
+    const { limiters, calls } = limiterSet(true);
+    vi.mocked(adminGuardDeps).mockReturnValue({ now: () => new Date(), secret: SECRET, rateLimit: { limiters, timeoutMs: 5_000 } });
+    vi.mocked(createSsrClient).mockReturnValue(fakeSsr().client as never);
+    await signInAdmin(pwForm(OUTSIDE, PASSWORD));
+    const afterOutside = calls.length;
+    expect(afterOutside).toBeGreaterThan(0);
+    await signInAdmin(pwForm(ALLOWED, "wrong"));
+    expect(calls.length).toBeGreaterThan(afterOutside);
+  }, 30_000);
+
+  test("로그에 주소·비밀번호·토큰·Supabase 문구가 남지 않는다 — 오류 code 만", async () => {
+    vi.mocked(createSsrClient).mockReturnValue(
+      fakeSsr(null, { data: { session: null, user: null }, error: { message: `Invalid login credentials for ${ALLOWED}`, code: "invalid_credentials" } }).client as never,
+    );
+    await signInAdmin(pwForm(ALLOWED, PASSWORD));
+    await signInAdmin(pwForm(OUTSIDE, PASSWORD));
+    vi.mocked(createSsrClient).mockReturnValue(fakeSsr(null, PW_OK).client as never);
+    await expect(signInAdmin(pwForm(ALLOWED, PASSWORD))).rejects.toBeInstanceOf(RedirectSignal);
+    const logged = JSON.stringify(vi.mocked(structuredLog).mock.calls);
+    expect(logged).toContain("invalid_credentials");
+    for (const secret of [PASSWORD.trim(), ALLOWED, OUTSIDE, CAPTCHA, "Invalid login credentials"]) {
+      expect(logged, secret).not.toContain(secret);
+    }
+  }, 30_000);
 });
 
 // =============================================================================
@@ -670,6 +925,10 @@ describe("6. 정적 규약", () => {
       PROTECTED_PAGE,
       LOGIN_FORM,
       GATE_SCRIPT,
+      ACCOUNT_ACTION,
+      ACCOUNT_PAGE,
+      ACCOUNT_FORM,
+      ACCOUNT_LIB,
     ]) {
       expect(exists(rel), rel).toBe(true);
     }
@@ -689,7 +948,17 @@ describe("6. 정적 규약", () => {
     expect(src.split("\n")[0].trim()).toMatch(/^["']use server["'];?$/);
     const exports = [...codeOf(ACTION).matchAll(/^export\s/gm)];
     expect(exports.length, "'use server' 파일의 export 는 전부 공개 POST 엔드포인트가 된다 (ADR-3)").toBe(1);
-    expect(src).toMatch(/export async function requestAdminLoginLink/);
+    expect(src).toMatch(/export async function signInAdmin/);
+  });
+
+  test("비밀번호 변경 액션 — 'use server' 첫 줄 · export 1개 · 첫 문장이 await requireAdmin() (OF-T3-6)", () => {
+    const src = read(ACCOUNT_ACTION);
+    expect(src.split("\n")[0].trim()).toMatch(/^["']use server["'];?$/);
+    expect([...codeOf(ACCOUNT_ACTION).matchAll(/^export\s/gm)].length).toBe(1);
+    expect(codeOf(ACCOUNT_ACTION)).toMatch(/export async function changeAdminPassword\(formData: FormData\): Promise<AccountResult> \{\s*await requireAdmin\(\);/);
+    // 바꾸는 대상은 세션 사용자 자신 — admin API(서비스 롤)도, 폼에서 받은 사용자 id 도 없다
+    expect(codeOf(ACCOUNT_ACTION)).toMatch(/auth\.updateUser\(\{ password: next \}\)/);
+    expect(codeOf(ACCOUNT_ACTION)).not.toMatch(/auth\.admin|updateUserById|user_id|userId/);
   });
 
   test("한글 리터럴 0 — 문구는 messages/ko.json admin.* 에서만 온다", () => {
@@ -702,6 +971,11 @@ describe("6. 정적 규약", () => {
       LOGIN_FORM,
       REQUIRE_ADMIN,
       ADMIN_LOGIN_LIB,
+      // OF-T3-6
+      ACCOUNT_ACTION,
+      ACCOUNT_PAGE,
+      ACCOUNT_FORM,
+      ACCOUNT_LIB,
     ];
     for (const rel of targets) {
       const offenders = codeOf(rel)
@@ -760,6 +1034,14 @@ describe("6. 정적 규약", () => {
     for (const k of ["title", "sub", "emailLabel", "submit", "submitting", "sent", "closed", "unavailable", "invalid", "ratelimit", "infra", "callbackFailed"]) {
       expect(ko.admin.login[k], k).toBeTruthy();
     }
+    // OF-T3-6 — 비밀번호 로그인 · 보조 링크 · 실패 한 문구 · 내 계정
+    for (const k of ["passwordLabel", "linkHint", "linkSubmit", "linkSubmitting", "captchaWaiting", "credentials"]) {
+      expect(ko.admin.login[k], k).toBeTruthy();
+    }
+    for (const k of ["title", "sub", "emailLabel", "newPasswordLabel", "confirmPasswordLabel", "hint", "submit", "submitting", ...ACCOUNT_STATES]) {
+      expect(ko.admin.account[k], `admin.account.${k}`).toBeTruthy();
+    }
+    expect((ko.admin.tabs as Record<string, string>).myAccount).toBe("내 계정");
     expect(ko.admin.home.title).toBeTruthy();
     // en 카탈로그에는 관리자 문구가 없다(관리자 화면은 로케일 밖 · 한국어 전용). P2-6 에서 en.json 이 공개 네임스페이스로 채워졌다.
     expect(JSON.parse(read("messages/en.json")).admin).toBeUndefined();

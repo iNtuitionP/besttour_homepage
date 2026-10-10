@@ -28,6 +28,9 @@
  * 프리페치가 사장님을 로그아웃시킨다. 서버액션(actions/admin/session.ts)이 첫 문장에서 게이트를 타므로 이 버튼은 인가를 스스로
  * 판단하지 않는다.
  *
+ * **내 계정**(OF-T3-6 · 비밀번호 정하기·바꾸기 /admin/account)도 같은 두 자리에 있다 — 사이드바 아래는 "내 계정" 글자 링크,
+ * 휴대폰 위 제목줄은 사람 아이콘 버튼(aria-label "내 계정"). 탭 항목(tabs.ts)이 아니라 계정 도구라 메뉴 목록에는 넣지 않았다.
+ *
  * 본문 자리(`#admin-content`)는 건너뛰기 링크의 목적지다. 탭 바는 본문 **뒤**에 둔다 — 화면 아래에 붙어 있어도 읽는 순서는 본문이 먼저다.
  */
 import Image from "next/image";
@@ -36,6 +39,7 @@ import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
 import { signOutAdmin } from "@/actions/admin/session";
+import { ADMIN_ACCOUNT_PATH } from "@/lib/auth/adminLogin";
 
 import { NavBadgeReportContext } from "./NavBadgeReport";
 import {
@@ -68,13 +72,15 @@ export interface AdminNavLabels {
   comingSoon: string;
   brand: string;
   account: string;
+  /** 내 계정(비밀번호 변경) 링크 라벨 — OF-T3-6. */
+  myAccount: string;
   siteLink: string;
   newWindow: string;
   skip: string;
   groups: Record<AdminHubKey, string>;
 }
 
-type IconKey = AdminTabKey | AdminHubKey | "external";
+type IconKey = AdminTabKey | AdminHubKey | "external" | "account";
 
 /** 선 아이콘(24 격자) — 시안의 아이콘과 같은 모양. 라벨이 늘 함께 붙는 장식이다(aria-hidden). */
 const ICON_PATHS: Readonly<Record<IconKey, string>> = {
@@ -89,6 +95,7 @@ const ICON_PATHS: Readonly<Record<IconKey, string>> = {
   site: "M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z M3 9h18 M7 6.5h.01 M10 6.5h.01",
   records: "M4 20V10 M10 20V4 M16 20v-7 M22 20H2",
   external: "M14 4h6v6 M20 4l-9 9 M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5",
+  account: "M16 8a4 4 0 1 1-8 0 4 4 0 0 1 8 0z M4 21a8 8 0 0 1 16 0",
 };
 
 function Icon({ name, className }: { name: IconKey; className: string }) {
@@ -203,6 +210,15 @@ export function AdminTabs({
           </nav>
           <div className={s.sideFoot}>
             <p className={s.sideWho}>{labels.account}</p>
+            <Link
+              className={s.sideLink}
+              href={ADMIN_ACCOUNT_PATH}
+              aria-current={currentAttr(navMatch(pathname, ADMIN_ACCOUNT_PATH))}
+              data-testid="admin-account-link"
+            >
+              <Icon name="account" className={s.navIcon} />
+              {labels.myAccount}
+            </Link>
             <a className={s.sideLink} href={publicHref} target="_blank" rel="noopener noreferrer">
               <Icon name="external" className={s.navIcon} />
               {labels.siteLink}
@@ -221,6 +237,15 @@ export function AdminTabs({
             <Image className={s.brandMark} src="/brand/symbol-mark.png" alt="" width={28} height={25} />
             {labels.brand}
           </span>
+          <Link
+            className={s.iconBtn}
+            href={ADMIN_ACCOUNT_PATH}
+            aria-label={labels.myAccount}
+            aria-current={currentAttr(navMatch(pathname, ADMIN_ACCOUNT_PATH))}
+            data-testid="admin-account-link-mobile"
+          >
+            <Icon name="account" className={s.navIcon} />
+          </Link>
           <a className={s.iconBtn} href={publicHref} target="_blank" rel="noopener noreferrer" aria-label={`${labels.siteLink} (${labels.newWindow})`}>
             <Icon name="external" className={s.navIcon} />
           </a>

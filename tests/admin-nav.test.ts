@@ -211,6 +211,7 @@ const labels = {
   comingSoon: tabsKo.comingSoon,
   brand: tabsKo.brand,
   account: tabsKo.account,
+  myAccount: tabsKo.myAccount,
   siteLink: tabsKo.siteLink,
   newWindow: tabsKo.newWindow,
   skip: tabsKo.skip,
@@ -358,6 +359,24 @@ describe("2-c. 메뉴 마크업 — 휴대폰 위 제목줄 · 아래 탭 바", 
     expect(`${attr(site!.tag, "aria-label") ?? ""} ${site!.text}`).toContain(tabsKo.siteLink);
     expect(top).toMatch(/<form[\s\S]*<button[^>]*type="submit"[\s\S]*<\/form>/);
     expect(text(top)).toContain((ko.admin.session as Record<string, string>).signOut);
+  });
+
+  test("내 계정(OF-T3-6) — 사이드바 아래 글자 링크 · 위 제목줄 아이콘 링크(이름 있음) 둘 다 /admin/account · 그 화면에서 aria-current=page", () => {
+    const html = renderNav();
+    const side = links(region(html, "admin-sidebar")).filter((l) => l.href === "/admin/account");
+    expect(side).toHaveLength(1);
+    expect(side[0].text).toContain(tabsKo.myAccount);
+    const top = links(region(html, "admin-topbar")).filter((l) => l.href === "/admin/account");
+    expect(top).toHaveLength(1);
+    expect(`${attr(top[0].tag, "aria-label") ?? ""} ${top[0].text}`).toContain(tabsKo.myAccount);
+    // 메뉴 목록(사이드바 nav · 아래 탭 바)에는 넣지 않는다 — 계정 도구다
+    expect(links(region(html, "admin-sidebar-nav")).some((l) => l.href === "/admin/account")).toBe(false);
+    expect(links(region(html, "admin-tabbar")).some((l) => l.href === "/admin/account")).toBe(false);
+    const onAccount = renderNav({ pathname: "/admin/account" });
+    for (const id of ["admin-sidebar", "admin-topbar"]) {
+      const l = links(region(onAccount, id)).find((x) => x.href === "/admin/account");
+      expect(attr(l!.tag, "aria-current"), id).toBe("page");
+    }
   });
 
   test("로그아웃 — 두 자리(사이드바 · 위 제목줄) 모두 form 안의 submit 버튼 · 로그아웃 링크는 없다", () => {
