@@ -12,6 +12,7 @@
 import Image from "next/image";
 import { useCallback, useEffect, useId, useRef, useState, type MouseEvent } from "react";
 
+import { RichText } from "@/components/content/RichText";
 import { lockDocumentScroll } from "@/lib/scroll-lock";
 
 import { dismissKey } from "./popup-dismiss";
@@ -129,7 +130,9 @@ export function Popup({ popup, labels, lang }: { popup: PopupContent; labels: Po
           <h2 id={titleId} className={s.title}>
             {popup.title}
           </h2>
-          <p className={s.body}>{popup.body}</p>
+          {/* T3-4 — 본문은 제한 서식. React 요소로만 그린다(팝업 제목이 h2 라 본문 제목은 h3부터) */}
+          <RichText text={popup.body} className={s.body} headingBase={3} />
+
         </div>
 
         <div className={s.ft}>

@@ -706,7 +706,8 @@ describe("7. 서버액션 — 저장 전 확인, 확인하면 저장", () => {
       },
       record: async () => copyHold(findCopyWarnings({ caption: "업계 1위" })),
     } as never);
-    expect(outcome).toEqual({ kind: "failed", reason: "record" });
+    // T3-2 — 업로드 때 장별 설명을 받으면서 이 길에 실제로 닿는다. 되돌리기는 같고, 고칠 곳(설명)을 알리는 이유로 바뀌었다
+    expect(outcome).toEqual({ kind: "failed", reason: "caption" });
     expect(removed.sort()).toEqual([paths.imagePath, paths.originalPath].sort());
   });
 });

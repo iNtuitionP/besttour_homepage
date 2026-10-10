@@ -205,7 +205,8 @@ describe("3. 빈 상태", () => {
   test.each([
     ["app/admin/(protected)/notices/page.tsx", "#notice-title", "components/admin/NoticeForm.tsx", 'id="notice-title"'],
     ["app/admin/(protected)/popups/page.tsx", "#popup-title", "components/admin/PopupForm.tsx", 'id="popup-title"'],
-    ["app/admin/(protected)/gallery/page.tsx", "#gallery-upload-input", "components/admin/GalleryUploader.tsx", 'id="gallery-upload-input"'],
+    // T3-2 — 파일 칸은 고르기 부품(ImageDropzone)이 그리고, 업로더가 그 id 를 넘긴다
+    ["app/admin/(protected)/gallery/page.tsx", "#gallery-upload-input", "components/admin/GalleryUploader.tsx", 'inputId="gallery-upload-input"'],
   ])("%s — 빈 상태에 다음 행동 링크(%s)가 있고, 그 자리가 실제 입력칸이다", (page, anchor, form, id) => {
     const src = codeOf(page);
     expect(src).toContain(`href="${anchor}"`);

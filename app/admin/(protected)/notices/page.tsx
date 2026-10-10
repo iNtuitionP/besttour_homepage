@@ -5,6 +5,7 @@ import { formatAdminDate } from "@/components/admin/admin-date";
 import { getAdminDateLabels } from "@/components/admin/adminDateLabels";
 import { getCopyWarningLabels } from "@/components/admin/copyWarningLabels";
 import { NoticeForm } from "@/components/admin/NoticeForm";
+import { getRichTextEditorLabels } from "@/components/admin/richTextEditorLabels";
 import { NoticeToggle } from "@/components/admin/NoticeToggle";
 import { routing } from "@/i18n/routing";
 import { NOTICE_CATEGORIES } from "@/lib/admin/noticeInput";
@@ -76,6 +77,7 @@ export default async function AdminNoticesPage() {
     deleteConfirm: t("deleteConfirm"),
     results,
     copyWarning,
+    editor: await getRichTextEditorLabels(),
   };
 
   return (

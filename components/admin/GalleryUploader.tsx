@@ -31,34 +31,32 @@ import { useRef, useState } from "react";
 
 import { recordGalleryUpload } from "@/actions/admin/gallery";
 import {
-  GALLERY_MAX_FILES,
-  GALLERY_PUBLIC_LONG_EDGE,
+  GALLERY_CAPTION_MAX,
   buildUploadPaths,
   contentTypeFor,
-  fileExtension,
-  fitLongEdge,
-  isHeicExtension,
   selectGalleryFiles,
   type GalleryActionCode,
   type GalleryRejectReason,
 } from "@/lib/admin/galleryInput";
 import { runGalleryPick } from "@/lib/admin/galleryPick";
 import { commitUpload, type GalleryStoragePort } from "@/lib/admin/galleryUpload";
+import { GALLERY_ACCEPT, PUBLIC_CACHE_CONTROL, prepareImage, storagePort } from "@/lib/admin/imagePrepare";
 import { createBrowserSupabase } from "@/lib/supabase/client";
 
 import s from "./admin.module.css";
 import { AdminBanner } from "./AdminBanner";
 import { useAdminToast } from "./AdminToast";
 import { uploadSummary } from "./feedback";
-
-/** 공개본 WebP 품질. 0.82 는 1600px 사진에서 눈에 띄는 손실 없이 원본의 5~8% 크기가 되는 지점이다. */
-const WEBP_QUALITY = 0.82;
-/** 공개본은 내용이 바뀌지 않는다(키에 uuid 가 있다) — 1년 캐시. */
-const PUBLIC_CACHE_CONTROL = "31536000";
+import { ImageDropzone, type ImageDropzoneHandle, type PickedImage } from "./ImageDropzone";
 
 export interface GalleryUploaderLabels {
   upload: string;
   uploadHint: string;
+  /** T3-2 — 놓는 자리 안내 · 장별 설명 칸 · 빼기 · 올리기 */
+  dropHere: string;
+  captionLabel: string;
+  removePick: string;
+  startUpload: string;
   /** 고른 사진이 없을 때 버튼 옆 한 줄. */
   pickNone: string;
   /** "{n}" 자리표시자가 든 원문 — 고른 장수. */
@@ -94,23 +92,6 @@ interface Item {
   message: string;
 }
 
-/**
- * 브라우저 스토리지 클라이언트 → `commitUpload` 이 쓰는 포트.
- * 이 어댑터가 얇을수록 되돌리기 규칙(순수 모듈)이 테스트로 덮인다.
- */
-function storagePort(client: ReturnType<typeof createBrowserSupabase>): GalleryStoragePort {
-  return {
-    async upload(bucket, key, body, options) {
-      // upsert 하지 않는다 — 키에 uuid 가 있어 겹칠 일이 없고, 겹쳤다면 그것은 사고다(덮어쓰지 말고 알려야 한다)
-      const { error } = await client.storage.from(bucket).upload(key, body as Blob, { ...options, upsert: false });
-      return { error };
-    },
-    async remove(bucket, key) {
-      await client.storage.from(bucket).remove([key]);
-    },
-  };
-}
-
 export function GalleryUploader({
   albums,
   defaultAlbumId,
@@ -122,12 +103,11 @@ export function GalleryUploader({
 }) {
   const router = useRouter();
   const toast = useAdminToast();
-  const inputRef = useRef<HTMLInputElement>(null);
+  /** 고르기 부품(T3-2) — 한 번의 올리기가 끝나면(전부 걸러져도) 흐름의 resetPicker 가 고른 목록과 파일 칸을 비운다. */
+  const dropzoneRef = useRef<ImageDropzoneHandle>(null);
   const [albumId, setAlbumId] = useState<number | null>(defaultAlbumId);
   const [items, setItems] = useState<Item[]>([]);
   const [busy, setBusy] = useState(false);
-  /** 고른 장수 — 버튼 옆 한 줄(P5-23 라운드 2 B-10). 한 번의 고르기가 끝나면(전부 걸러져도) 흐름의 resetPicker 가 입력칸을 비우고 0 으로 되돌린다. */
-  const [picked, setPicked] = useState(0);
   const [failure, setFailure] = useState("");
   /**
    * 요약 배너가 선 횟수(AdminBanner attempt) — 고른 것이 전부 걸러지면 같은 틱에 비우고 다시 써서, 같은 문구가 두 번이면
@@ -146,10 +126,13 @@ export function GalleryUploader({
     if (summary !== null) setFailureRound((n) => n + 1);
   };
 
-  const onPick = async (fileList: FileList | null): Promise<void> => {
-    if (!fileList || fileList.length === 0 || busy) return;
+  const onPick = async (pickedImages: PickedImage[]): Promise<void> => {
+    if (pickedImages.length === 0 || busy) return;
     setFailure("");
-    const picked = Array.from(fileList);
+    const picked = pickedImages.map((p) => p.file);
+    // 장별 설명(T3-2 · 사장님 요청 6.3 최소안) — 고른 파일 객체로 찾는다(걸러진 장이 빠져도 짝이 어긋나지 않는다). 빈 설명은 null
+    const captions = new Map(pickedImages.map((p) => [p.file, p.caption.trim()] as const));
+    const captionOf = (f: File): string | null => captions.get(f) || null;
     const { accepted, rejected } = selectGalleryFiles(picked);
 
     const rejectedItems: Item[] = rejected.map((r, i) => ({
@@ -175,41 +158,13 @@ export function GalleryUploader({
         mark(key, "working", labels.running.replace("{done}", String(i + 1)).replace("{total}", String(accepted.length)));
         if (storage === undefined) throw new Error("storage not prepared");
 
-        const ext = fileExtension(file.name);
-        if (ext === null) {
-          mark(key, "failed", labels.reject.type);
+        // 1~2. 디코드 → 1600px WebP → 타입 확인 — 규칙은 lib/admin/imagePrepare.ts 한 곳(HEIC 는 디코드에서 걸린다, 위 헤더의 실측)
+        const prepared = await prepareImage(file);
+        if (!prepared.ok) {
+          mark(key, "failed", prepared.reason === "heic" ? labels.heicHelp : labels.reject[prepared.reason]);
           return false;
         }
-
-        // 1. 디코드 — HEIC 는 여기서 걸린다(위 헤더의 실측)
-        let bitmap: ImageBitmap;
-        try {
-          bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
-        } catch {
-          mark(key, "failed", isHeicExtension(ext) ? labels.heicHelp : labels.reject.decode);
-          return false;
-        }
-
-        // 2. 축소 → WebP
-        const size = fitLongEdge(bitmap.width, bitmap.height, GALLERY_PUBLIC_LONG_EDGE);
-        let webp: Blob | null = null;
-        try {
-          const canvas = document.createElement("canvas");
-          canvas.width = size.width;
-          canvas.height = size.height;
-          const ctx = canvas.getContext("2d");
-          if (ctx) {
-            ctx.drawImage(bitmap, 0, 0, size.width, size.height);
-            webp = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", WEBP_QUALITY));
-          }
-        } finally {
-          bitmap.close();
-        }
-        // 타입까지 확인한다 — WebP 를 못 만드는 브라우저는 조용히 PNG 를 돌려준다(.webp 이름의 PNG 를 저장하지 않는다)
-        if (!webp || webp.type !== "image/webp") {
-          mark(key, "failed", labels.reject.encode);
-          return false;
-        }
+        const { ext, webp } = prepared;
 
         // 3~5. 업로드 두 번 + 기록. 되돌리기 판단은 commitUpload 안에 있다(리뷰 F1·M2)
         const outcome = await commitUpload({
@@ -219,12 +174,12 @@ export function GalleryUploader({
           originalContentType: contentTypeFor(ext),
           publicCacheControl: PUBLIC_CACHE_CONTROL,
           meta: {
-            width: size.width,
-            height: size.height,
+            width: prepared.width,
+            height: prepared.height,
             // bytes 는 **원본** 크기다(P6-1 §7-1 · 스펙 §13.9 (2)의 용량 추정이 보는 축)
             bytes: file.size,
             albumId,
-            caption: null,
+            caption: captionOf(file),
             sort: 0,
             active: true,
           },
@@ -243,8 +198,7 @@ export function GalleryUploader({
       onThrow: (i) => mark(acceptedItems[i].key, "failed", labels.reject.needsCheck),
       setBusy,
       resetPicker: () => {
-        if (inputRef.current) inputRef.current.value = "";
-        setPicked(0);
+        dropzoneRef.current?.clear();
       },
       finish: (ok, failed) => {
         if (ok > 0) {
@@ -282,41 +236,28 @@ export function GalleryUploader({
         </select>
       </div>
 
-      {/* 사진 고르기(P5-23 라운드 2 · 컨트롤러 B-10) — 브라우저 기본 파일 칸("파일 선택 · 선택된 파일 없음") 대신 버튼 모양의 라벨과
-          고른 장수 한 줄. 진짜 입력칸은 그대로 있다: 보이지 않게 접었을 뿐 Tab 으로 포커스를 받고 Enter·Space 로 열린다(포커스 링은 라벨에 그린다).
-          입력칸의 이름은 그 라벨("사진 고르기")이고, 고른 장수 줄이 설명(aria-describedby)이다. */}
-      <div className={s.field}>
-        <input
-          ref={inputRef}
-          id="gallery-upload-input"
-          className={s.fileInput}
-          type="file"
-          multiple
-          accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif"
-          disabled={busy}
-          data-max-files={GALLERY_MAX_FILES}
-          aria-describedby="gallery-upload-count"
-          onKeyDown={(e) => {
-            // 버튼 모양이라 Enter 로도 연다 — 브라우저의 파일 칸은 Space 로만 열린다(크롬 실측)
-            if (e.key === "Enter") {
-              e.preventDefault();
-              e.currentTarget.click();
-            }
-          }}
-          onChange={(e) => {
-            setPicked(e.target.files?.length ?? 0);
-            void onPick(e.target.files);
-          }}
-        />
-        <div className={s.pickRow}>
-          <label className={`${s.btnSecondary} ${s.pickButton}`} htmlFor="gallery-upload-input" data-disabled={busy ? "true" : undefined}>
-            {labels.upload}
-          </label>
-          <span className={s.pickCount} id="gallery-upload-count" data-testid="admin-gallery-pick-count">
-            {picked === 0 ? labels.pickNone : labels.pickCount.replace("{n}", String(picked))}
-          </span>
-        </div>
-      </div>
+      {/* 사진 고르기(T3-2) — 끌어다 놓기 또는 버튼 모양 라벨(B-10 규칙은 부품 안에 그대로). 고른 사진은 미리보기 목록에 쌓이고,
+          장별 설명을 적은 뒤 «올리기» 를 누르면 아래 흐름이 돈다. */}
+      <ImageDropzone
+        handleRef={dropzoneRef}
+        inputId="gallery-upload-input"
+        countId="gallery-upload-count"
+        accept={GALLERY_ACCEPT}
+        multiple
+        captionMax={GALLERY_CAPTION_MAX}
+        disabled={busy}
+        labels={{
+          pick: labels.upload,
+          pickNone: labels.pickNone,
+          pickCount: labels.pickCount,
+          drop: labels.dropHere,
+          caption: labels.captionLabel,
+          remove: labels.removePick,
+          start: labels.startUpload,
+        }}
+        onUpload={onPick}
+        testId="admin-gallery-dropzone"
+      />
 
       {busy ? (
         <p className={s.notice} role="status">

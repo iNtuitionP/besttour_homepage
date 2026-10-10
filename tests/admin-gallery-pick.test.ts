@@ -69,7 +69,10 @@ describe("사진 고르기 흐름 — 어느 길로 끝나든 고른 장수 줄�
   test("부품은 흐름을 쓴다 — 되돌리기 포트가 입력칸을 비우고 고른 장수를 0 으로 · 잠금 포트는 setBusy", () => {
     const src = codeOf("components/admin/GalleryUploader.tsx");
     expect(src).toMatch(/await runGalleryPick\(\{/);
-    expect(src).toMatch(/resetPicker: \(\) => \{\s*if \(inputRef\.current\) inputRef\.current\.value = "";\s*setPicked\(0\);\s*\}/);
+    // T3-2 — 파일 칸과 고른 장수는 고르기 부품(ImageDropzone) 안에 있다. 되돌리기는 부품의 clear()(파일 칸 비우기 + 목록 비우기)
+    expect(src).toMatch(/resetPicker: \(\) => \{\s*dropzoneRef\.current\?\.clear\(\);\s*\}/);
+    const dz = codeOf("components/admin/ImageDropzone.tsx");
+    expect(dz).toMatch(/const clear = \(\) => \{[\s\S]{0,200}return \[\];[\s\S]{0,40}\}\);\s*if \(inputRef\.current\) inputRef\.current\.value = "";/);
     expect(src).toMatch(/\bsetBusy,\s/);
     // 부품 안에 자기 finally 로 잠금·되돌리기를 다시 적지 않는다(흐름이 둘로 갈리지 않게)
     expect(src).not.toMatch(/finally\s*\{[\s\S]{0,200}setPicked\(0\)/);

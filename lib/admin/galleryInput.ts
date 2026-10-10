@@ -118,7 +118,7 @@ export function contentTypeFor(ext: GalleryExtension): string {
  * 거부 사유 — 화면 문구는 messages/ko.json `admin.gallery.reject.*`.
  * `needsCheck` 는 "실패했는지도 확실하지 않다"다 — 행이 만들어졌는지 알 수 없어 파일을 남겨 둔 경우(lib/admin/galleryUpload.ts).
  */
-export type GalleryRejectReason = "count" | "size" | "type" | "empty" | "decode" | "encode" | "upload" | "record" | "needsCheck";
+export type GalleryRejectReason = "count" | "size" | "type" | "empty" | "decode" | "encode" | "upload" | "record" | "needsCheck" | "caption";
 
 export interface GalleryFileMeta {
   name: string;
@@ -362,6 +362,8 @@ export type GalleryActionCode =
   | "failed"
   /** 파일을 못 지웠다 → **행을 남겼다**. 사장님이 다시 시도하면 된다(스토리지 삭제는 재시도해도 안전하다). */
   | "fileFailed"
+  /** T3-3 — 팝업이 이 사진을 쓰고 있어 지우지 않았다(노출·파일·행 모두 그대로). */
+  | "inUseByPopup"
   /** 저장하지 않았다 — 설명·앨범 이름에 확인이 필요한 표현이 있다(P6-12 · lib/admin/copyWarning.ts). 오류가 아니다. */
   | "copyWarning";
 
@@ -380,6 +382,8 @@ export const GALLERY_NOT_FOUND: GalleryActionResult = { ok: false, changed: fals
 export const GALLERY_VALIDATION: GalleryActionResult = { ok: false, changed: false, code: "validation" };
 /** 파일 삭제 실패 — 행은 그대로다. "지웠다"고 말하지 않는다. */
 export const GALLERY_FILE_FAILED: GalleryActionResult = { ok: false, changed: false, code: "fileFailed" };
+/** T3-3 — 팝업이 쓰는 사진. 아무것도 바꾸지 않았다. */
+export const GALLERY_IN_USE_BY_POPUP: GalleryActionResult = { ok: false, changed: false, code: "inUseByPopup" };
 
 /** 성공 결과 — changed 는 언제나 true 다(바뀐 것이 없으면 notFound 로 끝난다). */
 export const galleryChanged = (code: GalleryActionCode): GalleryActionResult => ({ ok: true, changed: true, code });

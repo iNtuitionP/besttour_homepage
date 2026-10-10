@@ -98,7 +98,7 @@
 }
 .sideGroupLabel {
   padding: 0 var(--space-inline-xs) var(--space-stack-xs);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--text-secondary);
 }
@@ -151,7 +151,7 @@
   min-width: 0;
 }
 .sideNote {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
 }
 /* 선 아이콘 — 라벨이 늘 함께 붙는 장식(--icon-default 는 보더·아이콘 전용 회색). 현재 항목은 브랜드색 */
@@ -180,7 +180,7 @@
   border-radius: 999em;
   background: var(--status-attention-bg);
   color: var(--status-attention-fg);
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 800;
   line-height: 1;
 }
@@ -644,7 +644,7 @@ a.hubItem:hover {
 /* 카드 덧말은 두세 줄짜리 짧은 글 — 줄 길이를 고르게(balance · 라운드 3): 좁은 카드에서 "…켜지지 않았을 수 / 있어요" 처럼
  * 마지막 줄에 낱말 하나만 남지 않는다(셸의 pretty 는 여기서 "있어요" 를 남겼다 — 320px 실측) */
 .todoSub {
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 1.45;
   color: var(--text-secondary);
   text-wrap: balance;
@@ -652,7 +652,7 @@ a.hubItem:hover {
 /* 카드의 작은 덧줄 — 문자 발송 카드의 사장님 쪽 알림 실패(배너가 아니다 · 컨트롤러 결정 P1-2) */
 .todoMinor {
   margin-top: calc(var(--space-stack-xs) / 2);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.45;
   color: var(--text-secondary);
   text-wrap: balance;
@@ -987,7 +987,7 @@ a.hubItem:hover {
 }
 .listHint {
   margin: var(--space-stack-xs) 0 0;
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 1.6;
   color: var(--text-secondary);
 }
@@ -1000,7 +1000,7 @@ a.hubItem:hover {
 }
 .privacyNote {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
   text-align: center;
   color: var(--text-secondary);
@@ -1042,7 +1042,7 @@ a.hubItem:hover {
 /* 묶음 제목 밑 한 줄 — 확정 탭의 '운행일이 지난 확정' 안내 · 다가오는 운행이 없을 때의 문장(수정 라운드 · 리뷰 P1-1) */
 .groupNote {
   margin: 0 0 var(--space-stack-xs);
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 1.6;
   color: var(--text-secondary);
 }
@@ -1300,7 +1300,7 @@ a.hubItem:hover {
   margin: var(--space-stack-md) 0 0;
 }
 .filterLabel {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--text-secondary);
 }
@@ -1308,7 +1308,7 @@ a.hubItem:hover {
   padding: var(--space-stack-xs) var(--space-inline-sm);
   border: 1px solid var(--border-subtle);
   border-radius: 999em;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 700;
   text-decoration: none;
   color: var(--text-secondary);
@@ -1375,14 +1375,14 @@ a.hubItem:hover {
 .table caption {
   padding: var(--space-stack-xs) var(--space-inline-sm);
   text-align: left;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-secondary);
 }
 .th {
   padding: var(--space-stack-xs) var(--space-inline-sm);
   text-align: left;
   white-space: nowrap;
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 800;
   letter-spacing: -0.02em;
   color: var(--text-secondary);
@@ -1433,7 +1433,7 @@ a.hubItem:hover {
   padding: 0 0.5rem;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-chip);
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 700;
   line-height: 1.7;
   white-space: nowrap;
@@ -1613,7 +1613,7 @@ a.hubItem:hover {
 }
 .dt {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--text-secondary);
 }
@@ -1776,7 +1776,7 @@ a.hubItem:hover {
   border: 2px solid var(--border-strong);
   border-radius: var(--radius-control);
   background: var(--bg-surface);
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 700;
   line-height: 1.5;
   color: var(--text-brand);
@@ -1784,9 +1784,16 @@ a.hubItem:hover {
 }
 .hint {
   margin: var(--space-stack-xs) 0 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
   color: var(--text-secondary);
+}
+/* T3-1 — 노선 금액 칸 아래 "홈 표시: 40만원" */
+.priceOnHome {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-brand);
 }
 /* 카드의 첫 줄이 안내 문단이면 위 여백을 두지 않는다 — 카드 안쪽 여백만(대표 노선 맨 위 안내 카드가 빈 제목 자리처럼 위가 떴다 · 라운드 3 컨트롤러 4) */
 .section > .hint:first-child {
@@ -2148,6 +2155,24 @@ a.hubItem:hover {
 }
 .recordsSummary::-webkit-details-marker {
   display: none;
+}
+/* T3-1 — 통계의 긴 설명 접기(사장님 요청 6) */
+.notesFold {
+  margin: var(--space-stack-xs) 0 0;
+}
+.notesFoldSummary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-link);
+}
+.notesFoldSummary:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-control);
 }
 .recordsSummary:focus-visible {
   outline: 2px solid var(--focus-ring);
@@ -2621,7 +2646,7 @@ a.hubItem:hover {
 .tablePopups caption {
   padding: var(--space-stack-xs) var(--space-inline-sm);
   text-align: left;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-secondary);
 }
 /* 콘텐츠 노출 상태(팝업·공지·노선·사진·앨범) — P5-20: 채운 보라를 걷었다(버튼 전용). 켜져 있음 = 확정과 같은 옅은 보라 면,
@@ -2805,6 +2830,339 @@ a.hubItem:hover {
   line-height: 1.5;
   color: var(--text-secondary);
 }
+/* T3-5 — 순서 바꾸기(@dnd-kit · ↑/↓ · 순서 저장) */
+.sortWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-stack-sm);
+}
+.sortList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-stack-xs);
+}
+.sortRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  min-height: 52px;
+  padding: var(--space-stack-xs) var(--space-inline-xs);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  touch-action: manipulation;
+}
+.sortRow[data-dragging="true"] {
+  position: relative;
+  z-index: 1;
+  border-color: var(--border-strong);
+  box-shadow: var(--elevation-raised);
+}
+.sortHandle,
+.sortMove {
+  display: inline-grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  color: var(--icon-brand);
+  font-size: 18px;
+  cursor: pointer;
+}
+.sortHandle {
+  cursor: grab;
+  touch-action: none;
+}
+.sortHandle:focus-visible,
+.sortMove:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.sortMove:disabled,
+.sortHandle:disabled {
+  color: var(--action-disabled-fg);
+  background: var(--action-disabled-bg);
+  border-color: var(--action-disabled-border);
+  cursor: not-allowed;
+}
+.sortPos {
+  min-width: 2ch;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-secondary);
+  text-align: right;
+}
+.sortLabel {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.sortMeta {
+  font-size: 14px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.sortButtons {
+  display: inline-flex;
+  gap: var(--space-inline-xs);
+}
+.sortActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-inline-xs);
+}
+@media (max-width: 479.98px) {
+  .sortMeta {
+    display: none;
+  }
+}
+/* T3-4 — 서식 편집기(TipTap) · 실시간 미리보기 */
+.rte {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-stack-xs);
+  margin-top: var(--space-stack-xs);
+}
+.rteEditor {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+}
+.rte[data-invalid="true"] .rteEditor {
+  border-width: 2px;
+  border-color: var(--border-strong);
+}
+.rteToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-inline-xs);
+  padding: var(--space-stack-xs);
+  border-bottom: 1px solid var(--border-decorative);
+}
+.rteButton {
+  min-height: 40px;
+  padding: 0 var(--space-inline-sm);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.rteButton[aria-pressed="true"] {
+  border-color: var(--border-strong);
+  background: var(--bg-subtle);
+}
+.rteButton:disabled {
+  color: var(--action-disabled-fg);
+  background: var(--action-disabled-bg);
+  border-color: var(--action-disabled-border);
+  cursor: not-allowed;
+}
+.rteButton:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.rteContent {
+  min-height: 160px;
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  font-size: 16px; /* 16px 미만이면 iOS 가 포커스 시 화면을 확대한다 */
+  line-height: 1.7;
+  color: var(--text-primary);
+  outline: none;
+}
+.rteContent:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.rteLoading {
+  min-height: 210px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+}
+.rteCount {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+  text-align: right;
+}
+.rteCount[data-over="true"] {
+  color: var(--text-primary);
+  font-weight: 800;
+}
+.rteSample {
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+}
+.rteSampleTitle {
+  margin: 0 0 var(--space-stack-xs);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.rteSampleBody,
+.rteContent {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.rteSampleBody > * + *,
+.rteContent > * + * {
+  margin-top: var(--space-stack-xs);
+}
+.rteSampleBody p,
+.rteSampleBody ul,
+.rteContent p,
+.rteContent ul {
+  margin: 0;
+}
+.rteSampleBody ul,
+.rteContent ul {
+  padding-left: 1.25em;
+  list-style: disc;
+}
+.rteSampleBody h2,
+.rteContent h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+}
+.rteSampleBody h3,
+.rteContent h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+}
+.rteSampleBody {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text-primary);
+}
+/* T3-3 — 팝업 사진(갤러리에서 고르기 + 새로 올리기) */
+.popupImage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-stack-sm);
+  margin-top: var(--space-stack-xs);
+}
+.popupImageCurrent,
+.popupImageUpload {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-stack-xs);
+}
+.popupImageThumb {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+  object-fit: cover;
+}
+.popupImageGrid {
+  list-style: none;
+  margin: var(--space-stack-xs) 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--space-inline-xs);
+}
+.popupImageChoice {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  cursor: pointer;
+}
+.popupImageChoice[aria-pressed="true"] {
+  border-color: var(--border-strong);
+}
+.popupImageChoice:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.popupImageChoice .popupImageThumb {
+  width: 100%;
+  aspect-ratio: 1;
+}
+/* T3-2 — 공통 사진 고르기(끌어다 놓기 · 미리보기 · 장별 설명) */
+.dropzoneWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-stack-sm);
+}
+.dropzone {
+  align-self: stretch;
+  padding: var(--space-stack-md) var(--space-inline-sm);
+  border: 2px dashed var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+}
+.dropzone[data-over="true"] {
+  border-color: var(--border-strong);
+  background: var(--bg-surface);
+}
+.dropzoneText {
+  margin: 0 0 var(--space-stack-xs);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.stageList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-stack-xs);
+}
+.stageItem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-inline-sm);
+  padding: var(--space-stack-xs) var(--space-inline-xs);
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+}
+.stageThumb {
+  flex: 0 0 72px;
+  width: 72px;
+  height: 72px;
+  overflow: hidden;
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+}
+.stageThumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.stageBody {
+  flex: 1 1 200px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-stack-xs);
+}
 
 /* ── 발송 내역 (P5-8) ────────────────────────────────────────────────────
  * 상태 배지 3종과 맨 위 요약. 실패를 눈에 띄게 해야 하는데 팔레트에 경고색이 없다(styles/semantic.css 에 danger 역할 토큰 없음).
@@ -2870,7 +3228,7 @@ a.hubItem:hover {
 }
 .summaryLabel {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   line-height: 1.4;
   color: var(--text-secondary);
@@ -2890,7 +3248,7 @@ a.hubItem:hover {
 }
 .summaryPeriod {
   margin: 0;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.4;
   color: var(--text-secondary);
 }
@@ -2927,7 +3285,7 @@ a.hubItem:hover {
 }
 .summaryNote {
   margin: var(--space-stack-xs) 0 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
   color: var(--text-secondary);
 }
@@ -2952,7 +3310,7 @@ a.hubItem:hover {
 .subState {
   display: block;
   margin: calc(var(--space-stack-xs) / 2) 0 0;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 700;
   line-height: 1.45;
   color: var(--text-secondary);
@@ -2973,7 +3331,7 @@ a.hubItem:hover {
 }
 .timeSub {
   display: block;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--text-secondary);
 }
 /* 표(1280px 이상) — 칸 사이 여백을 줄이고(바깥 두 칸만 넓게) 상태 칸은 가장 긴 덩어리(배지 · 날짜)만큼만 차지한다(width 1% = 내용에 맞춰 줄어듦).
@@ -3048,7 +3406,7 @@ a.hubItem:hover {
   }
   .notifyTable .cellLabel {
     display: block;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 700;
     color: var(--text-secondary);
   }
@@ -3254,7 +3612,7 @@ a.hubItem:hover {
 }
 .statNote {
   margin: var(--space-stack-xs) 0 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
   color: var(--text-muted);
 }
@@ -3314,7 +3672,7 @@ a.hubItem:hover {
 }
 .barSub {
   grid-column: 2 / -1;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-muted);
 }
 
@@ -3364,7 +3722,7 @@ a.hubItem:hover {
   display: flex;
   justify-content: space-between;
   margin: var(--space-stack-xs) 0 0;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-muted);
 }
 .legend {
@@ -3374,7 +3732,7 @@ a.hubItem:hover {
   margin: var(--space-stack-xs) 0 0;
   padding: 0;
   list-style: none;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-primary);
 }
 .legendItem {

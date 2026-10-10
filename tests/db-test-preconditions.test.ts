@@ -256,6 +256,9 @@ const ROUTES_MARKERS: [label: string, re: RegExp][] = [
   ["showcase_routes REST 경로", /[}"'`]\/showcase_routes[?"'`]/],
   // 공개 읽기 계층을 실 DB 로 부른다(= 활성 행 전체를 본다).
   ["공개 읽기 호출", /\bgetShowcaseRoutes\(/],
+  // T3-5(위험 25) — RPC 경로로 행을 바꾼다. 함수 이름을 따옴표로 부르는 호출(write-privileges 의 rpc 헬퍼 · PostgREST /rpc/ 경로)과
+  // 앱의 쓰기 함수(순서 저장 reorderRouteRows · 값 덮어쓰기 updateRouteRow)를 잡는다. 권한 목록의 서명 문자열 `admin_update_route(integer,…)` 는 잡지 않는다.
+  ["대표 노선 RPC 쓰기", /["'`/]admin_update_route["'`?]|\b(?:reorderRouteRows|updateRouteRow)\(/],
 ];
 
 describe("대표 노선 표 잠금 — 완전성 게이트 (P6-13)", () => {
@@ -286,6 +289,15 @@ describe("대표 노선 표 잠금 — 완전성 게이트 (P6-13)", () => {
     for (const f of ["admin-routes.test.ts", "write-privileges.test.ts", "places.test.ts", "queries.test.ts"]) {
       expect(picked, `탐지된 파일: ${picked.join(", ") || "(없음)"}`).toContain(f);
     }
+  });
+
+  test("🔴 T3-5 RPC 마커가 RPC 로 쓰는 두 파일을 실제로 고른다(마커가 비어 통과하지 않게)", () => {
+    const rpcHits = needsLock.filter(({ hits }) => hits.includes("대표 노선 RPC 쓰기")).map((n) => n.file);
+    for (const f of ["admin-routes.test.ts", "write-privileges.test.ts"]) expect(rpcHits, `RPC 마커 탐지: ${rpcHits.join(", ")}`).toContain(f);
+    const [, re] = ROUTES_MARKERS.find(([label]) => label === "대표 노선 RPC 쓰기") as [string, RegExp];
+    expect(re.test('"admin_update_route(integer,text,text,integer,integer,boolean)"'), "권한 목록의 서명 문자열은 쓰기가 아니다").toBe(false);
+    expect(re.test('rpcAs(token, "admin_update_route", {})')).toBe(true);
+    expect(re.test("await reorderRouteRows(ids, admin)")).toBe(true);
   });
 
   test("세 형태의 DB 블록(쓰기 가드 · anon 전용 · 서비스 롤 스모크)이 모두 탐지된다", () => {

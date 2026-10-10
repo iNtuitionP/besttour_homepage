@@ -46,6 +46,7 @@ import {
   PENDING_STALL_HOURS,
   notifyErrorKey,
   pendingSubState,
+  showsAttempts,
   type NotifyErrorKey,
 } from "@/lib/admin/notificationDisplay";
 import { getNotificationSummary, listNotifications, type NotificationListRow } from "@/lib/admin/notifications";
@@ -884,5 +885,22 @@ describe("4. 순수 모듈", () => {
   test("키 목록에 중복이 없다", () => {
     const keys: readonly NotifyErrorKey[] = NOTIFY_ERROR_KEYS;
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+// T3-1(사장님 요청 6) — '시도' 칸은 실패한 적이 있는 행에만(성공 행의 "1회" 는 소음)
+describe("T3-1 시도 칸은 실패 행에만", () => {
+  test("🔴 showsAttempts — failed 는 보임 · 다시 보내는 중(pending, 시도 1회 이상)도 보임 · sent·첫 대기·격리 행은 숨김", () => {
+    expect(showsAttempts({ status: "failed", attempts: 5, lastError: "x" })).toBe(true);
+    expect(showsAttempts({ status: "pending", attempts: 2, lastError: "x" })).toBe(true);
+    expect(showsAttempts({ status: "pending", attempts: 0, lastError: null })).toBe(false);
+    expect(showsAttempts({ status: "sent", attempts: 1, lastError: null })).toBe(false);
+    expect(showsAttempts({ status: "pending", attempts: 1, lastError: "sent_unmarked:abc" })).toBe(false);
+  });
+  test("🔴 화면 — 시도 칸은 showsAttempts 일 때만 값, 아니면 data-empty", () => {
+    const src = codeOf("app/admin/(protected)/notifications/page.tsx");
+    expect(src).toMatch(/const attemptsShown = showsAttempts\(row\);/);
+    expect(src).toMatch(/data-empty=\{attemptsShown \? undefined : "true"\}/);
+    expect(src).toMatch(/\{attemptsShown \? t\("attemptsValue", \{ n: row\.attempts \}\) : null\}/);
   });
 });

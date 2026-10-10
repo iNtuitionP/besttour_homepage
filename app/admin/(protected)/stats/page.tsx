@@ -138,7 +138,11 @@ export default async function AdminStatsPage({ searchParams }: { searchParams: S
         </nav>
         {/* 조각마다 한 덩어리 — "…기준으로 / 세요." 처럼 마지막 낱말만 떨어지지 않는다(C-15) */}
         <p className={a.hint}>{segments(splitSegments(t("rangeNote", { from: day(range.from), to: day(range.to) })))}</p>
-        <p className={a.hint}>{t("cohortNote")}</p>
+        {/* T3-1 — 세는 방법 설명은 접기 안으로(사장님 요청 6) */}
+        <details className={a.notesFold}>
+          <summary className={a.notesFoldSummary}>{t("notesFold")}</summary>
+          <p className={a.hint}>{t("cohortNote")}</p>
+        </details>
 
         {view === "denied" || stats === null ? (
           <p className={a.empty} data-testid="admin-stats-denied">
@@ -167,9 +171,12 @@ export default async function AdminStatsPage({ searchParams }: { searchParams: S
                   <h2 className={a.sectionTitle} id="stats-inquiry">
                     {t("inquiry.title")}
                   </h2>
-                  <p className={a.hint}>{t("suppressedNote")}</p>
                   <p className={a.hint}>{t("suppressedLimit")}</p>
-                  <p className={a.hint}>{t("axisTotalNote")}</p>
+                  <details className={a.notesFold}>
+                    <summary className={a.notesFoldSummary}>{t("notesFold")}</summary>
+                    <p className={a.hint}>{t("suppressedNote")}</p>
+                    <p className={a.hint}>{t("axisTotalNote")}</p>
+                  </details>
 
                   <div className={a.subBlock}>
                     <h3 className={a.subTitle}>{t("inquiry.purposes")}</h3>
@@ -256,8 +263,11 @@ export default async function AdminStatsPage({ searchParams }: { searchParams: S
                   <h2 className={a.sectionTitle} id="stats-lead">
                     {t("lead.title")}
                   </h2>
-                  <p className={a.statNote}>{t("lead.note")}</p>
-                  <p className={a.hint}>{t("axisTotalNote")}</p>
+                  <details className={a.notesFold}>
+                    <summary className={a.notesFoldSummary}>{t("notesFold")}</summary>
+                    <p className={a.statNote}>{t("lead.note")}</p>
+                    <p className={a.hint}>{t("axisTotalNote")}</p>
+                  </details>
                   <ul className={a.barList}>
                     {stats.lead_time.map((row, i) => (
                       <Bar

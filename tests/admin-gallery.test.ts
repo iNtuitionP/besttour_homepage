@@ -135,7 +135,7 @@ type DbResult = { data: unknown; error: unknown };
 function dbStub(results: DbResult | DbResult[], storage?: { error: unknown } | { error: unknown }[]) {
   const queue = Array.isArray(results) ? [...results] : null;
   const chain: Record<string, unknown> = {};
-  for (const m of ["select", "order", "limit", "range", "eq", "is", "insert", "update", "delete", "maybeSingle", "overrideTypes"]) {
+  for (const m of ["select", "order", "limit", "range", "eq", "in", "is", "insert", "update", "delete", "maybeSingle", "overrideTypes"]) {
     chain[m] = vi.fn(() => chain);
   }
   const nextResult = (): DbResult => (queue ? (queue.shift() ?? { data: [], error: null }) : (results as DbResult));
@@ -749,7 +749,10 @@ describe("4-B. 업로드 커밋과 되돌리기", () => {
     const loop = src.slice(src.indexOf("const onPick"));
     expect(loop.length, "onPick 을 찾지 못했다").toBeGreaterThan(0);
     expect(loop, "업로드 루프가 스스로 파일을 지운다").not.toMatch(/\.remove\(/);
-    expect(src.slice(0, src.indexOf("const onPick"))).toMatch(/function storagePort/);
+    // T3-2 — 포트 어댑터는 lib/admin/imagePrepare.ts 로 옮겼다(팝업 사진과 함께 쓴다). 업로더 안에는 remove 가 아예 없다
+    expect(src).toMatch(/import \{ GALLERY_ACCEPT, PUBLIC_CACHE_CONTROL, prepareImage, storagePort \} from "@\/lib\/admin\/imagePrepare"/);
+    expect(src).not.toMatch(/\.remove\(/);
+    expect(codeOf("lib/admin/imagePrepare.ts")).toMatch(/export function storagePort/);
   });
 });
 
@@ -765,6 +768,7 @@ describe("5. 삭제 순서와 부분 실패", () => {
   test("행 읽기 → 노출 끄기 → 두 버킷 삭제 → 행 삭제", async () => {
     const stub = dbStub([
       { data: PHOTO_ROW, error: null }, // getAdminPhoto
+      { data: [], error: null }, // T3-3 팝업 참조 없음
       { data: [{ id: 7 }], error: null }, // active=false
       { data: [{ id: 7 }], error: null }, // delete
     ]);
@@ -772,6 +776,9 @@ describe("5. 삭제 순서와 부분 실패", () => {
 
     const r = await deleteGalleryPhoto({ id: 7 });
     expect(r).toMatchObject({ ok: true, changed: true, code: "deleted" });
+    // T3-3 — 팝업 표에서 이 사진 경로(앞 '/' 있는 것까지)를 찾아봤다
+    expect(stub.from).toHaveBeenCalledWith("popups");
+    expect(stub.chain.in).toHaveBeenCalledWith("image_path", [PHOTO_ROW.image_path, `/${PHOTO_ROW.image_path}`]);
 
     // 두 버킷 모두 지웠다. 원본이 먼저다 — 중간에 실패해도 화면에 보이는 공개본이 남는 쪽이 덜 나쁘다
     expect(stub.storageFrom.mock.calls.map((c) => c[0])).toEqual([GALLERY_ORIGINALS_BUCKET, GALLERY_BUCKET]);
@@ -795,6 +802,7 @@ describe("5. 삭제 순서와 부분 실패", () => {
     const stub = dbStub(
       [
         { data: PHOTO_ROW, error: null },
+        { data: [], error: null },
         { data: [{ id: 7 }], error: null },
         { data: [{ id: 7 }], error: null },
       ],
@@ -811,6 +819,7 @@ describe("5. 삭제 순서와 부분 실패", () => {
   test("원본 경로가 비어 있어도(옛 행) 공개본만 지우고 행을 지운다", async () => {
     const stub = dbStub([
       { data: { ...PHOTO_ROW, original_path: null }, error: null },
+      { data: [], error: null },
       { data: [{ id: 7 }], error: null },
       { data: [{ id: 7 }], error: null },
     ]);
@@ -825,6 +834,7 @@ describe("5. 삭제 순서와 부분 실패", () => {
   test("우리 버킷 밖 경로(옛 시드 행·로컬 파일)는 지우려 들지 않는다", async () => {
     const stub = dbStub([
       { data: { ...PHOTO_ROW, image_path: "/brand/bus.png", original_path: null }, error: null },
+      { data: [], error: null },
       { data: [{ id: 7 }], error: null },
       { data: [{ id: 7 }], error: null },
     ]);
@@ -834,6 +844,29 @@ describe("5. 삭제 순서와 부분 실패", () => {
     expect(r).toMatchObject({ ok: true, code: "deleted" });
     expect(stub.remove).not.toHaveBeenCalled();
     expect(stub.rpc.mock.calls.map((c) => c[0])).toEqual(["admin_set_gallery_photo_active", "admin_delete_gallery_photo"]);
+  });
+
+  test("🔴 T3-3 팝업이 쓰는 사진은 지우지 않는다 — 노출도 파일도 행도 그대로 · 참조를 못 읽으면 실패(지우지 않는 쪽)", async () => {
+    const used = dbStub([
+      { data: PHOTO_ROW, error: null },
+      { data: [{ id: 3 }], error: null }, // 팝업 3번이 이 사진을 쓴다
+    ]);
+    vi.mocked(createSsrClient).mockReturnValue(used.client as never);
+    expect(await deleteGalleryPhoto({ id: 7 })).toEqual({ ok: false, changed: false, code: "inUseByPopup" });
+    expect(used.rpc).not.toHaveBeenCalled();
+    expect(used.remove).not.toHaveBeenCalled();
+
+    const broken = dbStub([
+      { data: PHOTO_ROW, error: null },
+      { data: null, error: { message: "permission denied" } },
+    ]);
+    vi.mocked(createSsrClient).mockReturnValue(broken.client as never);
+    expect(await deleteGalleryPhoto({ id: 7 })).toEqual({ ok: false, changed: false, code: "failed" });
+    expect(broken.rpc).not.toHaveBeenCalled();
+    expect(broken.remove).not.toHaveBeenCalled();
+
+    const ko = JSON.parse(read("messages/ko.json")) as { admin: { gallery: { result: Record<string, string> } } };
+    expect(ko.admin.gallery.result.inUseByPopup).toMatch(/팝업/);
   });
 
   test("행이 없으면 스토리지를 건드리지 않는다", async () => {
@@ -973,18 +1006,22 @@ describe("7. 정적 규약", () => {
   test("업로더는 브라우저 세션으로 직접 올린다 — 서버액션에 파일 본문을 넘기지 않는다 (ADR-9)", () => {
     const src = codeOf(UPLOADER_UI);
     expect(src).toMatch(/createBrowserSupabase/);
-    expect(src).toMatch(/\.storage\s*\.from\(/);
-    expect(src).toMatch(/createImageBitmap/);
-    expect(src).toMatch(/toBlob|convertToBlob/);
+    // T3-2 — 디코드·인코딩·스토리지 포트는 lib/admin/imagePrepare.ts(브라우저 전용 · 팝업 사진과 공용)
+    expect(src).toMatch(/storagePort\(createBrowserSupabase\(\)\)/);
+    expect(src).toMatch(/prepareImage\(file\)/);
+    const prep = codeOf("lib/admin/imagePrepare.ts");
+    expect(prep).toMatch(/\.storage\.from\(/);
+    expect(prep).toMatch(/createImageBitmap/);
+    expect(prep).toMatch(/toBlob|convertToBlob/);
     // 서버액션에 넘어가는 것은 경로·크기 메타뿐이다
     expect(src).not.toMatch(/FormData\([^)]*\)[\s\S]{0,200}append\((["'])file\1/);
     expect(src).toMatch(/recordGalleryUpload/);
   });
 
   test("HEIC — 디코드에 실패하면 업로드하지 않고 안내한다(서버 변환 없음)", () => {
-    const src = codeOf(UPLOADER_UI);
-    expect(src).toMatch(/isHeicExtension/);
-    expect(src).toMatch(/heic/i);
+    // T3-2 — 디코드 판정은 imagePrepare(heic 이유) · 안내 문구 선택은 업로더
+    expect(codeOf("lib/admin/imagePrepare.ts")).toMatch(/isHeicExtension\(ext\) \? "heic" : "decode"/);
+    expect(codeOf(UPLOADER_UI)).toMatch(/prepared\.reason === "heic" \? labels\.heicHelp/);
     const ko = JSON.parse(read("messages/ko.json")) as Record<string, never>;
     const gallery = (ko.admin as Record<string, Record<string, string>>).gallery;
     expect(gallery.heicHelp, "아이폰 설정 안내 문구가 없다").toBeTruthy();

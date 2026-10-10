@@ -26,6 +26,7 @@ import {
   ROUTE_FAILED,
   ROUTE_FIELDS,
   ROUTE_NOT_FOUND,
+  RouteReorderInput,
   parseRouteForm,
   parseRouteId,
   routeChanged,
@@ -34,7 +35,7 @@ import {
   type RouteActionResult,
 } from "@/lib/admin/routeInput";
 import { PUBLIC_CACHE_PATH, PUBLIC_CACHE_SCOPE } from "@/lib/admin/publicRevalidate";
-import { ADMIN_ROUTES_PATH, setRouteActive, updateRouteRow, type RouteWriteOutcome } from "@/lib/admin/routes";
+import { ADMIN_ROUTES_PATH, reorderRouteRows, setRouteActive, updateRouteRow, type RouteWriteOutcome } from "@/lib/admin/routes";
 import { requireAdmin } from "@/lib/auth/requireAdmin";
 import { structuredLog, type StructuredLogEntry } from "@/lib/log";
 import { runAfter } from "@/lib/ports/after";
@@ -47,11 +48,12 @@ interface AdminRouteLogEntry extends StructuredLogEntry {
   outcome: RouteActionCode;
 }
 
-type RouteAction = "update" | "toggle";
+type RouteAction = "update" | "toggle" | "reorder";
 
 const EVENT: Record<RouteAction, string> = {
   update: "admin.route.update",
   toggle: "admin.route.toggle",
+  reorder: "admin.route.reorder",
 };
 
 function report(action: RouteAction, id: number | null, result: RouteActionResult): RouteActionResult {
@@ -94,6 +96,31 @@ export async function updateRoute(formData: FormData): Promise<RouteActionResult
   const parsed = parseRouteForm(formData);
   if (!parsed.ok) return report("update", id, parsed.result);
   return apply("update", id, "updated", () => updateRouteRow(id, parsed.value));
+}
+
+/**
+ * T3-5(결정 10 A안) — 순서 저장. 화면에 보인 순서대로의 id 를 받아 바뀐 행만 admin_update_route 로 다시 쓴다(새 RPC 없음).
+ * 중간 실패는 failed(앞 행은 이미 바뀌었을 수 있다 — 화면이 목록을 새로 읽는다). 바뀐 것이 없으면 notFound 가 아니라 reordered(변경 0)다.
+ */
+export async function reorderRoutes(ids: unknown): Promise<RouteActionResult> {
+  await requireAdmin();
+  const parsed = RouteReorderInput.safeParse(ids);
+  if (!parsed.success) return report("reorder", null, routeValidationFailed({}));
+  let result: { ok: boolean; updated: number };
+  try {
+    result = await reorderRouteRows(parsed.data);
+  } catch {
+    return report("reorder", null, ROUTE_FAILED);
+  }
+  if (result.updated > 0) {
+    runAfter(() => {
+      revalidatePath(PUBLIC_CACHE_PATH, PUBLIC_CACHE_SCOPE);
+      revalidate(QUERY_TAGS.showcase);
+      revalidatePath(ADMIN_ROUTES_PATH);
+    });
+  }
+  if (!result.ok) return report("reorder", null, ROUTE_FAILED);
+  return report("reorder", null, result.updated > 0 ? routeChanged("reordered") : { ok: true, changed: false, code: "reordered" });
 }
 
 /** 목록에서 한 번에 내리고 올리기. 내린 노선은 홈 지도·카드에서 빠지고 나머지 컬럼은 그대로 남는다. */

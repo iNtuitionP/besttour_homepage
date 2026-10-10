@@ -5,6 +5,8 @@ import { formatAdminPeriod } from "@/components/admin/admin-date";
 import { getAdminDateLabels } from "@/components/admin/adminDateLabels";
 import { getCopyWarningLabels } from "@/components/admin/copyWarningLabels";
 import { PopupForm } from "@/components/admin/PopupForm";
+import { getPopupGalleryPhotos, getPopupImageLabels } from "@/components/admin/popupImageLabels";
+import { getRichTextEditorLabels } from "@/components/admin/richTextEditorLabels";
 import { PopupSample } from "@/components/admin/PopupSample";
 import { HomePopup } from "@/components/home/HomePopup";
 import { routing } from "@/i18n/routing";
@@ -48,6 +50,9 @@ export default async function AdminPopupEditPage({ params }: { params: Params })
       </main>
     );
   }
+
+  // T3-3 — 사진 고르기(갤러리에서 고르기 + 새로 올리기)
+  const [imageLabels, galleryPhotos] = await Promise.all([getPopupImageLabels(), getPopupGalleryPhotos()]);
 
   const results = {
     created: t("result.created"),
@@ -115,7 +120,10 @@ export default async function AdminPopupEditPage({ params }: { params: Params })
               deleteConfirm: t("deleteConfirm"),
               results,
               copyWarning,
+              image: imageLabels,
+              editor: await getRichTextEditorLabels(),
             }}
+            galleryPhotos={galleryPhotos}
           />
         </section>
 

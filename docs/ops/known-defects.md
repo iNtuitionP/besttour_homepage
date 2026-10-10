@@ -248,6 +248,7 @@ create policy gallery_select_active on gallery for select using (
 
 **결과**: 사장님이 도움말 예시를 그대로 따라 하면 **이미지가 깨진 팝업**이 홈에 뜬다.
 **조치**: 도움말 문자열에 앞 슬래시를 넣는다(ko·en 양쪽). **P6-6 에 포함**(그 태스크가 `messages/*.json` 편집자다). ✅ 2026-09-16 완료.
+**종결 (2026-10-10, OF-T3-3)**: 경로를 손으로 적는 칸 자체를 없앴다 — "갤러리에서 고르기 + 새로 올리기"(`components/admin/PopupImagePicker.tsx`). 새로 올린 사진은 `gallery/popups/yyyy/mm/<uuid>-1600.webp`. 옛 파일은 자동 삭제하지 않고, 갤러리 사진 삭제는 팝업 참조가 있으면 거절한다(`lib/admin/gallery.ts popupsUsingImage`). 잠금: `tests/home.test.ts`·`tests/admin-popup-image.test.ts`.
 
 ---
 

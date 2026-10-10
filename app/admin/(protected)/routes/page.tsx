@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 
+import { RouteOrder } from "@/components/admin/RouteOrder";
 import { RouteToggle } from "@/components/admin/RouteToggle";
 import { formatPriceKrw } from "@/components/KrMap/format";
 import { routing } from "@/i18n/routing";
@@ -36,6 +37,7 @@ export default async function AdminRoutesPage() {
     updated: t("result.updated"),
     activated: t("result.activated"),
     deactivated: t("result.deactivated"),
+    reordered: t("result.reordered"),
     notFound: t("result.notFound"),
     duplicate: t("result.duplicate"),
     validation: t("result.validation"),
@@ -134,6 +136,40 @@ export default async function AdminRoutesPage() {
             </div>
           )}
         </section>
+
+        {/* T3-5 — 순서 바꾸기(끌기 · ↑/↓ · «순서 저장»). 수정 화면의 순서 숫자 칸을 대신한다 */}
+        {rows.length > 1 ? (
+          <section className={a.section} aria-labelledby="route-order-title">
+            <h2 className={a.sectionTitle} id="route-order-title">
+              {t("order.title")}
+            </h2>
+            <p className={a.hint}>{t("order.hint")}</p>
+            <RouteOrder
+              items={rows.map((row) => {
+                const amount = formatPriceKrw(row.price_from);
+                return {
+                  id: row.id,
+                  label: t("routeValue", { origin: routePlaceLabel(row.origin_code), destination: routePlaceLabel(row.destination_code) }),
+                  meta: `${amount === "" ? t("noPrice") : amount}${row.active ? "" : ` · ${t("state.off")}`}`,
+                };
+              })}
+              labels={{
+                save: t("order.save"),
+                reset: t("order.reset"),
+                processing: t("processing"),
+                up: t.raw("order.up") as string,
+                down: t.raw("order.down") as string,
+                handle: t.raw("order.handle") as string,
+                moved: t.raw("order.moved") as string,
+                picked: t.raw("order.picked") as string,
+                canceled: t("order.canceled"),
+                instructions: t("order.instructions"),
+              }}
+              saved={t("order.saved")}
+              failed={t("order.failed")}
+            />
+          </section>
+        ) : null}
       </div>
     </main>
   );

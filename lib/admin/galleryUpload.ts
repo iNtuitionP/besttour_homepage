@@ -32,12 +32,12 @@ export interface GalleryStoragePort {
 /** 서버액션 포트 — actions/admin/gallery.ts recordGalleryUpload. */
 export type GalleryRecordPort = (input: GalleryUploadValues) => Promise<{ ok: boolean; code: string }>;
 
-export type UploadFailure = Extract<GalleryRejectReason, "upload" | "record" | "needsCheck">;
+export type UploadFailure = Extract<GalleryRejectReason, "upload" | "record" | "needsCheck" | "caption">;
 
 export type UploadOutcome = { kind: "done" } | { kind: "failed"; reason: UploadFailure };
 
 /** 행이 만들어지지 않았음이 **증명되는** 결과 코드. 이때만 되돌린다. */
-// copyWarning(P6-12) — 서버가 대조 단계에서 멈춘 것이라 쓰기 전이다. 업로더는 설명을 보내지 않으므로(caption: null) 지금은 닿지 않지만,
+// copyWarning(P6-12) — 서버가 대조 단계에서 멈춘 것이라 쓰기 전이다. T3-2 부터 업로더가 장별 설명을 보내 실제로 닿는다.
 // ok=true 라서 아래 "done" 판정에 섞이면 행 없는 파일을 성공이라 부르게 된다 — 그 길을 미리 닫는다.
 const PROVEN_NOT_WRITTEN: ReadonlySet<string> = new Set(["validation", "notFound", "copyWarning"]);
 
@@ -107,7 +107,8 @@ export async function commitUpload(args: CommitUploadArgs): Promise<UploadOutcom
   if (PROVEN_NOT_WRITTEN.has(result.code)) {
     await discard(storage, paths.publicBucket, paths.publicKey);
     await discard(storage, paths.originalBucket, paths.originalKey);
-    return { kind: "failed", reason: "record" };
+    // T3-2 — 업로드 때 장별 설명을 받으면서 copyWarning 에 닿게 됐다. 쓰기 전에 멈춘 것은 같지만, 고칠 곳이 설명이라는 것을 알린다
+    return { kind: "failed", reason: result.code === "copyWarning" ? "caption" : "record" };
   }
 
   // `failed` 등 — 서버가 쓰기 도중 예외를 삼킨 결과다. 커밋 뒤에 터졌을 가능성을 배제할 수 없다 → 파일을 남긴다

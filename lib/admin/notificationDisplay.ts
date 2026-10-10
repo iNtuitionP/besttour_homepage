@@ -100,6 +100,17 @@ export function notifyErrorKey(lastError: string | null | undefined): NotifyErro
  */
 export const PENDING_STALL_HOURS = 24;
 
+/**
+ * T3-1(사장님 요청 6) — 발송 기록의 '시도' 칸은 실패한 적이 있는 행에만 보인다.
+ * failed 는 늘 · pending 은 한 번 이상 시도한(= 실패해 다시 보내는) 행만 · 격리 행(sent_unmarked:)은 발송된 것이라 숨긴다.
+ */
+export function showsAttempts(row: { status: string; attempts: number; lastError: string | null }): boolean {
+  if (row.status === "failed") return true;
+  if (row.status !== "pending") return false;
+  if ((row.lastError ?? "").startsWith(SENT_UNMARKED_PREFIX)) return false;
+  return row.attempts > 0;
+}
+
 export type PendingSubState =
   | { kind: "sending" }
   | { kind: "retry"; at: string }

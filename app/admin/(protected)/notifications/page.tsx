@@ -5,7 +5,7 @@ import { formatAdminDate } from "@/components/admin/admin-date";
 import { getAdminDateLabels } from "@/components/admin/adminDateLabels";
 import { keepLastWord, segments, splitSegments } from "@/components/admin/segments";
 import { routing } from "@/i18n/routing";
-import { notifyErrorKey, pendingSubState } from "@/lib/admin/notificationDisplay";
+import { notifyErrorKey, pendingSubState, showsAttempts } from "@/lib/admin/notificationDisplay";
 import {
   CHANNEL_FILTERS,
   DEFAULT_NOTIFICATION_PAGE_SIZE,
@@ -221,6 +221,8 @@ export default async function AdminNotificationsPage({ searchParams }: { searchP
               <tbody>
                 {items.map((row) => {
                   const errorKey = notifyErrorKey(row.lastError);
+                  // T3-1 — 시도 횟수는 실패한 적이 있는 행에만(성공 행의 "1회" 는 읽을 거리만 늘린다)
+                  const attemptsShown = showsAttempts(row);
                   const updatedApart = Math.abs(Date.parse(row.updatedAt) - Date.parse(row.createdAt)) >= UPDATED_LINE_MIN_MS;
                   return (
                     <tr key={row.id} data-row-status={row.status}>
@@ -246,9 +248,9 @@ export default async function AdminNotificationsPage({ searchParams }: { searchP
                           )}
                         </span>
                       </td>
-                      <td className={`${a.td} ${a.tdNowrap}`}>
+                      <td className={`${a.td} ${a.tdNowrap}`} data-empty={attemptsShown ? undefined : "true"}>
                         <span className={a.cellLabel}>{t("col.attempts")}</span>
-                        <span className={a.cellValue}>{t("attemptsValue", { n: row.attempts })}</span>
+                        <span className={a.cellValue}>{attemptsShown ? t("attemptsValue", { n: row.attempts }) : null}</span>
                       </td>
                       <td className={a.td} data-empty={errorKey === null ? "true" : undefined}>
                         <span className={a.cellLabel}>{t("col.lastError")}</span>
