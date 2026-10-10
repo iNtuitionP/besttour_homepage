@@ -38,7 +38,7 @@ import q from "@/components/quote/quote.module.css";
  *   DOM 순서는 **연락·처리 → 본문**이다 — 휴대폰 한 열에서는 연락 카드가 맨 위다. ≥1024px 에서는 본문 2/3 + 오른쪽 1/3 고정 열(sticky)로,
  *   오른쪽 열(연락 · 처리 카드)이 격자의 둘째 칸에 선다(admin.module.css `.detailCols`).
  *   본문: 운행 카드(큰 구간 · 가는 날 · 오는 날 · 기간 · 인원 · 출발 시각 · 차량 · 왕복·편도 · 여행 구분 — 간편 접수의 미정 칸은 "전화로 확인") ·
- *   (옛 상세 접수) 접수 조건 · 요청 사항(있으면 메모 위에 따로) · 처리 영역(ReservationActions — "전화로 확인할 것" 체크리스트 · 메모 카드 · 시트 · 토스트) ·
+ *   (옛 상세 접수) 접수 조건 · 요청 사항(있으면 메모 위에 따로) · 처리 영역(ReservationActions — 메모 카드 · 시트 · 토스트. P5-22 의 점검표 카드는 사장님 요청 11 로 지웠다) ·
  *   접수 기록(동의 · 보관 — <details> 접힘, 라벨은 기존 admin.detail.field.* 그대로) · 휴대폰 맨 아래 취소(확정 버튼과 멀리).
  *   <1024px: 셸의 위 제목줄·아래 탭 바를 숨기고(`.shell:has(.detailPage)`) 이 화면의 위 제목줄(← · 접수 상세 · ⋯ 취소)과
  *   아래 고정 행동 바([전화] [확정하기] · 확정 뒤 [전화] [문자 보내기])를 둔다. 스크롤 여백은 행동 바 높이(포커스·배너가 바 뒤로 숨지 않게).
@@ -395,7 +395,7 @@ export default async function AdminReservationDetailPage({ params, searchParams 
               </section>
             ) : null}
 
-            {/* key — 다른 접수로 옮겨 가면 처리 영역을 새로 만든다(체크리스트 체크·메모 편집이 앞 접수에서 넘어오지 않게) */}
+            {/* key — 다른 접수로 옮겨 가면 처리 영역을 새로 만든다(메모 편집이 앞 접수에서 넘어오지 않게) */}
             <ReservationActions key={row.id} id={row.id} status={row.status} initialMemo={row.admin_memo ?? ""} summary={summary} labels={actionLabels} />
 
             <details className={`${a.detailCard} ${a.records}`} data-testid="admin-records">

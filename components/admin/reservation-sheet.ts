@@ -146,20 +146,6 @@ export interface CancelReasonCopy {
   line: string;
 }
 
-/**
- * 간편 접수의 "전화로 확인할 것" 문구(P5-22 · 시안 #detail) — 체크는 **화면 안내용**이라 저장하지 않는다(1단계 · 3단계에서 실제 칸 저장).
- * `progress` 는 `{n}`·`{total}` 틀이다(화면이 채운다).
- */
-export interface ChecklistLabels {
-  title: string;
-  progress: string;
-  items: readonly string[];
-  /** 저장되지 않는다는 한 줄(새로 열면 처음으로 돌아간다). */
-  note: string;
-  /** 확인한 것은 메모에 적어 두라는 한 줄. */
-  memoHint: string;
-}
-
 /** 처리 영역 문구 — 서버(components/admin/reservationActionLabels.tsx)가 messages/ko.json `admin.detail.*` 에서 만들어 내린다. */
 export interface ReservationActionLabels {
   /** 처리 영역의 이름 — 성공 뒤 포커스가 돌아올 때 읽힌다(P5-22 부터 처리 카드의 제목). */
@@ -181,15 +167,12 @@ export interface ReservationActionLabels {
   /** 메모 칸의 예시 자리글(시안). */
   memoPlaceholder: string;
   processing: string;
-  checklist: ChecklistLabels;
   sheet: {
     close: string;
     /** 간편 접수의 요약 상자 한 줄. */
     quickNote: string;
     /** 처리 중 SHEET_STUCK_MS 가 지났을 때 시트 안 안내(닫아도 된다 · 결과가 오면 알린다). */
     slow: string;
-    /** 확정 시트의 확인 경고 — `{total}`·`{n}` 틀(P5-22 · 간편 접수이고 체크가 다 채워지지 않았을 때만). */
-    checkWarning: string;
     confirm: SheetCopy;
     cancel: SheetCopy & { reasonLegend: string; reasonHint: string; reasons: readonly CancelReasonCopy[] };
     complete: SheetCopy;
@@ -206,31 +189,11 @@ export interface ReservationActionLabels {
 /** 시트의 요약 상자 — 구간 · 날짜 · 인원. 운행 정보이지 고객 식별 정보가 아니다(이름·전화·메일은 없다). */
 export interface ReservationSummary {
   parts: readonly string[];
-  /** 간편 접수(0023 intake='quick') — "차량·시각은 통화로 정한 대로" 한 줄을 더한다. P5-22 부터 "전화로 확인할 것" 체크리스트도 이것으로 정한다. */
+  /**
+   * 간편 접수(0023 intake='quick') — 확정 시트 요약에 "차량·시각은 통화로 정한 대로" 한 줄을 더한다.
+   * (P5-22 의 점검표 카드 · 확정 경고도 이것으로 정했으나 사장님 요청 11(2026-10-10)로 지웠다.)
+   */
   quick: boolean;
-}
-
-// =============================================================================
-// 전화로 확인할 것 (P5-22) — 체크 수 · 확정 시트의 확인 경고
-// =============================================================================
-
-/** 체크리스트의 지금 — 몇 개 중 몇 개를 확인했나. */
-export interface ChecklistState {
-  checked: number;
-  total: number;
-}
-
-export function countChecked(checks: readonly boolean[]): number {
-  return checks.filter(Boolean).length;
-}
-
-/**
- * 확정 시트의 확인 경고 — **확정 시트**이고, 체크리스트가 있고(간편 접수의 새 접수), 다 채우지 않았을 때만 그 상태를 돌려준다(아니면 null).
- * 막지 않는다 — 경고만 한다(통화로 이미 확인했을 수 있다 · 브리프 §B). 취소·완료 시트에는 없다.
- */
-export function sheetCheckWarning(sheet: SheetKind, checklist: ChecklistState | null | undefined): ChecklistState | null {
-  if (sheet !== "confirm" || checklist === null || checklist === undefined) return null;
-  return checklist.total > 0 && checklist.checked < checklist.total ? checklist : null;
 }
 
 // =============================================================================

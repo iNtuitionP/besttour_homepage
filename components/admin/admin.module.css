@@ -1981,7 +1981,6 @@ a.hubItem:hover {
 .detailCardIcon,
 .btnIcon,
 .undecidedIcon,
-.sheetWarnIcon,
 .recordsChevron {
   flex: none;
   fill: none;
@@ -1995,15 +1994,6 @@ a.hubItem:hover {
   height: 20px;
   color: var(--icon-default);
 }
-/* 카드 제목 오른쪽 작은 글자(체크 진행 "0/4 확인") */
-.cardAside {
-  margin-left: auto;
-  font-size: 13.5px;
-  font-weight: 800;
-  color: var(--text-brand);
-  font-variant-numeric: tabular-nums;
-}
-
 /* 연락 — 큰 번호 + [전화 걸기] [문자 보내기](48px · 서버가 그린 tel:·sms:) */
 .contactNum {
   margin: 0 0 var(--space-stack-sm);
@@ -2111,45 +2101,6 @@ a.hubItem:hover {
   line-height: 1.6;
   white-space: pre-line;
   overflow-wrap: anywhere;
-}
-
-/* 전화로 확인할 것 — 체크 4개(줄 48px · 라벨이 체크를 감싼다). 체크한 줄은 흐리게 긋는다(시안). 저장하지 않는다 */
-.callChecklist {
-  display: grid;
-  gap: calc(var(--space-stack-xs) / 4);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.callCheck {
-  display: flex;
-  align-items: center;
-  gap: var(--space-inline-sm);
-  min-height: 48px;
-  padding: calc(var(--space-stack-xs) / 2) calc(var(--space-inline-xs) * 0.75);
-  border-radius: var(--radius-control);
-  cursor: pointer;
-  font-size: 15.5px;
-  font-weight: 600;
-  line-height: 1.45;
-}
-.callCheck:hover {
-  background: var(--bg-subtle);
-}
-.callCheckInput {
-  width: 22px;
-  height: 22px;
-  flex: none;
-  margin: 0;
-  accent-color: var(--action-primary-bg);
-}
-.callCheckInput:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-.callCheckInput:checked + .callCheckText {
-  color: var(--text-secondary);
-  text-decoration: line-through;
 }
 
 /* 메모 카드 — 칸 · [메모 저장](오른쪽) */
@@ -2373,27 +2324,6 @@ a.hubItem:hover {
   font-size: 14px;
   font-weight: 500;
   color: var(--text-secondary);
-}
-/* 확정 시트의 확인 경고(P5-22 · 시안 .warn) — 간편 접수의 "전화로 확인할 것" 을 다 채우지 않았을 때. 실패가 아니라 확인이라 흰 면 + 골드 테두리
- * (새 접수 톤) · 표시는 골드(장식 — 글자가 뜻을 말한다). 막지 않는다 */
-.sheetWarn {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-inline-xs);
-  margin: var(--space-stack-sm) 0 0;
-  padding: var(--space-stack-xs) var(--space-inline-sm);
-  border: 1px solid var(--status-attention-border);
-  border-radius: var(--radius-control);
-  background: var(--bg-surface);
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.55;
-}
-.sheetWarnIcon {
-  width: 20px;
-  height: 20px;
-  margin: calc(var(--space-stack-xs) / 4) 0 0;
-  color: var(--accent-decorative-strong);
 }
 .sheetBody {
   margin: var(--space-stack-sm) 0 0;

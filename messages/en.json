@@ -68,7 +68,7 @@
           "heading": "To and from Incheon Airport —\n<em>airport routes,</em>\nhandled with confidence",
           "body": "Incheon Airport departures and arrivals are covered by our <b>Airport Pickup & Drop-off (Transfer Specialists)</b> service.",
           "chips": ["Incheon Airport pickup", "Incheon Airport drop-off", "Early-morning & late-night dispatch", "Room for luggage", "Group leader can ride along"],
-          "chipsOn": 2
+          "chipsOn": 0
         },
         "nationwide": {
           "title": "Nationwide service",
@@ -82,7 +82,7 @@
           "title": "Foreign tour specialty and trust",
           "tag": "Specialized in VIP transport & sightseeing for foreign visitors",
           "heading": "Standards for\nforeign tour service",
-          "body": "We are a <b>registered charter bus booking agency</b>. Vehicles are insured, and you can request the insurance documents if you wish. Bus assignments are checked personally by our CEO.",
+          "body": "We are a <b>registered charter bus booking agency</b>. Vehicles are insured, and you can request the insurance documents if you wish.",
           "chips": [],
           "chipsOn": 0
         }
@@ -96,10 +96,9 @@
         "date": "Departure date",
         "returnDate": "Return date",
         "pax": "Passengers",
-        "groupAirport": "★ Airport route (specialist)",
+        "groupAirport": "Airport",
         "groupRegions": "Provinces & metropolitan cities",
         "groupCities": "Featured route cities",
-        "airNote": "This is an <b>Airport Pickup & Drop-off (Transfer Specialists)</b> route.",
         "cta": "Request a quote",
         "note": "There is no online payment.",
         "errors": {
@@ -115,17 +114,14 @@
     },
     "routes": {
       "eyebrow": "Popular routes",
-      "title": "Popular routes, <ac>quotes at a glance</ac>",
-      "desc": "Sample quotes for frequently requested routes. <b>Incheon Airport routes</b> are served as Airport Pickup & Drop-off (Transfer Specialists)."
+      "title": "Popular routes, <ac>quotes at a glance</ac>"
     },
     "krmap": {
       "section": "Popular routes",
       "mapTitle": "Map of popular routes in Korea",
-      "legendAirport": "Gold = Airport Pickup & Drop-off (Transfer Specialists) route",
       "descEmpty": "A map of South Korea. There are no popular routes to show.",
       "desc": "The departure and arrival points of {count} popular routes are shown as pins and curves on a map of South Korea. Every route is described in full in the list that follows.",
       "listLabel": "Sample quotes for popular routes",
-      "airport": "Airport Pickup & Drop-off (Transfer Specialists)",
       "cta": "Request a quote for your schedule",
       "empty": "There are no popular routes to show right now. We will give you a quote through a consultation.",
       "moreHint": "Hover over or tap a line on the map to see the other {count} routes.",
@@ -141,14 +137,10 @@
       "intake": "24-hour online requests",
       "intakeSub": "We reply after reviewing your request"
     },
-    "services": {
-      "label": "Bestour strengths",
-      "items": ["Airport Pickup & Drop-off (Transfer Specialists)", "DVD · karaoke system", "Refrigerator · water dispenser", "Vehicle insurance", "Nationwide service"]
-    },
     "how": {
       "eyebrow": "How it works",
       "title": "From request to payment in just <ac>four steps</ac>",
-      "desc": "We take care of the complicated parts. All you need to do is tell us where you are going, when, and how many people. There is no online payment."
+      "desc": "We take care of the complicated parts. All you need to do is tell us where you are going, when, and how many people."
     },
     "fleet": {
       "eyebrow": "Vehicles",
@@ -350,7 +342,8 @@
         "For us, the greatest reward comes \"when customers step off the bus with a happy smile.\""
       ],
       "facts": {
-        "since": "Opened"
+        "since": "Opened",
+        "sinceValue": "{year}"
       },
       "location": {
         "title": "How to Find Us",

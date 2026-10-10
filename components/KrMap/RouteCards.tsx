@@ -7,6 +7,7 @@
  *   - 카드 hover → 지도 선 강조(양방향 연동). 활성 카드는 data-active.
  * 문구·금액·지명은 서버(KrMap → toRouteTips)가 만든 문자열만 받는다 — 이 파일에 문구 리터럴·가격 포맷 호출 없음.
  * 견적 CTA(i18n Link)는 서버 KrMap 이 만들어 RouteExplorer 가 목록 아래에 놓는다.
+ * 사장님 요청 10(2026-10-10): 공항 노선 카드의 골드 테두리(.cardAccent)와 공항 배지를 없앴다 — 카드 16장이 같은 모양이다.
  */
 import type { PointerEvent } from "react";
 
@@ -17,7 +18,6 @@ export interface RouteCardsProps {
   tips: readonly RouteTip[];
   listId: string;
   listLabel: string;
-  airportLabel: string;
   /** 보이는 카드 수(앞에서부터). 나머지는 visually-hidden. */
   visible: number;
   activeId: number | null;
@@ -34,7 +34,6 @@ export function RouteCards({
   tips,
   listId,
   listLabel,
-  airportLabel,
   visible,
   activeId,
   onCardEnter,
@@ -46,14 +45,13 @@ export function RouteCards({
     <ol className={s.cardList} aria-label={listLabel} id={listId} ref={listRef} data-testid="krmap-cards">
       {tips.map((t, i) => {
         const offscreen = i >= visible;
-        const classes = [t.highlight ? s.cardAccent : s.card, offscreen ? s.cardOffscreen : ""].filter(Boolean).join(" ");
+        const classes = [s.card, offscreen ? s.cardOffscreen : ""].filter(Boolean).join(" ");
         return (
           <li
             key={t.id}
             ref={cardRef ? (el) => cardRef(i, el) : undefined}
             className={classes}
             data-card={t.id}
-            data-highlight={t.highlight || undefined}
             data-offscreen={offscreen ? "" : undefined}
             data-active={activeId === t.id ? "" : undefined}
             onPointerEnter={onCardEnter ? (e) => isMouse(e) && onCardEnter(t.id) : undefined}
@@ -66,7 +64,6 @@ export function RouteCards({
               <b className={s.cardRoute}>
                 {t.from} → {t.to}
               </b>
-              {t.airport ? <em className={s.cardBadge}>{airportLabel}</em> : null}
             </span>
             {/* 빈 문자열 = 실값 미수령 → 라벨 숨김 폴백 (CLAUDE.md §3) */}
             {t.amount ? (

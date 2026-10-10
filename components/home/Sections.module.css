@@ -1,5 +1,6 @@
 /*
- * 홈 섹션 3~9 — 신뢰 지표 · 서비스 스트립 · 이용 절차 · 차량 · 회사 소개 · 갤러리 · 공지 (목업 variant-08).
+ * 홈 섹션 3~8 — 신뢰 지표 · 이용 절차 · 차량 · 회사 소개 · 갤러리 · 공지 (목업 variant-08).
+ * 서비스 스트립(강점 띠)은 사장님 요청 23(2026-10-10)으로 섹션째 지웠다 — 그 규칙(.services · .serviceItem)도 없다.
  * 색·간격·라운드·고도는 역할 토큰만, 간격 px 0건(home.module.css 헤더 참조).
  */
 
@@ -85,37 +86,6 @@
   font-size: 12.5px;
   line-height: 1.5;
   color: var(--text-secondary);
-}
-
-/* ── 서비스 스트립 (.section--tight.tone-lav) ─────────────────────────── */
-.services {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-inline-xs);
-  margin: var(--space-stack-sm) 0 0;
-  padding: 0;
-  list-style: none;
-}
-.serviceItem {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-inline-xs);
-  min-height: 40px;
-  padding: 0 var(--space-inline-sm);
-  background: var(--bg-surface);
-  border: 1px solid var(--border-decorative);
-  border-radius: var(--radius-control);
-  font-size: 13.5px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-.serviceItem::before {
-  content: "";
-  flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent-decorative);
 }
 
 /* ── 이용 절차 4단계 (.steps) ─────────────────────────────────────────── */

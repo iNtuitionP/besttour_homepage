@@ -313,7 +313,7 @@ describe("3-b. 영문 규칙 — 양성 픽스처(잡는다) · 음성 픽스처
     "Include 10% VAT in the quote",
     "Choose the trip purpose that is closest to yours.",
     "We arrange buses nationwide, from Seoul to Jeju.",
-    "Bus assignments are checked personally by our CEO.",
+    "We confirm the schedule and group size before dispatch.",
     "2 days, 1 night", // 일정 길이 — 연차 주장이 아니다
   ];
 
@@ -383,19 +383,36 @@ describe("6. 단일 원장 — 목록을 두 번 정의하지 않는다", () => 
 // 7. 남아 있어야 할 것 — 빼기만 했는지의 반대편 단언
 // =============================================================================
 describe("7. 사업 설명은 남는다 (실증 대상이 아니다)", () => {
-  // P3-8: 위저드(quote.steps.route.airNote)가 없어졌다 — 견적 입구는 홈 위젯(home.hero.widget.airNote)이고 그 안내가 같은 표기를 쓴다.
-  test('확정 표기 "공항 픽업·샌딩 (송영 전문)" 이 홈과 견적 위젯 안내에 그대로 있다 — CLAUDE.md §3', () => {
+  // P3-8: 위저드(quote.steps.route.airNote)가 없어졌다 — 견적 입구는 홈 위젯이었다.
+  // 사장님 요청 10·12·17·23(2026-10-10 · T1-1): 위젯 안내(airNote)·노선 설명(routes.desc)·지도 범례·카드 배지(krmap.*)·강점 띠(services)에서
+  // 이 표기를 뺐다. 남는 자리는 홈 메타 제목·설명 · 히어로 1번 슬라이드 태그·본문 · 신뢰 바 — 그 다섯 곳을 경로로 잠근다(개수만 보면 어디서 빠졌는지 모른다).
+  test('확정 표기 "공항 픽업·샌딩 (송영 전문)" 이 홈 메타·히어로 공항 슬라이드·신뢰 바에 그대로 있다 — CLAUDE.md §3', () => {
     const MARK = "공항 픽업·샌딩 (송영 전문)";
     const hits = koLeaves.filter((l) => l.value.includes(MARK));
     expect(hits.length, "확정 표기가 사라졌다").toBeGreaterThanOrEqual(4);
     expect(new Set(hits.map((l) => namespaceOf(l.path)))).toContain("home");
-    expect(hits.map((l) => l.path)).toContain("home.hero.widget.airNote");
+    expect(hits.map((l) => l.path)).toEqual(
+      expect.arrayContaining([
+        "home.meta.title",
+        "home.meta.description",
+        "home.hero.slides.airport.tag",
+        "home.hero.slides.airport.body",
+        "home.trust.airport",
+      ]),
+    );
+    // 사장님 요청으로 뺀 자리가 되살아나지 않는다
+    for (const gone of ["home.hero.widget.airNote", "home.routes.desc", "home.krmap.legendAirport", "home.krmap.airport"]) {
+      expect(hits.map((l) => l.path), gone).not.toContain(gone);
+    }
+    expect(hits.some((l) => l.path.startsWith("home.services")), "home.services").toBe(false);
   });
 
   test("홈의 보험 문구는 원장 INSURANCE 가 보증하는 범위 안이다 (가입 사실 + 서류 열람)", () => {
     const home = koLeaves.filter((l) => namespaceOf(l.path) === "home");
     const insuranceLeaves = home.filter((l) => l.value.includes("보험"));
-    expect(insuranceLeaves.length, "홈에서 보험 문구가 통째로 사라졌다").toBeGreaterThanOrEqual(2);
+    // 사장님 요청 23(T1-1): 강점 띠의 "차량 보험 가입"(home.services.items[3])이 띠째 빠져 2 → 1. 남은 자리를 경로로 잠근다.
+    expect(insuranceLeaves.length, "홈에서 보험 문구가 통째로 사라졌다").toBeGreaterThanOrEqual(1);
+    expect(insuranceLeaves.map((l) => l.path)).toContain("home.hero.slides.trust.body");
     // 원장 INSURANCE.body 가 실제로 말하는 것: (1) 보험에 가입되어 있다 (2) 원하면 보험 서류를 받아 볼 수 있다.
     expect(INSURANCE.body).toContain("보험 서류");
     expect(home.some((l) => l.value.includes("보험 서류")), "원장이 보증하는 '보험 서류' 안내가 홈에 없다").toBe(true);

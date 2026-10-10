@@ -11,7 +11,7 @@
  *      바깥 탭·Esc → 닫힘. 활성 노선은 선·양 끝 핀을 강조한다. 카드 hover 도 같은 강조를 켠다(양방향).
  *
  * 경계: 문구·금액·지명·곡선은 서버(KrMap → toRouteTips)가 만든 props 만 쓴다 — 이 파일에 문구 리터럴·가격 포맷 호출 없음.
- * 지도 SVG(MapSvg)·범례·CTA(i18n Link)는 서버가 렌더한 노드를 슬롯으로 받는다.
+ * 지도 SVG(MapSvg)·CTA(i18n Link)는 서버가 렌더한 노드를 슬롯으로 받는다.
  */
 import { useCallback, useEffect, useId, useLayoutEffect, useReducer, useRef, useState, type ReactNode } from "react";
 
@@ -25,7 +25,6 @@ import s from "./KrMap.module.css";
 
 export interface RouteExplorerCopy {
   listLabel: string;
-  airport: string;
   empty: string;
   /** 토글 — 펼치기(전체 개수가 들어간 완성 문장). */
   showAll: string;
@@ -40,9 +39,7 @@ export interface RouteExplorerProps {
   map: ReactNode;
   /** 지도 라벨 레이어(보류 중 슬롯 — KrMap props.labels). */
   labels?: ReactNode;
-  /** 골드 범례 문구 — null 이면 범례 없음. */
-  legend: string | null;
-  /** 견적 CTA(서버의 i18n Link). */
+  /** 견적 CTA(서버의 i18n Link). 골드 범례 슬롯(legend)은 사장님 요청 10(2026-10-10)으로 없앴다. */
   cta: ReactNode;
   tips: readonly RouteTip[];
   copy: RouteExplorerCopy;
@@ -57,7 +54,7 @@ export interface RouteExplorerProps {
 /** 활성 핀 강조 링 반지름(SVG 좌표) — 허브 halo(15)보다 조금 크게. */
 const ACTIVE_PIN_R = 9;
 
-export function RouteExplorer({ map, labels, legend, cta, tips, copy, collapse = true }: RouteExplorerProps) {
+export function RouteExplorer({ map, labels, cta, tips, copy, collapse = true }: RouteExplorerProps) {
   const listId = useId();
   const [state, dispatch] = useReducer(explorerReducer, INITIAL_EXPLORER_STATE);
   const [fit, setFit] = useState(() => (collapse ? Math.min(DEFAULT_VISIBLE_CARDS, tips.length) : tips.length));
@@ -186,14 +183,8 @@ export function RouteExplorer({ map, labels, legend, cta, tips, copy, collapse =
               </g>
             </svg>
           ) : null}
-          {activeTip && showsTip(state) ? <RouteTooltip tip={activeTip} airportLabel={copy.airport} /> : null}
+          {activeTip && showsTip(state) ? <RouteTooltip tip={activeTip} /> : null}
         </div>
-        {legend ? (
-          <figcaption className={s.caption}>
-            <i className={s.swatch} aria-hidden="true" />
-            {legend}
-          </figcaption>
-        ) : null}
       </figure>
 
       <div className={s.cards} ref={columnRef}>
@@ -206,7 +197,6 @@ export function RouteExplorer({ map, labels, legend, cta, tips, copy, collapse =
             tips={tips}
             listId={listId}
             listLabel={copy.listLabel}
-            airportLabel={copy.airport}
             visible={visible}
             activeId={active?.id ?? null}
             onCardEnter={(id) => dispatch({ type: "cardEnter", id })}

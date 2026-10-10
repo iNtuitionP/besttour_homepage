@@ -3,7 +3,7 @@
  * 예약 상세의 처리 영역 — 확인 시트 · 메모 · 결과 토스트의 주인 (P5-3 → P5-19 확인 시트 → P5-22 상세 재배치).
  *
  * P5-22 — 시안 #detail 로 화면을 다시 놓으면서 이 부품이 **그리는 것**이 바뀌었다(하는 일은 그대로다):
- *   - 그리는 것: 간편 접수(새 접수)의 "전화로 확인할 것" 체크리스트 카드 · 메모 카드 · 확인 시트 · 결과 토스트 자리.
+ *   - 그리는 것: 메모 카드 · 확인 시트 · 결과 토스트 자리.
  *   - 진입 버튼(확정·운행 완료·취소)은 **여기 없다**. 데스크톱 오른쪽 처리 카드 · 휴대폰 아래 행동 바 · 위 제목줄 ⋯ · 맨 아래 칸에 떨어져 있고
  *     (components/admin/ReservationProcess.tsx · SheetTrigger.tsx), 그 사이에 서버가 그린 개인정보(번호·`tel:`·요청 사항)가 끼어 있어
  *     이 부품으로 감쌀 수 없다(감싸면 개인정보가 props 로 넘어온다). 그래서 진입 버튼은 채널(components/admin/reservation-panel.ts)로
@@ -13,8 +13,8 @@
  *   - 성공 뒤 포커스는 **보이는 처리 영역**(데스크톱 처리 카드 · 휴대폰 행동 바 — data-process-region)으로 — 연 버튼은 새로고침에서 사라진다.
  *     없으면 메모 카드로. 처리 중에 시트를 닫은 뒤(15초 탈출) 늦게 온 결과가 연 버튼을 없애도 같은 자리로 구한다(수정 라운드 · 리뷰 P2-3 ·
  *     reservation-sheet.ts focusRescue) — 포커스가 <body> 로 빠지지 않게.
- *   - 체크리스트는 **화면 안내용**이다(저장하지 않는다 — 새로 열면 처음으로). 확정 시트는 그 수를 읽어, 다 채우지 않았으면
- *     "전화로 확인할 것 4개 중 n개를 확인했어요. 통화로 확인하셨나요?" 를 요약 아래에 보인다(막지 않는다 · 설명으로 함께 읽힌다).
+ *   - 사장님 요청 11(2026-10-10) — P5-22 의 간편 접수 "전화로 확인할 것" 점검표 카드(저장하지 않는 체크 4개)와, 그 수를 읽던
+ *     확정 시트의 확인 경고를 지웠다. 통화로 정한 내용은 메모 카드에 적는다. 운행 카드의 미정 칸 "전화로 확인" 은 페이지가 그대로 그린다(결정 13).
  *   - [메모 저장]은 P5-21 PendingButton(disabled 대신 aria-disabled) — 키보드로 저장해도 포커스가 body 로 떨어지지 않는다(P5-19 리뷰 P2-6).
  *
  * P5-19 에서 이어지는 것(바꾸지 않았다):
@@ -55,18 +55,14 @@ import {
   SHEET_STUCK_MS,
   bannerMessage,
   cleanCustomerName,
-  countChecked,
-  fillTemplate,
   focusRescue,
   focusReturn,
   initialPanelState,
   panelController,
   panelReducer,
-  sheetCheckWarning,
   sheetTitle,
   toastHasLink,
   type CancelReason,
-  type ChecklistState,
   type PanelActions,
   type PanelState,
   type ReservationActionLabels,
@@ -117,12 +113,8 @@ export function ReservationActions({ id, status, initialMemo, summary, labels }:
   const heldOpenerRef = useRef<HTMLElement | null>(null);
   const memoHintId = useId();
   const memoTitleId = useId();
-  const checklistTitleId = useId();
   /** 처리 중 SHEET_STUCK_MS 가 지났다(응답이 오지 않는다) — 시트의 [닫기]·ESC·바깥 누르기를 되살린다(리뷰 P2-1). */
   const [slow, setSlow] = useState(false);
-  /** 전화로 확인할 것 — 화면 안내용(저장하지 않는다). 확정 시트의 확인 경고가 이 수를 읽는다. */
-  const checklistItems = labels.checklist.items;
-  const [checks, setChecks] = useState<boolean[]>(() => checklistItems.map(() => false));
 
   useEffect(() => {
     if (!pending) {
@@ -211,43 +203,8 @@ export function ReservationActions({ id, status, initialMemo, summary, labels }:
     if (decision === "rescue") (visibleProcessRegion() ?? panelRef.current)?.focus();
   });
 
-  const showChecklist = summary.quick && canConfirm && checklistItems.length > 0;
-  const checklist: ChecklistState | null = showChecklist ? { checked: countChecked(checks), total: checklistItems.length } : null;
-
   return (
     <>
-      {checklist !== null ? (
-        <section className={s.detailCard} aria-labelledby={checklistTitleId} data-testid="admin-checklist">
-          <h2 id={checklistTitleId} className={s.detailCardTitle}>
-            {labels.checklist.title}
-            <span className={s.cardAside} data-testid="admin-check-progress">
-              {fillTemplate(labels.checklist.progress, { n: checklist.checked, total: checklist.total })}
-            </span>
-          </h2>
-          <ul className={s.callChecklist}>
-            {checklistItems.map((item, i) => (
-              <li key={i}>
-                <label className={s.callCheck}>
-                  <input
-                    type="checkbox"
-                    className={s.callCheckInput}
-                    checked={checks[i] ?? false}
-                    onChange={(e) => {
-                      const on = e.target.checked;
-                      setChecks((prev) => prev.map((v, j) => (j === i ? on : v)));
-                    }}
-                    data-testid={`admin-check-${i}`}
-                  />
-                  <span className={s.callCheckText}>{item}</span>
-                </label>
-              </li>
-            ))}
-          </ul>
-          <p className={s.hint}>{labels.checklist.note}</p>
-          <p className={s.hint}>{labels.checklist.memoHint}</p>
-        </section>
-      ) : null}
-
       <section ref={panelRef} className={s.detailCard} aria-labelledby={memoTitleId} tabIndex={-1} data-testid="admin-memo-card">
         <h2 id={memoTitleId} className={s.detailCardTitle}>
           <label htmlFor="admin-memo">{labels.memoLabel}</label>
@@ -287,7 +244,6 @@ export function ReservationActions({ id, status, initialMemo, summary, labels }:
           summary={summary}
           pending={pending}
           slow={slow}
-          checklist={checklist}
           onClose={controller.close}
           onSubmit={submit}
           onPickReason={controller.pickReason}
@@ -302,8 +258,8 @@ export function ReservationActions({ id, status, initialMemo, summary, labels }:
 /**
  * 시트 하나 — 종류별 문구·요약·사유를 AdminSheet 에 채운다. 상태는 부르는 쪽(ReservationActions)이 든다.
  * 잠긴 시트(이미 처리됨 — `state.sheetLocked`)는 실행 버튼과 사유 라디오를 막는다(리뷰 P1-1). 판정은 배너 모양이 아니라 잠금이다.
- * P5-22 — 확정 시트는 "전화로 확인할 것" 을 다 채우지 않았으면(간편 접수 · `checklist`) 요약 아래에 확인 경고를 보이고 설명으로 함께 읽힌다.
- * 막지 않는다(실행 버튼은 그대로) — 통화로 이미 확인했을 수 있다.
+ * 설명(aria-describedby)은 결과 문장 하나다 — P5-22 의 점검표 확인 경고는 사장님 요청 11(2026-10-10)로 지웠다(요약 상자 → 본문).
+ * 간편 접수의 요약 한 줄(quickNote)은 그대로다.
  */
 export function ReservationSheet({
   sheet,
@@ -312,7 +268,6 @@ export function ReservationSheet({
   summary,
   pending,
   slow,
-  checklist,
   onClose,
   onSubmit,
   onPickReason,
@@ -324,35 +279,21 @@ export function ReservationSheet({
   pending: boolean;
   /** 처리 중 SHEET_STUCK_MS 가 지났다 — [닫기]를 되살리고 늦음 안내를 보인다. */
   slow: boolean;
-  /** 간편 접수의 "전화로 확인할 것"(새 접수일 때만) — 없으면 경고도 없다(P5-22). */
-  checklist?: ChecklistState | null;
   onClose: () => void;
   onSubmit: () => void;
   onPickReason: (reason: CancelReason) => void;
 }) {
   const reasonIdPrefix = useId();
-  const warnId = useId();
   const copy = labels.sheet[sheet];
   const title = sheetTitle(copy.title, copy.titleNoName, state.customerName);
   const banner = state.sheetBanner === null ? null : bannerMessage(state.sheetBanner, labels);
-  const warn = sheetCheckWarning(sheet, checklist);
 
   const before =
     sheet === "cancel" ? null : (
-      <>
-        <p className={s.sheetSummary} data-testid="admin-sheet-summary">
-          {summary.parts.join(" · ")}
-          {sheet === "confirm" && summary.quick ? <span className={s.sheetSummaryNote}>{labels.sheet.quickNote}</span> : null}
-        </p>
-        {warn !== null ? (
-          <p id={warnId} className={s.sheetWarn} data-testid="admin-sheet-check-warning">
-            <svg className={s.sheetWarnIcon} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7.5v5.5M12 16.5v.3" />
-            </svg>
-            <span>{fillTemplate(labels.sheet.checkWarning, { total: warn.total, n: warn.checked })}</span>
-          </p>
-        ) : null}
-      </>
+      <p className={s.sheetSummary} data-testid="admin-sheet-summary">
+        {summary.parts.join(" · ")}
+        {sheet === "confirm" && summary.quick ? <span className={s.sheetSummaryNote}>{labels.sheet.quickNote}</span> : null}
+      </p>
     );
 
   const cancel = labels.sheet.cancel;
@@ -391,7 +332,6 @@ export function ReservationSheet({
       before={before}
       description={copy.body}
       after={after}
-      describedBy={warn !== null ? warnId : undefined}
       banner={banner}
       bannerAttempt={state.sheetBannerSeq}
       closeLabel={labels.sheet.close}

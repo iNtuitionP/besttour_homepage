@@ -6,6 +6,7 @@
  *   (CLAUDE.md §3 라벨 숨김 폴백). 계산 없음.
  * - 곡선 d 는 지도(MapSvg)와 같은 routeCurve — 히트 영역이 보이는 선과 정확히 겹친다.
  * - 말풍선 기준점은 곡선 중점(routeMidpoint)의 스테이지 백분율, 배치는 tipPlacement.
+ * - 사장님 요청 10(2026-10-10): 공항 배지를 켜던 airport 와 골드 카드를 켜던 highlight 필드를 없앴다 — 카드·말풍선 어디도 읽지 않는다.
  */
 import type { ShowcaseRouteView } from "@/lib/types";
 import { tipPlacement, type TipAlign, type TipSide } from "./fit";
@@ -18,8 +19,6 @@ export interface RouteTip {
   to: string;
   /** 표시 문자열("40만원" · "KRW 400,000"). 빈 문자열 = 실값 미수령 → 숨김. */
   amount: string;
-  airport: boolean;
-  highlight: boolean;
   /** SVG path d (지도 선과 같다). */
   d: string;
   /** 출발·도착 핀 SVG 좌표 — 활성 노선의 핀 강조 링. */
@@ -28,10 +27,6 @@ export interface RouteTip {
   /** 말풍선 기준점(스테이지 백분율). */
   anchor: { left: string; top: string };
   place: { align: TipAlign; side: TipSide };
-}
-
-function touchesAirport(r: ShowcaseRouteView): boolean {
-  return r.origin.kind === "airport" || r.destination.kind === "airport";
 }
 
 export function toRouteTips(routes: readonly ShowcaseRouteView[], locale: string): RouteTip[] {
@@ -43,8 +38,6 @@ export function toRouteTips(routes: readonly ShowcaseRouteView[], locale: string
       from: en ? r.origin.nameEn : r.origin.nameKo,
       to: en ? r.destination.nameEn : r.destination.nameKo,
       amount: en ? formatPriceKrwEn(r.priceFrom) : formatPriceKrw(r.priceFrom),
-      airport: touchesAirport(r),
-      highlight: r.highlight,
       d: routeCurve(r.origin, r.destination),
       a: { x: r.origin.svgX, y: r.origin.svgY },
       b: { x: r.destination.svgX, y: r.destination.svgY },

@@ -8,8 +8,11 @@
  * "큰 사고 하나 없었던"(실증 불가 안전 주장)·"외국인 관광객을 모시고 국토여행"(BM 노출) 문장은 옮기지 않는다 — 브리프 §/about.
  * 서명은 CompanyIntro 가 원장 대표자로 렌더한다.
  *
- * 회사 정보 표는 원장 COMPANY 필드 + 원장 라벨만(리터럴 0) — 법정 페이지의 LegalRecordList 재사용. "{년}년부터" 는
- * 원장 establishedYear(등록증 개업일) 보간(home.trust.since 재사용) — 연차("N년")는 표시하지 않는다.
+ * 회사 정보 표는 원장 COMPANY 필드 + 원장 라벨만(리터럴 0) — 법정 페이지의 LegalRecordList 재사용. 개업 값 "{년}년" 은
+ * 원장 establishedYear(등록증 개업일) 보간(pages.about.facts.sinceValue) — 연차("N년")는 표시하지 않는다.
+ * 사장님 요청 9(2026-10-10): 표의 값은 "2013년부터" 가 아니라 "2013년". 홈 신뢰 바(home.trust.since "2013년부터")는 그대로다.
+ * 사장님 요청 3(2026-10-10): 페이지 머리와 인사말 구역의 작은 글씨 소제목 "회사소개" 를 뺐다(h1·h2 는 남김) —
+ * PageHeader 에 eyebrow 를 넘기지 않고 CompanyIntro 에 showEyebrow={false} 를 넘긴다(tests/about-owner-requests.test.ts).
  * #location: 주소는 원장, 지도 임베드 없음(아래 TEMP 마커). 카카오맵·네이버 지도 **검색 URL** 에 주소를 인코딩한 외부 링크만
  * 건다(API 키 불필요). 대중교통 안내는 확인된 정보가 없어 쓰지 않는다.
  * 요청 시점 API(headers·cookies·searchParams) 사용 0 — 정적 렌더.
@@ -57,11 +60,9 @@ export default async function AboutPage({ params }: { params: Params }) {
   const { locale } = await params;
   setRequestLocale(locale);
 
-  const [t, tc, tCompany, tTrust, tMenu] = await Promise.all([
+  const [t, tc, tMenu] = await Promise.all([
     getTranslations("pages.about"),
     getTranslations("pages.common"),
-    getTranslations("home.company"),
-    getTranslations("home.trust"),
     getTranslations("layout.menu"),
   ]);
   const ui = ledgerUi(locale);
@@ -89,7 +90,7 @@ export default async function AboutPage({ params }: { params: Params }) {
     bizRegNo: COMPANY.bizRegNo,
     mailOrder: [COMPANY.mailOrderNo, COMPANY.mailOrderIssuer].filter((part) => part.trim() !== "").join(" "),
     // 숫자를 문자열로 넘긴다 — ICU 숫자 포맷이 "2,013" 으로 묶는 것을 막는다(TrustBar 와 동일).
-    since: tTrust("since", { year: String(COMPANY.establishedYear) }),
+    since: t("facts.sinceValue", { year: String(COMPANY.establishedYear) }),
     headOffice: COMPANY.address,
     branch: COMPANY.branchAddress,
     consultTel: consultPhone(locale).display,
@@ -110,11 +111,10 @@ export default async function AboutPage({ params }: { params: Params }) {
         navLabel={tc("breadcrumb")}
         homeLabel={tc("home")}
         current={tMenu("about")}
-        eyebrow={tCompany("eyebrow")}
         title={tMenu("about")}
       />
 
-      <CompanyIntro extra={t.raw("more") as string[]} />
+      <CompanyIntro extra={t.raw("more") as string[]} showEyebrow={false} />
 
       <section className={`${h.section} ${h.toneLav}`} aria-labelledby="facts-h" data-section="facts">
         <div className={h.wrap}>

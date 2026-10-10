@@ -3,7 +3,7 @@
  *
  * 카피는 messages/ko.json home.hero.* — 목업 슬라이드 문구를 옮기되 실증 불가 수치("13년"·"4,800+"·"운행 경력")가
  * 든 문장·팩트 블록·스탯 블록은 뺐다(P2-4 보고서 §제거 목록). verbatim(bookingNotice)만 원장에서 가져와 위젯에 props 로 내린다.
- * 위젯 선택지는 LOCATION_CODES(28) 전부 — 공항 / 16개 시도 / 대표 노선 도시 세 그룹, 라벨은 locationLabel(code, locale)
+ * 위젯 선택지는 LOCATION_CODES(28) 전부 — 공항 / 16개 시도 / 대표 노선 도시 세 그룹(공항 그룹명은 사장님 요청 10 으로 '공항' 한 단어), 라벨은 locationLabel(code, locale)
  * (ko 는 locationLabelKo 그대로, en 은 PLACES.nameEn · REGION_LABELS_EN — P2-6). 값은 언제나 canonical code 다.
  * verbatim 은 localizeVerbatim — ko 는 원장 문자열 그 자체, en 은 컨트롤러 확정 영문.
  *
@@ -52,9 +52,10 @@ export async function Hero() {
       image,
       ariaLabel: t("slideLabel", { n: String(i + 1), total: String(SLIDES.length), title }),
       dotLabel: t("dotLabel", { n: String(i + 1), title }),
+      // 태그는 세 슬라이드 모두 같은 테두리 모양 — 공항 슬라이드만 골드 배경(.tag)이던 것을 사장님 요청 10(2026-10-10)으로 없앴다.
       content: (
         <>
-          <p className={key === "airport" ? s.tag : s.tagLine}>{t(`slides.${key}.tag`)}</p>
+          <p className={s.tagLine}>{t(`slides.${key}.tag`)}</p>
           <h2 className={s.heading}>{t.rich(`slides.${key}.heading`, RICH)}</h2>
           <p className={s.body}>{t.rich(`slides.${key}.body`, RICH)}</p>
           {chips.length > 0 ? (
@@ -112,7 +113,6 @@ export async function Hero() {
           }}
           groups={groups}
           defaults={{ origin: AIRPORT_CODE, dest: "SEL" }}
-          airNote={t.rich("widget.airNote", RICH)}
           paymentNote={t("widget.note")}
           bookingNotice={bookingNotice}
           locale={locale}

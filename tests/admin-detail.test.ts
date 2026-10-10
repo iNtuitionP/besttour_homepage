@@ -4,7 +4,8 @@
  * 이 파일이 잠그는 것 (처리 부품 하나하나는 tests/admin-detail-panel.test.ts)
  *   1. 머리 — 배지 줄(상태 + 간편 칩 "간편 접수 · 전화 확인 필요") · 제목 = "{이름} 님"(이름은 `#admin-customer-name` 안에만 — P5-19 시트가 읽는다) ·
  *      한 줄 메타 "{접수 시각} 접수 ({경과}) · {홈 간편 견적 / 상세 접수} · 접수번호 {코드}"
- *   2. 배치 — DOM 순서가 연락·처리 → 본문(운행 · 전화로 확인할 것 · 요청 사항 · 메모 · 접수 기록 · 휴대폰 맨 아래 취소).
+ *   2. 배치 — DOM 순서가 연락·처리 → 본문(운행 · 요청 사항 · 메모 · 접수 기록 · 휴대폰 맨 아래 취소). 간편 접수의 "전화로 확인할 것" 점검표
+ *      카드는 사장님 요청 11(2026-10-10)로 지웠다 — 미정 칸의 "전화로 확인" 은 남는다(결정 13 · 부품 쪽은 admin-detail-panel §5·§6).
  *      ≥1024px 는 본문 2/3 + 오른쪽 1/3 고정 열(sticky) · <1024px 는 한 열 + 아래 고정 행동 바 [전화] [확정하기](확정 뒤 [전화] [문자 보내기]) ·
  *      이 화면에서는 아래 탭 바와 셸의 위 제목줄을 숨기고, 위 제목줄 자리에 ← · 접수 상세 · ⋯(취소 시트)
  *   3. 운행 카드 — 가는 날 · 오는 날 · 기간(여러 날만 — P5-21 목록 규칙) · 인원 · 출발 시각 · 차량 · 왕복·편도 · 여행 구분 — 간편 접수의 미정 칸은 "전화로 확인"
@@ -654,7 +655,8 @@ describe("8. 게이트 · 규약", () => {
   });
 
   test("새 문구 — 해요체 · '문자 기록' 없음(2단계 카드는 만들지 않는다)", () => {
-    const touched = JSON.stringify({ meta: detail.meta, contact: detail.contact, bar: detail.bar, trip: detail.trip, checklist: detail.checklist, process: detail.process });
+    // checklist(P5-22)는 요청 11 로 카탈로그에서 지웠다 — 남은 묶음만 본다(키가 없다는 사실은 admin-detail-panel §5 가 잠근다)
+    const touched = JSON.stringify({ meta: detail.meta, contact: detail.contact, bar: detail.bar, trip: detail.trip, process: detail.process });
     expect(touched).not.toMatch(/습니다|십시오/);
     expect(JSON.stringify(ko.admin)).not.toContain("문자 기록");
   });
@@ -669,7 +671,6 @@ describe("8. 게이트 · 규약", () => {
     const contact = detail.contact as unknown as Record<string, string>;
     const bar = detail.bar as unknown as Record<string, string>;
     const trip = detail.trip as unknown as Record<string, string>;
-    const checklist = detail.checklist as unknown as { title: string; items: string[]; note: string; memoHint: string; progress: string };
     const value = detail.value as unknown as Record<string, string>;
     const sheet = detail.sheet as unknown as Record<string, string>;
     for (const quote of [
@@ -682,19 +683,19 @@ describe("8. 게이트 · 규약", () => {
       trip.undecided,
       String(detail.records),
       value.intakeQuick,
-      checklist.title,
-      ...checklist.items,
-      checklist.note,
-      checklist.memoHint,
       String(detail.memoPlaceholder),
-      checklist.progress.replace("{n}", "0").replace("{total}", String(checklist.items.length)),
-      sheet.checkWarning.replace("{total}", String(checklist.items.length)).replace("{n}", "n"),
+      // 확정 시트 요약의 간편 접수 한 줄 — 요청 11 뒤에도 남는 것(결정 13)이라 문서가 그대로 인용한다
+      sheet.quickNote,
     ]) {
       expect(section, `매뉴얼 상세 화면 절에 없다: ${quote}`).toContain(quote);
     }
-    // 체크는 저장되지 않는다 · 경고는 막지 않는다 — 두 사실을 문서가 말한다
-    expect(section).toMatch(/체크는 저장되지 않습니다/);
-    expect(section).toMatch(/막는 것은 아닙니다/);
+    // 사장님 요청 11(2026-10-10) — 점검표 카드와 확정 경고를 지웠다. 매뉴얼 어디에도 없는 화면을 설명하지 않는다
+    // (카탈로그 키가 없어졌으니 옛 화면 문구를 리터럴로 든다 — 미정 칸 "전화로 확인" 은 남는 문구라 여기 없다)
+    for (const gone of ["전화로 확인할 것", "체크는 저장", "0/4 확인", "4/4 확인", "통화로 확인하셨나요", "확인한 내용은 아래 메모에"]) {
+      expect(manual, `매뉴얼에 지운 화면의 문구가 남았다: ${gone}`).not.toContain(gone);
+    }
+    // 점검표가 하던 일(통화로 정한 것을 남기기)은 메모가 맡는다 — 그 안내를 문서가 말한다
+    expect(section).toMatch(/통화로 정하신[^\n]*\*\*관리자 메모\*\* 에 적어 두세요/);
     // 로그아웃 절 — 휴대폰 상세에서는 맨 위 줄이 바뀐다(로그아웃이 없다)는 것을 적는다
     const logout = manual.slice(manual.indexOf("### 나오실 때 — 로그아웃"), manual.indexOf("### 🔒 열쇠를 남에게 주지 마세요"));
     expect(logout).toContain(String(detail.title));

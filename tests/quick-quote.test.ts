@@ -333,7 +333,6 @@ describe("4. 렌더 — 모달 열림 조건 · 요약 · 동의 · verbatim · 
         },
         groups: [{ label: "G", options: [{ value: "ICN", label: "인천공항" }, { value: "SEL", label: "서울" }] }],
         defaults: { origin: "ICN", dest: "SEL" },
-        airNote: "AIR",
         paymentNote: "PAY",
         bookingNotice: VERBATIM.bookingNotice,
         locale: "ko",
@@ -349,6 +348,9 @@ describe("4. 렌더 — 모달 열림 조건 · 요약 · 동의 · verbatim · 
     // 위젯은 더 이상 /quote 로 링크하지 않는다
     expect(html).not.toMatch(/href="\/quote/);
     expect(html).toContain(VERBATIM.bookingNotice);
+    // 사장님 요청 12(2026-10-10 · T1-1): 출발지가 인천공항(기본값)이어도 "공항 … 노선입니다" 안내 줄이 없다.
+    expect(html).toMatch(/<option value="ICN" selected="">/);
+    expect(html).not.toContain('data-testid="quote-air"');
   });
 
   test("모달(열림) — role=dialog · aria-modal · aria-labelledby → 제목 '이 내용으로 견적 신청하기' · 닫기 버튼", () => {
