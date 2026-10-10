@@ -59,7 +59,8 @@ const FIXED = {
   // P7-3 독립 리뷰 P2-6① — 견적 모달의 접힌 카드 전용(접힌 자리는 영문 요약, 한국어 원문은 "View details" 안). 컨트롤러 작성 문안.
   officialNoticeCollapsed:
     "The Korean original under “View details” is the official, legally binding version. If you need help understanding it, please contact us before booking.",
-  bookingNotice: "We will contact you after reviewing your request. Payment is taken only for confirmed bookings.",
+  // T2-2(2026-10-10, 사장님 요청 7 · 결정 3 A안): ko verbatim 이 "확인 후 연락드리겠습니다." 가 되어 en 짝도 같은 뜻으로 바꿨다(계획 결정 3-1 의 영문).
+  bookingNotice: "We will review your request and contact you.",
   showcaseNotice:
     "Sample quotes for popular routes · Based on a 45-seat coach, same-day round trip · Final quote confirmed after consultation",
   airportMark: "Airport Pickup & Drop-off (Transfer Specialists)",
@@ -222,7 +223,10 @@ describe("4. 원장 UI 문구 — ko 는 원장 그대로, en 은 컨트롤러 �
       marketing: PRIVACY_NOTICE.marketingConsentLabel,
       withdrawal: WITHDRAWAL.consentLabel, // P1-7
     });
-    expect(koUi.relatedRole).toBe(RELATED_COMPANY.role);
+    // 사장님 요청 5 · 결정 2(2026-10-10): 푸터의 '관계사' 배지를 걷으면서 원장 UI 에서도 relatedRole 을 뺐다(렌더하는 곳이 없다).
+    // 원장 값 RELATED_COMPANY.role 은 기록용으로 남는다 — 화면에 다시 나오지 않는다는 것은 tests/brand-bestmobility.test.ts §6·§8 이 잠근다.
+    expect(koUi).not.toHaveProperty("relatedRole");
+    expect(RELATED_COMPANY.role).toBe("관계사");
     expect(koUi.labels.effectiveDate).toBe(LEGAL_LABELS.effectiveDate);
     expect(koUi.labels.home).toBe(LEGAL_LABELS.home);
     expect(koUi.labels.legalNav).toBe(LEGAL_LABELS.legalNav);
@@ -234,7 +238,11 @@ describe("4. 원장 UI 문구 — ko 는 원장 그대로, en 은 컨트롤러 �
     for (const k of Object.keys(koUi.labels.footer) as (keyof typeof koUi.labels.footer)[]) {
       expect(koUi.labels.footer[k], `footer.${k}`).toBe(LEGAL_LABELS.footer[k]);
     }
-    expect(Object.keys(koUi.labels.footer).sort()).toEqual(Object.keys(LEGAL_LABELS.footer).sort());
+    // 원장 푸터 라벨 전부를 원장 UI 로 내보낸다 — 단 'operator'(운영사 배지)만 뺐다(사장님 요청 5 · 결정 2, 2026-10-10: 푸터 배지와
+    // /about 의 '운영사' 라벨을 걷어 렌더하는 곳이 없다). 원장 값은 기록용으로 남는다. 다른 라벨이 빠지면 여기서 멈춘다.
+    const NOT_EXPORTED = ["operator"];
+    expect(Object.keys(koUi.labels.footer).sort()).toEqual(Object.keys(LEGAL_LABELS.footer).filter((k) => !NOT_EXPORTED.includes(k)).sort());
+    for (const k of NOT_EXPORTED) expect(Object.keys(LEGAL_LABELS.footer), `원장에 ${k} 가 없다 — 이 예외를 지울 것`).toContain(k);
   });
 
   test("en.json legal 과 ko 원장 UI 의 키 구조가 같다 (officialNotice · officialNoticeCollapsed 는 en 에만 값이 있다)", () => {
@@ -283,8 +291,9 @@ describe("4. 원장 UI 문구 — ko 는 원장 그대로, en 은 컨트롤러 �
   });
 
   test("ko verbatim 두 문구는 CLAUDE.md §3 원문과 바이트 일치 (ko 는 한 글자도 바꾸지 않았다)", () => {
-    // P7-7(2026-10-09, 사용자 지시): '사장님 확정 후' → '담당자 확인 후'. en 짝(FIXED.bookingNotice)에는 "owner" 가 없어 그대로다.
-    expect(VERBATIM.bookingNotice).toBe("담당자 확인 후 연락드리며, 확정된 예약만 결제 진행됩니다.");
+    // P7-7(2026-10-09, 사용자 지시): '사장님 확정 후' → '담당자 확인 후'. en 짝(FIXED.bookingNotice)에는 "owner" 가 없어 그대로였다.
+    // T2-2(2026-10-10, 사장님 요청 7 · 결정 3 A안 · CLAUDE.md §3 개정 사용자 승인): → '확인 후 연락드리겠습니다.' · en 짝도 함께 바꿨다.
+    expect(VERBATIM.bookingNotice).toBe("확인 후 연락드리겠습니다.");
     expect(VERBATIM.showcaseNotice).toBe("대표 노선 예시 견적 · 45인승 당일왕복 기준 · 실제 견적은 상담 후 확정");
   });
 
@@ -306,10 +315,13 @@ describe("4. 원장 UI 문구 — ko 는 원장 그대로, en 은 컨트롤러 �
     for (const p of paths) expect(String(e.get(p)).toLowerCase(), p).toContain(FIXED.registered);
   });
 
-  test("영문 브랜드 표기는 하나 — 'Bestour' (원장 COMPANY.brandNameEn). 'Best Tour'·'BEST TOUR' 변형 0", () => {
+  // 사장님 요청 14 · 결정 1(2026-10-10): 영문 브랜드가 'Bestour' → 'Bestmobility'. 옛 표기는 t 가 하나라(Best+our) `/best\s+tour/` 로는
+  // 'Bestour' 자체를 못 잡았다 — `t?` 로 넓혀 옛 표기 다섯 가지를 모두 막는다. 새 표기 변형('Best Mobility' 등)도 0.
+  test("영문 브랜드 표기는 하나 — 원장 COMPANY.brandNameEn('Bestmobility'). 옛 'Bestour'·'Best Tour'·'BEST TOUR' 0 · 'Best Mobility' 같은 변형 0", () => {
     const text = JSON.stringify(en);
     expect(text).toContain(COMPANY.brandNameEn);
-    expect(/best\s+tour/i.test(text)).toBe(false);
+    expect(/best\s*t?our/i.test(text)).toBe(false);
+    expect(new Set([...text.matchAll(/best[\s-]*mobility/gi)].map((m) => m[0]))).toEqual(new Set([COMPANY.brandNameEn]));
     expect((en.common as Record<string, string>).siteName).toBe(COMPANY.brandNameEn);
   });
 });
@@ -433,8 +445,9 @@ const LEDGER_ON_EN: ReadonlyArray<{ file: string; refs: readonly string[]; scree
   { file: "components/home/Hero.tsx", screen: "/en 간편 견적 모달의 개인정보 수집·이용 고지 본문", notice: true, refs: ["PRIVACY_NOTICE"] },
   // P1-7: 청약철회 제한 문장이 약관 제8조 발췌(withdrawal.ts — 삭제)에서 원장 WITHDRAWAL.notice 로 바뀌었다. 체크박스 라벨은 원장 확정 영문(consentLabelEn).
   { file: "components/quote/WithdrawalNotice.tsx", screen: "/en 간편 견적 모달의 신청 전 확인 사항 · 청약철회 제한 고지", notice: true, refs: ["CANCELLATION", "PAYMENT", "QUOTE_BASIS", "WITHDRAWAL"] },
-  // P7-4 후속 ①: 4단계는 원장 영문(GUIDE_SECTIONS.flow.stepsEn — 컨트롤러 작성)이라 영문으로 보인다. 한국어로 남는 것은 산정 기준 · 대금 지급 두 줄.
-  { file: "components/home/HowItWorks.tsx", screen: "/en 이용 방법 — 산정 기준 · 대금 지급 두 줄(4단계는 원장 stepsEn 영문)", notice: true, refs: ["GUIDE_SECTIONS", "PAYMENT", "QUOTE_BASIS"] },
+  // P7-4 후속 ①: 4단계는 원장 영문(GUIDE_SECTIONS.flow.stepsEn — 컨트롤러 작성)이라 영문으로 보인다. 한국어로 남는 것은 산정 기준 한 줄
+  // (T2-2 — 사장님 요청 20: 대금 지급 줄은 홈 이용 방법에서 뺐다. 견적 모달·/guide 에는 남는다).
+  { file: "components/home/HowItWorks.tsx", screen: "/en 이용 방법 — 산정 기준 한 줄(4단계는 원장 stepsEn 영문)", notice: true, refs: ["GUIDE_SECTIONS", "QUOTE_BASIS"] },
   { file: "components/home/RecentFeed.tsx", screen: "/en 접수 현황 공개 고지(행이 있을 때만)", notice: true, refs: ["PRIVACY_NOTICE"] },
   { file: "components/home/TrustBar.tsx", screen: "/en 신뢰 지표 — 통신판매업 신고번호 · 법인 상호", notice: false, refs: ["COMPANY.legalName", "COMPANY.mailOrderNo"] },
   // P1-7: 계좌는 COMPANY.bankAccount 에서 PAYMENT.accountLine(관계사 명의)으로 옮겼다.

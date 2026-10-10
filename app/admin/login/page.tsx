@@ -34,7 +34,7 @@ export default async function AdminLoginPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const t = await getTranslations({ locale: routing.defaultLocale, namespace: "admin.login" });
-  // 카드 머리의 이름 — 셸 사이드바와 같은 말("베스트투어 관리" · admin.tabs.brand)이다(P5-23 라운드 2 B-13)
+  // 카드 머리의 이름 — 셸 사이드바와 같은 말("베스트모빌리티 관리" · admin.tabs.brand)이다(P5-23 라운드 2 B-13 · 2026-10-10 간판 변경)
   const tTabs = await getTranslations({ locale: routing.defaultLocale, namespace: "admin.tabs" });
 
   const allowlistEmpty = adminEmailAllowlist().length === 0;

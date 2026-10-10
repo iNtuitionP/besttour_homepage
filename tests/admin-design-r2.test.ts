@@ -25,6 +25,7 @@ import { describe, expect, test } from "vitest";
 
 import { dashUnits, glued, keepLastWord, segments, sentences, splitSegments } from "@/components/admin/segments";
 import { revealsOnFocus } from "@/components/admin/TabIntoView";
+import { COMPANY } from "@/lib/legal/disclosures";
 
 import { stripComments } from "./helpers/strip-comments";
 
@@ -466,7 +467,7 @@ describe("B-9 · B-10 · B-11 · B-12 — 폼 간격 · 갤러리 · 홈 절 머
 // B-13 · A-4 — 로그인 · 옛 위저드 라벨
 // =============================================================================
 describe("B-13 · A-4 — 로그인 · 라벨 띄어쓰기", () => {
-  test("🔴 B-13 로그인 — 낱말 안에서 꺾지 않고(keep-all) 긴 주소만 어디서든(anywhere) · 문단 끝 외톨이 줄임 · 카드 머리에 브랜드 표식과 '베스트투어 관리'", () => {
+  test("🔴 B-13 로그인 — 낱말 안에서 꺾지 않고(keep-all) 긴 주소만 어디서든(anywhere) · 문단 끝 외톨이 줄임 · 카드 머리에 브랜드 표식과 '{브랜드} 관리'", () => {
     const login = cssRules(read(LOGIN_CSS));
     const main = bodyOf(".main", null, login);
     expect(decl(main, "word-break")).toBe("keep-all");
@@ -478,7 +479,8 @@ describe("B-13 · A-4 — 로그인 · 라벨 띄어쓰기", () => {
     expect(page).toMatch(/tTabs\("brand"\)/);
     // 브랜드가 제목(h1)보다 먼저
     expect(page.indexOf('data-testid="admin-login-brand"')).toBeLessThan(page.indexOf("<h1"));
-    expect((ko.admin.tabs as Record<string, string>).brand).toBe("베스트투어 관리");
+    // 사장님 요청 14 · 결정 1(2026-10-10): 셸 이름의 브랜드도 원장 간판(베스트모빌리티)이다 — "베스트투어 관리" → "베스트모빌리티 관리".
+    expect((ko.admin.tabs as Record<string, string>).brand).toBe(`${COMPANY.brandName} 관리`);
   });
 
   test("A-4 — 옛 위저드 라벨: '가족 여행' · '세금계산서 발행' · '외국인 의전·관광' (부가세(VAT)는 그대로)", () => {

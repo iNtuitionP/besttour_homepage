@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 
+import { COMPANY } from "@/lib/legal/disclosures";
+
+// 탭 제목의 브랜드는 원장 간판(COMPANY.brandName — 사장님 요청 14 · 2026-10-10). 상호를 여기 다시 적지 않는다.
 export const metadata: Metadata = {
-  title: "베스트투어 관리자",
+  title: `${COMPANY.brandName} 관리자`,
   robots: { index: false, follow: false },
 };
 

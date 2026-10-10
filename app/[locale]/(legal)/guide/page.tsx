@@ -1,6 +1,8 @@
 /**
  * /guide — 이용안내 (전자상거래법 §13② 거래조건 표시 + 기존 메뉴 계승).
- * 절 순서·제목은 원장 GUIDE_SECTIONS. verbatim 2건은 견적 산정 기준 절 위에 VERBATIM 에서 렌더한다(CLAUDE.md §3).
+ * 절 순서·제목은 원장 GUIDE_SECTIONS. 견적 산정 기준 절 위의 안내 상자에는 Top-5 고지 verbatim(VERBATIM.showcaseNotice) 하나를 렌더한다(CLAUDE.md §3).
+ * 접수 안내 verbatim(VERBATIM.bookingNotice)은 사장님 요청 7 · 결정 3-2(2026-10-10 · T2-2)로 이 상자에서 뺐다 — 그 문장은 견적 모달 제출 위 ·
+ * 완료 화면 · 예약 확인 카드(접수 상태)에만 둔다. 대금 지급 절(PAYMENT.line)은 그대로다(전자상거래법 §13② 계약 전 표시).
  * 취소·환불은 열 표(2행 — 사장님 답변 2026-09-21 A-1), basis 가 deposit 이면 표 위에 depositNote. 표·기준 시각 바로 아래에
  * 청약철회 제한 고지(원장 WITHDRAWAL.notice — 계약 전 고지의 두 번째 층, P1-7 브리프 1-B · 영문 화면은 번역본 noticeEn 도 — R2).
  * 대금 지급 절에는 입금 계좌(PAYMENT.accountLine)와 관계사 고지(RELATED_COMPANY.note)를 함께 싣는다(R2 — 법정 페이지에는 푸터가 없다).
@@ -128,7 +130,6 @@ export default async function GuidePage({ params }: { params: Params }) {
           <div key={s.key}>
             {s.key === "quoteBasis" ? (
               <aside className={styles.notice} data-testid="verbatim">
-                <p>{VERBATIM.bookingNotice}</p>
                 <p>{VERBATIM.showcaseNotice}</p>
               </aside>
             ) : null}

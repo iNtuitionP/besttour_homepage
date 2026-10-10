@@ -333,8 +333,6 @@ describe("4. 렌더 — 모달 열림 조건 · 요약 · 동의 · verbatim · 
         },
         groups: [{ label: "G", options: [{ value: "ICN", label: "인천공항" }, { value: "SEL", label: "서울" }] }],
         defaults: { origin: "ICN", dest: "SEL" },
-        paymentNote: "PAY",
-        bookingNotice: VERBATIM.bookingNotice,
         locale: "ko",
         legal: LEGAL,
         turnstileSiteKey: "site-key",
@@ -347,7 +345,10 @@ describe("4. 렌더 — 모달 열림 조건 · 요약 · 동의 · verbatim · 
     expect(html).not.toMatch(/role="dialog"/);
     // 위젯은 더 이상 /quote 로 링크하지 않는다
     expect(html).not.toMatch(/href="\/quote/);
-    expect(html).toContain(VERBATIM.bookingNotice);
+    // T2-2(2026-10-10, 사장님 요청 7 · 결정 3-2): 위젯 하단의 결제 안내·verbatim 두 줄을 걷었다 — 닫힌 위젯에는 verbatim 이 없다.
+    // verbatim 은 모달 제출 버튼 위·완료 화면에 있다(아래 모달 렌더 단언 · tests/quote-disclosure.test.ts).
+    expect(html).not.toContain(VERBATIM.bookingNotice);
+    expect(html).not.toContain('data-legal="booking-notice"');
     // 사장님 요청 12(2026-10-10 · T1-1): 출발지가 인천공항(기본값)이어도 "공항 … 노선입니다" 안내 줄이 없다.
     expect(html).toMatch(/<option value="ICN" selected="">/);
     expect(html).not.toContain('data-testid="quote-air"');

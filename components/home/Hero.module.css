@@ -450,10 +450,5 @@
   gap: var(--space-stack-xs);
   padding: var(--space-stack-sm) var(--space-inline-md) var(--space-stack-md);
 }
-.quoteNote {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.6;
-  text-align: center;
-  color: var(--text-secondary);
-}
+/* 버튼 아래 작은 안내 두 줄(.quoteNote — 결제 안내 · 접수 안내 verbatim)은 사장님 요청 7(2026-10-10 · T2-2)로 걷었다.
+   접수 안내는 모달 제출 버튼 위와 완료 화면에 있다. */

@@ -53,10 +53,12 @@
   outline-offset: 2px;
   border-radius: var(--radius-control);
 }
+/* 간판 로고 best mobility 가로형(2110×265 — 7.96:1 · 사장님 요청 2). 옛 bestour 165×32 자리 */
 .logo {
   display: block;
-  width: 165px;
-  height: 32px;
+  width: 215px;
+  height: 27px;
+  max-width: 100%;
   object-fit: contain;
 }
 

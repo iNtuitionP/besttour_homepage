@@ -223,6 +223,9 @@ describe("4. 등록번호 · 주소 실값", () => {
   test("계약 주체는 합자회사 베스트투어 — 관계사 note 가 이를 명시한다", () => {
     expect(COMPANY.legalName).toBe("합자회사 베스트투어");
     expect(RELATED_COMPANY.note).toContain(COMPANY.legalName);
+    // 결정 1(2026-10-10): 간판(brandName)은 베스트모빌리티로 바뀌어도 법정 상호는 그대로다 — 둘이 같은 값이 아니다.
+    expect(COMPANY.brandName).not.toBe(COMPANY.legalName);
+    expect(RELATED_COMPANY.note).toContain(RELATED_COMPANY.legalName);
   });
 });
 
@@ -343,8 +346,13 @@ describe("5-b. P1-7 원장 변경 — 브리프 문안과 바이트 일치", () 
       holder: "(주)베스트모빌리티",
       holderRole: "관계사",
     });
-    eq((ledger.PAYMENT as unknown as { accountLine: string }).accountLine, "입금 계좌 : 하나은행 255-910018-71504 (예금주 (주)베스트모빌리티 · 관계사)");
-    eq(RELATED_COMPANY.note, "계약과 개인정보 처리의 주체는 합자회사 베스트투어이며, 대금은 관계사 (주)베스트모빌리티 명의 계좌로 받습니다.");
+    // 사장님 요청 5 · 결정 2(2026-10-10 — 컨트롤러 원장 작성): 손님에게 보이는 두 줄에서 '관계사' 꼬리표만 뺐다.
+    // 예금주 실명 · 계약 주체 · 대금 수령 주체 고지(§13①1호)는 그대로다. holderRole 은 렌더하지 않는 기록용 값이라 남는다.
+    eq((ledger.PAYMENT as unknown as { accountLine: string }).accountLine, "입금 계좌 : 하나은행 255-910018-71504 (예금주 (주)베스트모빌리티)");
+    eq(RELATED_COMPANY.note, "계약과 개인정보 처리의 주체는 합자회사 베스트투어이며, 대금은 (주)베스트모빌리티 명의 계좌로 받습니다.");
+    for (const line of [(ledger.PAYMENT as unknown as { accountLine: string }).accountLine, RELATED_COMPANY.note]) {
+      expect(line, "손님에게 보이는 줄에 '관계사' 꼬리표").not.toContain("관계사");
+    }
   });
 
   test("DISPUTE — 접수 창구는 예약·상담 전화, 처리 기한은 값 그대로", () => {

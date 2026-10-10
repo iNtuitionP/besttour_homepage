@@ -3,7 +3,7 @@
  *
  *   - ko: 원장 GUIDE_SECTIONS.flow.steps 그대로 — 한국어 화면의 마크업은 이 후속 전과 **바이트까지 같다**(아래 KO_GOLDEN).
  *   - en: 원장 GUIDE_SECTIONS.flow.stepsEn(컨트롤러 작성 영문 · 독립 리뷰 서명) — 단계 목록에 lang="ko" 가 없다.
- *         한국어로 남는 두 줄(산정 기준 QUOTE_BASIS.line · 대금 지급 PAYMENT.line)에만 lang="ko", 공식 한국어 안내는 **그 두 줄 바로 위**
+ *         한국어로 남는 줄(산정 기준 QUOTE_BASIS.line — T2-2 로 대금 지급 줄은 빠졌다)에만 lang="ko", 공식 한국어 안내는 **그 줄 바로 위**
  *         (OfficialKoreanNotice 규약 — "영문 화면의 한국어 원장 블록 바로 위". 영문 단계 위에 두면 "아래 한국어가 정본" 이 영문을 가리킨다).
  *   - 영문 네 줄은 원장에만 있다 — 클라이언트 파일·카탈로그·다른 소스에 리터럴 0(원장 단일 출처 · CLAUDE.md §3).
  *
@@ -33,6 +33,7 @@ vi.mock("next-intl/server", async () => {
 });
 
 import { HowItWorks } from "@/components/home/HowItWorks";
+import { localizeVerbatim } from "@/lib/i18n/ledger-ui";
 import { GUIDE_SECTIONS, PAYMENT, QUOTE_BASIS, VERBATIM } from "@/lib/legal/disclosures";
 
 import { stripComments } from "./helpers/strip-comments";
@@ -77,8 +78,10 @@ function koGolden(): string {
     `<section class="_section_4bcd29 _toneWhite_4bcd29" aria-labelledby="how-h" data-section="how"><div class="_wrap_4bcd29">` +
     `<div class="_head_4bcd29 _headSplit_4bcd29"><div><p class="_eyebrow_4bcd29">${esc(how.eyebrow)}</p><h2 class="_title_4bcd29" id="how-h">${title}</h2></div><p class="_desc_4bcd29">${esc(how.desc)}</p></div>` +
     `<ol class="_steps_ce5c51" data-testid="how-steps">${steps}</ol>` +
-    `<div class="_stepsNotes_ce5c51" data-testid="how-notes"><p class="_stepsNote_ce5c51">${esc(VERBATIM.bookingNotice)}</p>` +
-    `<p class="_stepsMeta_ce5c51">${esc(QUOTE_BASIS.line)}</p><p class="_stepsMeta_ce5c51">${esc(PAYMENT.line)}</p></div></div></section>`
+    // T2-2(2026-10-10, 사장님 요청 7 · 20): 상자 안의 verbatim 줄(_stepsNote)과 대금 지급 줄을 뺐다 — 산정 기준 한 줄만 남는다.
+    // 나머지 태그·속성·클래스·순서는 캡처 그대로다(이 두 줄 말고는 바뀌지 않았다는 잠금).
+    `<div class="_stepsNotes_ce5c51" data-testid="how-notes">` +
+    `<p class="_stepsMeta_ce5c51">${esc(QUOTE_BASIS.line)}</p></div></div></section>`
   );
 }
 
@@ -112,7 +115,8 @@ describe("홈 '이용 방법' — ko 는 원장 steps(무변경) · en 은 원�
     expect(HANGUL.test(inner)).toBe(false);
   });
 
-  test("en — 공식 한국어 안내는 하나 · 단계 목록 뒤, 한국어 두 줄(lang=ko · 산정 기준 · 대금 지급) 바로 앞", async () => {
+  // T2-2(2026-10-10, 사장님 요청 20): 대금 지급 줄을 홈에서 뺐다 — 한국어로 남는 것은 산정 기준 한 줄이다(대금 지급은 견적 모달·/guide).
+  test("en — 공식 한국어 안내는 하나 · 단계 목록 뒤, 한국어 한 줄(lang=ko · 산정 기준) 바로 앞 · verbatim·대금 지급 줄 0", async () => {
     const html = await render("en");
     const notices = html.match(/data-legal="official-korean-notice"/g) ?? [];
     expect(notices).toHaveLength(1);
@@ -123,12 +127,16 @@ describe("홈 '이용 방법' — ko 는 원장 steps(무변경) · en 은 원�
     expect(iNotice).toBeGreaterThan(iList);
     expect(iFirstKo).toBeGreaterThan(iNotice);
     const koLines = [...html.matchAll(/<p\b[^>]*lang="ko"[^>]*>([\s\S]*?)<\/p>/g)].map((m) => decode(m[1]));
-    expect(koLines).toEqual([QUOTE_BASIS.line, PAYMENT.line]);
+    expect(koLines).toEqual([QUOTE_BASIS.line]);
+    expect(decode(html)).not.toContain(PAYMENT.line);
+    expect(decode(html)).not.toContain(localizeVerbatim("en", VERBATIM.bookingNotice));
   });
 
-  test("ko — 마크업이 이 후속 전과 같다(KO_GOLDEN) · 단계는 원장 steps · lang 속성 0 · 공식 안내 0", async () => {
+  test("ko — 마크업이 이 후속 전과 같다(KO_GOLDEN — T2-2 의 두 줄 삭제만 반영) · 단계는 원장 steps · lang 속성 0 · 공식 안내 0", async () => {
     const html = await render("ko");
     expect(html).toBe(koGolden());
+    expect(decode(html)).not.toContain(VERBATIM.bookingNotice);
+    expect(decode(html)).not.toContain(PAYMENT.line);
     expect(titles(stepList(html).inner)).toEqual([...flow.steps]);
     expect(html).not.toMatch(/\slang=/);
     expect(html).not.toContain("official-korean-notice");

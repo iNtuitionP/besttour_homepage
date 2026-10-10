@@ -2,7 +2,13 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 
+import { COMPANY } from "@/lib/legal/disclosures";
+
 const ROOT = path.resolve(import.meta.dirname, "..");
+// 사이트 이름은 원장 브랜드(사장님 요청 14 · 결정 1 — 2026-10-10 베스트모빌리티 / Bestmobility). 리터럴을 다시 적지 않는다 —
+// 값이 원장과 같다는 것은 tests/brand-bestmobility.test.ts §1 이 원장 쪽에서 잠근다.
+const SITE_KO = COMPANY.brandName;
+const SITE_EN = COMPANY.brandNameEn;
 
 function readSource(relative: string): string {
   return readFileSync(path.join(ROOT, relative), "utf8");
@@ -29,12 +35,12 @@ describe("메시지 폴백 — en 은 공개 네임스페이스를 갖고, 없�
   test("messages/en.json 에는 admin 이 없다 (관리자 화면은 로케일 밖 · 한국어 전용 — P2-6)", async () => {
     const en = JSON.parse(readSource("messages/en.json"));
     expect(en.admin).toBeUndefined();
-    expect(en.common?.siteName).toBe("Bestour");
+    expect(en.common?.siteName).toBe(SITE_EN);
   });
 
   test("messages/ko.json에는 최소 키가 있다", async () => {
     const ko = JSON.parse(readSource("messages/ko.json"));
-    expect(ko.common?.siteName).toBe("베스트투어");
+    expect(ko.common?.siteName).toBe(SITE_KO);
   });
 
   test("병합 결과: locale='en' 은 영문 공개 문구 + ko 의 admin (loadMessages — 최상위 shallow 병합)", async () => {
@@ -45,7 +51,7 @@ describe("메시지 폴백 — en 은 공개 네임스페이스를 갖고, 없�
       string,
       Record<string, unknown>
     >;
-    expect(messages.common.siteName).toBe("Bestour");
+    expect(messages.common.siteName).toBe(SITE_EN);
     expect(messages.admin).toEqual(ko.admin);
   });
 
@@ -63,7 +69,7 @@ describe("메시지 폴백 — en 은 공개 네임스페이스를 갖고, 없�
       string,
       Record<string, string>
     >;
-    expect(messages.common.siteName).toBe("베스트투어");
+    expect(messages.common.siteName).toBe(SITE_KO);
   });
 
   test("request.ts가 loadMessages를 통해 병합한다 (배선 확인)", () => {
