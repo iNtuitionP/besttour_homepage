@@ -164,9 +164,11 @@ const gate = dbWriteGate();
 if (!gate.allowed) console.info(`[outbox-claim-channel] DB 실증 skip — ${gate.reason}`);
 
 const RID_FAKE = "00000000-0000-4000-8000-000000000042";
-const CUSTOMER_VARS: CustomerVars = { publicCode: "ABCD2345", origin: "https://example.test" };
+// OF-T2-3: 고객 변수에 접수 시각이 생겼다(시행일 전 접수). 사장님 변수는 그것을 상속하지 않으므로 펼칠 때 뺀다.
+const CUSTOMER_VARS: CustomerVars = { publicCode: "ABCD2345", origin: "https://example.test", createdAt: "2026-10-01T03:00:00.000Z" };
 const OWNER_VARS: OwnerVars = {
-  ...CUSTOMER_VARS,
+  publicCode: CUSTOMER_VARS.publicCode,
+  origin: CUSTOMER_VARS.origin,
   reservationId: RID_FAKE,
   name: "테스트",
   phone: "010-0000-0000",

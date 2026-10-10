@@ -264,6 +264,39 @@ describe("1. 머리 — 배지 줄 · '{이름} 님' · 한 줄 메타", () => {
     const old = text(elementOf(await render({ ...WIZARD_ROW, created_at: "2025-12-31T03:00:00.000Z" }), "admin-detail-meta"));
     expect(old.startsWith(fill(meta.year, { year: 2025, month: 12, day: 31, time: "12:00" }))).toBe(true);
   });
+
+  // OF-T2-3 후속 · 릴리스 C 리뷰 P1-3 — 시행일 뒤에도 그 전 접수분은 옛 규정이 계약 내용이다. 담당자가 판을 머리에서 바로 본다.
+  // 판 = refundPolicyEditionAt(created_at)(확정 문자와 같은 기준) · 숫자는 원장 tiers · 틀은 admin.detail.refundPolicy.
+  test("🔴 취소·환불 규정 한 줄 — 접수 시각의 KST 날짜로 종전(3일/2일)·개정(7일/6일) · 경계 · 메타 바로 아래 · 접히지 않음", async () => {
+    const rp = dobj("refundPolicy");
+    expect(rp.current).toBe("취소·환불 규정: 종전({refund}/{noRefund}) — {date}까지 접수");
+    expect(rp.next).toBe("취소·환불 규정: 개정({refund}/{noRefund}) — {date}부터 접수");
+    const lineOf = async (created_at: string) => {
+      const html = await render({ ...QUICK_ROW, created_at });
+      const el = elementOf(html, "admin-refund-policy");
+      return { text: text(el), edition: attr(/<p[^>]*data-testid="admin-refund-policy"[^>]*>/.exec(html)?.[0] ?? "", "data-refund-policy"), html };
+    };
+    const before = await lineOf("2026-11-08T14:59:59.999Z"); // KST 11/8 23:59:59.999
+    expect(before.text).toBe("취소·환불 규정: 종전(3일/2일) — 2026-11-08까지 접수");
+    expect(before.edition).toBe("current");
+    const first = await lineOf("2026-11-08T15:00:00.000Z"); // KST 11/9 00:00 (UTC 로는 아직 11/8)
+    expect(first.text).toBe("취소·환불 규정: 개정(7일/6일) — 2026-11-09부터 접수");
+    expect(first.edition).toBe("next");
+    // 화면을 보는 날(시스템 시각)과 무관 — 시행일 뒤에 열어도 그 전 접수는 종전
+    vi.setSystemTime(new Date("2026-12-01T00:00:00.000Z"));
+    expect((await lineOf("2026-10-01T03:00:00.000Z")).text).toBe("취소·환불 규정: 종전(3일/2일) — 2026-11-08까지 접수");
+    vi.setSystemTime(NOW);
+    // 자리: 머리 안, 메타 줄 바로 뒤 · <details> 밖(접히지 않는다)
+    const html = before.html;
+    const iMeta = html.indexOf('data-testid="admin-detail-meta"');
+    const iLine = html.indexOf('data-testid="admin-refund-policy"');
+    expect(iMeta).toBeGreaterThan(-1);
+    expect(iLine).toBeGreaterThan(iMeta);
+    expect(iLine).toBeLessThan(html.indexOf('data-testid="admin-detail-side"')); // 본문 열보다 앞(머리 안)
+    expect(html.slice(iMeta, iLine)).not.toContain("<details");
+    // 읽지 못하는 접수 시각이면 줄을 숨긴다(판을 짐작하지 않는다)
+    expect(await render({ ...QUICK_ROW, created_at: "not-a-date" })).not.toContain('data-testid="admin-refund-policy"');
+  });
 });
 
 // =============================================================================

@@ -10,7 +10,7 @@
  * `customerVars` 와 `ownerVars` 는 **반환 타입이 다르다**(lib/notify/templates.ts). 고객 변수에는 이름·전화가
  * 타입에 없어서, 고객 문자를 보내면서 남의 개인정보를 읽어 오는 코드를 **쓸 수가 없다**. 넓은 타입 하나를 만들고
  * 고객 쪽에서 일부만 쓰는 방식은 쓰지 않았다 — 그것은 구조가 아니라 규율이고, 규율은 언젠가 깨진다.
- * 조회 경로도 함께 갈랐다: 고객 조회는 `public_code` 한 컬럼만 읽는다(§select 화이트리스트).
+ * 조회 경로도 함께 갈랐다: 고객 조회는 `public_code`·`created_at` 두 컬럼만 읽는다(§select 화이트리스트 · created_at 은 OF-T2-3).
  *
  * ## 서비스 롤 예외
  * `reservations` 는 RLS 정책이 없다(0001 — "정책 없음 = 서비스 롤만 접근"). anon 으로는 0행이고 크론에는 세션이 없으므로
@@ -52,15 +52,17 @@ const RESERVATIONS = "reservations";
 const VEHICLES = "vehicles";
 
 /**
- * 고객 문안이 읽는 전부. **한 컬럼이다.**
+ * 고객 문안이 읽는 전부. **두 컬럼이다**(접수번호 · 접수 시각 — 접수 시각은 OF-T2-3 에서 더했다, 아래).
  * 고객 변수(`CustomerVars`)는 접수번호와 사이트 원점뿐이고, 원점은 DB 가 아니라 주입값이다(lib/notify/templates.ts).
  * T2-5(결정 5, 2026-10-10)부터 **고객 문자 2종(created·confirmed)은 접수번호를 쓰지 않는다** — 예약확인이 휴대폰 번호 + 예약자 이름으로
  * 바뀌었다. 그래도 public_code 를 계속 읽는 이유: 같은 `CustomerVars` 를 사장님 발송 실패 알림(lib/notify/fallback.ts)이 받고, 그 알림은
  * 접수번호로 어느 예약인지 가리킨다. 운행일·구간·차량을 고객 문자에 넣지 않는 것은 실수가 아니라 설계다 —
  * 문안의 "■ 예약 확인" 칸이 예약확인 주소와 "휴대폰 번호와 예약자 이름으로 조회" 를 안내한다(T2-4 블록 서식).
  * 그래서 쓰지 않는 값은 읽지도 않는다(lib/queries/recent.ts 가 public_code 조차 읽지 않는 것과 같은 원칙).
+ * OF-T2-3(사장님 요청 16 · 결정 4): `created_at`(접수 시각)을 더했다 — 확정 문자의 취소·환불 줄이 **접수일 기준**으로 옛/개정 규정을
+ * 고른다(lib/refund-policy.ts). 개인정보가 아니다. 사장님 변수(OWNER_VARS_COLUMNS)에는 넣지 않는다(사장님 문안은 쓰지 않는다).
  */
-export const CUSTOMER_VARS_COLUMNS = ["public_code"] as const;
+export const CUSTOMER_VARS_COLUMNS = ["public_code", "created_at"] as const;
 
 /**
  * 사장님 접수 알림이 읽는 전부. 문안(templates.ts `ownerVariants`)이 실제로 쓰는 11컬럼이다 —
@@ -110,9 +112,9 @@ const VEHICLE_LABEL_SELECT = "name_ko";
 // =============================================================================
 
 /** 고객 변수의 키 전부(lib/notify/templates.ts `CustomerVars`). 테스트가 결과 객체의 키 집합과 대조한다. */
-export const CUSTOMER_VARS_KEYS = ["publicCode", "origin"] as const satisfies readonly (keyof CustomerVars)[];
+export const CUSTOMER_VARS_KEYS = ["publicCode", "origin", "createdAt"] as const satisfies readonly (keyof CustomerVars)[];
 
-/** 사장님 변수의 키 전부(`OwnerVars`). `CustomerVars` 를 확장하므로 접수번호·원점이 앞에 있다. */
+/** 사장님 변수의 키 전부(`OwnerVars`). `CustomerVars` 에서 접수 시각만 뺀 것을 확장하므로 접수번호·원점이 앞에 있다(OF-T2-3). */
 export const OWNER_VARS_KEYS = [
   "publicCode",
   "origin",
@@ -189,6 +191,19 @@ function badColumn(column: string, why: string): Error {
 function requiredString(row: Row, column: string): string {
   const value = row[column];
   if (typeof value !== "string" || value.length === 0) throw badColumn(column, "가 비었거나 문자열이 아니다");
+  return value;
+}
+
+/**
+ * 시간대가 붙은 시각 문자열(timestamptz) — 접수 시각(OF-T2-3). 읽을 수 없으면 throw: 판(옛/개정 취소 규정)을 짐작해 보내지 않는다.
+ * 판정 자체는 문안 모듈(lib/refund-policy.ts)이 한다 — 여기서는 값이 시각인지만 본다.
+ */
+function requiredInstant(row: Row, column: string): string {
+  const value = requiredString(row, column);
+  // 날짜 + 'T'/공백 + 시각 + 시간대까지 요구한다 — "2026-11-08" 의 끝 "-08" 을 오프셋으로 읽지 않게(릴리스 C 리뷰 P2-6).
+  if (!/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}(:?\d{2})?)$/i.test(value) || Number.isNaN(Date.parse(value))) {
+    throw badColumn(column, "가 시간대가 붙은 시각이 아니다");
+  }
   return value;
 }
 
@@ -295,8 +310,8 @@ export function templateVars(deps: TemplateVarsDeps): TemplateVarsPort {
     async customerVars(reservationId: string): Promise<CustomerVars | null> {
       const row = await loadRow(reservationId, CUSTOMER_VARS_SELECT, "customer");
       if (row === null) return null;
-      // 이 객체에 담을 수 있는 필드가 두 개뿐이라, 위 행이 무엇을 더 들고 왔든 여기서 끝난다.
-      return { publicCode: requiredString(row, "public_code"), origin: deps.origin };
+      // 이 객체에 담을 수 있는 필드가 셋뿐이라, 위 행이 무엇을 더 들고 왔든 여기서 끝난다.
+      return { publicCode: requiredString(row, "public_code"), origin: deps.origin, createdAt: requiredInstant(row, "created_at") };
     },
 
     async ownerVars(reservationId: string): Promise<OwnerVars | null> {

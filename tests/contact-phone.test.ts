@@ -54,6 +54,7 @@ import { renderVariants } from "@/lib/notify/templates";
 import type { Notice } from "@/lib/types";
 
 import { findElements, findText } from "./helpers/hangul-html";
+import { CREATED_BEFORE_REFUND_CHANGE } from "./helpers/refund-policy-fixtures";
 import { RETIRED_PHONE, RETIRED_PHONE_FORMS } from "./helpers/retired-phones";
 import { stripComments } from "./helpers/strip-comments";
 
@@ -219,7 +220,8 @@ describe("3. 소스 — 전화는 consultPhone, 옛 필드를 읽는 곳 0", () 
 });
 
 describe("4. 고객 문자 — 문의·변경·취소 번호는 예약·상담 전화", () => {
-  const vars = { publicCode: "BT12ABCD", origin: "https://bestour.co.kr" };
+  // OF-T2-3: 고객 변수에 접수 시각(created_at)이 생겼다 — 판과 무관한 전화 줄만 본다.
+  const vars = { publicCode: "BT12ABCD", origin: "https://bestour.co.kr", createdAt: CREATED_BEFORE_REFUND_CHANGE };
   test.for([["created.customer.sms"], ["confirmed.customer.sms"]] as const)("%s — sms·lms 모두 010-6362-6188, 옛 번호 없음", ([key]) => {
     const r = renderVariants(key, vars);
     for (const text of [r.sms, r.lms]) {

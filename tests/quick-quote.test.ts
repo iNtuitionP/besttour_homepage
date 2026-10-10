@@ -530,9 +530,12 @@ describe("5. 정적 검사", () => {
     expect(hero).toMatch(/TURNSTILE_ACTION/);
     // 마케팅 동의 라벨은 내리지 않는다
     expect(hero).not.toMatch(/marketing/);
-    // 청약철회 고지 서버 컴포넌트는 원장 4종을 직접 가져온다. verbatim 은 모달이 제출 바로 위에 한 번만 그린다(중복 0).
-    const w = ledgerImports(read(`${QUOTE_DIR}/WithdrawalNotice.tsx`));
-    for (const n of ["QUOTE_BASIS", "PAYMENT", "CANCELLATION", "WITHDRAWAL"]) expect(w, n).toContain(n);
+    // 청약철회 고지 서버 컴포넌트는 산정 기준·대금을 원장에서 직접, 취소·청약철회는 렌더 시각의 판(lib/refund-policy — OF-T2-3:
+    // 시행일 전 CANCELLATION·WITHDRAWAL, 시행일부터 *_NEXT)으로 가져온다. verbatim 은 모달이 제출 바로 위에 한 번만 그린다(중복 0).
+    const wSrc = read(`${QUOTE_DIR}/WithdrawalNotice.tsx`);
+    const w = ledgerImports(wSrc);
+    for (const n of ["QUOTE_BASIS", "PAYMENT"]) expect(w, n).toContain(n);
+    expect(wSrc).toMatch(/import\s*\{[^}]*\brefundPolicyAt\b[^}]*\}\s*from\s*["']@\/lib\/refund-policy["']/);
     expect(w).not.toContain("VERBATIM");
   });
 

@@ -24,8 +24,8 @@ import { describe, expect, test } from "vitest";
 import { loadMessages } from "@/i18n/messages";
 import { ledgerUi, localizeVerbatim } from "@/lib/i18n/ledger-ui";
 import { LEGACY_MENU } from "@/lib/legacy-menu-map";
+import { refundPolicyAt } from "@/lib/refund-policy";
 import {
-  CANCELLATION,
   COMPANY,
   INSURANCE,
   LEGAL_LABELS,
@@ -433,18 +433,21 @@ describe("6. 공개 화면 코드 — 한글 리터럴 0 (주석 제외, 명시�
  */
 const LEDGER_ON_EN: ReadonlyArray<{ file: string; refs: readonly string[]; screen: string; notice: boolean | { via: string } }> = [
   // P1-7 R2: /en/guide 대금 지급 절에 입금 계좌·관계사 고지(RELATED_COMPANY.note), 청약철회 고지는 영문 번역본(noticeEn) + 한국어 원문.
-  { file: "app/[locale]/(legal)/guide/page.tsx", screen: "/en/guide 본문 전체(P1-7: 취소·환불 절 아래 청약철회 제한 고지 · R2: 대금 지급 절에 입금 주체)", notice: true, refs: ["CANCELLATION", "COMPANY[]", "DISPUTE", "GUIDE_SECTIONS", "INSURANCE", "LEGAL_LABELS", "MINORS", "PAYMENT", "QUOTE_BASIS", "RELATED_COMPANY", "VERBATIM", "WITHDRAWAL"] },
+  // OF-T2-3: 취소·환불 절은 판 고르기(refundPolicyAt · 시행일 전 '변경 예정' 은 upcomingRefundPolicy)로 원장을 읽고, 머리·예고는 한국어 틀
+  // (refundChangeTexts("ko") — 본문 lang="ko"). 예고와 개정 고지는 en 화면에서 영문 번역(lang="en")을 먼저 싣는다.
+  { file: "app/[locale]/(legal)/guide/page.tsx", screen: "/en/guide 본문 전체(P1-7: 취소·환불 절 아래 청약철회 제한 고지 · R2: 대금 지급 절에 입금 주체 · OF-T2-3: 시행일 전 변경 예정 묶음)", notice: true, refs: ["COMPANY[]", "DISPUTE", "GUIDE_SECTIONS", "INSURANCE", "LEGAL_LABELS", "MINORS", "PAYMENT", "QUOTE_BASIS", "RELATED_COMPANY", "VERBATIM", "refundChangeTexts(ko)", "refundPolicyAt", "upcomingRefundPolicy"] },
   // P1-7 R2: 방문 통계 국외이전 항목(VISITOR_STATS_TRANSFER)을 따로 두고 그 바로 아래 거부 버튼(라벨은 영문).
   { file: "app/[locale]/(legal)/privacy/page.tsx", screen: "/en/privacy 본문 전체", notice: true, refs: ["COMPANY.privacyOfficer", "LEGAL_LABELS", "OVERSEAS_TRANSFERS", "PRIVACY_NOTICE", "PRIVACY_POLICY_SECTIONS", "PROCESSORS", "VISITOR_STATS_TRANSFER"] },
   // R3 [P2-F]: 제7조(취소 및 환불) 아래에 CANCELLATION.scope(규정의 적용 범위 — 고객 사정 취소 · 법정 권리 보존)를 붙였다.
-  { file: "app/[locale]/(legal)/terms/page.tsx", screen: "/en/terms 본문 전체(P1-7: 제8조 아래 청약철회 제한 고지 · R3: 제7조 아래 취소·환불 적용 범위)", notice: true, refs: ["CANCELLATION", "TERMS", "WITHDRAWAL"] },
+  { file: "app/[locale]/(legal)/terms/page.tsx", screen: "/en/terms 본문 전체(P1-7: 제8조 아래 청약철회 제한 고지 · R3: 제7조 아래 취소·환불 적용 범위 · OF-T2-3: 시행일 전 예고)", notice: true, refs: ["TERMS", "refundChangeTexts(ko)", "refundPolicyAt"] },
   { file: "components/legal/LegalArticle.tsx", screen: "/en/terms 조 번호(제N조)", notice: { via: "app/[locale]/(legal)/terms/page.tsx" }, refs: ["LEGAL_LABELS"] },
   { file: "app/[locale]/(site)/about/page.tsx", screen: "/en/about 회사 정보 표 · 찾아오시는 길 주소", notice: true, refs: ["COMPANY.address", "COMPANY.branchAddress", "COMPANY.legalName", "COMPANY.mailOrderIssuer", "COMPANY.mailOrderNo"] },
   { file: "app/[locale]/(site)/fleet/page.tsx", screen: "/en/fleet 보험 본문", notice: true, refs: ["INSURANCE"] },
   // P3-8: 위저드(/quote)를 지우고 홈 간편 견적 모달로 옮겼다 — 동의 고지 본문은 Hero(서버)가 원장에서 읽어 모달에 내린다.
   { file: "components/home/Hero.tsx", screen: "/en 간편 견적 모달의 개인정보 수집·이용 고지 본문", notice: true, refs: ["PRIVACY_NOTICE"] },
   // P1-7: 청약철회 제한 문장이 약관 제8조 발췌(withdrawal.ts — 삭제)에서 원장 WITHDRAWAL.notice 로 바뀌었다. 체크박스 라벨은 원장 확정 영문(consentLabelEn).
-  { file: "components/quote/WithdrawalNotice.tsx", screen: "/en 간편 견적 모달의 신청 전 확인 사항 · 청약철회 제한 고지", notice: true, refs: ["CANCELLATION", "PAYMENT", "QUOTE_BASIS", "WITHDRAWAL"] },
+  // OF-T2-3: 취소·청약철회는 렌더 시각의 판(refundPolicyAt)에서 — 자세히 보기 안의 한국어 한 벌·원문이 en 에 남는다. 예고는 로케일 틀이라 영문.
+  { file: "components/quote/WithdrawalNotice.tsx", screen: "/en 간편 견적 모달의 신청 전 확인 사항 · 청약철회 제한 고지", notice: true, refs: ["PAYMENT", "QUOTE_BASIS", "refundPolicyAt"] },
   // P7-4 후속 ①: 4단계는 원장 영문(GUIDE_SECTIONS.flow.stepsEn — 컨트롤러 작성)이라 영문으로 보인다. 한국어로 남는 것은 산정 기준 한 줄
   // (T2-2 — 사장님 요청 20: 대금 지급 줄은 홈 이용 방법에서 뺐다. 견적 모달·/guide 에는 남는다).
   { file: "components/home/HowItWorks.tsx", screen: "/en 이용 방법 — 산정 기준 한 줄(4단계는 원장 stepsEn 영문)", notice: true, refs: ["GUIDE_SECTIONS", "QUOTE_BASIS"] },
@@ -472,6 +475,12 @@ const PROSE_SYMBOLS = [
   "LEGAL_LABELS",
   "WITHDRAWAL",
   "VISITOR_STATS_TRANSFER",
+  // OF-T2-3: 취소·환불은 판 고르기(lib/refund-policy)를 거친다 — 그 함수가 돌려주는 것이 원장 CANCELLATION·WITHDRAWAL(또는 *_NEXT)의
+  // 한국어 산문이다. 기호 이름이 소스에서 사라져도 /en 에 남는 한국어를 이 목록이 계속 보도록 판 고르기 함수 이름을 센다.
+  "CANCELLATION_NEXT",
+  "WITHDRAWAL_NEXT",
+  "refundPolicyAt",
+  "upcomingRefundPolicy",
 ] as const;
 /** COMPANY 의 한글 값 필드 — tel·consultTel·consultTelIntl·mobile·fax·email·bizRegNo 는 숫자·ASCII 라 빠진다. (P1-7: bankAccount·bankHolder 는 COMPANY 에서 빠졌다) */
 const COMPANY_KO_FIELDS = [
@@ -492,6 +501,8 @@ function koreanLedgerRefs(file: string): string[] {
   for (const sym of PROSE_SYMBOLS) if (new RegExp(`\\b${sym}\\b`).test(code)) refs.add(sym);
   for (const f of COMPANY_KO_FIELDS) if (new RegExp(`\\bCOMPANY\\.${f}\\b`).test(code)) refs.add(`COMPANY.${f}`);
   if (/\bCOMPANY\[/.test(code)) refs.add("COMPANY[]");
+  // OF-T2-3: 예고 문구를 한국어 틀로 부르면(법정 페이지 본문 — lang="ko") en 화면에도 한국어가 남는다. 로케일 틀(locale)로 부르면 영문이다.
+  if (/\brefundChangeTexts\(\s*["']ko["']/.test(code)) refs.add("refundChangeTexts(ko)");
   // LEGAL_PAGES 는 제목만 한글이다(시행일은 날짜). 제목을 직접 읽으면 en 에서도 한국어다 — ledgerUi(locale).pages 를 써야 한다.
   if (/\bLEGAL_PAGES\.\w+\.title\b/.test(code)) refs.add("LEGAL_PAGES.title");
   // VERBATIM 은 localizeVerbatim(locale, VERBATIM.x) 로 감싸면 en 에서 확정 영문이 된다. 감싸지 않은 참조만 센다.
@@ -733,7 +744,8 @@ describe.runIf(Boolean(EN_BASE))("8-d. 렌더 실측 — 청약철회 고지 영
     expect(en[0].attrs.get("lang")).toBe("en");
     const koLangOk = ko[0].attrs.get("lang") === "ko" || ko[0].ancestors.some((a) => a.attrs.get("lang") === "ko");
     expect(koLangOk, route).toBe(true);
-    expect(decodeText(page)).toContain(WITHDRAWAL.noticeEn);
+    // OF-T2-3: 서버는 렌더 시각의 판을 싣는다(시행일 전 WITHDRAWAL · 그날부터 WITHDRAWAL_NEXT) — 같은 함수로 지금 판을 구해 대조한다.
+    expect(decodeText(page)).toContain(refundPolicyAt(new Date()).withdrawal.noticeEn);
     expect(page.indexOf('data-legal="withdrawal-restriction-en"')).toBeLessThan(page.indexOf('data-legal="withdrawal-restriction"'));
   });
 
@@ -749,7 +761,7 @@ describe.runIf(Boolean(EN_BASE))("8-d. 렌더 실측 — 청약철회 고지 영
     async ([route]) => {
       const page = await html(route);
       expect(page, route).toContain('data-legal="cancellation-scope"');
-      expect(decodeText(page), route).toContain(CANCELLATION.scope);
+      expect(decodeText(page), route).toContain(refundPolicyAt(new Date()).cancellation.scope); // OF-T2-3 — 렌더 시각의 판
     },
   );
 

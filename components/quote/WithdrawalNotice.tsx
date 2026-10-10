@@ -25,13 +25,22 @@
  *     한국어 원문(lang="ko")을 싣는다 — 원문의 "위 취소·환불 규정" 이 가리킬 표가 원문 바로 위에 있다(P7-3 후속 2).
  *   - 제목·소제목·토글은 messages(quote.notice · quote.more). 체크박스 라벨은 원장의 확정 영문(WITHDRAWAL.consentLabelEn).
  * ko 화면은 안내도 lang 속성도 내지 않는다.
+ *
+ * 취소·환불 개정(OF-T2-3 · 사장님 요청 16 · 결정 4 B안): 위 CANCELLATION·WITHDRAWAL 은 **렌더 시각의 판**이다 —
+ * `refundPolicyAt(now)`(lib/refund-policy.ts)가 시행일(원장 REFUND_POLICY_EFFECTIVE_FROM, KST 날짜) 전이면 옛 규정(CANCELLATION·WITHDRAWAL),
+ * 시행일부터는 개정 규정(CANCELLATION_NEXT·WITHDRAWAL_NEXT)을 준다. 마크업·순서·표지는 두 판이 같다.
+ * 시행일 전에는 접힌 자리 맨 아래(제한 한 줄 다음)에 예고 한 줄(data-legal="refund-policy-change" — ko 한국어 · en 영문, 문구는
+ * lib/i18n/refund-change.ts)을 더 단다. 시행일부터는 예고가 없다. 루트의 `data-refund-policy` 가 어느 판인지 밝힌다(테스트·browse).
+ * `now` 는 테스트가 판을 고정하려고 넘긴다 — 화면(Hero)은 넘기지 않는다(렌더 순간).
  */
 import { getLocale, getTranslations } from "next-intl/server";
 
 import { OfficialKoreanNotice } from "@/components/legal/OfficialKoreanNotice";
 import { WithdrawalRestrictionText } from "@/components/legal/WithdrawalRestrictionText";
 import { koLang, ledgerUi } from "@/lib/i18n/ledger-ui";
-import { CANCELLATION, PAYMENT, QUOTE_BASIS, WITHDRAWAL } from "@/lib/legal/disclosures";
+import { refundChangeTexts } from "@/lib/i18n/refund-change";
+import { PAYMENT, QUOTE_BASIS } from "@/lib/legal/disclosures";
+import { refundPolicyAt, type RefundPolicy } from "@/lib/refund-policy";
 
 import { MoreToggle } from "./MoreToggle";
 import s from "./quote.module.css";
@@ -40,34 +49,44 @@ import s from "./quote.module.css";
  * 한국어 취소·환불 한 벌 — 2단계 표 → 날짜 기준(작은 줄) → 적용 범위(R3 [P2-F]: 표는 그 자체로 절대적으로 읽힌다 — 범위 문장을 표 묶음 바로 아래에).
  * 같은 마크업을 두 자리가 쓴다: ko 의 접힌 자리(lang 없음) · en 의 "자세히 보기" 안에서 한국어 원문 바로 앞(lang="ko", P7-3 후속 2).
  */
-function KoreanCancellationTable({ lang }: { lang: "ko" | undefined }) {
+function KoreanCancellationTable({ lang, cancellation }: { lang: "ko" | undefined; cancellation: RefundPolicy["cancellation"] }) {
   return (
     <>
       <ul className={s.tiers} lang={lang}>
-        {CANCELLATION.tiers.map((tier) => (
+        {cancellation.tiers.map((tier) => (
           <li key={tier.when}>
             <span>{tier.when}</span> <b>{tier.label}</b>
           </li>
         ))}
       </ul>
       <p className={s.cancelReference} data-legal="cancellation-reference" lang={lang}>
-        {CANCELLATION.referenceTime}
+        {cancellation.referenceTime}
       </p>
       <p className={s.cancelScope} data-legal="cancellation-scope" lang={lang}>
-        {CANCELLATION.scope}
+        {cancellation.scope}
       </p>
     </>
   );
 }
 
-export async function WithdrawalNotice() {
+export async function WithdrawalNotice({ now }: { now?: Date } = {}) {
   const [t, locale] = await Promise.all([getTranslations("quote.notice"), getLocale()]);
   const lang = koLang(locale);
   // 접힌 요약의 언어 — 영문 화면만 원장 영문 요약을 쓴다(ledgerUi · withdrawalParagraphs 와 같은 판정).
   const english = locale === "en";
+  // 렌더 순간의 판(KST 날짜) — 시행일 전 옛 규정 + 예고, 시행일부터 개정 규정만(lib/refund-policy.ts).
+  const at = now ?? new Date();
+  const policy = refundPolicyAt(at);
+  const { cancellation, withdrawal } = policy;
+  const change = refundChangeTexts(locale, at);
 
   return (
-    <aside className={s.withdrawal} data-legal="withdrawal-notice" aria-labelledby="quote-withdrawal-title">
+    <aside
+      className={s.withdrawal}
+      data-legal="withdrawal-notice"
+      data-refund-policy={policy.edition}
+      aria-labelledby="quote-withdrawal-title"
+    >
       <h3 className={s.agreeTitle} id="quote-withdrawal-title">
         {t("title")}
       </h3>
@@ -80,35 +99,41 @@ export async function WithdrawalNotice() {
         {english ? (
           <>
             <ul className={`${s.tiers} ${s.tiersPlain}`}>
-              {WITHDRAWAL.summaryEn.tiers.map((line) => (
+              {withdrawal.summaryEn.tiers.map((line) => (
                 <li key={line}>{line}</li>
               ))}
             </ul>
             <p className={s.cancelReference} data-legal="cancellation-reference-en">
-              {WITHDRAWAL.summaryEn.referenceTime}
+              {withdrawal.summaryEn.referenceTime}
             </p>
             <p className={s.cancelScope} data-legal="cancellation-scope-en">
-              {WITHDRAWAL.summaryEn.scope}
+              {withdrawal.summaryEn.scope}
             </p>
           </>
         ) : (
-          <KoreanCancellationTable lang={lang} />
+          <KoreanCancellationTable lang={lang} cancellation={cancellation} />
         )}
       </div>
       {english ? (
         <p className={s.withdrawalKey} data-legal="withdrawal-summary">
-          {WITHDRAWAL.summaryEn.restriction}
+          {withdrawal.summaryEn.restriction}
         </p>
       ) : (
         <p className={s.withdrawalKey} data-legal="withdrawal-summary" lang={lang}>
-          {WITHDRAWAL.smsLine}
+          {withdrawal.smsLine}
         </p>
       )}
+      {/* 시행일 전에만 — 지금 규정 아래 예고 한 줄(ko 한국어 · en 영문). 시행일부터는 change 가 null 이라 아무것도 내지 않는다. */}
+      {change ? (
+        <p className={s.policyChange} data-legal="refund-policy-change">
+          {change.notice}
+        </p>
+      ) : null}
 
       <MoreToggle testId="withdrawal-more" describedBy="quote-withdrawal-title">
-        {CANCELLATION.basis === "deposit" ? (
+        {cancellation.basis === "deposit" ? (
           <p data-legal="cancellation-deposit" lang={lang}>
-            {CANCELLATION.depositNote}
+            {cancellation.depositNote}
           </p>
         ) : null}
         <p data-legal="payment" lang={lang}>
@@ -121,11 +146,11 @@ export async function WithdrawalNotice() {
             P7-3 후속 2 · 리뷰: 영문 화면은 한국어 원문 바로 앞에 구속력 있는 한국어 한 벌(2단계 → 날짜 기준 → 범위, lang="ko")을 둔다 —
             원문의 "위 취소·환불 규정" 이 가리킬 표가 원문 바로 위에 있다. ko 는 한 벌이 접힌 자리에 이미 있어 되풀이하지 않는다. */}
         <WithdrawalRestrictionText
-          notice={WITHDRAWAL.notice}
-          noticeEn={WITHDRAWAL.noticeEn}
+          notice={withdrawal.notice}
+          noticeEn={withdrawal.noticeEn}
           locale={locale}
           className={s.withdrawalLaw}
-          beforeOriginal={english ? <KoreanCancellationTable lang={lang} /> : undefined}
+          beforeOriginal={english ? <KoreanCancellationTable lang={lang} cancellation={cancellation} /> : undefined}
         />
       </MoreToggle>
     </aside>

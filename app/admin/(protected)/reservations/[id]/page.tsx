@@ -10,6 +10,7 @@ import { StatusBadge } from "@/components/admin/StatusBadge";
 import { dayParts, receivedAt, smsHref, splitNameTemplate, type DayParts } from "@/components/admin/reservation-detail";
 import { backToListHref, elapsedSince, stayNights, telHref } from "@/components/admin/reservation-list";
 import { PROCESS_REGION_ATTR } from "@/components/admin/reservation-panel";
+import { refundPolicyLine } from "@/components/admin/refund-policy-line";
 import { CUSTOMER_NAME_ELEMENT_ID, fillTemplate, type ReservationSummary } from "@/components/admin/reservation-sheet";
 import { getReservationActionLabels } from "@/components/admin/reservationActionLabels";
 import { getReservationRowLabels } from "@/components/admin/reservationRowLabels";
@@ -185,6 +186,9 @@ export default async function AdminReservationDetailPage({ params, searchParams 
         : received.kind === "date"
           ? t("meta.date", { month: received.month, day: received.day, time: clock(received.hour, received.minute) })
           : t("meta.year", { year: received.year, month: received.month, day: received.day, time: clock(received.hour, received.minute) });
+  // 이 예약의 취소·환불 규정 판(OF-T2-3 후속 · 릴리스 C 리뷰 P1-3) — 확정 문자와 같은 기준(접수 시각). 읽지 못하면 줄을 숨긴다.
+  // 틀은 raw 로 받는다 — {refund}·{noRefund}·{date} 는 원장에서 채운다(refund-policy-line.ts).
+  const refundPolicy = refundPolicyLine(row.created_at, { current: str(t.raw("refundPolicy.current")), next: str(t.raw("refundPolicy.next")) });
   const elapsed = elapsedSince(row.created_at, now);
   const ago = elapsed === null ? "" : elapsed.unit === "justNow" ? rowLabels.elapsed.justNow : fillTemplate(rowLabels.elapsed[elapsed.unit], { n: elapsed.n });
 
@@ -258,6 +262,11 @@ export default async function AdminReservationDetailPage({ params, searchParams 
               t("meta.code", { code: row.public_code }),
             ])}
           </p>
+          {refundPolicy !== null ? (
+            <p className={a.detailMeta} data-testid="admin-refund-policy" data-refund-policy={refundPolicy.edition}>
+              {refundPolicy.text}
+            </p>
+          ) : null}
         </header>
 
         <div className={a.detailCols}>

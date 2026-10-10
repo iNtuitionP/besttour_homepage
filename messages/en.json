@@ -10,6 +10,11 @@
       "date": "{month} {day}, {year}",
       "time": "{hour}:{minute}",
       "dateTime": "{date}, {time}"
+    },
+    "refundChange": {
+      "notice": "For bookings received on or after {date}, the cancellation and refund policy changes: {rule}",
+      "currentTitle": "Current policy — applies to bookings received on or before {date}",
+      "nextTitle": "Upcoming change — applies to bookings received on or after {date}"
     }
   },
   "layout": {

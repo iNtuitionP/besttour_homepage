@@ -16,7 +16,8 @@ import { ledgerUi } from "@/lib/i18n/ledger-ui";
 import * as ledger from "@/lib/legal/disclosures";
 import { VERBATIM } from "@/lib/legal/disclosures";
 import { TEMPLATE_KEYS } from "@/lib/notify/outbox";
-import { ALIMTALK_TEMPLATES, renderTemplate, renderVariants, type CustomerVars } from "@/lib/notify/templates";
+import { ALIMTALK_TEMPLATES, ALIMTALK_TEMPLATES_NEXT, renderTemplate, renderVariants, type CustomerVars } from "@/lib/notify/templates";
+import { CREATED_AFTER_REFUND_CHANGE, CREATED_BEFORE_REFUND_CHANGE } from "./helpers/refund-policy-fixtures";
 import { stripComments } from "./helpers/strip-comments";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -97,29 +98,36 @@ describe("2. 원장 — 손님 화면에 렌더되는 값", () => {
 });
 
 describe("3. 손님에게 가는 문자·알림톡", () => {
-  const CUSTOMER: CustomerVars = { publicCode: "BT12ABCD", origin: "https://bestour.co.kr" };
+  // OF-T2-3: 고객 변수에 접수 시각이 생겼고, 확정 문자는 접수일 판(옛/개정 취소 규정)에 따라 줄이 달라진다 — 두 판 모두 본다.
+  const CUSTOMERS: readonly CustomerVars[] = [
+    { publicCode: "BT12ABCD", origin: "https://bestour.co.kr", createdAt: CREATED_BEFORE_REFUND_CHANGE },
+    { publicCode: "BT12ABCD", origin: "https://bestour.co.kr", createdAt: CREATED_AFTER_REFUND_CHANGE },
+  ];
   const customerKeys = TEMPLATE_KEYS.filter((k) => k.includes(".customer."));
 
   test("손님 문자 키가 둘 있다(접수·확정)", () => {
     expect([...customerKeys].sort()).toEqual(["confirmed.customer.sms", "created.customer.sms"]);
   });
 
-  test("렌더 결과(보낼 한 통 · SMS 판 · LMS 판)에 사장님 0건", () => {
-    for (const key of customerKeys) {
-      const v = renderVariants(key, CUSTOMER);
-      for (const [variant, text] of [
-        ["sent", renderTemplate(key, CUSTOMER).text],
-        ["sms", v.sms],
-        ["lms", v.lms],
-      ] as const) {
-        expect(text, `${key} / ${variant}`).not.toContain(OWNER_KO);
+  test("렌더 결과(보낼 한 통 · SMS 판 · LMS 판)에 사장님 0건 — 옛·개정 판 모두", () => {
+    for (const CUSTOMER of CUSTOMERS) {
+      for (const key of customerKeys) {
+        const v = renderVariants(key, CUSTOMER);
+        for (const [variant, text] of [
+          ["sent", renderTemplate(key, CUSTOMER).text],
+          ["sms", v.sms],
+          ["lms", v.lms],
+        ] as const) {
+          expect(text, `${key} / ${variant} / ${CUSTOMER.createdAt}`).not.toContain(OWNER_KO);
+        }
       }
     }
   });
 
-  test("알림톡 심사 제출본(손님에게 간다)에 사장님 0건", () => {
+  test("알림톡 심사 제출본(손님에게 간다)에 사장님 0건 — 옛·개정 판 모두", () => {
     expect(ALIMTALK_TEMPLATES.length).toBe(2);
-    for (const t of ALIMTALK_TEMPLATES) {
+    expect(ALIMTALK_TEMPLATES_NEXT.length).toBe(2);
+    for (const t of [...ALIMTALK_TEMPLATES, ...ALIMTALK_TEMPLATES_NEXT]) {
       expect(t.body, t.event).not.toContain(OWNER_KO);
       expect(t.name, t.event).not.toContain(OWNER_KO);
       for (const b of t.buttons) expect(b.name, t.event).not.toContain(OWNER_KO);

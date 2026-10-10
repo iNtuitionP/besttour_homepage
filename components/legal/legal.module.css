@@ -183,6 +183,30 @@
   margin-top: var(--space-stack-xs);
 }
 
+/* ── 취소·환불 개정 (OF-T2-3) — 시행일 전에만: 현재 규정 / 변경 예정 머리와 변경 예정 묶음 ─────────────── */
+.policyTitle {
+  margin: var(--space-stack-sm) 0 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.policyTitle + .tableNote,
+.policyTitle + .tableWrap {
+  margin-top: var(--space-stack-xs);
+}
+.policyNext {
+  margin-top: var(--space-stack-lg);
+  padding-top: var(--space-stack-sm);
+  border-top: 1px solid var(--border-decorative);
+}
+.policyNext > .notice {
+  margin-bottom: 0;
+}
+/* 약관 제7조 아래 — 적용 범위 문장 바로 뒤의 예고 상자 */
+.body + .notice {
+  margin-top: var(--space-stack-xs);
+}
+
 /* ── 방문 통계 거부 버튼 (P1-7 R2) — 방문 통계 국외이전 항목 바로 아래 ─────────────── */
 .optOut {
   margin: var(--space-stack-xs) 0 var(--space-stack-sm);

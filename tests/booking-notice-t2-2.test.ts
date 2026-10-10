@@ -54,6 +54,7 @@ import type { ReservationCheckRow } from "@/lib/reservation-check/lookup";
 import { RESERVATION_STATUSES, toReservationView } from "@/lib/reservation-check/view";
 import { ALIMTALK_TEMPLATES, CONTRACT_PARTY_LINE, GUIDE_PATH, renderTemplate, renderVariants, type CustomerVars } from "@/lib/notify/templates";
 
+import { CREATED_BEFORE_REFUND_CHANGE } from "./helpers/refund-policy-fixtures";
 import { stripComments } from "./helpers/strip-comments";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
@@ -274,7 +275,8 @@ describe.each(["ko", "en"] as const)("2-c. 예약 확인 카드 (%s) — verbati
 });
 
 // ── 문자·알림톡 ─────────────────────────────────────────────────────────────
-const CUSTOMER: CustomerVars = { publicCode: "BT12ABCD", origin: "https://bestour.co.kr" };
+// OF-T2-3: 고객 변수에 접수 시각이 생겼다 — 시행일 전 접수로 박아 옛 규정(CANCELLATION.smsItem) 단언이 날짜와 무관하게 유지된다.
+const CUSTOMER: CustomerVars = { publicCode: "BT12ABCD", origin: "https://bestour.co.kr", createdAt: CREATED_BEFORE_REFUND_CHANGE };
 const wholeLines = (s: string, line: string) => s.split("\n").filter((l) => l === line).length;
 
 describe("2-d. 문자·알림톡 — 확정에서 verbatim 삭제 · 접수에는 남김", () => {

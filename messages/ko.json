@@ -10,6 +10,11 @@
       "date": "{year}년 {month}월 {day}일",
       "time": "{hour}:{minute}",
       "dateTime": "{date} {time}"
+    },
+    "refundChange": {
+      "notice": "{date} 접수분부터 취소·환불 규정이 바뀝니다: {rule}",
+      "currentTitle": "현재 규정 — {date} 접수분까지 적용",
+      "nextTitle": "변경 예정 — {date} 접수분부터 적용"
     }
   },
   "layout": {
@@ -729,6 +734,10 @@
         "noWithdrawalRecord": "기록 없음(동의 기록 도입 전 접수)",
         "intakeQuick": "간편 접수 · 전화 확인 필요",
         "intakeWizard": "상세 접수"
+      },
+      "refundPolicy": {
+        "current": "취소·환불 규정: 종전({refund}/{noRefund}) — {date}까지 접수",
+        "next": "취소·환불 규정: 개정({refund}/{noRefund}) — {date}부터 접수"
       },
       "confirm": "확정하기",
       "cancel": "이 접수 취소하기",
