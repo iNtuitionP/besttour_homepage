@@ -64,6 +64,7 @@ export default async function AdminGalleryPage({ searchParams }: { searchParams:
     validation: t("result.validation"),
     failed: t("result.failed"),
     fileFailed: t("result.fileFailed"),
+    inUseByPopup: t("result.inUseByPopup"),
     copyWarning: t("result.copyWarning"),
   } satisfies Record<GalleryActionCode, string>;
 
@@ -77,6 +78,7 @@ export default async function AdminGalleryPage({ searchParams }: { searchParams:
     upload: t("reject.upload"),
     record: t("reject.record"),
     needsCheck: t("reject.needsCheck"),
+    caption: t("reject.caption"),
   } satisfies Record<GalleryRejectReason, string>;
 
   const state = { live: t("state.live"), off: t("state.off") };
@@ -111,6 +113,10 @@ export default async function AdminGalleryPage({ searchParams }: { searchParams:
             labels={{
               upload: t("upload"),
               uploadHint: t("uploadHint"),
+              dropHere: t("dropHere"),
+              captionLabel: t("captionLabel"),
+              removePick: t("removePick"),
+              startUpload: t("startUpload"),
               pickNone: t("pickNone"),
               pickCount: t.raw("pickCount") as string,
               uploadTarget: t("uploadTarget"),

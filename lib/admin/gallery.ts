@@ -256,6 +256,22 @@ export async function setGalleryPhotoActive(id: number, active: boolean, client?
   return write("setPhotoActive", GALLERY_RPC.setPhotoActive, { p_id: id, p_active: active }, client);
 }
 
+const POPUP_REFERENCE_TABLE = "popups";
+
+/**
+ * T3-3(결정 9) — 이 사진 경로를 팝업이 쓰고 있는가. 팝업 사진은 "갤러리에서 고르기"로 같은 파일을 가리킬 수 있어,
+ * 갤러리에서 지우면 팝업이 깨진 이미지가 된다. 그래서 지우기 전에 센다. 팝업 칸은 앞 '/' 를 허용하므로(popupInput) 두 모양을 다 본다.
+ * 돌려주는 값: 쓰는 팝업 수(0 이상), 읽지 못했으면 null — 호출부는 null 이면 **지우지 않는다**.
+ * 관리자 세션으로 읽는다(0009 관리자 RLS). 서비스 롤이 아니다.
+ */
+export async function popupsUsingImage(imagePath: string, client?: AdminDbClient): Promise<number | null> {
+  const db = client ?? (await sessionClient());
+  const p = imagePath.replace(/^\/+/, "");
+  const { data, error } = await db.from(POPUP_REFERENCE_TABLE).select("id").in("image_path", [p, `/${p}`]).limit(1);
+  if (error || !Array.isArray(data)) return null;
+  return data.length;
+}
+
 /** 행 삭제 — 파일을 먼저 지운 뒤에만 부른다(actions/admin/gallery.ts deleteGalleryPhoto). */
 export async function deleteGalleryPhotoRow(id: number, client?: AdminDbClient): Promise<boolean> {
   return write("deletePhoto", GALLERY_RPC.deletePhoto, { p_id: id }, client);

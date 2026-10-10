@@ -79,6 +79,19 @@ function optionalInteger(raw: string): number | null {
   return Number.isSafeInteger(n) ? n : NaN;
 }
 
+/** 세 자리 쉼표가 바르게 찍힌 숫자("400,000") — 쉼표를 지운 문자열만 바뀐다. 값 변환은 아니다(T3-1). */
+const GROUPED_DIGITS = /^\d{1,3}(,\d{3})+$/;
+const ungroupDigits = (raw: string): string => (GROUPED_DIGITS.test(raw) ? raw.replace(/,/g, "") : raw);
+
+/**
+ * 입력 칸 표시용 — 숫자가 아닌 글자를 버리고 세 자리마다 쉼표(T3-1, 사장님 요청 6).
+ * 문자열 치환일 뿐 산술이 없다. 앞자리 0 은 그대로 둔다(서버가 정수로 읽는다).
+ */
+export function groupPriceDigits(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
 export const RouteInput = z
   .object({
     originCode: z.string(),
@@ -105,7 +118,11 @@ export const RouteInput = z
   });
 
 /** 화면이 문구 키로 쓰는 결과 어휘 — messages/ko.json `admin.routes.result.*`. */
-export type RouteActionCode = "updated" | "activated" | "deactivated" | "notFound" | "duplicate" | "validation" | "failed";
+export type RouteActionCode = "updated" | "activated" | "deactivated" | "reordered" | "notFound" | "duplicate" | "validation" | "failed";
+
+/** T3-5 — 순서 저장 입력: 화면에 보인 순서대로의 노선 id(양의 정수, 16행 고정 집합 — 넉넉히 32개까지). */
+export const ROUTE_REORDER_MAX = 32;
+export const RouteReorderInput = z.array(z.number().int().positive()).min(1).max(ROUTE_REORDER_MAX);
 
 export interface RouteActionResult {
   /** 사장님에게 빨간 오류를 보일 것인가. */
@@ -146,7 +163,7 @@ export function parseRouteForm(formData: FormData): ParsedRouteForm {
     // 코드는 canonical 그대로 받는다 — 공백·대소문자를 관대하게 보지 않는다(lib/codes.ts isLocationCode 와 같은 규약).
     originCode: text(formData.get(ROUTE_FIELDS.originCode)),
     destinationCode: text(formData.get(ROUTE_FIELDS.destinationCode)),
-    priceFrom: optionalInteger(text(formData.get(ROUTE_FIELDS.priceFrom)).trim()),
+    priceFrom: optionalInteger(ungroupDigits(text(formData.get(ROUTE_FIELDS.priceFrom)).trim())),
     sort: optionalInteger(text(formData.get(ROUTE_FIELDS.sort)).trim()),
     active: isChecked(formData.get(ROUTE_FIELDS.active)),
   });

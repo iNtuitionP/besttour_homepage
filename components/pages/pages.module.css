@@ -119,6 +119,34 @@
 .prose p + p {
   margin-top: var(--space-stack-sm);
 }
+/* T3-4 — 공지 본문 제한 서식(RichText: p · h2 · h3 · ul · strong · em) */
+.richBody > * + * {
+  margin-top: var(--space-stack-sm);
+}
+.richBody h2,
+.richBody h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-weight: 800;
+  line-height: 1.4;
+}
+.richBody h2 {
+  font-size: 20px;
+}
+.richBody h3 {
+  font-size: 17px;
+}
+.richBody ul {
+  margin: 0;
+  padding-left: 1.25em;
+  list-style: disc;
+  font-size: 15.5px;
+  line-height: 1.85;
+  color: var(--text-primary);
+}
+.richBody strong {
+  font-weight: 800;
+}
 .lead {
   margin: 0 0 var(--space-stack-sm);
   font-size: 16px;

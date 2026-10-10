@@ -38,12 +38,13 @@ vi.mock("@/lib/log", () => ({ structuredLog: vi.fn() }));
 
 import { revalidatePath } from "next/cache";
 
-import { toggleRouteActive, updateRoute } from "@/actions/admin/route";
+import { reorderRoutes, toggleRouteActive, updateRoute } from "@/actions/admin/route";
 import {
   ROUTE_FIELDS,
   ROUTE_PLACE_CODES,
   ROUTE_PRICE_MAX,
   ROUTE_SORT_MAX,
+  groupPriceDigits,
   parseRouteForm,
   parseRouteId,
   type RouteValues,
@@ -56,6 +57,8 @@ import {
   ROUTE_TABLE,
   getAdminRoute,
   listAdminRoutes,
+  planRouteReorder,
+  reorderRouteRows,
   setRouteActive,
   updateRouteRow,
 } from "@/lib/admin/routes";
@@ -176,7 +179,8 @@ describe("1. 입력 검증", () => {
   });
 
   test("표시 가격 — 사장님이 넣은 정수 하나. 음수·0·소수·문자·상한 초과는 거부", () => {
-    for (const bad of ["0", "-1", "-400000", "1.5", "40만", "abc", "1e5", "400,000", " 400000 x"]) {
+    // T3-1 — "400,000" 은 이제 받는다(입력 칸이 쉼표를 넣어 보여 준다). 자리가 어긋난 쉼표는 여전히 거부
+    for (const bad of ["0", "-1", "-400000", "1.5", "40만", "abc", "1e5", "4,00000", ",400", "400,", "40,0000", " 400000 x"]) {
       const parsed = parseRouteForm(validForm({ [ROUTE_FIELDS.priceFrom]: bad }));
       expect(parsed.ok, bad).toBe(false);
       if (parsed.ok) continue;
@@ -188,6 +192,24 @@ describe("1. 입력 검증", () => {
     if (!max.ok) return;
     // 값이 통과할 때 그 값은 **입력 그대로**다 — 어떤 변환도 없다
     expect(max.value.priceFrom).toBe(ROUTE_PRICE_MAX);
+  });
+
+  test("🔴 T3-1 표시 가격 — 세 자리 쉼표는 지우고 읽는다(값은 그대로) · 화면은 text + inputMode numeric + 홈 표시 미리보기", () => {
+    for (const [raw, n] of [["400,000", 400000], ["1,255,000", 1255000], ["400000", 400000]] as const) {
+      const parsed = parseRouteForm(validForm({ [ROUTE_FIELDS.priceFrom]: raw }));
+      expect(parsed.ok, raw).toBe(true);
+      if (parsed.ok) expect(parsed.value.priceFrom, raw).toBe(n);
+    }
+    const ui = codeOf(FORM_UI);
+    expect(ui).toMatch(/id="route-price"[\s\S]*?type="text"[\s\S]*?inputMode="numeric"/);
+    expect(ui).not.toMatch(/id="route-price"[\s\S]{0,200}type="number"/);
+    expect(ui, "미리보기는 홈과 같은 포맷 함수").toMatch(/formatPriceKrw\(/);
+    expect(ui).toMatch(/groupPriceDigits\(/);
+    expect(groupPriceDigits("400000")).toBe("400,000");
+    expect(groupPriceDigits("4a00,0 00")).toBe("400,000");
+    expect(groupPriceDigits("")).toBe("");
+    const ko = JSON.parse(read("messages/ko.json")) as { admin: { routes: { priceOnHome: string } } };
+    expect(ko.admin.routes.priceOnHome).toContain("{price}");
   });
 
   test("표시 가격 — 비우면 null 이고, 그것이 라벨 숨김 폴백의 입력이다 (CLAUDE.md §3)", () => {
@@ -326,7 +348,8 @@ describe("2. 쿼리 계층", () => {
   test("추가·삭제 경로가 아예 없다 — 16개는 고정 집합이다 (스펙 §13.2 · 0002 FK)", async () => {
     const mod = (await import("@/lib/admin/routes")) as Record<string, unknown>;
     const names = Object.keys(mod).filter((k) => typeof mod[k] === "function");
-    expect(names.sort()).toEqual(["getAdminRoute", "listAdminRoutes", "setRouteActive", "updateRouteRow"]);
+    // T3-5 — 순서 계획(순수)·순서 저장(updateRouteRow 반복)이 더해졌다. 만들기·지우기는 여전히 없다
+    expect(names.sort()).toEqual(["getAdminRoute", "listAdminRoutes", "planRouteReorder", "reorderRouteRows", "setRouteActive", "updateRouteRow"]);
     const src = codeOf(LIB_DB);
     expect(src, "쿼리 모듈에 insert 가 있다").not.toMatch(/\.insert\(/);
     expect(src, "쿼리 모듈에 delete 가 있다").not.toMatch(/\.delete\(/);
@@ -473,13 +496,13 @@ describe("4. 정적 규약", () => {
     for (const rel of TS_TARGETS) expect(exists(rel), rel).toBe(true);
   });
 
-  test("액션 — 'use server' 첫 줄 · export 2개뿐(추가·삭제 없음) · 전부 async · 첫 문장이 게이트", () => {
+  test("액션 — 'use server' 첫 줄 · export 3개뿐(추가·삭제 없음 — T3-5 순서 저장이 셋째) · 전부 async · 첫 문장이 게이트", () => {
     const src = read(ACTION);
     expect(src.split("\n")[0].trim()).toMatch(/^["']use server["'];?$/);
     const exports = [...codeOf(ACTION).matchAll(/^export\s+.*$/gm)].map((m) => m[0]);
-    expect(exports.length, "'use server' 파일의 export 는 전부 공개 POST 엔드포인트가 된다 (ADR-3)").toBe(2);
+    expect(exports.length, "'use server' 파일의 export 는 전부 공개 POST 엔드포인트가 된다 (ADR-3)").toBe(3);
     for (const e of exports) expect(e, e).toMatch(/^export async function/);
-    for (const name of ["updateRoute", "toggleRouteActive"]) {
+    for (const name of ["updateRoute", "toggleRouteActive", "reorderRoutes"]) {
       const body = new RegExp(`export async function ${name}\\([^)]*\\)[^{]*\\{\\s*await requireAdmin\\(\\);`);
       expect(codeOf(ACTION), `${name} 의 첫 문장이 게이트가 아니다`).toMatch(body);
     }
@@ -823,6 +846,41 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("5. DB — showcase_routes
     });
   });
 
+  /**
+   * T3-5(결정 10 A안) — 순서 저장은 기존 admin_update_route 를 행마다 부른다(서명 그대로 · 마이그레이션 없음).
+   * 실제 관리자 세션 클라이언트로 lib 함수를 돌려, 순서만 바뀌고 다른 값(코드·가격·노출)은 그대로인지 본다. 원복은 finally.
+   */
+  test("🔴 T3-5 순서 저장 — 앞의 두 노선을 맞바꾸면 그 순서로 읽히고 다른 값은 그대로 · 원래 순서로 되돌린다", async () => {
+    const { createClient } = await import("@supabase/supabase-js");
+    const before = (await rest("GET", `/showcase_routes?select=${ROUTE_ADMIN_SELECT}&order=id.asc`)).body as RouteRow[];
+    expect(before.length).toBe(16);
+    const admin = createClient(baseUrl(), env.anonKey as string, {
+      global: { headers: { Authorization: `Bearer ${adminToken}` } },
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    try {
+      const shown = (await listAdminRoutes(admin as never)).map((r) => r.id);
+      const swapped = [shown[1], shown[0], ...shown.slice(2)];
+      const result = await reorderRouteRows(swapped, admin as never);
+      expect(result.ok, JSON.stringify(result)).toBe(true);
+      expect(result.updated).toBeGreaterThan(0);
+      expect((await listAdminRoutes(admin as never)).map((r) => r.id)).toEqual(swapped);
+      const after = (await rest("GET", `/showcase_routes?select=${ROUTE_ADMIN_SELECT}&order=id.asc`)).body as RouteRow[];
+      for (const row of before) {
+        const now = after.find((r) => r.id === row.id) as RouteRow;
+        expect({ ...now, sort: 0 }, `id ${row.id} 의 순서 밖 값이 바뀌었다`).toEqual({ ...row, sort: 0 });
+      }
+      // 같은 순서를 다시 저장하면 바꿀 것이 없다(행마다 부르지 않는다)
+      expect((await reorderRouteRows(swapped, admin as never)).updated).toBe(0);
+      // 순열이 아니면 아무것도 쓰지 않는다
+      expect((await reorderRouteRows(swapped.slice(1), admin as never)).ok).toBe(false);
+    } finally {
+      for (const row of before) await rest("PATCH", `/showcase_routes?id=eq.${row.id}`, { sort: row.sort });
+      const back = (await rest("GET", `/showcase_routes?select=${ROUTE_ADMIN_SELECT}&order=id.asc`)).body as RouteRow[];
+      expect(back, "원래 순서로 되돌리지 못했다").toEqual(before);
+    }
+  });
+
   test("정리 — 고친 행을 원래 값으로 되돌리고 16행을 유지한다", async () => {
     const row = target as RouteRow;
     await rest("PATCH", `/showcase_routes?id=eq.${row.id}`, {
@@ -843,5 +901,77 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("5. DB — showcase_routes
     for (const id of [adminId, plainId]) {
       if (id) await call("DELETE", `${baseUrl()}/auth/v1/admin/users/${id}`, serviceHeaders);
     }
+  });
+});
+
+// =============================================================================
+// 6. T3-5 순서 드래그(결정 10 A안 · @dnd-kit · '순서 저장' 버튼)
+// =============================================================================
+describe("6. T3-5 순서 바꾸기", () => {
+  const row = (id: number, sort: number | null, extra: Partial<typeof ROW> = {}) => ({ ...ROW, id, sort, ...extra });
+
+  test("🔴 planRouteReorder — 새 순서(1부터)와 다른 행만 · 값은 지금 행 그대로(코드·가격·노출) · 순열이 아니면 null", () => {
+    const rows = [row(1, 1), row(2, 2, { price_from: null, active: false }), row(3, null)];
+    expect(planRouteReorder(rows, [2, 1, 3])).toEqual([
+      { id: 2, values: { originCode: ROW.origin_code, destinationCode: ROW.destination_code, priceFrom: null, sort: 1, active: false } },
+      { id: 1, values: { originCode: ROW.origin_code, destinationCode: ROW.destination_code, priceFrom: ROW.price_from, sort: 2, active: true } },
+      { id: 3, values: { originCode: ROW.origin_code, destinationCode: ROW.destination_code, priceFrom: ROW.price_from, sort: 3, active: true } },
+    ]);
+    expect(planRouteReorder([row(1, 1), row(2, 2)], [1, 2])).toEqual([]);
+    for (const bad of [[1], [1, 2, 2], [1, 2, 9], [1, 2, 3, 4], []]) {
+      expect(planRouteReorder(rows, bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+
+  test("🔴 액션 reorderRoutes — 첫 문장 게이트 · 형식이 틀리면 DB 를 부르지 않는다", async () => {
+    vi.mocked(requireAdmin).mockResolvedValue({ userId: "admin-uuid", email: "owner@example.test" });
+    const { client, from, rpc } = dbStub({ data: [], error: null });
+    vi.mocked(createSsrClient).mockReturnValue(client as never);
+    for (const bad of [null, "1,2", [1, "x"], [0, 1], [1.5], Array.from({ length: 40 }, (_, i) => i + 1)]) {
+      expect((await reorderRoutes(bad)).code, JSON.stringify(bad)).toBe("validation");
+    }
+    expect(from).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
+    expect(codeOf(ACTION)).toMatch(/export async function reorderRoutes\([^)]*\)[^{]*\{\s*await requireAdmin\(\);/);
+  });
+
+  test("🔴 A안 — 새 RPC 없이 updateRouteRow(admin_update_route)를 행마다 · 첫 실패에서 멈춘다", () => {
+    const src = codeOf(LIB_DB);
+    expect(src).toMatch(/export async function reorderRouteRows\(/);
+    const body = src.slice(src.indexOf("export async function reorderRouteRows("));
+    expect(body).toMatch(/for \(const step of plan\)/);
+    expect(body).toMatch(/await updateRouteRow\(step\.id, step\.values, db\)/);
+    expect(Object.keys(ROUTE_RPC).sort(), "새 RPC 를 만들지 않는다").toEqual(["setActive", "update"]);
+  });
+
+  test("🔴 수정 화면 — 순서 칸이 없다(숨은 칸이 지금 순서를 그대로 보낸다) · 목록 화면에 순서 바꾸기", () => {
+    const form = codeOf(FORM_UI);
+    expect(form).not.toMatch(/id="route-sort"/);
+    expect(form).toMatch(/<input type="hidden" name=\{ROUTE_FIELDS\.sort\} value=\{initial\.sort\} readOnly \/>/);
+    const list = codeOf(LIST_PAGE);
+    expect(list).toMatch(/<RouteOrder\b/);
+    const order = codeOf("components/admin/RouteOrder.tsx");
+    expect(order).toMatch(/<SortableList\b/);
+    expect(order).toMatch(/reorderRoutes\(/);
+  });
+
+  test("🔴 SortableList — @dnd-kit(포인터·터치·키보드) · ↑/↓ 버튼 · aria-live 알림 · '순서 저장' 버튼(바뀌었을 때만)", () => {
+    const raw = read("components/admin/SortableList.tsx");
+    expect(raw.split("\n")[0].trim()).toMatch(/^["']use client["'];?$/);
+    const src = codeOf("components/admin/SortableList.tsx");
+    expect(src).toMatch(/from "@dnd-kit\/core"/);
+    expect(src).toMatch(/from "@dnd-kit\/sortable"/);
+    expect(src).toMatch(/useSensor\(PointerSensor/);
+    expect(src).toMatch(/useSensor\(TouchSensor/);
+    expect(src).toMatch(/useSensor\(KeyboardSensor, \{ coordinateGetter: sortableKeyboardCoordinates \}\)/);
+    expect(src).toMatch(/aria-live="polite"/);
+    expect(src).toMatch(/onClick=\{\(\) => move\(i, -1\)\}/);
+    expect(src).toMatch(/onClick=\{\(\) => move\(i, 1\)\}/);
+    expect(src).toMatch(/disabled=\{!dirty \|\| saving\}/);
+    expect(src).not.toMatch(/dangerouslySetInnerHTML/);
+    const ko = JSON.parse(read("messages/ko.json")) as { admin: { routes: Record<string, unknown> } };
+    const order = ko.admin.routes.order as Record<string, string>;
+    for (const k of ["title", "hint", "save", "reset", "up", "down", "handle", "moved", "saved", "failed"]) expect(order[k], k).toBeTruthy();
+    expect((ko.admin.routes.result as Record<string, string>).reordered).toBeTruthy();
   });
 });

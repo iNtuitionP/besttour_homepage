@@ -40,6 +40,7 @@ import { AdminBanner } from "./AdminBanner";
 import { useAdminToast } from "./AdminToast";
 import { CopyWarningPanel, isCopyAckSubmitter, mergeAck, type CopyWarningLabels } from "./CopyWarningPanel";
 import { feedbackKind } from "./feedback";
+import { RichTextEditor, type RichTextEditorLabels } from "./RichTextEditor";
 
 export interface NoticeFormValues {
   title: string;
@@ -64,6 +65,8 @@ export interface NoticeFormLabels {
   deleteConfirm: string;
   results: Record<NoticeActionCode, string>;
   copyWarning: CopyWarningLabels;
+  /** T3-4 — 서식 편집기 */
+  editor: RichTextEditorLabels;
 }
 
 export function NoticeForm({
@@ -88,6 +91,7 @@ export function NoticeForm({
   const [banner, setBanner] = useState("");
   const [invalid, setInvalid] = useState<Partial<Record<NoticeField, true>>>({});
   const [armed, setArmed] = useState(false);
+  const [resetKey, setResetKey] = useState(0);
   const [warnings, setWarnings] = useState<CopyWarning[]>([]);
   /** 저장이 경고로 멈춘 횟수 — 같은 경고가 다시 와도 패널이 다시 보이는 자리로 온다(재리뷰 P2-R1 · CopyWarningPanel attempt). */
   const [warningRound, setWarningRound] = useState(0);
@@ -125,7 +129,11 @@ export function NoticeForm({
       setWarnings([]);
       setAck([]);
       if (!result.changed) return;
-      if (mode === "create") formRef.current?.reset();
+      if (mode === "create") {
+        formRef.current?.reset();
+        // 편집기는 자기 상태를 들고 있어 reset 이 닿지 않는다 — 새로 만든다(T3-4)
+        setResetKey((k) => k + 1);
+      }
       router.refresh();
     });
   };
@@ -211,23 +219,24 @@ export function NoticeForm({
       </div>
 
       <div className={s.field}>
-        <label className={s.label} htmlFor="notice-body">
+        <span className={s.label} id="notice-body-label">
           {labels.field.body}
-        </label>
+        </span>
         <p className={s.hint} id="notice-body-hint">
           {labels.hint.body}
         </p>
-        <textarea
+        {/* T3-4 — 서식 편집기(굵게·기울임·제목·목록). 폼에는 숨은 칸 name=body 로 제한 서식 문자열이 실린다(HTML 아님) */}
+        <RichTextEditor
+          key={resetKey}
           id="notice-body"
-          className={s.textarea}
           name={NOTICE_FIELDS.body}
-          rows={12}
-          defaultValue={initial.body}
-          maxLength={NOTICE_BODY_MAX}
-          required
+          initialValue={initial.body}
+          maxPlain={NOTICE_BODY_MAX}
           disabled={pending}
-          aria-describedby="notice-body-hint"
-          aria-invalid={mark("body")}
+          labelledBy="notice-body-label"
+          describedBy="notice-body-hint"
+          invalid={mark("body") === "true"}
+          labels={labels.editor}
         />
       </div>
 

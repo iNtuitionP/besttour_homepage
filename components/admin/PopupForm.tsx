@@ -33,6 +33,8 @@ import { AdminBanner } from "./AdminBanner";
 import { useAdminToast } from "./AdminToast";
 import { CopyWarningPanel, isCopyAckSubmitter, mergeAck, type CopyWarningLabels } from "./CopyWarningPanel";
 import { feedbackKind } from "./feedback";
+import { PopupImagePicker, type PopupGalleryPhoto, type PopupImageLabels } from "./PopupImagePicker";
+import { RichTextEditor, type RichTextEditorLabels } from "./RichTextEditor";
 
 export interface PopupFormValues {
   title: string;
@@ -54,6 +56,10 @@ export interface PopupFormLabels {
   deleteConfirm: string;
   results: Record<PopupActionCode, string>;
   copyWarning: CopyWarningLabels;
+  /** T3-3 — 사진 고르기(갤러리에서 고르기 + 새로 올리기) */
+  image: PopupImageLabels;
+  /** T3-4 — 서식 편집기 */
+  editor: RichTextEditorLabels;
 }
 
 export function PopupForm({
@@ -62,12 +68,14 @@ export function PopupForm({
   initial,
   labels,
   listHref,
+  galleryPhotos,
 }: {
   mode: "create" | "edit";
   id?: number;
   initial: PopupFormValues;
   labels: PopupFormLabels;
   listHref: string;
+  galleryPhotos: readonly PopupGalleryPhoto[];
 }) {
   const router = useRouter();
   const toast = useAdminToast();
@@ -76,6 +84,7 @@ export function PopupForm({
   const [banner, setBanner] = useState("");
   const [invalid, setInvalid] = useState<Partial<Record<PopupField, true>>>({});
   const [armed, setArmed] = useState(false);
+  const [resetKey, setResetKey] = useState(0);
   const [warnings, setWarnings] = useState<CopyWarning[]>([]);
   /** 저장이 경고로 멈춘 횟수 — 같은 경고가 다시 와도 패널이 다시 보이는 자리로 온다(재리뷰 P2-R1 · CopyWarningPanel attempt). */
   const [warningRound, setWarningRound] = useState(0);
@@ -113,7 +122,11 @@ export function PopupForm({
       setWarnings([]);
       setAck([]);
       if (!result.changed) return;
-      if (mode === "create") formRef.current?.reset();
+      if (mode === "create") {
+        formRef.current?.reset();
+        // 편집기·사진 고르기는 자기 상태를 들고 있어 reset 이 닿지 않는다 — 새로 만든다(T3-3·T3-4)
+        setResetKey((k) => k + 1);
+      }
       router.refresh();
     });
   };
@@ -155,42 +168,43 @@ export function PopupForm({
       </div>
 
       <div className={s.field}>
-        <label className={s.label} htmlFor="popup-body">
+        <span className={s.label} id="popup-body-label">
           {labels.field.body}
-        </label>
+        </span>
         <p className={s.hint} id="popup-body-hint">
           {labels.hint.body}
         </p>
-        <textarea
+        {/* T3-4 — 서식 편집기(굵게·기울임·제목·목록). 폼에는 숨은 칸 name=body 로 제한 서식 문자열이 실린다(HTML 아님) */}
+        <RichTextEditor
+          key={resetKey}
           id="popup-body"
-          className={s.textarea}
           name={POPUP_FIELDS.body}
-          rows={5}
-          defaultValue={initial.body}
-          maxLength={POPUP_BODY_MAX}
-          required
+          initialValue={initial.body}
+          maxPlain={POPUP_BODY_MAX}
           disabled={pending}
-          aria-describedby="popup-body-hint"
-          aria-invalid={mark("body")}
+          labelledBy="popup-body-label"
+          describedBy="popup-body-hint"
+          invalid={mark("body") === "true"}
+          labels={labels.editor}
         />
       </div>
 
       <div className={s.field}>
-        <label className={s.label} htmlFor="popup-image">
+        <span className={s.label} id="popup-image-label">
           {labels.field.imagePath}
-        </label>
+        </span>
         <p className={s.hint} id="popup-image-hint">
           {labels.hint.imagePath}
         </p>
-        <input
-          id="popup-image"
-          className={s.input}
-          name={POPUP_FIELDS.imagePath}
-          type="text"
-          defaultValue={initial.imagePath}
+        {/* T3-3 — 경로를 적지 않는다. 갤러리에서 고르거나 새로 올리면 숨은 칸에 경로가 들어간다(옛 파일은 지우지 않는다) */}
+        <PopupImagePicker
+          key={resetKey}
+          initialPath={initial.imagePath}
+          photos={galleryPhotos}
+          labels={labels.image}
           disabled={pending}
-          aria-describedby="popup-image-hint"
-          aria-invalid={mark("imagePath")}
+          invalid={mark("imagePath") === "true"}
+          hintId="popup-image-hint"
         />
       </div>
 

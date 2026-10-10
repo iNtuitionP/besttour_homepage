@@ -1670,3 +1670,26 @@ end $$;`);
     }
   });
 });
+
+// T3-1(사장님 요청 6) — 긴 설명은 접기 안으로, 화면 밖 공유 금지 경고(suppressedLimit)는 접지 않는다
+describe("T3-1 통계 설명 접기", () => {
+  test("🔴 cohortNote · suppressedNote · axisTotalNote · lead.note 는 <details> 안 · suppressedLimit 은 밖", () => {
+    const src = read(PAGE_REL);
+    const folds = [...src.matchAll(/<details className=\{a\.notesFold\}[\s\S]*?<\/details>/g)].map((m) => m[0]);
+    expect(folds.length, "접기 블록").toBeGreaterThanOrEqual(3);
+    const inside = folds.join("\n");
+    for (const k of ['t("cohortNote")', 't("suppressedNote")', 't("axisTotalNote")', 't("lead.note")']) {
+      expect(inside, k).toContain(k);
+      const outside = src.replace(/<details className=\{a\.notesFold\}[\s\S]*?<\/details>/g, "");
+      expect(outside, `${k} 가 접기 밖에 남지 않는다`).not.toContain(k);
+    }
+    expect(inside).not.toContain('t("suppressedLimit")');
+    expect(src).toContain('t("suppressedLimit")');
+    for (const f of folds) expect(f).toMatch(/<summary className=\{a\.notesFoldSummary\}>\{t\("notesFold"\)\}<\/summary>/);
+    const ko = JSON.parse(read("messages/ko.json")) as { admin: { stats: Record<string, string> } };
+    expect(ko.admin.stats.notesFold).toBeTruthy();
+    const css = read("components/admin/admin.module.css");
+    expect(css).toMatch(/\.notesFold \{/);
+    expect(css).toMatch(/\.notesFoldSummary \{[^}]*font-size: (1[4-9]|[2-9]\d)px/);
+  });
+});

@@ -39,6 +39,7 @@ import {
   getAdminPhoto,
   insertAlbum,
   insertGalleryPhoto,
+  popupsUsingImage,
   removePhotoObjects,
   setAlbumActive,
   setGalleryPhotoActive,
@@ -50,6 +51,7 @@ import {
   AlbumPatchInput,
   GALLERY_FAILED,
   GALLERY_FILE_FAILED,
+  GALLERY_IN_USE_BY_POPUP,
   GALLERY_NOT_FOUND,
   GALLERY_VALIDATION,
   GalleryIdInput,
@@ -179,6 +181,11 @@ export async function deleteGalleryPhoto(input: unknown): Promise<GalleryActionR
     const db = await adminGalleryClient();
     const row = await getAdminPhoto(id, db);
     if (!row) return report("delete", id, GALLERY_NOT_FOUND);
+
+    // 0) T3-3 — 팝업이 이 사진을 쓰면 지우지 않는다(노출도 끄지 않는다). 참조를 읽지 못해도 지우지 않는다
+    const users = await popupsUsingImage(row.image_path, db);
+    if (users === null) return report("delete", id, GALLERY_FAILED);
+    if (users > 0) return report("delete", id, GALLERY_IN_USE_BY_POPUP);
 
     // 1) 공개 화면에서 먼저 내린다 — 파일이 사라진 뒤 행이 남는 순간에도 깨진 이미지가 뜨지 않는다
     if (!(await setGalleryPhotoActive(id, false, db))) return report("delete", id, GALLERY_NOT_FOUND);

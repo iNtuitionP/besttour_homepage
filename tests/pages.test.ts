@@ -189,7 +189,8 @@ describe("1. 라우트 파일 — 존재 · revalidate = 600 · 요청 시점 AP
     expect(code).toMatch(/import\s*\{[^}]*\bnotFound\b[^}]*\}\s*from\s*["']next\/navigation["']/);
     expect(code).toMatch(/notFound\(\)/);
     expect(code).toMatch(/getNotice\(/);
-    expect(code).toMatch(/splitParagraphs\(/);
+    // T3-4 — 본문은 제한 서식 렌더러(React 요소만). splitParagraphs 모듈은 남아 있고 §8 이 그 규칙을 그대로 잠근다
+    expect(code).toMatch(/<RichText text=\{notice\.body\}/);
   });
 
   test("목록은 getNotices(50) · 갤러리는 getGallery(60) · 차량은 getVehicles()", () => {

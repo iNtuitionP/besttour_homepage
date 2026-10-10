@@ -547,14 +547,16 @@ describe("10. resolveImageUrl", () => {
   // 여기서 블록 주석을 쓰지 않는 이유: tests/db-test-preconditions.test.ts 의 주석 제거기는 문자열 안의
   // "components/home/**" 을 블록 주석 시작으로 오해한다. 이 파일 뒤쪽에 닫는 표시가 새로 생기면 그 사이가
   // 통째로 지워져 갤러리 잠금 게이트가 이 파일을 놓친다. 줄 주석은 그 짝을 만들지 않는다.
-  test("admin 팝업 도움말의 경로 예시가 그대로 해석된다 (앞 슬래시 = 로컬 public/ 경로)", () => {
+  // T3-3(결정 9 · D6 해소) — 사장님은 이제 경로를 적지 않는다. 갤러리에서 고르거나 새로 올리면 화면이 경로를 넣는다.
+  // 그래서 도움말에 경로 예시가 없어야 하고, 새로 올린 팝업 사진의 경로는 gallery 버킷 객체로 해석돼야 한다.
+  test("admin 팝업 사진 — 도움말에 경로 예시가 없고, 새로 올린 경로는 gallery 버킷 공개 URL 로 해석된다", async () => {
     type KoAdmin = { admin?: { popups?: { hint?: { imagePath?: string } } } };
     const hint = (JSON.parse(read(MESSAGES_KO)) as KoAdmin).admin?.popups?.hint?.imagePath;
     expect(hint, "admin.popups.hint.imagePath 가 없다").toBeTruthy();
-    const example = (hint ?? "").match(/(\/?[\w./-]+\.(?:jpg|jpeg|png|webp))/i)?.[1];
-    expect(example, `도움말에서 경로 예시를 찾지 못했다: ${hint}`).toBeTruthy();
-    expect(example!.startsWith("/"), `도움말 예시 "${example}" 에 앞 슬래시가 없다 — Storage 객체로 해석된다`).toBe(true);
-    expect(resolveImageUrl(example!, SUPA)).toBe(example);
-    expect(existsSync(path.join(ROOT, "public", example!.replace(/^\//, "")))).toBe(true);
+    expect(hint, "경로를 적게 하는 예시가 남았다").not.toMatch(/\.(?:jpg|jpeg|png|webp)/i);
+    const { buildPopupImagePath } = await import("@/lib/admin/popupImage");
+    const p = buildPopupImagePath("123e4567-e89b-42d3-a456-426614174000", new Date("2026-10-10T00:00:00Z"));
+    expect(resolveImageUrl(p.imagePath, SUPA)).toBe(`${SUPA}/storage/v1/object/public/gallery/popups/2026/10/123e4567-e89b-42d3-a456-426614174000-1600.webp`);
+    expect(existsSync(path.join(ROOT, "public", "hero", "bus-02.jpg")), "옛 팝업이 쓰던 로컬 파일은 그대로 있다").toBe(true);
   });
 });

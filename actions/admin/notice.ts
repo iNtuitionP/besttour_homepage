@@ -34,6 +34,7 @@ import {
   type NoticeActionResult,
 } from "@/lib/admin/noticeInput";
 import { holdForCopy } from "@/lib/admin/copyCheck";
+import { toPlainText } from "@/lib/content/richText";
 import { readCopyAckForm } from "@/lib/admin/copyWarning";
 import { ADMIN_NOTICES_PATH, deleteNoticeRow, insertNotice, setNoticeActive, updateNoticeRow } from "@/lib/admin/notices";
 import { PUBLIC_CACHE_PATH, PUBLIC_CACHE_SCOPE } from "@/lib/admin/publicRevalidate";
@@ -99,7 +100,8 @@ export async function createNotice(formData: FormData): Promise<NoticeActionResu
   await requireAdmin();
   const parsed = parseNoticeForm(formData);
   if (!parsed.ok) return report("create", null, parsed.result);
-  const held = holdForCopy({ title: parsed.value.title, body: parsed.value.body }, readCopyAckForm(formData));
+  // T3-4 — 문구 검사와 확인 키는 **보이는 글자**로(서식 기호가 끼어 "업계 **1위**" 가 빠지지 않게)
+  const held = holdForCopy({ title: parsed.value.title, body: toPlainText(parsed.value.body) }, readCopyAckForm(formData));
   if (held) return report("create", null, held);
   return apply("create", null, "created", () => insertNotice(parsed.value));
 }
@@ -111,7 +113,8 @@ export async function updateNotice(formData: FormData): Promise<NoticeActionResu
   if (id === null) return report("update", null, noticeValidationFailed({ id: true }));
   const parsed = parseNoticeForm(formData);
   if (!parsed.ok) return report("update", id, parsed.result);
-  const held = holdForCopy({ title: parsed.value.title, body: parsed.value.body }, readCopyAckForm(formData));
+  // T3-4 — 문구 검사와 확인 키는 **보이는 글자**로(서식 기호가 끼어 "업계 **1위**" 가 빠지지 않게)
+  const held = holdForCopy({ title: parsed.value.title, body: toPlainText(parsed.value.body) }, readCopyAckForm(formData));
   if (held) return report("update", id, held);
   return apply("update", id, "updated", () => updateNoticeRow(id, parsed.value));
 }

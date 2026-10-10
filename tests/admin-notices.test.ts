@@ -518,8 +518,8 @@ describe("4. 정적 규약", () => {
     for (const rel of TS_TARGETS) {
       expect(read(rel), rel).not.toMatch(/dangerously/i);
     }
-    // 공개 상세는 splitParagraphs 로만 렌더한다 — 이 태스크는 그 파일을 바꾸지 않는다
-    expect(read("app/[locale]/(site)/notices/[id]/page.tsx")).toMatch(/splitParagraphs/);
+    // T3-4 — 공개 상세는 제한 서식 렌더러(RichText, React 요소만)로 그린다. 그 전에는 splitParagraphs(plain text 문단)였다
+    expect(read("app/[locale]/(site)/notices/[id]/page.tsx")).toMatch(/<RichText text=\{notice\.body\}/);
   });
 
   test("공개 읽기 계층은 이 태스크가 고치지 않는다", () => {

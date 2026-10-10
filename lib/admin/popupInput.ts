@@ -20,6 +20,8 @@
  */
 import { z } from "zod";
 
+import { RICH_TEXT_RAW_FACTOR, normalizeRichText, toPlainText } from "../content/richText";
+
 import type { CopyWarning } from "./copyWarning";
 
 /** 폼 필드 이름 — 화면·액션·테스트가 같은 문자열을 쓴다. */
@@ -77,7 +79,15 @@ export interface PopupValues {
 export const PopupInput = z
   .object({
     title: z.string().trim().min(1).max(POPUP_TITLE_MAX),
-    body: z.string().trim().min(1).max(POPUP_BODY_MAX),
+    // T3-4 — 본문은 제한 서식 문자열. 정규형으로 다시 쓰고, 길이는 **보이는 글자**로 잰다(서식 기호는 세지 않는다)
+    body: z
+      .string()
+      .max(POPUP_BODY_MAX * RICH_TEXT_RAW_FACTOR)
+      .transform(normalizeRichText)
+      .refine((v) => {
+        const n = toPlainText(v).length;
+        return n >= 1 && n <= POPUP_BODY_MAX;
+      }),
     imagePath: z.string().trim().max(POPUP_IMAGE_PATH_MAX).nullable(),
     startsAt: z.string().trim(),
     endsAt: z.string().trim(),

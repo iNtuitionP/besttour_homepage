@@ -12,8 +12,9 @@
  *      실존하는 달력 날짜인지까지 본다(2026-02-30 은 형식은 맞지만 없는 날이다).
  *   2. **카테고리는 코드로 저장한다**(CLAUDE.md §3 — 번역 문자열 저장 금지). 세 코드는 화면 라벨
  *      `messages/ko.json home.notice.category` 의 키와 같은 집합이고, tests/admin-notices.test.ts 가 그 일치를 단언한다.
- *   3. **본문은 plain text 다.** 공개 상세(P6-3)가 `splitParagraphs` 로 문단만 나눠 렌더하고 HTML 을 해석하지 않는다 —
- *      여기서도 마크업을 해석하거나 정제하지 않는다. 길이만 본다.
+ *   3. **본문은 제한 서식 문자열이다(T3-4 — 그 전에는 plain text).** lib/content/richText.ts 의 마크다운 하위집합이고
+ *      공개 상세는 components/content/RichText.tsx 가 React 요소로만 그린다(HTML 해석 0). 여기서는 정규형으로 다시 쓰고
+ *      보이는 글자 수로 길이를 본다.
  *   4. **결과에 개인정보가 없다.** 공지는 콘텐츠 표라 애초에 개인정보가 없지만, 결과 객체는 브라우저까지 나가는 값이므로
  *      화면이 쓸 최소(ok·changed·code·필드별 오류 표시)만 담는다. 문구는 messages/ko.json 몫이다.
  *
@@ -21,6 +22,8 @@
  * 사용자에게 보일 문구는 여기 없다(한글 리터럴 0). zod 메시지는 개발자용이라 ASCII 로 적는다.
  */
 import { z } from "zod";
+
+import { RICH_TEXT_RAW_FACTOR, normalizeRichText, toPlainText } from "../content/richText";
 
 import type { CopyWarning } from "./copyWarning";
 import { isKstDateString } from "./popupInput";
@@ -66,7 +69,15 @@ export interface NoticeValues {
 export const NoticeInput = z
   .object({
     title: z.string().trim().min(1).max(NOTICE_TITLE_MAX),
-    body: z.string().trim().min(1).max(NOTICE_BODY_MAX),
+    // T3-4 — 본문은 제한 서식 문자열. 정규형으로 다시 쓰고, 길이는 **보이는 글자**로 잰다(서식 기호는 세지 않는다)
+    body: z
+      .string()
+      .max(NOTICE_BODY_MAX * RICH_TEXT_RAW_FACTOR)
+      .transform(normalizeRichText)
+      .refine((v) => {
+        const n = toPlainText(v).length;
+        return n >= 1 && n <= NOTICE_BODY_MAX;
+      }),
     category: z.string(),
     publishedAt: z.string().trim(),
     active: z.boolean(),
@@ -130,7 +141,7 @@ export type ParsedNoticeForm = { ok: true; value: NoticeValues } | { ok: false; 
 export function parseNoticeForm(formData: FormData): ParsedNoticeForm {
   const parsed = NoticeInput.safeParse({
     title: text(formData.get(NOTICE_FIELDS.title)),
-    // 본문은 trim 뒤 그대로 — 줄바꿈이 문단 구분이다(P6-3 splitParagraphs).
+    // 본문은 제한 서식 문자열 — 스키마가 정규형으로 다시 쓴다(T3-4). 빈 줄이 문단, 한 줄 바꿈은 같은 문단 안 줄바꿈.
     body: text(formData.get(NOTICE_FIELDS.body)),
     category: text(formData.get(NOTICE_FIELDS.category)),
     publishedAt: text(formData.get(NOTICE_FIELDS.publishedAt)),

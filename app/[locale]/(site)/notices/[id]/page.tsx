@@ -4,7 +4,8 @@
  * generateStaticParams 는 쓰지 않는다 — 공지는 늘어난다. 첫 요청에 렌더해 캐시하고 10분마다 재검증한다.
  * getNotice(id): 라우트 파라미터 형식(serial 양의 정수)이 틀리면 DB 에 가지 않고 null, 부재·미공개(active=false 는 RLS 가
  * 가린다)도 null → notFound() → (site)/not-found.tsx(헤더·푸터 상속, <html lang> 은 로케일 레이아웃).
- * 본문은 **plain text 를 문단으로만**(splitParagraphs — \n\n 분리, HTML 해석 0). React 의 raw-HTML 주입 prop 은 쓰지 않는다 — admin 입력이다.
+ * 본문은 **제한 서식**(T3-4 — lib/content/richText.ts)을 components/content/RichText.tsx 가 React 요소로만 그린다(HTML 해석 0).
+ * React 의 raw-HTML 주입 prop 은 쓰지 않는다 — admin 입력이다. 서식 이전의 plain text 본문도 같은 부품이 문단·줄바꿈으로 그린다.
  * generateMetadata 와 페이지가 같은 요청에서 한 번만 조회하도록 React cache 로 감싼다(캐시 계층이 아니라 요청 내 dedupe).
  */
 import type { Metadata } from "next";
@@ -14,7 +15,7 @@ import { cache } from "react";
 
 import { noticeDate } from "@/components/home/notice-date";
 import { PageHeader } from "@/components/pages/PageHeader";
-import { splitParagraphs } from "@/components/pages/paragraphs";
+import { RichText } from "@/components/content/RichText";
 import { Link } from "@/i18n/navigation";
 import { koLang, ledgerUi } from "@/lib/i18n/ledger-ui";
 import { formatPublicDate, publicDateLabels } from "@/lib/public-date";
@@ -72,7 +73,6 @@ export default async function NoticeDetailPage({ params }: { params: Params }) {
   ]);
   const categories = tNotice.raw("category") as Record<string, string | undefined>;
   const date = noticeDate(notice.publishedAt);
-  const paragraphs = splitParagraphs(notice.body);
   // P7-4: 게시일의 보이는 글자는 공개 화면 공용 틀("2026년 9월 22일" · "Sep 22, 2026") — <time dateTime> 은 YYYY-MM-DD 그대로.
   const dates = publicDateLabels(tCommon.raw("dates"));
   const shownDate = formatPublicDate(date, dates, { style: "posted" }) ?? date;
@@ -102,11 +102,8 @@ export default async function NoticeDetailPage({ params }: { params: Params }) {
                 </span>
               </p>
             </div>
-            <div data-testid="notice-body" lang={lang}>
-              {paragraphs.map((paragraph, i) => (
-                <p key={i}>{paragraph}</p>
-              ))}
-            </div>
+            {/* T3-4 — 본문은 제한 서식. React 요소로만 그린다(제목1 → h2 · 제목2 → h3 · 목록 · 굵게 · 기울임) */}
+            <RichText text={notice.body} lang={lang} testId="notice-body" className={p.richBody} />
             <div className={p.articleFoot}>
               <Link className={h.btnGhost} href="/notices">
                 {t("back")}

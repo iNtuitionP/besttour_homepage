@@ -151,6 +151,61 @@ export async function updateRouteRow(id: number, values: RouteValues, client?: A
   return write("update", ROUTE_RPC.update, { p_id: id, ...toArgs(values) }, client);
 }
 
+// =============================================================================
+// T3-5 순서 저장 (결정 10 A안) — 새 RPC 없이 admin_update_route 를 행마다 부른다
+// =============================================================================
+
+export interface RouteReorderStep {
+  id: number;
+  values: RouteValues;
+}
+
+/**
+ * 새 순서(id 배열) → 바꿔 써야 할 행들. 순서 값은 1부터 차례로이고, **지금 값과 다른 행만** 고른다.
+ * 나머지 값(코드·가격·노출)은 지금 행 그대로 넘긴다 — 함수 서명이 전 칸을 받기 때문이다(서명 유지 · 위험 24).
+ * id 배열이 지금 행들의 순열(빠짐·중복·모르는 id 없음)이 아니면 null — 아무것도 쓰지 않는다.
+ */
+export function planRouteReorder(rows: readonly AdminRouteRow[], orderedIds: readonly number[]): RouteReorderStep[] | null {
+  if (orderedIds.length !== rows.length || rows.length === 0) return null;
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  if (new Set(orderedIds).size !== orderedIds.length || orderedIds.some((id) => !byId.has(id))) return null;
+  const plan: RouteReorderStep[] = [];
+  orderedIds.forEach((id, i) => {
+    const row = byId.get(id) as AdminRouteRow;
+    const sort = i + 1;
+    if (row.sort === sort) return;
+    plan.push({
+      id,
+      values: { originCode: row.origin_code, destinationCode: row.destination_code, priceFrom: row.price_from, sort, active: row.active },
+    });
+  });
+  return plan;
+}
+
+export interface RouteReorderResult {
+  ok: boolean;
+  /** 실제로 바뀐 행 수 */
+  updated: number;
+}
+
+/**
+ * 순서 저장. 지금 행을 읽어 계획을 세우고, 바꿀 행마다 updateRouteRow(= admin_update_route)를 차례로 부른다.
+ * **원자성이 없다**(A안의 감수 — 관리자 1명 · 16행): 중간에 실패하면 거기서 멈추고 ok=false 를 돌려준다(앞의 행은 이미 바뀌어 있다).
+ * 화면은 실패를 배너로 알리고 목록을 새로 읽는다 — 다시 저장하면 남은 행만 다시 쓴다(같은 값은 건너뛴다).
+ */
+export async function reorderRouteRows(orderedIds: readonly number[], client?: AdminDbClient): Promise<RouteReorderResult> {
+  const db = client ?? (await sessionClient());
+  const plan = planRouteReorder(await listAdminRoutes(db), orderedIds);
+  if (plan === null) return { ok: false, updated: 0 };
+  let updated = 0;
+  for (const step of plan) {
+    const outcome = await updateRouteRow(step.id, step.values, db);
+    if (outcome !== "changed") return { ok: false, updated };
+    updated += 1;
+  }
+  return { ok: true, updated };
+}
+
 /** 노출/중지만 바꾼다 — 목록에서 한 번에 내리기 위한 좁은 쓰기(가격·코드를 건드리지 않는다). */
 export async function setRouteActive(id: number, active: boolean, client?: AdminDbClient): Promise<RouteWriteOutcome> {
   return write("setActive", ROUTE_RPC.setActive, { p_id: id, p_active: active }, client);

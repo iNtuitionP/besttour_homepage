@@ -319,6 +319,34 @@ describe("C-16 · C-17 — 상태 탭 줄 · 글자 크기", () => {
     expect(small).toEqual([]);
     expect(decl(bodyOf(".tabCount"), "font-size")).toBe("12px");
   });
+
+  /** T3-1(사장님 요청 6) — 안내문·라벨·표 글자는 14px 이상, 나머지도 13px 아래 없음(휴대폰 탭 바만 예외) */
+  test("🔴 T3-1 안내문·라벨·표 글자 14px 이상 · 그 밖은 13px 이상(탭 바 .tabItem·.tabCount 만 예외)", () => {
+    const sizeOf = (v: string | null) => {
+      if (v === null) return null;
+      const px = /^(\d+(?:\.\d+)?)px$/.exec(v);
+      const rem = /^(\d+(?:\.\d+)?)rem$/.exec(v);
+      return px ? Number(px[1]) : rem ? Number(rem[1]) * 16 : null;
+    };
+    const READABLE = [
+      ".hint", ".th", ".dt", ".listHint", ".privacyNote", ".groupNote", ".filterLabel", ".filter",
+      ".table caption", ".tablePopups caption", ".bannerInline", ".sideNote", ".sideGroupLabel",
+      ".summaryLabel", ".summaryNote", ".statNote", ".legend", ".todoSub", ".todoMinor",
+      ".label",
+    ];
+    for (const sel of READABLE) {
+      expect(sizeOf(decl(bodyOf(sel), "font-size")), sel).toBeGreaterThanOrEqual(14);
+    }
+    const TAB_EXCEPTIONS = new Set([".tabItem", ".tabCount"]);
+    const small: string[] = [];
+    for (const rel of [ADMIN_CSS, LOGIN_CSS]) {
+      for (const r of cssRules(read(rel))) {
+        const size = sizeOf(decl(r.body, "font-size"));
+        if (size !== null && size < 13 && !TAB_EXCEPTIONS.has(r.selector.trim())) small.push(`${rel} — ${r.selector}`);
+      }
+    }
+    expect(small).toEqual([]);
+  });
 });
 
 // =============================================================================
@@ -416,13 +444,17 @@ describe("B-9 · B-10 · B-11 · B-12 — 폼 간격 · 갤러리 · 홈 절 머
   });
 
   test("🔴 B-10 사진 고르기 — 진짜 입력칸은 그대로(라벨로 이름 · 보이지 않게 접었을 뿐 포커스 받음 · 키보드로 연다) · 버튼 모양 라벨 + 고른 장수 한 줄", () => {
-    const src = codeOf("components/admin/GalleryUploader.tsx");
-    expect(src).toMatch(/id="gallery-upload-input"[\s\S]{0,80}className=\{s\.fileInput\}/);
+    // T3-2 — 파일 칸은 공통 고르기 부품(ImageDropzone)으로 옮겼다. 업로더는 id 두 개를 넘기고, 규칙은 부품에서 본다
+    const uploader = codeOf("components/admin/GalleryUploader.tsx");
+    expect(uploader).toMatch(/inputId="gallery-upload-input"/);
+    expect(uploader).toMatch(/countId="gallery-upload-count"/);
+    const src = codeOf("components/admin/ImageDropzone.tsx");
+    expect(src).toMatch(/id=\{inputId\}[\s\S]{0,80}className=\{s\.fileInput\}/);
     expect(src).toMatch(/type="file"/);
-    expect(src).toMatch(/<label className=\{`\$\{s\.btnSecondary\} \$\{s\.pickButton\}`\} htmlFor="gallery-upload-input"/);
-    expect(src).toMatch(/aria-describedby="gallery-upload-count"/);
-    expect(src).toMatch(/id="gallery-upload-count"/);
-    expect(src, "입력칸을 없애거나 tabIndex 로 빼지 않는다").not.toMatch(/tabIndex=\{-1\}[\s\S]{0,40}gallery-upload-input|gallery-upload-input[\s\S]{0,200}tabIndex=\{-1\}/);
+    expect(src).toMatch(/<label className=\{`\$\{s\.btnSecondary\} \$\{s\.pickButton\}`\} htmlFor=\{inputId\}/);
+    expect(src).toMatch(/aria-describedby=\{countId\}/);
+    expect(src).toMatch(/id=\{countId\}/);
+    expect(src, "입력칸을 없애거나 tabIndex 로 빼지 않는다").not.toMatch(/tabIndex=\{-1\}/);
     // 키보드 — Space 는 브라우저가 연다 · 버튼 모양이라 Enter 로도 연다
     expect(src).toMatch(/if \(e\.key === "Enter"\) \{\s*e\.preventDefault\(\);\s*e\.currentTarget\.click\(\);/);
     // 접는 방법 — 화면에서만 사라지고 포커스·키보드는 살아 있다(display:none · visibility:hidden 금지)

@@ -21,6 +21,7 @@
 import { revalidatePath } from "next/cache";
 
 import { holdForCopy } from "@/lib/admin/copyCheck";
+import { toPlainText } from "@/lib/content/richText";
 import { readCopyAckForm } from "@/lib/admin/copyWarning";
 import {
   POPUP_FAILED,
@@ -97,7 +98,8 @@ export async function createPopup(formData: FormData): Promise<PopupActionResult
   await requireAdmin();
   const parsed = parsePopupForm(formData);
   if (!parsed.ok) return report("create", null, parsed.result);
-  const held = holdForCopy({ title: parsed.value.title, body: parsed.value.body }, readCopyAckForm(formData));
+  // T3-4 — 문구 검사와 확인 키는 **보이는 글자**로(서식 기호가 끼어 "업계 **1위**" 가 빠지지 않게)
+  const held = holdForCopy({ title: parsed.value.title, body: toPlainText(parsed.value.body) }, readCopyAckForm(formData));
   if (held) return report("create", null, held);
   return apply("create", null, "created", () => insertPopup(parsed.value));
 }
@@ -109,7 +111,8 @@ export async function updatePopup(formData: FormData): Promise<PopupActionResult
   if (id === null) return report("update", null, popupValidationFailed({ id: true }));
   const parsed = parsePopupForm(formData);
   if (!parsed.ok) return report("update", id, parsed.result);
-  const held = holdForCopy({ title: parsed.value.title, body: parsed.value.body }, readCopyAckForm(formData));
+  // T3-4 — 문구 검사와 확인 키는 **보이는 글자**로(서식 기호가 끼어 "업계 **1위**" 가 빠지지 않게)
+  const held = holdForCopy({ title: parsed.value.title, body: toPlainText(parsed.value.body) }, readCopyAckForm(formData));
   if (held) return report("update", id, held);
   return apply("update", id, "updated", () => updatePopupRow(id, parsed.value));
 }

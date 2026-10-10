@@ -57,6 +57,7 @@ export default async function AdminRouteEditPage({ params }: { params: Params })
     updated: t("result.updated"),
     activated: t("result.activated"),
     deactivated: t("result.deactivated"),
+    reordered: t("result.reordered"),
     notFound: t("result.notFound"),
     duplicate: t("result.duplicate"),
     validation: t("result.validation"),
@@ -105,6 +106,8 @@ export default async function AdminRouteEditPage({ params }: { params: Params })
               submit: t("save"),
               processing: t("processing"),
               results,
+              priceOnHome: t.raw("priceOnHome") as string,
+              priceOnHomeEmpty: t("homeLookNoPrice"),
             }}
           />
         </section>

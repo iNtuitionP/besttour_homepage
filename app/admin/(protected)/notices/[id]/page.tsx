@@ -5,6 +5,7 @@ import { formatAdminDate } from "@/components/admin/admin-date";
 import { getAdminDateLabels } from "@/components/admin/adminDateLabels";
 import { getCopyWarningLabels } from "@/components/admin/copyWarningLabels";
 import { NoticeForm } from "@/components/admin/NoticeForm";
+import { getRichTextEditorLabels } from "@/components/admin/richTextEditorLabels";
 import { routing } from "@/i18n/routing";
 import { NOTICE_CATEGORIES, parseAdminNoticeId } from "@/lib/admin/noticeInput";
 import { ADMIN_NOTICES_PATH, getAdminNotice } from "@/lib/admin/notices";
@@ -29,6 +30,7 @@ export default async function AdminNoticeEditPage({ params }: { params: Params }
 
   const t = await getTranslations({ locale: routing.defaultLocale, namespace: "admin.notices" });
   const copyWarning = await getCopyWarningLabels();
+  const editorLabels = await getRichTextEditorLabels();
   const tc = await getTranslations({ locale: routing.defaultLocale, namespace: "home.notice" });
   const { id } = await params;
   const noticeId = parseAdminNoticeId(id);
@@ -112,6 +114,7 @@ export default async function AdminNoticeEditPage({ params }: { params: Params }
               deleteConfirm: t("deleteConfirm"),
               results,
               copyWarning,
+              editor: editorLabels,
             }}
           />
         </section>

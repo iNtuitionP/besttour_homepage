@@ -17,7 +17,8 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
 
 import { updateRoute } from "@/actions/admin/route";
-import { ROUTE_FIELDS, ROUTE_PRICE_MAX, ROUTE_SORT_MAX, type RouteActionCode, type RouteField } from "@/lib/admin/routeInput";
+import { ROUTE_FIELDS, ROUTE_PRICE_MAX, groupPriceDigits, type RouteActionCode, type RouteField } from "@/lib/admin/routeInput";
+import { formatPriceKrw } from "@/components/KrMap/format";
 
 import s from "./admin.module.css";
 import { AdminBanner } from "./AdminBanner";
@@ -44,6 +45,10 @@ export interface RouteFormLabels {
   submit: string;
   processing: string;
   results: Record<RouteActionCode, string>;
+  /** "홈 표시: {price}" — {price} 자리에 홈과 같은 포맷(formatPriceKrw)의 결과가 들어간다(T3-1) */
+  priceOnHome: string;
+  /** 칸이 비었을 때의 미리보기 — 홈은 금액 라벨을 감춘다 */
+  priceOnHomeEmpty: string;
 }
 
 export function RouteForm({
@@ -62,6 +67,10 @@ export function RouteForm({
   const [pending, startTransition] = useTransition();
   const [banner, setBanner] = useState("");
   const [invalid, setInvalid] = useState<Partial<Record<RouteField, true>>>({});
+  // T3-1 — 금액 칸은 쉼표를 넣어 보여 주고, 아래에 홈 표시 모양을 미리 보인다(값을 만들지 않는다 — 표시 포맷뿐)
+  const [price, setPrice] = useState(() => groupPriceDigits(initial.priceFrom));
+  const priceDigits = price.replace(/,/g, "");
+  const priceLabel = priceDigits === "" ? "" : formatPriceKrw(Number(priceDigits));
 
   const mark = (field: RouteField): "true" | undefined => (invalid[field] ? "true" : undefined);
 
@@ -145,40 +154,23 @@ export function RouteForm({
           id="route-price"
           className={s.input}
           name={ROUTE_FIELDS.priceFrom}
-          type="number"
+          type="text"
           inputMode="numeric"
-          min={1}
-          max={ROUTE_PRICE_MAX}
-          step={1}
-          defaultValue={initial.priceFrom}
+          autoComplete="off"
+          maxLength={String(ROUTE_PRICE_MAX).length + 4}
+          value={price}
+          onChange={(e) => setPrice(groupPriceDigits(e.target.value))}
           disabled={pending}
-          aria-describedby="route-price-hint"
+          aria-describedby="route-price-hint route-price-home"
           aria-invalid={mark("priceFrom")}
         />
+        <p className={s.priceOnHome} id="route-price-home" aria-live="polite" data-testid="admin-route-price-home">
+          {priceLabel === "" ? labels.priceOnHomeEmpty : labels.priceOnHome.replace("{price}", priceLabel)}
+        </p>
       </div>
 
-      <div className={s.field}>
-        <label className={s.label} htmlFor="route-sort">
-          {labels.field.sort}
-        </label>
-        <p className={s.hint} id="route-sort-hint">
-          {labels.hint.sort}
-        </p>
-        <input
-          id="route-sort"
-          className={s.input}
-          name={ROUTE_FIELDS.sort}
-          type="number"
-          inputMode="numeric"
-          min={0}
-          max={ROUTE_SORT_MAX}
-          step={1}
-          defaultValue={initial.sort}
-          disabled={pending}
-          aria-describedby="route-sort-hint"
-          aria-invalid={mark("sort")}
-        />
-      </div>
+      {/* T3-5 — 순서는 목록 화면의 «순서 바꾸기»에서만 바꾼다. 이 폼은 지금 순서를 그대로 돌려보낸다(덮어써서 뒤로 밀리지 않게) */}
+      <input type="hidden" name={ROUTE_FIELDS.sort} value={initial.sort} readOnly />
 
       <div className={s.field}>
         <div className={s.checkRow}>
