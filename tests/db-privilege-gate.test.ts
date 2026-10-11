@@ -219,14 +219,21 @@ const AUTH_EXEC: Reasoned = {
   "admin_update_gallery_photo(integer,text,integer,integer)": "관리자 사진 캡션·앨범·순서 고치기 (0020)",
   "admin_set_gallery_photo_active(integer,boolean)": "관리자 사진 노출 토글 (0020)",
   "admin_delete_gallery_photo(integer)": "관리자 사진 행 지우기 (0020 · 파일은 호출부가 먼저 지운다)",
-  "admin_create_album(text,text,integer,boolean)": "관리자 앨범 만들기 (0020)",
-  "admin_update_album(integer,text,text,integer,boolean)": "관리자 앨범 고치기 (0020)",
+  // 0025(T4-2) — 앨범 = 글. 만들기·고치기는 서명이 바뀌었다(drop+create · 같은 트랜잭션 revoke/grant). slug 는 DB 가 짓고 고치기는 받지 않는다.
+  "admin_create_album(text,text,date,boolean)": "관리자 글(앨범) 쓰기 (0025 · slug 는 DB 가 짓는다)",
+  "admin_update_album(integer,text,text,date,boolean)": "관리자 글(앨범) 고치기 (0025 · slug 를 받지 않는다)",
   "admin_set_album_active(integer,boolean)": "관리자 앨범 노출 토글 (0020)",
-  "admin_delete_album(integer)": "관리자 앨범 지우기 (0020 · 사진은 미분류로 남는다)",
+  "admin_delete_album(integer)": "관리자 글(앨범) 지우기 (0020 · 0025 트리거가 사진을 미분류 · 비공개로 내린다)",
   "admin_update_route(integer,text,text,integer,integer,boolean)": "관리자 대표 노선 값 고치기 (0020 · 만들기·지우기는 없다)",
   "admin_set_route_active(integer,boolean)": "관리자 대표 노선 노출 토글 (0020)",
   // 0022(P5-17) — 관리자 통계. **읽기 전용 집계**이고 결과는 (버킷·코드, 건수)뿐이다(개인정보 0 · 1~2건 칸은 함수가 가린다).
   "admin_stats(date,date)": "관리자 통계 집계 (0022, definer · 첫 문장 is_admin 가드 · 읽기 전용)",
+  // 0024(T4-1) — 관리자 차량 쓰기 다섯. definer + 첫 문장 is_admin() 가드. 접수 기록이 있으면 이름·정원 'locked' · 삭제 'referenced'.
+  "admin_create_vehicle(text,text,integer,text,text,boolean)": "관리자 차량 만들기 (0024)",
+  "admin_update_vehicle(integer,text,text,integer,text,text)": "관리자 차량 고치기 (0024 · 접수 기록이 있으면 이름·정원 잠금)",
+  "admin_set_vehicle_active(integer,boolean)": "관리자 차량 숨기기·보이기 (0024)",
+  "admin_delete_vehicle(integer)": "관리자 차량 지우기 (0024 · 접수 기록이 있으면 referenced)",
+  "admin_reorder_vehicles(integer[])": "관리자 차량 순서 저장 (0024 · 원자적)",
 };
 
 /** 객체 소유자 — 마이그레이션은 `postgres` 로 적용된다. 공개 롤이 소유하면 권한 회수가 의미를 잃는다. */
@@ -820,7 +827,7 @@ describe("0. 허용 목록 — 사유 필수 · 비어 있지 않음(의도적 �
     expect(AUTH_WRITE).toEqual({});
     const adminFns = Object.keys(AUTH_EXEC).filter((f) => f.startsWith("admin_"));
     expect(adminFns.length, "관리자 쓰기 경로가 표에도 함수에도 없다 — 목록이 비어 판정이 무의미해진 상태일 수 있다").toBeGreaterThanOrEqual(22);
-    for (const t of ["notice", "popup", "gallery_photo", "album", "route"]) {
+    for (const t of ["notice", "popup", "gallery_photo", "album", "route", "vehicle"]) {
       expect(adminFns.some((f) => f.includes(t)), `${t} 쓰기 함수가 AUTH_EXEC 에 없다`).toBe(true);
     }
   });

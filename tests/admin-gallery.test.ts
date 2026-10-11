@@ -539,8 +539,8 @@ describe("4. 서버액션", () => {
       () => updateGalleryPhoto({ id: 7, caption: null, albumId: null, sort: 0 }),
       () => toggleGalleryPhotoActive({ id: 7, active: false }),
       () => deleteGalleryPhoto({ id: 7 }),
-      () => createGalleryAlbum({ title: "t", slug: "t", sort: 0, active: true }),
-      () => updateGalleryAlbum({ id: 1, title: "t", slug: "t", sort: 0, active: true }),
+      () => createGalleryAlbum({ title: "t", body: "", publishedAt: "2026-10-11", active: true }),
+      () => updateGalleryAlbum({ id: 1, title: "t", body: "", publishedAt: "2026-10-11", active: true }),
       () => toggleGalleryAlbumActive({ id: 1, active: false }),
       () => deleteGalleryAlbum({ id: 1 }),
     ]) {
@@ -566,28 +566,33 @@ describe("4. 서버액션", () => {
     expect(vi.mocked(revalidatePath)).not.toHaveBeenCalled();
   });
 
-  test("앨범 — 만들기·이름 바꾸기·내리기. slug 는 0008 CHECK 와 같은 규칙으로 먼저 거른다", async () => {
+  test("글(앨범) — 쓰기·고치기. slug 는 보내지 않는다(새 글은 DB 가 짓고 고치기는 공개 주소를 지킨다 · 0025 T4-2)", async () => {
     const { client, rpc } = dbStub({ data: [{ id: 3 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
 
-    const ok = await createGalleryAlbum({ title: "45인승", slug: "bus-45", sort: 1, active: true });
+    const ok = await createGalleryAlbum({ title: "45인승", body: "**첫** 운행", publishedAt: "2026-10-11", active: true });
     expect(ok).toMatchObject({ ok: true, code: "albumCreated" });
-    // 인자 = 화이트리스트(slug·title·sort·active). description 은 화면에 입력란이 없어 함수가 받지 않는다(0020 §4).
-    expect(rpc.mock.calls[0]).toEqual(["admin_create_album", { p_slug: "bus-45", p_title: "45인승", p_sort: 1, p_active: true }]);
+    // 인자 = 화이트리스트(제목·본문·게시일·노출). slug·sort·description 은 받지 않는다.
+    expect(rpc.mock.calls[0]).toEqual(["admin_create_album", { p_title: "45인승", p_body: "**첫** 운행", p_published_at: "2026-10-11", p_active: true }]);
+    rpc.mockClear();
+
+    const upd = await updateGalleryAlbum({ id: 3, title: "45인승", body: "", publishedAt: "2026-10-10", active: false, slug: "evil" });
+    expect(upd).toMatchObject({ ok: true, code: "albumUpdated" });
+    // 빈 본문은 null · 화면이 slug 를 실어 보내도 함수 인자에는 없다(공개 주소 유지)
+    expect(rpc.mock.calls[0]).toEqual(["admin_update_album", { p_id: 3, p_title: "45인승", p_body: null, p_published_at: "2026-10-10", p_active: false }]);
     rpc.mockClear();
 
     for (const bad of [
-      { title: "x", slug: "Bus-45", sort: 0, active: true },
-      { title: "x", slug: "-bus", sort: 0, active: true },
-      { title: "x", slug: "bus--45", sort: 0, active: true },
-      { title: "x", slug: "a".repeat(41), sort: 0, active: true },
-      { title: "", slug: "bus", sort: 0, active: true },
-      { title: "x".repeat(ALBUM_TITLE_MAX + 1), slug: "bus", sort: 0, active: true },
+      { title: "", body: "", publishedAt: "2026-10-11", active: true },
+      { title: "x".repeat(ALBUM_TITLE_MAX + 1), body: "", publishedAt: "2026-10-11", active: true },
+      { title: "x", body: "", publishedAt: "2026-02-30", active: true },
+      { title: "x", body: "", publishedAt: "10/11", active: true },
+      { title: "x", body: "가".repeat(4001), publishedAt: "2026-10-11", active: true },
     ]) {
       const r = await createGalleryAlbum(bad);
-      expect(r.code, JSON.stringify(bad)).toBe("validation");
+      expect(r.code, JSON.stringify(bad).slice(0, 80)).toBe("validation");
     }
-    // 검증에 걸린 여섯 건은 DB 를 부르지 않았다
+    // 검증에 걸린 다섯 건은 DB 를 부르지 않았다
     expect(rpc).not.toHaveBeenCalled();
   });
 
@@ -1030,9 +1035,9 @@ describe("7. 정적 규약", () => {
 
   // P5-8 이 여섯 번째 탭(발송 내역)을 덧붙였다 — tests/admin-notifications.test.ts 가 그 탭의 화면을 단언한다.
   // P5-20 — 사이드바·탭 바 개편: 홈이 첫 항목이 되고 순서가 묶음(매일 · 홈페이지 · 기록)을 따른다(tests/admin-nav.test.ts).
-  test("탭 — 갤러리가 켜졌다. 여덟 항목 전부 ready 다", async () => {
+  test("탭 — 갤러리가 켜졌다. 아홉 항목 전부 ready 다 (T4-1 차량 소개 포함)", async () => {
     const { ADMIN_TABS } = await import("@/components/admin/tabs");
-    expect(ADMIN_TABS.map((t) => t.key)).toEqual(["home", "reservations", "notices", "popups", "gallery", "routes", "notifications", "stats"]);
+    expect(ADMIN_TABS.map((t) => t.key)).toEqual(["home", "reservations", "notices", "popups", "gallery", "routes", "fleet", "notifications", "stats"]);
     expect(ADMIN_TABS.filter((t) => t.ready).map((t) => t.href)).toEqual([
       "/admin",
       "/admin/reservations",
@@ -1040,6 +1045,7 @@ describe("7. 정적 규약", () => {
       "/admin/popups",
       "/admin/gallery",
       "/admin/routes",
+      "/admin/fleet",
       "/admin/notifications",
       "/admin/stats",
     ]);
@@ -1398,8 +1404,17 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("8. DB — 0011 스토리�
   }
 
   test("표 — 관리자 세션이 앨범·사진 행을 만들고 고치고 내렸다 되살린다 (0020 definer 함수)", async () => {
-    albumId = await rpcOne(adminToken, "admin_create_album", { p_slug: `p62-${RUN}`, p_title: `P6-2 ${RUN}`, p_sort: 1, p_active: true });
-    expect(await rpcOne(adminToken, "admin_update_album", { p_id: albumId, p_slug: `p62-${RUN}`, p_title: `P6-2 ${RUN} edit`, p_sort: 1, p_active: true })).toBe(albumId);
+    // 0025(T4-2) — 글: slug 는 DB 가 짓고('a-' + 8자) 고치기는 받지 않는다 → 수정 뒤에도 같은 공개 주소다(위험 31).
+    albumId = await rpcOne(adminToken, "admin_create_album", { p_title: `P6-2 ${RUN}`, p_body: null, p_published_at: "2026-10-11", p_active: true });
+    const slugOf = async () => ((await rest("GET", `/gallery_albums?select=slug&id=eq.${albumId}`)).body as { slug: string }[])[0]?.slug;
+    const slugBefore = await slugOf();
+    expect(slugBefore).toMatch(/^a-[0-9a-f]{8}$/);
+    expect(
+      await rpcOne(adminToken, "admin_update_album", { p_id: albumId, p_title: `P6-2 ${RUN} edit`, p_body: "**본문**", p_published_at: "2026-10-10", p_active: true }),
+    ).toBe(albumId);
+    expect(await slugOf(), "글을 고쳤더니 공개 주소(slug)가 바뀌었다").toBe(slugBefore);
+    const saved = await rest("GET", `/gallery_albums?select=body,published_at&id=eq.${albumId}`);
+    expect(saved.body).toEqual([{ body: "**본문**", published_at: "2026-10-10" }]);
     expect(await rpcOne(adminToken, "admin_set_album_active", { p_id: albumId, p_active: false })).toBe(albumId);
     // 비공개 앨범 읽기 — 0020 이 0009 `_admin_all` 을 좁힌 `gallery_albums_admin_select` 로 관리자가 표에서 직접 읽는다
     const hiddenAlbum = await asUser(adminToken, "GET", `/gallery_albums?select=id,title,active&id=eq.${albumId}`);
@@ -1442,8 +1457,8 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("8. DB — 0011 스토리�
       ["admin_update_gallery_photo", { p_id: photoId, p_caption: "hijacked", p_album_id: null, p_sort: 1 }],
       ["admin_set_gallery_photo_active", { p_id: photoId, p_active: false }],
       ["admin_delete_gallery_photo", { p_id: photoId }],
-      ["admin_create_album", { p_slug: `p62x-${RUN}`, p_title: "x", p_sort: 1, p_active: true }],
-      ["admin_update_album", { p_id: albumId, p_slug: `p62-${RUN}`, p_title: "hijacked", p_sort: 1, p_active: true }],
+      ["admin_create_album", { p_title: `P6-2x ${RUN}`, p_body: null, p_published_at: null, p_active: true }],
+      ["admin_update_album", { p_id: albumId, p_title: "hijacked", p_body: null, p_published_at: null, p_active: true }],
       ["admin_set_album_active", { p_id: albumId, p_active: false }],
       ["admin_delete_album", { p_id: albumId }],
     ] as const) {
@@ -1487,7 +1502,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("8. DB — 0011 스토리�
 
   test("정리 — 만든 것을 전부 지운다", async () => {
     await rest("DELETE", `/gallery?image_path=like.${encodeURIComponent(`*p62-${RUN}*`)}`);
-    await rest("DELETE", `/gallery_albums?slug=like.${encodeURIComponent(`*p62-${RUN}*`)}`);
+    await rest("DELETE", `/gallery_albums?title=like.${encodeURIComponent(`P6-2*${RUN}*`)}`);
     await rest("DELETE", `/admin_users?user_id=eq.${adminId}`);
     for (const id of [adminId, plainId]) {
       if (id) await call("DELETE", `${baseUrl()}/auth/v1/admin/users/${id}`, serviceHeaders);

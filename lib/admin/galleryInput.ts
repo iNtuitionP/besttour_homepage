@@ -21,8 +21,10 @@
  */
 import { z } from "zod";
 
+import { RICH_TEXT_RAW_FACTOR, normalizeRichText, toPlainText } from "../content/richText";
 import { toKstDateString } from "../kst";
 import type { CopyWarning } from "./copyWarning";
+import { isKstDateString } from "./popupInput";
 
 // =============================================================================
 // 버킷·상한 (스펙 §13.9 (4) · 컨트롤러가 만든 버킷 두 개)
@@ -62,6 +64,8 @@ export const GALLERY_SORT_MAX = 9999;
 /** 앨범 제목 상한(화면 표시명). slug 는 0008 의 CHECK 와 같은 40자다. */
 export const ALBUM_TITLE_MAX = 40;
 export const ALBUM_SLUG_MAX = 40;
+/** 글 본문 — 보이는 글자 상한(공지 본문과 같다 · 0025 CHECK 는 이 값 × RICH_TEXT_RAW_FACTOR). */
+export const ALBUM_BODY_MAX = 4000;
 
 /**
  * 앨범 slug 규칙 — 0008 `gallery_albums_slug_ck` 및 공개 읽기(lib/queries/albums.ts `ALBUM_SLUG_PATTERN`)와
@@ -306,13 +310,24 @@ export const GalleryToggleInput = z.object({ id: positiveInt, active: z.boolean(
 /** 삭제 — id 만. */
 export const GalleryIdInput = z.object({ id: positiveInt });
 
-/** 앨범 만들기·고치기. slug 는 0008 CHECK 와 같은 규칙(위 ALBUM_SLUG_RE). */
-export const AlbumInput = z.object({
-  title: z.string().trim().min(1).max(ALBUM_TITLE_MAX),
-  slug: z.string().trim().min(1).max(ALBUM_SLUG_MAX).regex(ALBUM_SLUG_RE),
-  sort: z.number().int().min(0).max(GALLERY_SORT_MAX),
-  active: z.boolean(),
-});
+/**
+ * 글(앨범) 쓰기·고치기 (T4-2 · 0025). 받는 칸: 제목 · 본문(제한 서식 · 비워도 된다) · 게시일(KST 날짜) · 노출.
+ * **slug 는 받지 않는다** — 새 글은 DB 가 짓고('a-' + 무작위 8자), 고치기는 slug 를 건드리지 않는다(공개 주소 /gallery/<slug> 유지).
+ * 정렬값도 받지 않는다 — 글은 게시일 최신순이다.
+ */
+export const AlbumInput = z
+  .object({
+    title: z.string().trim().min(1).max(ALBUM_TITLE_MAX),
+    // 본문은 공지와 같은 제한 서식 — 정규형으로 다시 쓰고, 길이는 보이는 글자로 잰다. 빈 본문은 null.
+    body: z
+      .string()
+      .max(ALBUM_BODY_MAX * RICH_TEXT_RAW_FACTOR)
+      .transform(normalizeRichText)
+      .refine((v) => toPlainText(v).length <= ALBUM_BODY_MAX)
+      .transform((v) => (toPlainText(v).trim() === "" ? null : v)),
+    publishedAt: z.string().trim().refine(isKstDateString),
+    active: z.boolean(),
+  });
 export type AlbumValues = z.infer<typeof AlbumInput>;
 export const AlbumPatchInput = AlbumInput.extend({ id: positiveInt });
 

@@ -204,7 +204,19 @@ describe("3. buildAlbumCards", () => {
     const cards = buildAlbumCards([album({ description: "인천공항 픽업" }), album({ id: 2, slug: "x" })], [[], []]);
     expect(cards[0].description).toBe("인천공항 픽업");
     expect(cards[1].description).toBeNull();
-    expect(Object.keys(cards[0]).sort()).toEqual(["cover", "description", "hasPhotos", "slug", "title"]);
+    // T4-2(0025) — 글: 게시일·본문 요약이 더해졌다(본문이 없으면 요약 null — 지어내지 않는다).
+    expect(Object.keys(cards[0]).sort()).toEqual(["cover", "description", "excerpt", "hasPhotos", "publishedAt", "slug", "title"]);
+    expect(cards[0].excerpt).toBeNull();
+  });
+
+  test("T4-2 — 본문 요약은 서식 기호를 뺀 보이는 글자이고 80자에서 자른다 · 게시일은 그대로 나른다", () => {
+    const long = `**굵게** ${"가".repeat(100)}`;
+    const [c] = buildAlbumCards([album({ body: long, publishedAt: "2026-10-11" } as never)], [[]]);
+    expect(c.publishedAt).toBe("2026-10-11");
+    expect(c.excerpt?.startsWith("굵게 가")).toBe(true);
+    expect(c.excerpt).not.toContain("*");
+    expect(c.excerpt?.endsWith("…")).toBe(true);
+    expect((c.excerpt ?? "").length).toBeLessThanOrEqual(81);
   });
 
   test("앨범 0개면 카드 0개", () => {

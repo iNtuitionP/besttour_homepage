@@ -14,7 +14,7 @@ import {
   isActiveOn,
   mapShowcaseRouteRows,
 } from "@/lib/queries";
-import { withShowcaseRoutesLock } from "./helpers/db-lock";
+import { withShowcaseRoutesLock, withVehiclesLock } from "./helpers/db-lock";
 import { loadDotEnvLocal } from "./helpers/load-env-local";
 
 loadDotEnvLocal();
@@ -287,6 +287,8 @@ describe.skipIf(!hasAnon)("DB 읽기 — anon 키 + RLS (원격, 읽기 전용)"
   // getShowcaseRoutes 는 활성 16행 전체를 시드와 대조한다 — 시드 행을 잠시 바꾸는 블록(admin-routes · write-privileges §5)과
   // 겹치면 15행(비활성으로 내려 둔 순간)이나 틀린 sort 를 읽는다(P6-13 재현: 84회 중 2회). 같은 잠금으로 줄 세운다.
   withShowcaseRoutesLock();
+  // getVehicles 는 활성 차량 전체(5행·순서)를 대조한다 — 0024 함수로 차량을 만들거나 순서를 바꾸는 블록과 줄 세운다(맨 나중).
+  withVehiclesLock();
   const SERVICE_KEY_NAME = "SUPABASE_SERVICE_ROLE_KEY";
   let savedServiceKey: string | undefined;
   const anonHeaders = { apikey: anonKey as string, Authorization: `Bearer ${anonKey}` };
@@ -389,6 +391,9 @@ describe.skipIf(!hasAnon)("DB 읽기 — anon 키 + RLS (원격, 읽기 전용)"
       expect(v.nameKo.length).toBeGreaterThan(0);
       expect(v.nameEn.length).toBeGreaterThan(0);
       expect(v.active).toBe(true);
+      // 0024 백필 — 설명·사진이 공개 화면에 그대로 온다(anon 이 새 칸을 읽는다).
+      expect((v.descriptionKo ?? "").length, `${v.slug} 설명`).toBeGreaterThan(0);
+      expect(v.imagePath, `${v.slug} 사진`).toMatch(/^\/hero\/bus-0[1-6]\.jpg$/);
     }
   });
 

@@ -153,14 +153,7 @@
       "capacityLabel": "정원",
       "capacity": "최대 <b>{n}명</b>",
       "cta": "견적 신청하기",
-      "disc": "차종별 정원·옵션은 배차 차량에 따라 일부 다를 수 있습니다.",
-      "lines": {
-        "bus45": "단체 워크숍·현장학습·종교단체 이동에 쓰이는 대형 차량.",
-        "bus35": "중형 단체에 알맞은 크기. 친목회·가족여행·통근 운행까지 폭넓게 운용합니다.",
-        "limo28": "넓은 좌석 간격의 우등 시트. 외국인 의전·관광, 관혼상제 등 격이 필요한 일정에 추천합니다.",
-        "bus25": "소규모 단체의 합리적인 선택. 대학MT·워크숍 등 20명 안팎 일정에 적합합니다.",
-        "bus16": "공항 픽업·샌딩과 소규모 이동에 적합. 골목길 진입이 편해 도심 일정에 강합니다."
-      }
+      "disc": "차종별 정원·옵션은 배차 차량에 따라 일부 다를 수 있습니다."
     },
     "company": {
       "eyebrow": "회사소개",
@@ -390,8 +383,8 @@
         "description": "전세버스 운행 현장 사진을 모았습니다."
       },
       "empty": "갤러리를 준비 중입니다. 운행 사진이 올라오면 이곳에서 보실 수 있습니다.",
-      "albumsTitle": "앨범",
-      "albumsLabel": "앨범 목록",
+      "albumsTitle": "글",
+      "albumsLabel": "글 목록",
       "albumPending": "사진 준비 중",
       "allTitle": "전체 사진",
       "detail": {
@@ -399,7 +392,16 @@
           "title": "{title} — 갤러리 | {brand}",
           "description": "전세버스 운행 현장 사진입니다."
         },
-        "empty": "이 앨범에는 아직 사진이 없습니다.",
+        "empty": "이 글에는 아직 사진이 없습니다.",
+        "photosTitle": "사진",
+        "lightbox": {
+          "open": "{n}번째 사진 크게 보기",
+          "label": "사진 크게 보기",
+          "close": "닫기",
+          "prev": "이전 사진",
+          "next": "다음 사진",
+          "position": "{n} / {total}"
+        },
         "back": "갤러리로",
         "pager": {
           "label": "사진 페이지 넘김",
@@ -551,6 +553,7 @@
       "popups": "팝업",
       "gallery": "갤러리",
       "routes": "대표 노선",
+      "fleet": "차량 소개",
       "notifications": "발송 기록",
       "stats": "통계",
       "site": "홈페이지",
@@ -590,7 +593,7 @@
     "hub": {
       "site": {
         "title": "홈페이지",
-        "sub": "방문자에게 보이는 공지·팝업·사진·대표 노선을 고쳐요.",
+        "sub": "방문자에게 보이는 공지·팝업·사진·대표 노선·차량을 고쳐요.",
         "listLabel": "홈페이지 관리 메뉴"
       },
       "records": {
@@ -615,6 +618,10 @@
       "routes": {
         "live": "{total}개 중 {live}개 노출 중",
         "noPrice": "{total}개 중 {live}개 노출 중 · {n}개는 금액 없이 노선만 보여요"
+      },
+      "fleet": {
+        "live": "{total}대 중 {live}대 보이는 중",
+        "empty": "아직 등록한 차량이 없어요"
       },
       "stats": "기간별 접수·확정 숫자를 봐요"
     },
@@ -1025,9 +1032,97 @@
         "failed": "처리하지 못했어요. 잠시 뒤 다시 시도해 주세요."
       }
     },
+    "fleet": {
+      "title": "차량 소개",
+      "sub": "홈과 차량소개 화면에 보이는 차량의 사진·이름·설명·정원을 고쳐요.",
+      "new": "새 차량 추가",
+      "newTitle": "새 차량 추가",
+      "edit": "차량 고치기",
+      "back": "← 차량 목록",
+      "notFound": "이 차량을 찾을 수 없어요. 목록에서 다시 골라 주세요.",
+      "listLabel": "차량 목록",
+      "empty": "아직 등록한 차량이 없어요. «새 차량 추가»로 넣어 주세요.",
+      "noPhoto": "사진 없음",
+      "seatValue": "{n}인승",
+      "bookedBadge": "접수 기록 있음",
+      "col": {
+        "vehicle": "차량",
+        "capacity": "정원",
+        "state": "상태",
+        "actions": "처리"
+      },
+      "state": {
+        "live": "보이는 중",
+        "off": "숨김"
+      },
+      "field": {
+        "nameKo": "차량 이름",
+        "nameEn": "영문 이름",
+        "capacity": "정원 (명)",
+        "descriptionKo": "설명",
+        "imagePath": "사진",
+        "active": "바로 보이기"
+      },
+      "hint": {
+        "nameKo": "예: 45인승 관광버스",
+        "nameEn": "영문 화면에 보이는 이름이에요. 꼭 적어 주세요. 예: 45-seat Coach",
+        "capacity": "1명부터 60명까지 적을 수 있어요.",
+        "descriptionKo": "한국어 화면에만 보여요. 영문 화면에서는 설명 없이 이름과 정원만 보여요.",
+        "imagePath": "가로 사진이 잘 어울려요. 올리면 홈페이지에 맞게 줄여서 저장해요.",
+        "active": "끄면 저장만 하고 홈페이지에는 아직 보이지 않아요. 목록에서 언제든 켤 수 있어요."
+      },
+      "lockedNote": "이 차량으로 들어온 접수가 있어서 이름과 정원은 바꿀 수 없어요. 지난 접수의 차량 표시가 바뀌지 않게 하려는 거예요. 다른 차라면 «새 차량 추가»로 넣어 주세요. 설명과 사진은 고칠 수 있어요.",
+      "referencedNote": "이 차량으로 들어온 접수가 있어서 지울 수 없어요. 홈페이지에서 빼려면 목록에서 «숨기기»를 눌러 주세요.",
+      "count": "{n} / {max}자",
+      "save": "차량 저장하기",
+      "turnOn": "다시 보이기",
+      "turnOff": "숨기기",
+      "editLink": "고치기",
+      "processing": "처리 중…",
+      "delete": "이 차량 지우기",
+      "deleteArm": "삭제할게요 (되돌릴 수 없어요)",
+      "deleteConfirm": "이 차량을 지울까요? 되살릴 수 없어요.",
+      "image": {
+        "current": "지금 사진",
+        "none": "사진이 없어요. 사진 없이 이름과 정원만 보여요.",
+        "clear": "사진 빼기",
+        "upload": "새로 올리기",
+        "uploading": "사진을 올리는 중이에요…",
+        "uploadFailed": "사진을 올리지 못했어요. 잠시 뒤 다시 시도해 주세요."
+      },
+      "order": {
+        "title": "순서 바꾸기",
+        "hint": "손잡이를 끌어 옮기거나 ↑ ↓ 단추를 누른 뒤 «순서 저장»을 눌러 주세요. 저장하기 전에는 홈에 반영되지 않아요.",
+        "save": "순서 저장",
+        "reset": "처음 순서로",
+        "up": "{name} 위로",
+        "down": "{name} 아래로",
+        "handle": "{name} 끌어서 옮기기",
+        "moved": "{name}을(를) {pos}번째로 옮겼어요.",
+        "picked": "{name}을(를) 집었어요. 위아래 화살표로 옮기고 Space 로 놓아 주세요.",
+        "canceled": "옮기기를 취소했어요.",
+        "instructions": "Space 로 집고, 위아래 화살표로 옮긴 뒤 Space 로 놓아요. Esc 는 취소예요.",
+        "saved": "순서를 저장했어요.",
+        "failed": "순서를 저장하지 못했어요. 목록을 새로 불러온 뒤 다시 «순서 저장»을 눌러 주세요."
+      },
+      "result": {
+        "created": "새 차량을 저장했어요.",
+        "updated": "차량을 저장했어요.",
+        "deleted": "차량을 지웠어요.",
+        "activated": "차량을 다시 보이게 했어요.",
+        "deactivated": "차량을 숨겼어요.",
+        "reordered": "순서를 저장했어요.",
+        "notFound": "이 차량을 찾을 수 없어요. 목록을 새로 불러와 주세요.",
+        "locked": "접수 기록이 있는 차량이라 이름과 정원은 바꿀 수 없어요. 아무것도 저장하지 않았어요.",
+        "referenced": "접수 기록이 있는 차량이라 지울 수 없어요. 목록에서 «숨기기»를 눌러 주세요.",
+        "validation": "입력한 내용을 확인해 주세요.",
+        "failed": "처리하지 못했어요. 잠시 뒤 다시 시도해 주세요.",
+        "copyWarning": "아직 저장하지 않았어요. 아래 안내를 확인해 주세요."
+      }
+    },
     "gallery": {
       "title": "갤러리",
-      "sub": "운행 사진을 올리고 앨범으로 묶어요. 사진은 이 화면에서 바로 올라가고, 큰 사진은 자동으로 줄여서 홈에 써요.",
+      "sub": "운행 사진을 올리고 글로 묶어요. 사진은 이 화면에서 바로 올라가고, 큰 사진은 자동으로 줄여서 홈에 써요.",
       "listLabel": "사진 목록",
       "empty": "아직 올린 사진이 없어요.",
       "emptyFiltered": "고른 앨범에 사진이 없어요.",
@@ -1046,27 +1141,38 @@
       "uploadDone": "{ok}장을 올렸어요.",
       "uploadFailedAll": "사진을 올리지 못했어요. 이유는 목록에서 사진마다 확인해 주세요.",
       "uploadFailedSome": "{n}장은 올리지 못했어요. 이유는 목록에서 확인해 주세요.",
-      "uploadTarget": "넣을 앨범",
+      "uploadTarget": "넣을 글",
       "usage": "사진 {count}장 · 약 {size}",
-      "usageHint": "보관해 둔 원본 파일 크기를 합한 값이에요.",
-      "albumSection": "앨범",
-      "albumLabel": "앨범",
+      "usageHint": "갤러리에 올린 사진의 원본 파일 크기를 합한 값이에요. 차량 사진과 팝업에 새로 올린 사진은 들어 있지 않아요.",
+      "albumSection": "글 목록",
+      "albumLabel": "글",
       "albumAll": "전체",
       "albumNone": "미분류",
-      "albumNew": "새 앨범 만들기",
-      "albumListLabel": "앨범 목록",
-      "albumEmpty": "만든 앨범이 없어요. 앨범 없이도 사진은 올라가고, 나중에 옮길 수 있어요.",
-      "albumTitle": "앨범 이름",
-      "albumSlug": "앨범 주소 (영문)",
-      "albumSlugHint": "영문 소문자·숫자·하이픈만 쓸 수 있어요. 예: bus-45",
-      "albumSort": "순서",
-      "albumActive": "노출",
-      "albumCreate": "앨범 만들기",
-      "albumSave": "앨범 저장하기",
-      "albumDelete": "앨범 삭제",
+      "albumNew": "새 글 쓰기",
+      "albumNewTitle": "새 글 쓰기",
+      "albumEdit": "글 고치기",
+      "albumBack": "← 갤러리",
+      "albumNotFound": "이 글을 찾을 수 없어요. 갤러리 화면에서 다시 골라 주세요.",
+      "albumLead": "글 하나에 제목·날짜·본문과 사진 여러 장이 들어가요. 사진은 갤러리 화면에서 올릴 때 «넣을 글»로 이 글을 고르면 그 글에 들어가요.",
+      "albumOpen": "고치기",
+      "albumPhotos": "이 글의 사진 보기",
+      "albumAddress": "홈페이지 주소: {path} — 글을 고쳐도 이 주소는 바뀌지 않아요.",
+      "albumListLabel": "글 목록",
+      "albumEmpty": "아직 쓴 글이 없어요. 글 없이도 사진은 올라가고, 나중에 글로 옮길 수 있어요.",
+      "albumTitle": "글 제목",
+      "albumTitleHint": "갤러리 목록과 글 맨 위에 보여요. 예: 10월 대학 MT 운행",
+      "albumDate": "날짜",
+      "albumDateHint": "글 목록은 이 날짜가 최근인 순서로 보여요. 처음에는 오늘 날짜예요.",
+      "albumBody": "본문",
+      "albumBodyHint": "사진 위에 보이는 글이에요. 비워 두면 사진만 보여요.",
+      "albumActive": "바로 보이기",
+      "albumActiveHint": "끄면 저장만 하고 홈페이지에는 아직 보이지 않아요. 목록에서 언제든 켤 수 있어요.",
+      "albumCreate": "글 저장하기",
+      "albumSave": "글 저장하기",
+      "albumDelete": "글 삭제",
       "albumDeleteArm": "삭제할게요 (되돌릴 수 없어요)",
-      "albumDeleteNote": "앨범을 지워도 사진은 지워지지 않아요. 그 앨범에 있던 사진은 '미분류'로 남아요. 노출을 꺼 둔 앨범이었다면 그 안의 사진도 노출이 함께 꺼져요.",
-      "albumDeleteConfirm": "이 앨범을 지울까요? 사진은 지워지지 않고 미분류로 남아요. 노출을 꺼 둔 앨범이었다면 그 안의 사진도 노출이 함께 꺼져요.",
+      "albumDeleteNote": "글을 지워도 사진 파일은 지워지지 않아요. 그 글에 있던 사진은 '미분류'로 옮겨지고 홈페이지에서 숨겨져요. 다시 보이게 하려면 갤러리 사진 목록의 '미분류'에서 사진마다 노출을 켜 주세요.",
+      "albumDeleteConfirm": "이 글을 지울까요? 사진은 지워지지 않고 미분류로 옮겨져 숨겨져요.",
       "caption": "설명",
       "captionHint": "비워 둬도 돼요. 사진 아래에 한 줄로 보여요.",
       "sort": "순서",
@@ -1107,11 +1213,11 @@
         "deleted": "사진을 삭제했어요.",
         "activated": "사진 노출을 다시 켰어요.",
         "deactivated": "사진 노출을 껐어요.",
-        "albumCreated": "앨범을 만들었어요.",
-        "albumUpdated": "앨범을 저장했어요.",
-        "albumActivated": "앨범 노출을 다시 켰어요.",
-        "albumDeactivated": "앨범 노출을 껐어요.",
-        "albumDeleted": "앨범을 삭제했어요. 사진은 미분류로 남아 있어요.",
+        "albumCreated": "새 글을 저장했어요.",
+        "albumUpdated": "글을 저장했어요.",
+        "albumActivated": "글을 다시 보이게 했어요.",
+        "albumDeactivated": "글을 숨겼어요.",
+        "albumDeleted": "글을 지웠어요. 사진은 미분류로 옮겨져 숨겨졌어요.",
         "notFound": "이 사진을 찾을 수 없어요. 목록을 새로 불러와 주세요.",
         "validation": "입력한 내용을 확인해 주세요.",
         "failed": "처리하지 못했어요. 잠시 뒤 다시 시도해 주세요.",
@@ -1141,7 +1247,10 @@
         "title": "제목",
         "body": "내용",
         "caption": "사진 설명",
-        "albumTitle": "앨범 이름"
+        "albumTitle": "글 제목",
+        "albumBody": "글 본문",
+        "vehicleName": "차량 이름",
+        "vehicleDescription": "차량 설명"
       },
       "kind": {
         "license": "전세버스는 등록제예요. ‘등록’으로 적어 주세요.",

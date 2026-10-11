@@ -75,7 +75,7 @@ export const GALLERY_ADMIN_COLUMNS = [
 ] as const;
 export const GALLERY_ADMIN_SELECT: string = GALLERY_ADMIN_COLUMNS.join(",");
 
-export const ALBUM_ADMIN_COLUMNS = ["id", "slug", "title", "description", "sort", "active", "created_at"] as const;
+export const ALBUM_ADMIN_COLUMNS = ["id", "slug", "title", "description", "sort", "active", "created_at", "body", "published_at"] as const;
 export const ALBUM_ADMIN_SELECT: string = ALBUM_ADMIN_COLUMNS.join(",");
 
 export interface AdminGalleryRow {
@@ -100,6 +100,9 @@ export interface AdminAlbumRow {
   sort: number;
   active: boolean;
   created_at: string;
+  /** 0025 — 글 본문(제한 서식 · null = 본문 없음)·게시일(KST "YYYY-MM-DD"). */
+  body: string | null;
+  published_at: string;
 }
 
 /** 앨범 필터 — `undefined` 전체 · `null` 미분류 · 숫자 그 앨범. */
@@ -159,18 +162,31 @@ export async function listAdminPhotos(filter: GalleryListFilter, client?: AdminD
   return data ?? [];
 }
 
-/** 앨범 목록 — sort, id 순. 비활성 앨범도 보인다. */
+/** 글(앨범) 목록 — 게시일 최신순(공개 목록과 같은 차례 · 0025). 숨긴 글도 보인다. */
 export async function listAdminAlbums(client?: AdminDbClient): Promise<AdminAlbumRow[]> {
   const db = client ?? (await sessionClient());
   const { data, error } = await db
     .from(ALBUM_TABLE)
     .select(ALBUM_ADMIN_SELECT)
-    .order("sort", { ascending: true })
-    .order("id", { ascending: true })
+    .order("published_at", { ascending: false })
+    .order("id", { ascending: false })
     .overrideTypes<AdminAlbumRow[], { merge: false }>();
 
   if (error) fail("listAlbums", error);
   return data ?? [];
+}
+
+/** 글 한 건(고치기 화면). 없거나 정책에 가려지면 null. */
+export async function getAdminAlbum(id: number, client?: AdminDbClient): Promise<AdminAlbumRow | null> {
+  const db = client ?? (await sessionClient());
+  const { data, error } = await db
+    .from(ALBUM_TABLE)
+    .select(ALBUM_ADMIN_SELECT)
+    .eq("id", id)
+    .maybeSingle()
+    .overrideTypes<AdminAlbumRow, { merge: false }>();
+  if (error) fail("getAlbum", error);
+  return data ?? null;
 }
 
 /** 한 장. 없거나 정책에 가려지면 null. 삭제가 파일 경로를 알기 위해 먼저 부른다. */
@@ -281,20 +297,24 @@ export async function deleteGalleryPhotoRow(id: number, client?: AdminDbClient):
 // 쓰기 — 앨범
 // =============================================================================
 
+/**
+ * 새 글. **slug 는 DB 가 짓는다**(0025 admin_create_album — 'a-' + 무작위 8자, 23505 면 다시). 화면에 주소 입력란이 없다.
+ */
 export async function insertAlbum(values: AlbumValues, client?: AdminDbClient): Promise<boolean> {
   return write(
     "insertAlbum",
     GALLERY_RPC.createAlbum,
-    { p_slug: values.slug, p_title: values.title, p_sort: values.sort, p_active: values.active },
+    { p_title: values.title, p_body: values.body, p_published_at: values.publishedAt, p_active: values.active },
     client,
   );
 }
 
+/** 글 고치기. **slug 를 보내지 않는다** — 0025 의 함수는 slug 를 받지 않아 공개 주소 /gallery/<slug> 가 바뀌지 않는다. */
 export async function updateAlbumRow(id: number, values: AlbumValues, client?: AdminDbClient): Promise<boolean> {
   return write(
     "updateAlbum",
     GALLERY_RPC.updateAlbum,
-    { p_id: id, p_slug: values.slug, p_title: values.title, p_sort: values.sort, p_active: values.active },
+    { p_id: id, p_title: values.title, p_body: values.body, p_published_at: values.publishedAt, p_active: values.active },
     client,
   );
 }
@@ -304,7 +324,8 @@ export async function setAlbumActive(id: number, active: boolean, client?: Admin
 }
 
 /**
- * 앨범 삭제. 0008 의 FK 가 `on delete set null` 이라 **사진은 지워지지 않고 미분류로 남는다** —
+ * 글(앨범) 삭제. 0008 의 FK 가 `on delete set null` 이라 **사진은 지워지지 않고 미분류로 남는다** — 그리고 0025 가 개정한
+ * 트리거가 그 사진을 **언제나 비공개로 내린다**(결정 8 (b) · 되돌릴 수 있다 — 사진 목록 '미분류' 에서 다시 켠다).
  * 화면이 그 사실을 먼저 알려 준다(messages/ko.json admin.gallery.albumDeleteNote).
  * 여기서 사진 행이나 파일을 함께 지우는 코드를 쓰지 않는다. 앨범 하나로 사진 수백 장이 사라지는 경로를 만들지 않는다.
  */

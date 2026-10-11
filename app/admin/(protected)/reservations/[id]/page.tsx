@@ -85,7 +85,7 @@ function waypointLabels(value: unknown): string[] {
 /** 차량 slug → 표시 이름. 읽지 못하면 빈 표 — 화면은 slug 로 떨어진다(목록 화면과 같은 규약). */
 async function vehicleNames(): Promise<Map<string, string>> {
   try {
-    const vehicles = await getVehicles();
+    const vehicles = await getVehicles(undefined, { includeInactive: true });
     return new Map(vehicles.map((v): [string, string] => [v.slug, v.nameKo]));
   } catch {
     return new Map();

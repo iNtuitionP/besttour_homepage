@@ -102,7 +102,8 @@ const links = (html: string) => [...html.matchAll(/<a\s[^>]*>[\s\S]*?<\/a>/g)].m
 // =============================================================================
 describe("1. 메뉴 정의 (tabs.ts)", () => {
   test("항목·순서 — 홈 · 접수 / 공지 · 팝업 · 갤러리 · 대표 노선 / 발송 기록 · 통계 (브리프 §B · 시안 사이드바)", () => {
-    expect([...ADMIN_TAB_KEYS]).toEqual(["home", "reservations", "notices", "popups", "gallery", "routes", "notifications", "stats"]);
+    // T4-1 — 차량 소개(fleet)가 홈페이지 묶음 맨 뒤(대표 노선 다음)에 들어왔다.
+    expect([...ADMIN_TAB_KEYS]).toEqual(["home", "reservations", "notices", "popups", "gallery", "routes", "fleet", "notifications", "stats"]);
     expect(ADMIN_TABS.map((t) => t.key)).toEqual([...ADMIN_TAB_KEYS]);
     expect(ADMIN_TABS.map((t) => t.href)).toEqual([
       "/admin",
@@ -111,14 +112,15 @@ describe("1. 메뉴 정의 (tabs.ts)", () => {
       "/admin/popups",
       "/admin/gallery",
       "/admin/routes",
+      "/admin/fleet",
       "/admin/notifications",
       "/admin/stats",
     ]);
   });
 
   test("묶음 — daily(매일) · site(홈페이지) · records(기록). 묶음마다 이어져 있다(사이드바에서 한 덩어리)", () => {
-    expect(ADMIN_TABS.map((t) => t.group)).toEqual(["daily", "daily", "site", "site", "site", "site", "records", "records"]);
-    expect(hubItems("site").map((t) => t.key)).toEqual(["notices", "popups", "gallery", "routes"]);
+    expect(ADMIN_TABS.map((t) => t.group)).toEqual(["daily", "daily", "site", "site", "site", "site", "site", "records", "records"]);
+    expect(hubItems("site").map((t) => t.key)).toEqual(["notices", "popups", "gallery", "routes", "fleet"]);
     expect(hubItems("records").map((t) => t.key)).toEqual(["notifications", "stats"]);
   });
 
@@ -675,6 +677,7 @@ interface HubMocks {
   popups?: () => Promise<unknown>;
   usage?: () => Promise<unknown>;
   routes?: () => Promise<unknown>;
+  fleet?: () => Promise<unknown>;
   summary?: () => Promise<unknown>;
 }
 
@@ -723,6 +726,13 @@ async function renderHub(which: "site" | "records", mocks: HubMocks) {
       return (mocks.routes ?? (async () => []))();
     },
   }));
+  vi.doMock("@/lib/admin/vehicles", async () => ({
+    ...(await vi.importActual<Record<string, unknown>>("@/lib/admin/vehicles")),
+    listAdminVehicles: async () => {
+      mark("fleet");
+      return (mocks.fleet ?? (async () => []))();
+    },
+  }));
   vi.doMock("@/lib/admin/notifications", async () => ({
     ...(await vi.importActual<Record<string, unknown>>("@/lib/admin/notifications")),
     getNotificationSummary: async () => {
@@ -737,7 +747,7 @@ async function renderHub(which: "site" | "records", mocks: HubMocks) {
     const html = renderToStaticMarkup(await page.default());
     return { html, beforeGate, started };
   } finally {
-    for (const m of ["@/lib/auth/requireAdmin", "next-intl/server", "@/lib/admin/notices", "@/lib/admin/popups", "@/lib/admin/gallery", "@/lib/admin/routes", "@/lib/admin/notifications"]) {
+    for (const m of ["@/lib/auth/requireAdmin", "next-intl/server", "@/lib/admin/notices", "@/lib/admin/popups", "@/lib/admin/gallery", "@/lib/admin/routes", "@/lib/admin/vehicles", "@/lib/admin/notifications"]) {
       vi.doUnmock(m);
     }
     vi.resetModules();
@@ -754,10 +764,10 @@ function hubRow(html: string, key: string): string {
 }
 
 describe("5. 허브 — /admin/site (홈페이지)", () => {
-  test("네 항목(공지 · 팝업 · 갤러리 · 대표 노선) — 순서 · 경로 · 제목", async () => {
+  test("다섯 항목(공지 · 팝업 · 갤러리 · 대표 노선 · 차량 소개) — 순서 · 경로 · 제목", async () => {
     const { html } = await renderHub("site", {});
     const rows = [...html.matchAll(/data-hub-item="(\w+)"/g)].map((m) => m[1]);
-    expect(rows).toEqual(["notices", "popups", "gallery", "routes"]);
+    expect(rows).toEqual(["notices", "popups", "gallery", "routes", "fleet"]);
     for (const t of hubItems("site")) {
       const row = hubRow(html, t.key);
       expect(attr(row, "href")).toBe(t.href);
@@ -772,6 +782,7 @@ describe("5. 허브 — /admin/site (홈페이지)", () => {
       popups: async () => [POPUP(1, true), POPUP(2, false)],
       usage: async () => ({ photos: 7, bytes: 1234 }),
       routes: async () => [ROUTE(1, true, 400000), ROUTE(2, true, null), ROUTE(3, false, null)],
+      fleet: async () => [{ active: true }, { active: false }, { active: true }],
     });
     // 마지막 게시일은 관리자 날짜 틀(P5-23 라운드 2 A-3) — 원형 "2026-09-25" 가 아니라 "9월 25일 (금)"(올해가 아니면 연도까지 — 기준은 지금 KST)
     const d = ko.admin.dates as Record<string, unknown>;
@@ -789,6 +800,7 @@ describe("5. 허브 — /admin/site (홈페이지)", () => {
     expect(text(hubRow(html, "gallery"))).toContain(fill(hubKo.gallery.count, { n: 7 }));
     expect(text(hubRow(html, "routes"))).toContain(asSegments(fill(hubKo.routes.noPrice, { total: 3, live: 2, n: 1 })));
     expect(text(hubRow(html, "routes")), "구분점은 DOM 글자가 아니다").not.toContain(" · ");
+    expect(text(hubRow(html, "fleet"))).toContain(fill(hubKo.fleet.live, { total: 3, live: 2 }));
   });
 
   test("비어 있을 때 — 거짓 없는 한 줄(노출 중 없음 · 아직 없음)", async () => {
@@ -804,9 +816,10 @@ describe("5. 허브 — /admin/site (홈페이지)", () => {
     expect(text(hubRow(html, "routes"))).toContain(fill(hubKo.routes.live, { total: 1, live: 1 }));
     const none = await renderHub("site", { notices: async () => [] });
     expect(text(hubRow(none.html, "notices"))).toContain(hubKo.notices.empty);
+    expect(text(hubRow(none.html, "fleet"))).toContain(hubKo.fleet.empty);
   });
 
-  test("조회는 게이트 뒤 · 넷이 동시에 나간다(하나가 다른 것을 기다리지 않는다)", async () => {
+  test("조회는 게이트 뒤 · 다섯이 동시에 나간다(하나가 다른 것을 기다리지 않는다)", async () => {
     let arrived = 0;
     let release!: () => void;
     const opened = new Promise<void>((r) => {
@@ -814,7 +827,7 @@ describe("5. 허브 — /admin/site (홈페이지)", () => {
     });
     const wait = async <T,>(v: T) => {
       arrived += 1;
-      if (arrived >= 4) release();
+      if (arrived >= 5) release();
       await Promise.race([opened, new Promise((_, rej) => setTimeout(() => rej(new Error("직렬로 줄 서 있다")), 3000))]);
       return v;
     };
@@ -823,9 +836,10 @@ describe("5. 허브 — /admin/site (홈페이지)", () => {
       popups: () => wait([]),
       usage: () => wait({ photos: 0, bytes: 0 }),
       routes: () => wait([]),
+      fleet: () => wait([]),
     });
     expect(beforeGate, "조회가 게이트보다 먼저 시작했다").toEqual([]);
-    expect(started.sort()).toEqual(["notices", "popups", "routes", "usage"]);
+    expect(started.sort()).toEqual(["fleet", "notices", "popups", "routes", "usage"]);
   });
 
   test("한 조회가 실패하면 그 줄만 '불러오지 못했어요' — 화면은 열리고 다른 줄은 그대로(모르는 것을 '없음'이라 하지 않는다)", async () => {

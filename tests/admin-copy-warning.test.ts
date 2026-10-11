@@ -229,10 +229,10 @@ describe("2. import 경계 — 목록은 server-only 한 곳으로만 들어온�
     expect(importers).toEqual(["lib/admin/copyCheck.ts"]);
   });
 
-  test("copyCheck.ts 는 server-only 이고, 그것을 부르는 곳은 'use server' 액션 셋뿐이다", () => {
+  test("copyCheck.ts 는 server-only 이고, 그것을 부르는 곳은 'use server' 액션 넷뿐이다 (T4-1 차량 추가)", () => {
     expect(read("lib/admin/copyCheck.ts")).toMatch(/^import "server-only";$/m);
     const importers = appFiles.filter((f) => importsOf(f).some((i) => resolvesTo(f, i.spec, "lib/admin/copyCheck")));
-    expect(importers.sort()).toEqual(["actions/admin/gallery.ts", "actions/admin/notice.ts", "actions/admin/popup.ts"]);
+    expect(importers.sort()).toEqual(["actions/admin/gallery.ts", "actions/admin/notice.ts", "actions/admin/popup.ts", "actions/admin/vehicle.ts"]);
     for (const f of importers) expect(read(f).split("\n")[0].trim(), f).toMatch(/^["']use server["'];?$/);
   });
 
@@ -497,7 +497,7 @@ describe("6. holdForCopy · 확인 키", () => {
   test("패널 한 줄은 한 번에 채운다 — 사장님 글자의 `{reason}`·`$&` 가 다시 치환되지 않는다", () => {
     const labels = {
       item: "{field} ‘{text}’ — {reason}",
-      field: { title: "제목", body: "내용", caption: "사진 설명", albumTitle: "앨범 이름" },
+      field: { title: "제목", body: "내용", caption: "사진 설명", albumTitle: "글 제목", albumBody: "글 본문", vehicleName: "차량 이름", vehicleDescription: "차량 설명" },
       kind: { license: "L", rival: "R", internal: "I", unproven: "U", comparative: "C" },
     };
     expect(fillCopyWarningItem(labels, { key: "k", field: "body", kind: "unproven", text: "투명한{reason}$&요금" })).toBe("내용 ‘투명한{reason}$&요금’ — U");
@@ -665,20 +665,24 @@ describe("7. 서버액션 — 저장 전 확인, 확인하면 저장", () => {
     expect(JSON.stringify(written?.args)).not.toMatch(/copyAck|copyWarning/);
   });
 
-  test("앨범 이름 — createGalleryAlbum · updateGalleryAlbum", async () => {
+  test("글(앨범) 제목·본문 — createGalleryAlbum · updateGalleryAlbum (T4-2 · 본문도 대조한다)", async () => {
     const stub = dbStub({ data: [{ id: 1 }], error: null });
     vi.mocked(createSsrClient).mockReturnValue(stub.client as never);
-    const album = { title: "업계 1위 단체여행", slug: "trip", sort: 0, active: true };
+    const album = { title: "업계 1위 단체여행", body: "", publishedAt: "2026-10-11", active: true };
     const key = ackKey("albumTitle", album.title, "업계 1위");
+    // 본문만 걸려도 멈춘다 — 서식 기호를 뺀 보이는 글자로 대조한다
+    expect((await createGalleryAlbum({ ...album, title: "10월 운행", body: "**업계 1위** 운행" })).code).toBe("copyWarning");
 
     expect((await createGalleryAlbum(album)).code).toBe("copyWarning");
     expect((await updateGalleryAlbum({ id: 1, ...album })).code).toBe("copyWarning");
     expectNothingWritten(stub);
 
     expect(await createGalleryAlbum({ ...album, [COPY_ACK_FIELD]: [key] })).toMatchObject({ ok: true, changed: true, code: "albumCreated" });
-    expect(writtenArgs(stub.rpc)).toEqual({ fn: "admin_create_album", args: expect.objectContaining({ p_title: "업계 1위 단체여행", p_slug: "trip" }) });
+    expect(writtenArgs(stub.rpc)).toEqual({ fn: "admin_create_album", args: expect.objectContaining({ p_title: "업계 1위 단체여행", p_body: null, p_published_at: "2026-10-11" }) });
+    expect(writtenArgs(stub.rpc)?.args, "새 글은 slug 를 보내지 않는다 — DB 가 짓는다").not.toHaveProperty("p_slug");
     expect(await updateGalleryAlbum({ id: 1, ...album, [COPY_ACK_FIELD]: [key] })).toMatchObject({ ok: true, changed: true, code: "albumUpdated" });
     expect(writtenArgs(stub.rpc, 1)).toEqual({ fn: "admin_update_album", args: expect.objectContaining({ p_id: 1, p_title: "업계 1위 단체여행" }) });
+    expect(writtenArgs(stub.rpc, 1)?.args, "고치기는 slug 를 보내지 않는다 — 공개 주소 유지").not.toHaveProperty("p_slug");
   });
 
   test("업로드 기록 — 설명이 걸리면 멈추고, 업로더는 그것을 성공으로 읽지 않는다(파일을 되돌린다)", async () => {
@@ -756,7 +760,7 @@ describe("8. 화면 배선 · 문구 · 공개 화면", { timeout: 60_000 }, () 
     expect(ch4).not.toContain("검사가 하나도 걸리지 않습니다");
   });
 
-  test("다섯 관리자 화면이 패널 문구를 내려 주고, 네 입력 컴포넌트가 패널을 그린다", () => {
+  test("관리자 화면이 패널 문구를 내려 주고, 다섯 입력 컴포넌트가 패널을 그린다 (T4-1 차량 · T4-2 글 폼 포함)", () => {
     for (const page of [
       "app/admin/(protected)/notices/page.tsx",
       "app/admin/(protected)/notices/[id]/page.tsx",
@@ -765,10 +769,13 @@ describe("8. 화면 배선 · 문구 · 공개 화면", { timeout: 60_000 }, () 
       "app/admin/(protected)/gallery/page.tsx",
     ]) {
       const code = codeOf(page);
-      expect(code, page).toMatch(/await getCopyWarningLabels\(\)/);
+      expect(code, page).toMatch(/getCopyWarningLabels\(\)/);
       expect(code, page).toMatch(/copyWarning: t\("result\.copyWarning"\)/);
     }
-    for (const ui of ["NoticeForm", "PopupForm", "GalleryPhotoCard", "GalleryAlbums"]) {
+    // T4-1·T4-2 — 차량·갤러리 글 폼은 문구 모음 헬퍼가 패널 문구를 내려 준다
+    expect(codeOf("components/admin/vehicleFormLabels.ts")).toMatch(/getCopyWarningLabels\(\)/);
+    expect(codeOf("components/admin/albumPostFormLabels.ts")).toMatch(/getCopyWarningLabels\(\)/);
+    for (const ui of ["NoticeForm", "PopupForm", "GalleryPhotoCard", "AlbumPostForm", "VehicleForm"]) {
       expect(codeOf(`components/admin/${ui}.tsx`), ui).toMatch(/<CopyWarningPanel\b/);
     }
     // 폼은 "그대로 저장하기"로 보낸 제출에만 확인 키를 붙인다
@@ -813,14 +820,21 @@ describe("9. 카피 2건 (P6-10 잔여) — 빼기만, 새 주장 0", () => {
     expect(now).toContain("운행 기준");
   });
 
-  test("fleet.lines.bus45 — 전칭 문장 하나만 뺐다 · 옵션 안내는 disc 가 맡는다", () => {
-    const now = ko.home.fleet.lines.bus45;
+  // T4-1(0024) — 차량 설명은 ko.json home.fleet.lines 에서 DB(vehicles.description_ko)로 옮겼다. 백필 값이 그 문구 그대로다.
+  const bus45Now = (): string => {
+    const m = read("supabase/migrations/0024_vehicles_admin.sql").match(/\('bus45',\s*'([^']*)'/);
+    expect(m, "0024 백필에 bus45 설명이 없다").not.toBeNull();
+    return (m as RegExpMatchArray)[1];
+  };
+
+  test("fleet.lines.bus45(→ 0024 백필) — 전칭 문장 하나만 뺐다 · 옵션 안내는 disc 가 맡는다", () => {
+    const now = bus45Now();
     expect(now).toBe(OLD_BUS45.replace(" DVD·노래방 시스템 완비.", ""));
     expect(ko.home.fleet.disc).toContain("배차 차량에 따라 일부 다를 수 있습니다");
   });
 
   test("새 값은 옛 값의 부분 문자열 조각으로만 이루어졌다 (새 수식어 0)", () => {
-    const now = [ko.home.hero.slides.trust.heading, ko.home.fleet.lines.bus45];
+    const now = [ko.home.hero.slides.trust.heading, bus45Now()];
     const old = [OLD_HEADING, OLD_BUS45];
     now.forEach((n, i) => {
       // 새 값의 모든 글자가 옛 값에 같은 순서로 있다(부분수열) — 뺐을 뿐 넣지 않았다

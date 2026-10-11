@@ -5,6 +5,7 @@
  * 호출부(RSC)가 읽어 온 행을 넘기면 이 파일은 그것을 화면이 쓸 모양으로 바꾸기만 한다. 한글 리터럴 0.
  */
 import { resolveImageUrl } from "@/components/home/image-url";
+import { toPlainText } from "@/lib/content/richText";
 import type { GalleryAlbum, GalleryItem } from "@/lib/types";
 
 /**
@@ -42,6 +43,28 @@ export interface AlbumCard {
    * 이 값으로만 판정한다. 해석 실패를 "사진이 없다"로 바꿔 말하면 사장님이 원인을 영영 못 찾는다.
    */
   hasPhotos: boolean;
+  /** 게시일 "YYYY-MM-DD"(0025 · T4-2). 없으면 null(옛 행 모양 — 테스트 픽스처). */
+  publishedAt: string | null;
+  /** 본문 앞부분 — 서식 기호를 뺀 보이는 글자, ALBUM_EXCERPT_MAX 자에서 자른다. 본문이 없으면 null. */
+  excerpt: string | null;
+}
+
+/** 카드 요약 글자 수 상한. */
+export const ALBUM_EXCERPT_MAX = 80;
+
+/** 본문 → 카드 요약(보이는 글자 · 줄바꿈은 빈칸). 비면 null. 자르면 말줄임표(…) — 글자이지 문구가 아니다. */
+export function albumExcerpt(body: string | null | undefined): string | null {
+  const plain = toPlainText(body ?? "").replace(/\s+/g, " ").trim();
+  if (plain === "") return null;
+  return plain.length > ALBUM_EXCERPT_MAX ? `${plain.slice(0, ALBUM_EXCERPT_MAX).trimEnd()}…` : plain;
+}
+
+/** "YYYY-MM-DD" → 로케일 날짜("2026. 10. 11." · "Oct 11, 2026"). 달력 날짜라 UTC 로 고정해 하루가 밀리지 않게 한다. */
+export function formatPostDate(ymd: string, locale: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Intl.DateTimeFormat(locale === "en" ? "en-US" : "ko-KR", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }).format(
+    new Date(Date.UTC(y, m - 1, d)),
+  );
 }
 
 /**
@@ -65,6 +88,8 @@ export function buildAlbumCards(
       description: a.description,
       cover: covers[0] ?? null,
       hasPhotos: items.length > 0,
+      publishedAt: a.publishedAt ?? null,
+      excerpt: albumExcerpt(a.body),
     };
   });
 }

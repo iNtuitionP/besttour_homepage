@@ -1,5 +1,5 @@
 /**
- * /gallery/[album] — 앨범 상세 (P6-3b). 서버 컴포넌트, 동적 세그먼트 + ISR(revalidate 600, dynamicParams true).
+ * /gallery/[album] — 글(앨범) 상세 (P6-3b · T4-2 날짜·본문·확대 보기). 서버 컴포넌트, 동적 세그먼트 + ISR(revalidate 600, dynamicParams true).
  *
  * generateStaticParams 는 쓰지 않는다 — 사장님이 관리자에서 앨범을 새로 만들면 다음 배포 전까지 404 가 된다.
  * 첫 요청에 렌더해 캐시하고 10분마다 재검증한다.
@@ -20,8 +20,10 @@ import { notFound } from "next/navigation";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { cache } from "react";
 
-import { GalleryGrid, resolvePictures } from "@/components/home/GalleryGrid";
-import { ALBUM_PAGE_SIZE, albumPageOffset, normalizeAlbumPage } from "@/components/pages/albums";
+import { RichText } from "@/components/content/RichText";
+import { resolvePictures } from "@/components/home/GalleryGrid";
+import { GalleryLightbox } from "@/components/home/GalleryLightbox";
+import { ALBUM_PAGE_SIZE, albumExcerpt, albumPageOffset, formatPostDate, normalizeAlbumPage } from "@/components/pages/albums";
 import { PageHeader } from "@/components/pages/PageHeader";
 import { Link } from "@/i18n/navigation";
 import { koLang, ledgerUi } from "@/lib/i18n/ledger-ui";
@@ -65,7 +67,7 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   return {
     title: t("title", { title: album.title, brand }),
     // 사장님이 적은 설명이 있으면 그것이 이 문서의 요약이다. 없으면 갤러리 공통 문구로 — 지어내지 않는다.
-    description: album.description ?? t("description"),
+    description: albumExcerpt(album.body) ?? album.description ?? t("description"),
     // 정본은 조회한 행의 slug — 라우트 파라미터(대소문자·유입 쿼리)를 그대로 쓰지 않는다. 로케일별 URL + 언어 대안(P2-6).
     alternates: pageAlternates(`/gallery/${album.slug}`, locale),
   };
@@ -98,6 +100,7 @@ export default async function AlbumDetailPage({ params, searchParams }: { params
     getTranslations("layout.menu"),
   ]);
   const pictures = resolvePictures(shown.items);
+  const lang = koLang(locale);
   const prevHref = current > 1 ? `/gallery/${album.slug}?page=${current - 1}` : null;
   const nextHref = shown.hasMore ? `/gallery/${album.slug}?page=${current + 1}` : null;
 
@@ -111,11 +114,22 @@ export default async function AlbumDetailPage({ params, searchParams }: { params
         eyebrow={tMenu("gallery")}
         title={album.title}
         desc={album.description ?? undefined}
-        contentLang={koLang(locale)}
+        contentLang={lang}
       />
 
       <section className={`${h.section} ${h.toneLav}`} data-section="album-detail">
         <div className={h.wrap} data-album-slug={album.slug}>
+          {/* T4-2 — 글: 날짜 · 본문(제한 서식 · React 요소로만 그린다) · 사진(확대 보기). 본문이 없으면 사진만. */}
+          {album.publishedAt ? (
+            <p className={p.albumDesc}>
+              <time dateTime={album.publishedAt} data-testid="album-date">
+                {formatPostDate(album.publishedAt, locale)}
+              </time>
+            </p>
+          ) : null}
+          {album.body ? (
+            <RichText text={album.body} lang={lang} testId="album-body" className={`${p.richBody} ${p.albumBody}`} />
+          ) : null}
           {pictures.length === 0 ? (
             <div className={p.empty} role="status" data-testid="album-empty">
               <p>{t("empty")}</p>
@@ -127,7 +141,18 @@ export default async function AlbumDetailPage({ params, searchParams }: { params
             </div>
           ) : (
             <>
-              <GalleryGrid pictures={pictures} testId="album-gallery-grid" />
+              <GalleryLightbox
+                pictures={pictures.map((g) => ({ id: g.id, src: g.src, caption: g.caption }))}
+                captionLang={lang}
+                labels={{
+                  open: t.raw("lightbox.open") as string,
+                  label: t("lightbox.label"),
+                  close: t("lightbox.close"),
+                  prev: t("lightbox.prev"),
+                  next: t("lightbox.next"),
+                  position: t.raw("lightbox.position") as string,
+                }}
+              />
               {prevHref !== null || nextHref !== null ? (
                 <nav className={p.pager} aria-label={t("pager.label")} data-testid="album-pager">
                   {prevHref === null ? null : (

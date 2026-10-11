@@ -64,6 +64,7 @@ import {
 } from "@/lib/admin/galleryInput";
 import { PUBLIC_CACHE_PATH, PUBLIC_CACHE_SCOPE } from "@/lib/admin/publicRevalidate";
 import { requireAdmin } from "@/lib/auth/requireAdmin";
+import { toPlainText } from "@/lib/content/richText";
 import { structuredLog, type StructuredLogEntry } from "@/lib/log";
 import { runAfter } from "@/lib/ports/after";
 import { revalidate } from "@/lib/ports/revalidate";
@@ -212,14 +213,14 @@ export async function deleteGalleryPhoto(input: unknown): Promise<GalleryActionR
 }
 
 // =============================================================================
-// 앨범 — 사진을 담는 그릇. 지워도 사진은 미분류로 남는다(0008 on delete set null)
+// 글(앨범) — 제목·날짜·본문 + 사진 여러 장(0025 T4-2). 지우면 사진은 미분류 · 비공개로 남는다(0008 on delete set null + 0025 트리거)
 // =============================================================================
 
 export async function createGalleryAlbum(input: unknown): Promise<GalleryActionResult> {
   await requireAdmin();
   const parsed = AlbumInput.safeParse(input);
   if (!parsed.success) return report("albumCreate", null, GALLERY_VALIDATION);
-  const held = holdForCopy({ albumTitle: parsed.data.title }, readCopyAckValue(input));
+  const held = holdForCopy({ albumTitle: parsed.data.title, albumBody: toPlainText(parsed.data.body ?? "") }, readCopyAckValue(input));
   if (held) return report("albumCreate", null, held);
   return apply("albumCreate", null, "albumCreated", () => insertAlbum(parsed.data));
 }
@@ -228,7 +229,7 @@ export async function updateGalleryAlbum(input: unknown): Promise<GalleryActionR
   await requireAdmin();
   const parsed = AlbumPatchInput.safeParse(input);
   if (!parsed.success) return report("albumUpdate", null, GALLERY_VALIDATION);
-  const held = holdForCopy({ albumTitle: parsed.data.title }, readCopyAckValue(input));
+  const held = holdForCopy({ albumTitle: parsed.data.title, albumBody: toPlainText(parsed.data.body ?? "") }, readCopyAckValue(input));
   if (held) return report("albumUpdate", parsed.data.id, held);
   const { id, ...values } = parsed.data;
   return apply("albumUpdate", id, "albumUpdated", () => updateAlbumRow(id, values));
@@ -242,7 +243,7 @@ export async function toggleGalleryAlbumActive(input: unknown): Promise<GalleryA
   return apply("albumToggle", id, active ? "albumActivated" : "albumDeactivated", () => setAlbumActive(id, active));
 }
 
-/** 앨범만 지운다. 그 안의 사진은 지워지지 않고 미분류로 남는다 — 화면이 먼저 알려 준다. */
+/** 글만 지운다. 그 안의 사진은 지워지지 않고 미분류 · 비공개로 남는다(0025 — 다시 켤 수 있다) — 화면이 먼저 알려 준다. */
 export async function deleteGalleryAlbum(input: unknown): Promise<GalleryActionResult> {
   await requireAdmin();
   const parsed = GalleryIdInput.safeParse(input);

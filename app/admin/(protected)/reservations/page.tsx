@@ -66,7 +66,7 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 /** 표시용 차량 라벨. 비활성 차량으로 접수된 건은 anon 정책에 걸려 안 나오므로 slug 로 떨어진다(라벨이 없다고 행을 숨기지 않는다). */
 async function vehicleLabels(): Promise<Map<string, string>> {
   try {
-    const vehicles = await getVehicles();
+    const vehicles = await getVehicles(undefined, { includeInactive: true });
     return new Map(vehicles.map((v): [string, string] => [v.slug, v.nameKo]));
   } catch {
     return new Map();

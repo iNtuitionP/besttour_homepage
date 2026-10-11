@@ -114,8 +114,8 @@ const PHOTO: AdminGalleryRow = {
 
 async function renderGallery(params: Record<string, string>, opts: { photos: AdminGalleryRow[]; total: number }): Promise<string> {
   vi.mocked(listAdminAlbums).mockResolvedValue([
-    { id: 3, slug: "bus-45", title: "45인승", description: null, sort: 0, active: true, created_at: "2026-09-27T00:00:00.000Z" },
-    { id: 4, slug: "airport", title: "공항", description: null, sort: 1, active: true, created_at: "2026-09-27T00:00:00.000Z" },
+    { id: 3, slug: "bus-45", title: "45인승", description: null, sort: 0, active: true, created_at: "2026-09-27T00:00:00.000Z", body: null, published_at: "2026-09-27" },
+    { id: 4, slug: "airport", title: "공항", description: null, sort: 1, active: true, created_at: "2026-09-27T00:00:00.000Z", body: null, published_at: "2026-09-26" },
   ]);
   vi.mocked(listAdminPhotos).mockResolvedValue(opts.photos);
   vi.mocked(galleryUsage).mockResolvedValue({ photos: opts.total, bytes: opts.total * 1000 });

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { isAirport, PURPOSES, REGIONS } from "@/lib/codes";
 import { quickReservationSchema } from "@/lib/types";
+import { withVehiclesLock } from "./helpers/db-lock";
 import { loadDotEnvLocal } from "./helpers/load-env-local";
 
 loadDotEnvLocal();
@@ -137,6 +138,8 @@ if (requireDbTests && !hasServiceRole) {
 }
 
 describe.skipIf(!hasServiceRole)("DB smoke (requires SUPABASE_SERVICE_ROLE_KEY)", () => {
+  // vehicles 전체 행 수(5)를 센다 — 0024 함수로 임시 차량을 만드는 블록(admin-vehicles)과 줄 세운다.
+  withVehiclesLock();
   const restRoot = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1`;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY as string;
   const headers = {

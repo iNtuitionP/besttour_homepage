@@ -117,6 +117,14 @@ export const GALLERY_LOCK = "gallery-tables";
  */
 export const SHOWCASE_ROUTES_LOCK = "showcase-routes";
 
+/**
+ * `vehicles` 를 **바꾸는** 블록(관리자 차량 함수 — 0024 · T4-1)과 **활성 차량 전체**를 대조하는 블록이 공유하는 잠금 이름.
+ * 쓰는 쪽은 임시 차량을 만들고 지우거나 시드 행의 순서·활성을 바꿨다 되돌린다. 읽는 쪽(queries 의 getVehicles · schema 의 시드 5행 대조)은
+ * 그 사이에 행 수·순서가 달라진 표를 본다 — showcase_routes 와 같은 부류의 경합이다.
+ * **잠금 순서 규약**: notifications → gallery → showcase-routes → **vehicles**(맨 나중). tests/db-test-preconditions.test.ts 가 강제한다.
+ */
+export const VEHICLES_LOCK = "vehicles";
+
 const POLL_MS = 20;
 /**
  * 잠금을 기다리는 최대 시간. **줄을 서는 모든 DB 블록의 합보다 넉넉해야 한다** — 상한은 "한 블록이 얼마나 오래 쥐나" 가 아니라
@@ -285,6 +293,14 @@ export function withGalleryLock(): void {
  */
 export function withShowcaseRoutesLock(): void {
   withDbLock(SHOWCASE_ROUTES_LOCK);
+}
+
+/**
+ * describe 블록 전체를 `vehicles` 잠금 안에서 돌린다 (T4-1 · 0024).
+ * 다른 잠금과 함께 쓰면 **맨 나중에** 부른다(notifications → gallery → showcase-routes → vehicles · VEHICLES_LOCK 주석).
+ */
+export function withVehiclesLock(): void {
+  withDbLock(VEHICLES_LOCK);
 }
 
 /**

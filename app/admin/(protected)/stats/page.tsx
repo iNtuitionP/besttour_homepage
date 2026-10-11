@@ -93,12 +93,12 @@ export default async function AdminStatsPage({ searchParams }: { searchParams: S
   // P4-7b · 재검토 P2-R3-2 — 0022 와 ⑤ 보정 집계를 **동시에** 보낸다. 순차로 돌리면 두 조회 사이(수십 ms)에 자가 복구·새 중복 억제 행이
   // 끼어 한 번의 렌더에서 한 건이 어긋날 수 있었다. 동시에 보내면 그 창이 두 요청의 도착 차이로 줄어든다(0 은 아니다 — 원자적으로 하려면 0023).
   // 보정 쪽 실패는 여기서 삼키지 않고 stats 가 있을 때만 던진다(권한 없음 화면을 보정 오류로 500 내지 않게).
-  // 차량 라벨은 `vehicles.name_ko`(DB 가 진실)에서 온다. anon 키 + RLS 로 활성 차량만 — 개인정보가 없다.
+  // 차량 라벨은 `vehicles.name_ko`(DB 가 진실)에서 온다. 숨긴 차량까지(관리자 세션 · T4-1) — 개인정보가 없다.
   // P5-18: 차량 이름표도 같은 줄에 세운다 — 셋은 서로 기다릴 이유가 없다(예전에는 두 집계가 끝난 뒤 왕복 하나가 더 붙었다).
   const [stats, earlyCorrections, vehicles] = await Promise.all([
     getAdminStats(range),
     getNotifyCorrections(NOTIFY_WINDOW).catch((err: unknown) => (err instanceof Error ? err : new Error(String(err)))),
-    getVehicles(),
+    getVehicles(undefined, { includeInactive: true }),
   ]);
   // P5-20 — ② 의 처리 대기 카드는 상태 배지로 이름을 단다(메뉴 배지·목록과 같은 "새 접수" · 72시간 넘은 것은 "답이 늦은 접수").
   const badgeLabels = await getStatusBadgeLabels();

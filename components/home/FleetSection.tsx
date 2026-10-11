@@ -1,8 +1,9 @@
 /**
  * 섹션 6 — 차량 (#fleet, 목업 variant-08 §04). 서버 컴포넌트. **가격 없음.**
- * 카드 = 이름(vehicles.name_ko) · 정원(capacity) · 한 줄(ko.json home.fleet.lines[slug], 목업 .bus__spec) · 견적 CTA(홈 간편 견적 `/#quote`).
+ * 카드 = 사진(vehicles.image_path) · 이름(name_ko / name_en) · 정원(capacity) · 설명(description_ko) · 견적 CTA(홈 간편 견적 `/#quote`).
+ * T4-1(0024) — 사진·설명은 DB 가 진실이다(사장님이 /admin/fleet 에서 고친다). 코드에 차종별 사진·문구를 두지 않는다.
+ * 영문 화면에서는 설명을 숨긴다(결정 11 — 영문 설명 칸이 없다). 사진이 없는 차량은 사진 없이 렌더한다.
  * P3-8: 차종 프리필(`/quote?vehicle=`)은 위저드와 함께 없어졌다 — 간편 견적은 차종을 받지 않고 사장님이 전화로 확인한다.
- * 옛 사이트 차량소개 원문·용도·옵션 표는 P6-3 /fleet 몫. 사진은 목업의 slug↔사진 대응 그대로(public/hero).
  * 차량이 0대면 섹션을 숨긴다.
  */
 import Image from "next/image";
@@ -12,25 +13,16 @@ import { Link } from "@/i18n/navigation";
 import type { Vehicle } from "@/lib/types";
 
 import h from "./home.module.css";
+import { resolveImageUrl } from "./image-url";
 import s from "./Sections.module.css";
 import { QUOTE_ANCHOR } from "./quote-anchor";
 import { RICH } from "./rich";
 import { SectionHead } from "./SectionHead";
 
-/** 목업 .fleet 의 카드별 사진 (assets/bus-0N → public/hero/bus-0N). 없는 slug 는 사진 없이 렌더한다. */
-const FLEET_IMAGES: Readonly<Record<string, string>> = {
-  bus45: "/hero/bus-01.jpg",
-  bus35: "/hero/bus-04.jpg",
-  limo28: "/hero/bus-03.jpg",
-  bus25: "/hero/bus-02.jpg",
-  bus16: "/hero/bus-05.jpg",
-};
-
 export async function FleetSection({ vehicles }: { vehicles: readonly Vehicle[] }) {
   if (vehicles.length === 0) return null;
   const [t, locale] = await Promise.all([getTranslations("home.fleet"), getLocale()]);
-  const lines = t.raw("lines") as Record<string, string | undefined>;
-  /** 차량 이름 — DB 행의 로케일 필드(vehicles.name_ko · name_en, 0001 시드). P2-6 */
+  /** 차량 이름 — DB 행의 로케일 필드(vehicles.name_ko · name_en). P2-6 */
   const nameOf = (v: Vehicle) => (locale === "en" ? v.nameEn : v.nameKo);
 
   return (
@@ -44,8 +36,8 @@ export async function FleetSection({ vehicles }: { vehicles: readonly Vehicle[] 
 
         <div className={s.fleet} data-testid="fleet-cards">
           {vehicles.map((v) => {
-            const image = FLEET_IMAGES[v.slug];
-            const line = lines[v.slug];
+            const image = resolveImageUrl(v.imagePath);
+            const line = locale === "en" ? null : (v.descriptionKo ?? "").trim();
             return (
               <article key={v.id} className={s.bus} data-vehicle={v.slug}>
                 <div className={s.busPh}>
