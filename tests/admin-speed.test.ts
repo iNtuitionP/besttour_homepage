@@ -335,7 +335,7 @@ describe("3-a. 로딩 경계 파일", () => {
   test("상세([id]) 화면이 있는 구역은 빠짐없이 목록↔상세 경계를 갖는다 — 새 상세 화면이 생겨도 잡힌다", () => {
     const sections = readdirSync(path.join(ROOT, PROTECTED)).filter((d) => statSync(path.join(ROOT, PROTECTED, d)).isDirectory());
     const withDetail = sections.filter((d) => exists(`${PROTECTED}/${d}/[id]/page.tsx`));
-    expect(withDetail.sort()).toEqual(["notices", "popups", "reservations", "routes"]);
+    expect(withDetail.sort()).toEqual(["fleet", "notices", "popups", "reservations", "routes"]);
     for (const d of withDetail) expect(exists(`${PROTECTED}/${d}/loading.tsx`), `${d}/loading.tsx`).toBe(true);
   });
 });

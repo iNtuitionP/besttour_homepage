@@ -202,7 +202,7 @@ export interface ShowcaseRouteView extends ShowcaseRoute {
   destination: PlacePin;
 }
 
-/** vehicles 행(0001). 가격 컬럼 없음. */
+/** vehicles 행(0001 · 0024 설명·사진). 가격 컬럼 없음. 영문 설명은 없다(결정 11). */
 export interface Vehicle {
   id: number;
   slug: string;
@@ -211,6 +211,10 @@ export interface Vehicle {
   capacity: number;
   sort: number;
   active: boolean;
+  /** 한국어 설명(≤300) — 0024. 없으면 null. */
+  descriptionKo?: string | null;
+  /** `gallery/vehicles/<uuid>-1600.webp` 또는 `/hero/bus-0N.jpg`(0024 CHECK). 없으면 null. */
+  imagePath?: string | null;
 }
 
 /** notices 행(0001). */
@@ -255,6 +259,10 @@ export interface GalleryAlbum {
   active: boolean;
   /** timestamptz → ISO 8601 문자열. */
   createdAt: string;
+  /** 글 본문 — 제한 서식 문자열(lib/content/richText.ts · HTML 아님). 없으면 null. 0025. */
+  body?: string | null;
+  /** 게시일 — KST 달력 날짜 "YYYY-MM-DD"(0025). */
+  publishedAt?: string;
 }
 
 /** popups 행(0001). 노출 기간은 KST 달력 날짜로 해석한다(lib/queries/popups.ts). */

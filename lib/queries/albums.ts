@@ -1,5 +1,5 @@
 /**
- * 갤러리 앨범(gallery_albums, 0008) 읽기 — anon 키 + RLS, 서버 액션 아님(ADR-3). P6-1 신설.
+ * 갤러리 앨범 = 글(gallery_albums, 0008 · 0025 본문·게시일) 읽기 — anon 키 + RLS, 서버 액션 아님(ADR-3). P6-1 신설.
  *
  * 비활성 앨범은 RLS(gallery_albums_select_active)가 0행으로 만든다. 쿼리에도 `active = true` 를 함께 적는 것은
  * 정책이 바뀌어도 의도가 코드에 남게 하기 위해서다(notices.ts 와 같은 규약).
@@ -8,7 +8,7 @@
 import { createAnonClient, type AnonClient } from "../supabase/anon";
 import type { GalleryAlbum } from "../types";
 
-const SELECT = "id,slug,title,description,sort,active,created_at";
+const SELECT = "id,slug,title,description,sort,active,created_at,body,published_at";
 
 export interface AlbumRow {
   id: number;
@@ -18,6 +18,9 @@ export interface AlbumRow {
   sort: number;
   active: boolean;
   created_at: string;
+  /** 0025 — 글 본문(제한 서식)·게시일. */
+  body: string | null;
+  published_at: string;
 }
 
 /**
@@ -47,18 +50,21 @@ function toAlbum(r: AlbumRow): GalleryAlbum {
     sort: r.sort,
     active: r.active,
     createdAt: r.created_at,
+    body: r.body,
+    publishedAt: r.published_at,
   };
 }
 
-/** 활성 앨범 목록 — sort 오름차순(동률은 id). */
+/** 활성 글(앨범) 목록 — 게시일 최신순(동률은 id 최신순 · 0025 T4-2 게시판).
+ * 🔴 0025 가 원격에 적용되기 **전에** 이 코드가 나가면 새 칸 SELECT 가 실패한다 — 배포 순서는 DB → 코드. */
 export async function getAlbums(client?: AnonClient): Promise<GalleryAlbum[]> {
   const db = client ?? createAnonClient();
   const { data, error } = await db
     .from("gallery_albums")
     .select(SELECT)
     .eq("active", true)
-    .order("sort", { ascending: true })
-    .order("id", { ascending: true })
+    .order("published_at", { ascending: false })
+    .order("id", { ascending: false })
     .overrideTypes<AlbumRow[], { merge: false }>();
 
   if (error) throw new Error(`getAlbums: ${error.message}`);

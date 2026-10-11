@@ -80,7 +80,7 @@ const TRIPS_LIMIT = 20;
 /** 표시용 차량 라벨 — 접수 목록과 같은 규약(읽지 못하면 빈 표 → slug 로 떨어진다). */
 async function vehicleLabels(): Promise<Map<string, string>> {
   try {
-    const vehicles = await getVehicles();
+    const vehicles = await getVehicles(undefined, { includeInactive: true });
     return new Map(vehicles.map((v): [string, string] => [v.slug, v.nameKo]));
   } catch {
     return new Map();

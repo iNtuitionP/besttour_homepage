@@ -153,14 +153,7 @@
       "capacityLabel": "Capacity",
       "capacity": "Up to <b>{n} people</b>",
       "cta": "Request a quote",
-      "disc": "Seating capacity and options may vary slightly depending on the vehicle assigned.",
-      "lines": {
-        "bus45": "A large coach used for group workshops, field trips and religious groups.",
-        "bus35": "Sized for medium groups. Used for everything from social gatherings and family trips to commuter service.",
-        "limo28": "Premium seats with generous legroom. Recommended for occasions that call for a touch of class, such as foreign VIP visits, sightseeing, weddings and funerals.",
-        "bus25": "A sensible choice for small groups. Suited to trips of around 20 people, such as university retreats and workshops.",
-        "bus16": "Suited to airport pickup & drop-off and small-group trips. It gets into narrow streets easily, which makes it a strong fit for city itineraries."
-      }
+      "disc": "Seating capacity and options may vary slightly depending on the vehicle assigned."
     },
     "company": {
       "eyebrow": "About us",
@@ -390,8 +383,8 @@
         "description": "Photos from charter bus trips."
       },
       "empty": "The gallery is being prepared. Trip photos will appear here once they are posted.",
-      "albumsTitle": "Albums",
-      "albumsLabel": "Album list",
+      "albumsTitle": "Posts",
+      "albumsLabel": "Post list",
       "albumPending": "Photos coming soon",
       "allTitle": "All photos",
       "detail": {
@@ -399,7 +392,16 @@
           "title": "{title} — Gallery | {brand}",
           "description": "Photos from a charter bus trip."
         },
-        "empty": "There are no photos in this album yet.",
+        "empty": "There are no photos in this post yet.",
+        "photosTitle": "Photos",
+        "lightbox": {
+          "open": "View photo {n} larger",
+          "label": "Photo viewer",
+          "close": "Close",
+          "prev": "Previous photo",
+          "next": "Next photo",
+          "position": "{n} / {total}"
+        },
         "back": "Back to gallery",
         "pager": {
           "label": "Photo pages",

@@ -200,8 +200,8 @@ describe("갤러리 표 잠금 — 완전성 게이트 (P6-3b)", () => {
     }
   });
 
-  test("잠금을 여럿 쓰는 파일은 notifications → gallery → showcase-routes 순서로 잡는다 (순환 대기 = 교착 방지)", () => {
-    const ORDER = ["withNotificationsLock()", "withGalleryLock()", "withShowcaseRoutesLock()"];
+  test("잠금을 여럿 쓰는 파일은 notifications → gallery → showcase-routes → vehicles 순서로 잡는다 (순환 대기 = 교착 방지)", () => {
+    const ORDER = ["withNotificationsLock()", "withGalleryLock()", "withShowcaseRoutesLock()", "withVehiclesLock()"];
     let checked = 0;
     for (const f of files) {
       const code = stripComments(readFileSync(path.join(TESTS_DIR, f), "utf-8"), f);
@@ -310,6 +310,51 @@ describe("대표 노선 표 잠금 — 완전성 게이트 (P6-13)", () => {
       const src = readFileSync(path.join(TESTS_DIR, f), "utf-8");
       if (!src.includes("withShowcaseRoutesLock")) continue;
       expect(src, f).toMatch(/import\s*\{[^}]*withShowcaseRoutesLock[^}]*\}\s*from\s*["']\.\/helpers\/db-lock["']/);
+    }
+  });
+});
+
+// =============================================================================
+// 차량 표 잠금의 **완전성** (T4-1 · 0024)
+// =============================================================================
+/**
+ * 0024 가 관리자 차량 쓰기 경로(definer 함수 다섯)를 열었다. 쓰는 쪽은 임시 차량을 만들고 지우거나(admin-vehicles)
+ * 시드 행을 고쳤다 되돌린다(write-privileges §5). 읽는 쪽은 **표 전체**를 센다(schema 의 5행 · queries 의 getVehicles 5행·순서).
+ * 겹치면 읽는 쪽이 6행이나 바뀐 순서를 본다 — showcase_routes 와 같은 부류다. 탐지 형태는 `!hasServiceRole`(schema)까지 넷이다.
+ */
+const VEHICLES_DB_BLOCK_RE = /describe\.skipIf\(\s*!(gate\.allowed|hasAnon|env\.hasServiceRole|hasServiceRole)\b/;
+const VEHICLES_MARKERS: [label: string, re: RegExp][] = [
+  ["vehicles REST 경로", /[}"'`]\/vehicles[?"'`]/],
+  ["공개 읽기 호출", /\bgetVehicles\(/],
+  ["차량 RPC 쓰기", /["'`/]admin_(?:create|update|set|delete|reorder)_vehicles?(?:_active)?["'`?]|\b(?:insertVehicle|updateVehicleRow|deleteVehicleRow|setVehicleActive|reorderVehicleRows)\(/],
+];
+
+describe("차량 표 잠금 — 완전성 게이트 (T4-1)", () => {
+  const SELF = path.basename(import.meta.filename);
+  const files = readdirSync(TESTS_DIR).filter((f) => f.endsWith(".test.ts") && f !== SELF);
+  const needsLock = files
+    .map((f) => ({ file: f, code: stripComments(readFileSync(path.join(TESTS_DIR, f), "utf-8"), f) }))
+    .filter(({ code }) => VEHICLES_DB_BLOCK_RE.test(code))
+    .map((f) => ({ ...f, hits: VEHICLES_MARKERS.filter(([, re]) => re.test(f.code)).map(([label]) => label) }))
+    .filter(({ hits }) => hits.length > 0);
+
+  test("vehicles 를 바꾸거나 전체를 세는 DB 블록은 전부 withVehiclesLock() 을 쓴다", () => {
+    const missing = needsLock.filter(({ code }) => !/withVehiclesLock\(\s*\)/.test(code)).map(({ file, hits }) => `${file} (${hits.join(", ")})`);
+    expect(missing, "describe 본문에서 `withVehiclesLock()` 을 (다른 잠금 뒤에) 부르고 `./helpers/db-lock` 에서 import 할 것").toEqual([]);
+  });
+
+  test("마커가 낡지 않았다 — 쓰는 파일 둘과 세는 파일 둘을 모두 고른다", () => {
+    const picked = needsLock.map((n) => n.file);
+    for (const f of ["admin-vehicles.test.ts", "write-privileges.test.ts", "schema.test.ts", "queries.test.ts"]) {
+      expect(picked, `탐지된 파일: ${picked.join(", ") || "(없음)"}`).toContain(f);
+    }
+  });
+
+  test("잠금을 쓰는 파일은 helpers/db-lock 에서 가져온다 (제자리 정의 금지)", () => {
+    for (const f of files) {
+      const src = readFileSync(path.join(TESTS_DIR, f), "utf-8");
+      if (!src.includes("withVehiclesLock")) continue;
+      expect(src, f).toMatch(/import\s*\{[^}]*withVehiclesLock[^}]*\}\s*from\s*["']\.\/helpers\/db-lock["']/);
     }
   });
 });

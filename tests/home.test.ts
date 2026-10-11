@@ -126,10 +126,11 @@ describe("1. components/home/** · ko.json home — 금지어·실증 불가 수
 // =============================================================================
 // 2. 'use client' 경계 — 캐러셀·팝업·위젯만
 // =============================================================================
-const CLIENT_ALLOWED = [`${HOME_DIR}/HeroCarousel.tsx`, `${HOME_DIR}/Popup.tsx`, `${HOME_DIR}/QuoteWidget.tsx`];
+// T4-2 — 갤러리 글 상세의 사진 확대 보기(GalleryLightbox)가 넷째 클라이언트 섬이다(문구는 props · 쿼리·원장 import 0).
+const CLIENT_ALLOWED = [`${HOME_DIR}/GalleryLightbox.tsx`, `${HOME_DIR}/HeroCarousel.tsx`, `${HOME_DIR}/Popup.tsx`, `${HOME_DIR}/QuoteWidget.tsx`];
 
 describe("2. 'use client' 경계", () => {
-  test("'use client' 는 HeroCarousel · Popup · QuoteWidget 에만 (파일명으로 단언)", () => {
+  test("'use client' 는 GalleryLightbox · HeroCarousel · Popup · QuoteWidget 에만 (파일명으로 단언)", () => {
     const clients = homeTsx.filter((f) => /^\s*["']use client["']/m.test(read(f)));
     expect(clients.sort()).toEqual([...CLIENT_ALLOWED].sort());
   });

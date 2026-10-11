@@ -474,7 +474,7 @@ describe("4. /admin/stats 화면 · 탭 · messages/ko.json", () => {
   // P5-20 — 사이드바·탭 바 개편: 홈이 첫 항목이 되고 순서가 묶음(매일 · 홈페이지 · 기록)을 따른다. 통계는 여전히 **맨 뒤**다(tests/admin-nav.test.ts).
   test("탭에 통계가 **맨 뒤에** 있고 경로는 그대로다", async () => {
     const { ADMIN_TABS, ADMIN_TAB_KEYS } = await import("@/components/admin/tabs");
-    expect([...ADMIN_TAB_KEYS]).toEqual(["home", "reservations", "notices", "popups", "gallery", "routes", "notifications", "stats"]);
+    expect([...ADMIN_TAB_KEYS]).toEqual(["home", "reservations", "notices", "popups", "gallery", "routes", "fleet", "notifications", "stats"]);
     expect(ADMIN_TABS.filter((t) => t.ready).map((t) => t.href)).toEqual([
       "/admin",
       "/admin/reservations",
@@ -482,6 +482,7 @@ describe("4. /admin/stats 화면 · 탭 · messages/ko.json", () => {
       "/admin/popups",
       "/admin/gallery",
       "/admin/routes",
+      "/admin/fleet",
       "/admin/notifications",
       "/admin/stats",
     ]);

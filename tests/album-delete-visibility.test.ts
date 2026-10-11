@@ -282,7 +282,11 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("4. DB — 삭제가 공�
     expect(row!.original_path, "원본 경로가 남아 있어야 나중에 지울 수 있다").toBe(`${PATH_PREFIX}off-1.orig`);
   });
 
-  test("활성 앨범을 지우면 그 사진은 계속 보인다 — 반대 방향으로도 공개 여부가 바뀌지 않는다", async () => {
+  /**
+   * 🔴 0025(T4-2 · 결정 8 (b))가 **의도적으로 뒤집은** 거동이다. 0015 에서는 활성 앨범을 지우면 사진이 미분류로 **계속 공개**됐다.
+   * 사장님은 글(앨범)을 지우면 사진도 사라진다고 기대하신다 — 그래서 이제 활성 글을 지워도 사진은 비공개로 내려간다(행·파일은 남아 되돌릴 수 있다).
+   */
+  test("활성 글(앨범)을 지워도 그 사진은 비공개로 내려간다 — 행은 남는다 (0025 개정)", async () => {
     const albumId = await makeAlbum("on", true);
     await makePhoto("on-1", albumId);
 
@@ -291,10 +295,11 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("4. DB — 삭제가 공�
     const del = await rest("DELETE", `/gallery_albums?id=eq.${albumId}`);
     expect(del.status, JSON.stringify(del.body)).toBe(204);
 
-    expect(await anonVisible("on-"), "보이던 사진이 사라졌다 — 활성 앨범 삭제에서 사진을 내리면 안 된다").toEqual(["on-1"]);
+    expect(await anonVisible("on-"), "글을 지웠는데 그 사진이 계속 공개된다 — 0025 트리거가 없다").toEqual([]);
 
     const row = await photoRow("on-1");
-    expect(row!.active).toBe(true);
+    expect(row, "사진 행이 지워졌다 — 되돌릴 수 없다").not.toBeNull();
+    expect(row!.active).toBe(false);
     expect(row!.album_id).toBeNull();
   });
 
@@ -316,7 +321,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("4. DB — 삭제가 공�
     expect((await photoRow("mix-loose"))!.album_id).toBeNull();
   });
 
-  test("앨범 여러 개를 한 번에 지워도 각 앨범의 상태대로 판정한다 (행 단위 트리거)", async () => {
+  test("앨범 여러 개를 한 번에 지워도 행마다 트리거가 돈다 — 활성·비활성 모두 사진이 내려간다 (0025)", async () => {
     const offId = await makeAlbum("bulk-off", false);
     const onId = await makeAlbum("bulk-on", true);
     await makePhoto("bulk-off-1", offId);
@@ -327,9 +332,9 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("4. DB — 삭제가 공�
     const del = await rest("DELETE", `/gallery_albums?slug=like.${like(`${SLUG_PREFIX}-bulk`)}`);
     expect(del.status, JSON.stringify(del.body)).toBe(204);
 
-    expect(await anonVisible("bulk-")).toEqual(["bulk-on-1"]);
+    expect(await anonVisible("bulk-")).toEqual([]);
     expect((await photoRow("bulk-off-1"))!.active).toBe(false);
-    expect((await photoRow("bulk-on-1"))!.active).toBe(true);
+    expect((await photoRow("bulk-on-1"))!.active).toBe(false);
   });
 
   test("트리거가 붙어 있고, 공개 롤은 그 함수를 실행할 수 없다 (CLAUDE.md §3 — 기본권한이 되돌려 놓는다)", () => {
@@ -351,7 +356,8 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("4. DB — 삭제가 공�
     expect(verdict, "0015 가 이 DB 에 적용되지 않았다").not.toContain("trigger=(none)");
     expect(verdict).toContain("BEFORE DELETE ON public.gallery_albums");
     expect(verdict).toContain("FOR EACH ROW");
-    expect(verdict).toContain("WHEN ((NOT old.active))");
+    // 0025 가 when 절을 걷었다 — 활성 글을 지울 때도 함수가 불린다.
+    expect(verdict).not.toContain("WHEN");
     expect(verdict).toContain("secdef=t");
     expect(verdict).toContain("searchpath=search_path=public, pg_temp");
     expect(verdict, "anon 이 트리거 함수를 실행할 수 있다").toContain("| anon=false");

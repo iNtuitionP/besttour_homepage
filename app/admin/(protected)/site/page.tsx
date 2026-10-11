@@ -3,7 +3,7 @@ import { getTranslations } from "next-intl/server";
 
 import { formatAdminDate } from "@/components/admin/admin-date";
 import { getAdminDateLabels } from "@/components/admin/adminDateLabels";
-import { galleryLine, hubLineValues, noticesLine, popupsLine, routesLine, type HubLine } from "@/components/admin/hub";
+import { fleetLine, galleryLine, hubLineValues, noticesLine, popupsLine, routesLine, type HubLine } from "@/components/admin/hub";
 import { segments, splitSegments } from "@/components/admin/segments";
 import { hubItems } from "@/components/admin/tabs";
 import { routing } from "@/i18n/routing";
@@ -11,6 +11,7 @@ import { galleryUsage } from "@/lib/admin/gallery";
 import { listAdminNotices } from "@/lib/admin/notices";
 import { listAdminPopups, popupState } from "@/lib/admin/popups";
 import { listAdminRoutes } from "@/lib/admin/routes";
+import { listAdminVehicles } from "@/lib/admin/vehicles";
 import { requireAdmin } from "@/lib/auth/requireAdmin";
 import { toKstDateString } from "@/lib/kst";
 
@@ -39,13 +40,20 @@ export default async function AdminSiteHubPage() {
   ]);
   const now = new Date();
   const today = toKstDateString(now);
-  const [notices, popups, usage, routes] = await Promise.allSettled([listAdminNotices(), listAdminPopups(), galleryUsage(), listAdminRoutes()]);
+  const [notices, popups, usage, routes, vehicles] = await Promise.allSettled([
+    listAdminNotices(),
+    listAdminPopups(),
+    galleryUsage(),
+    listAdminRoutes(),
+    listAdminVehicles(),
+  ]);
 
   const lines: Record<string, HubLine> = {
     notices: noticesLine(notices),
     popups: popupsLine(popups, (row) => popupState(row, today) === "live"),
     gallery: galleryLine(usage),
     routes: routesLine(routes),
+    fleet: fleetLine(vehicles),
   };
   // 날짜는 관리자 날짜 틀로("마지막 게시일 9월 27일 (일)" — P5-23 라운드 2 A-3) · 줄은 조각 사이에서만 꺾인다(C-14)
   const lineText = (key: string): string => {

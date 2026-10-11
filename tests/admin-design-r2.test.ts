@@ -476,10 +476,12 @@ describe("B-9 · B-10 · B-11 · B-12 — 폼 간격 · 갤러리 · 홈 절 머
     const albums = codeOf("components/admin/GalleryAlbums.tsx");
     const row = albums.slice(albums.indexOf('data-testid="admin-gallery-album"'));
     expect(row.indexOf("className={s.albumState}")).toBeGreaterThan(0);
-    expect(row.indexOf("className={s.albumState}")).toBeLessThan(row.indexOf("className={s.dateRow}"));
-    const actions = row.slice(row.indexOf("className={s.rowActions}"), row.indexOf("<CopyWarningPanel"));
+    // T4-2 — 글 목록 줄: 상태 배지는 줄 머리, 버튼 줄은 고치기(링크) · 노출 두 개뿐(편집 칸·패널은 고치기 화면으로 갔다)
+    expect(row.indexOf("className={s.albumState}")).toBeLessThan(row.indexOf("className={s.rowActions}"));
+    const actions = row.slice(row.indexOf("className={s.rowActions}"), row.indexOf("<AdminBanner"));
     expect(actions).not.toMatch(/s\.badge/);
-    expect([...actions.matchAll(/<button/g)]).toHaveLength(2);
+    expect([...actions.matchAll(/<button/g)]).toHaveLength(1);
+    expect([...actions.matchAll(/<Link/g)]).toHaveLength(1);
   });
 
   test("🔴 B-11 — 관리 홈 절 머리는 링크(44px)가 있든 없든 같은 높이 · 제목은 그 가운데 → '새 접수' 와 '다가오는 운행' 이 한 줄에 선다", () => {

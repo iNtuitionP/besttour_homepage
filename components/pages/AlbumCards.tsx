@@ -1,5 +1,5 @@
 /**
- * 앨범 카드 목록 (P6-3b `/gallery` 색인) — 서버 컴포넌트, fetch 없음.
+ * 앨범 = 글 카드 목록 (P6-3b `/gallery` 색인 · T4-2 날짜·본문 요약) — 서버 컴포넌트, fetch 없음.
  *
  * 카드 하나가 통째로 `/gallery/<slug>` 링크다(제목만 링크로 두면 모바일에서 표적이 너무 작다).
  * 표지는 그 앨범의 첫 사진(`components/pages/albums.ts` buildAlbumCards). 표지가 없으면 빈 틀만 두고,
@@ -13,7 +13,7 @@ import { getLocale } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
 import { koLang } from "@/lib/i18n/ledger-ui";
 
-import type { AlbumCard } from "./albums";
+import { formatPostDate, type AlbumCard } from "./albums";
 import p from "./pages.module.css";
 
 export async function AlbumCards({
@@ -46,12 +46,17 @@ export async function AlbumCards({
               ) : null}
               {a.hasPhotos ? null : <span className={p.albumPending}>{pendingLabel}</span>}
             </span>
+            {a.publishedAt ? (
+              <time className={p.albumDesc} dateTime={a.publishedAt}>
+                {formatPostDate(a.publishedAt, locale)}
+              </time>
+            ) : null}
             <span className={p.albumTitle} lang={lang}>
               {a.title}
             </span>
-            {a.description ? (
+            {a.excerpt ?? a.description ? (
               <span className={p.albumDesc} lang={lang}>
-                {a.description}
+                {a.excerpt ?? a.description}
               </span>
             ) : null}
           </Link>

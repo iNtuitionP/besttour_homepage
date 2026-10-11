@@ -19,7 +19,7 @@
  *
  * 라벨은 여기 없다: messages/ko.json `admin.tabs.<key>`. 관리자 영역은 로케일 밖이라 레이아웃이 기본 로케일로 풀어 내린다.
  */
-export const ADMIN_TAB_KEYS = ["home", "reservations", "notices", "popups", "gallery", "routes", "notifications", "stats"] as const;
+export const ADMIN_TAB_KEYS = ["home", "reservations", "notices", "popups", "gallery", "routes", "fleet", "notifications", "stats"] as const;
 export type AdminTabKey = (typeof ADMIN_TAB_KEYS)[number];
 
 /** 묶음 — daily(매일 쓰는 것) · site(홈페이지에 보이는 것) · records(기록을 보는 것). */
@@ -46,6 +46,8 @@ export const ADMIN_TABS: readonly AdminTab[] = [
   { key: "popups", href: "/admin/popups", ready: true, group: "site", mobileHub: true },
   { key: "gallery", href: "/admin/gallery", ready: true, group: "site", mobileHub: true },
   { key: "routes", href: "/admin/routes", ready: true, group: "site", mobileHub: true },
+  // T4-1 차량 소개 — 0024 의 definer 함수 다섯으로 쓴다(lib/admin/vehicles.ts 헤더).
+  { key: "fleet", href: "/admin/fleet", ready: true, group: "site", mobileHub: true },
   // P5-8 발송 내역(메뉴 이름 '발송 기록' — P5-21 · 메일 행도 있다) — 읽기 전용. 아웃박스가 기록만 하고 아무도 읽지 않던 구멍을 막는 화면이다(lib/admin/notifications.ts 헤더).
   { key: "notifications", href: "/admin/notifications", ready: true, group: "records", mobileHub: true },
   // P5-17 통계 — 읽기 전용. 0022 의 definer 함수 하나가 집계해 준다(lib/admin/stats.ts 헤더). 매일 누르는 화면이 아니라 **맨 뒤**다.

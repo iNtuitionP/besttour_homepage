@@ -1,0 +1,78 @@
+/* 사진 확대 보기 (T4-2) — 역할 토큰만 쓴다(styles/semantic.css). 그리드 칸 모양은 Sections.module.css 의 .gal* 를 그대로 쓴다. */
+.cell {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+.cell:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -3px;
+}
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-inverse);
+  color: var(--text-on-inverse);
+}
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-inline-sm);
+  padding: var(--space-stack-sm) var(--space-page-x);
+}
+.position {
+  font-size: 15px;
+}
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  margin: 0 var(--space-page-x);
+}
+.img {
+  object-fit: contain;
+}
+.caption {
+  margin: 0;
+  padding: var(--space-stack-sm) var(--space-page-x);
+  font-size: 15px;
+  text-align: center;
+}
+.nav {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-inline-md);
+  padding: 0 var(--space-page-x) var(--space-stack-md);
+}
+.btn {
+  min-width: var(--size-target-min);
+  min-height: var(--size-target-min);
+  padding: 0 var(--space-inline-md);
+  border: 1px solid var(--border-on-inverse);
+  border-radius: var(--radius-control);
+  background: var(--bg-inverse-raised);
+  color: var(--text-on-inverse);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+.btn:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 
+import { formatAdminDate } from "@/components/admin/admin-date";
+import { getAdminDateLabels } from "@/components/admin/adminDateLabels";
 import { getCopyWarningLabels } from "@/components/admin/copyWarningLabels";
 import { GalleryAlbums } from "@/components/admin/GalleryAlbums";
 import { GalleryPhotoCard } from "@/components/admin/GalleryPhotoCard";
@@ -45,7 +47,8 @@ export default async function AdminGalleryPage({ searchParams }: { searchParams:
   const params = await searchParams;
   const albumFilter = parseAlbumParam(params.album);
   const t = await getTranslations({ locale: routing.defaultLocale, namespace: "admin.gallery" });
-  const copyWarning = await getCopyWarningLabels();
+  const [copyWarning, dateLabels] = await Promise.all([getCopyWarningLabels(), getAdminDateLabels()]);
+  const now = new Date();
 
   const [albums, photos, usage] = await Promise.all([listAdminAlbums(), listAdminPhotos({ albumId: albumFilter }), galleryUsage()]);
 
@@ -142,28 +145,25 @@ export default async function AdminGalleryPage({ searchParams }: { searchParams:
             {t("albumSection")}
           </h2>
           <GalleryAlbums
-            albums={albums.map((album) => ({ id: album.id, slug: album.slug, title: album.title, sort: album.sort, active: album.active }))}
+            albums={albums.map((album) => ({
+              id: album.id,
+              slug: album.slug,
+              title: album.title,
+              dateLabel: formatAdminDate(album.published_at, now, dateLabels) ?? album.published_at,
+              active: album.active,
+            }))}
             labels={{
               albumNew: t("albumNew"),
+              albumLead: t("albumLead"),
               albumListLabel: t("albumListLabel"),
               albumEmpty: t("albumEmpty"),
-              albumTitle: t("albumTitle"),
-              albumSlug: t("albumSlug"),
-              albumSlugHint: t("albumSlugHint"),
-              albumSort: t("albumSort"),
-              albumActive: t("albumActive"),
-              albumCreate: t("albumCreate"),
-              albumSave: t("albumSave"),
-              albumDelete: t("albumDelete"),
-              albumDeleteArm: t("albumDeleteArm"),
+              albumOpen: t("albumOpen"),
               albumDeleteNote: t("albumDeleteNote"),
-              albumDeleteConfirm: t("albumDeleteConfirm"),
               turnOn: t("turnOn"),
               turnOff: t("turnOff"),
               processing: t("processing"),
               state,
               results,
-              copyWarning,
             }}
           />
         </section>

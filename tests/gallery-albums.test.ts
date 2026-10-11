@@ -250,6 +250,8 @@ const ALBUM_ROW: AlbumRow = {
   sort: 1,
   active: true,
   created_at: "2026-09-13T00:00:00+00:00",
+  body: null,
+  published_at: "2026-09-13",
 };
 
 const selectCols = (calls: Call[]) =>
@@ -309,19 +311,21 @@ describe("4. lib/queries/albums.ts", () => {
       sort: 1,
       active: true,
       createdAt: "2026-09-13T00:00:00+00:00",
+      body: null,
+      publishedAt: "2026-09-13",
     });
   });
 
-  test("getAlbums — 활성만, sort 오름차순(동률은 id)", async () => {
+  test("getAlbums — 활성만, 게시일 최신순(동률은 id 최신순 · T4-2 게시판)", async () => {
     const { client, calls } = fakeClient({ data: [ALBUM_ROW], error: null });
     const albums = await getAlbums(client);
     expect(albums.map((a) => a.slug)).toEqual(["airport-pickup"]);
     expect(calls.find((c) => c.method === "from")?.args).toEqual(["gallery_albums"]);
     expect(calls.filter((c) => c.method === "eq").map((c) => c.args)).toEqual([["active", true]]);
     const orders = calls.filter((c) => c.method === "order").map((c) => c.args[0]);
-    expect(orders).toEqual(["sort", "id"]);
+    expect(orders).toEqual(["published_at", "id"]);
     for (const o of calls.filter((c) => c.method === "order")) {
-      expect((o.args[1] as { ascending: boolean }).ascending).toBe(true);
+      expect((o.args[1] as { ascending: boolean }).ascending).toBe(false);
     }
   });
 
@@ -837,7 +841,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("8. DB — 0008 앨범 RLS
     expect(await getAlbumBySlug(`${SLUG_PREFIX}-off`, anonClient)).toBeNull();
   });
 
-  test("앨범을 지우면 사진은 남고 album_id 만 null 이 된다 (on delete set null)", async () => {
+  test("앨범을 지우면 사진은 남고 album_id 는 null · 사진은 비공개가 된다 (on delete set null + 0025 트리거)", async () => {
     const del = await rest("DELETE", `/gallery_albums?id=eq.${activeAlbumId}`);
     expect([200, 204]).toContain(del.status);
 
@@ -858,10 +862,11 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("8. DB — 0008 앨범 RLS
     expect(albumPhotos).toHaveLength(2);
     expect(albumPhotos.every((p) => p.album_id === null)).toBe(true);
 
-    // 미분류가 된 사진은 다시 anon 에게 보인다(앨범이 사라져도 사진이 사라지지 않는다)
+    // 0025(T4-2 · 결정 8 (b)) — 글(앨범)을 지우면 그 사진은 **비공개**로 내려간다(행은 남는다 — 위 단언). 0015 의 "활성 앨범이면
+    // 미분류로 계속 공개" 를 의도적으로 바꿨다. anon 에게는 처음부터 미분류였던 free 만 보인다.
     const rows = (await anonRest(
       `/gallery?select=image_path&image_path=like.${encodeURIComponent(`${PATH_PREFIX}*`)}&order=sort.asc`,
     )) as { image_path: string }[];
-    expect(rows.map((r) => r.image_path)).toEqual([`${PATH_PREFIX}a1.webp`, `${PATH_PREFIX}a2.webp`, `${PATH_PREFIX}free.webp`]);
+    expect(rows.map((r) => r.image_path)).toEqual([`${PATH_PREFIX}free.webp`]);
   });
 });

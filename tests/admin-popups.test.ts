@@ -517,7 +517,7 @@ describe("4. 정적 규약", () => {
 
   // P5-5·P5-6 이 공지·대표 노선을, P6-2 가 갤러리를, P5-8 이 발송 내역을 켰다(각 탭의 단언은 그 태스크의 테스트 파일에 있다).
   // P5-20 — 사이드바·탭 바 개편: 홈이 첫 항목이 되고 순서가 묶음(매일 · 홈페이지 · 기록)을 따른다(tests/admin-nav.test.ts).
-  test("탭 — 팝업이 켜졌고 여덟 항목 전부 ready 다", async () => {
+  test("탭 — 팝업이 켜졌고 아홉 항목 전부 ready(T4-1 차량 소개 포함) 다", async () => {
     const { ADMIN_TABS } = await import("@/components/admin/tabs");
     expect(ADMIN_TABS.filter((t) => t.ready).map((t) => t.href)).toEqual([
       "/admin",
@@ -526,6 +526,7 @@ describe("4. 정적 규약", () => {
       "/admin/popups",
       "/admin/gallery",
       "/admin/routes",
+      "/admin/fleet",
       "/admin/notifications",
       "/admin/stats",
     ]);

@@ -35,8 +35,11 @@ import { z } from "zod";
 
 import type { OwnerCopyKind } from "@/lib/copy/kinds";
 
-/** 검사하는 자유 텍스트 칸 — 공지·팝업 제목/내용, 사진 설명, 앨범 이름. 화면 라벨은 `admin.copyWarning.field.*`. */
-export const COPY_FIELDS = ["title", "body", "caption", "albumTitle"] as const;
+/**
+ * 검사하는 자유 텍스트 칸 — 공지·팝업 제목/내용, 사진 설명, 갤러리 글 제목/본문(T4-2), 차량 이름/설명(T4-1).
+ * 화면 라벨은 `admin.copyWarning.field.*`. 차량 영문 이름은 대조하지 않는다(목록에 영문 규칙이 없다 — 결정 11).
+ */
+export const COPY_FIELDS = ["title", "body", "caption", "albumTitle", "albumBody", "vehicleName", "vehicleDescription"] as const;
 export type CopyField = (typeof COPY_FIELDS)[number];
 
 export type CopyWarningKind = OwnerCopyKind;

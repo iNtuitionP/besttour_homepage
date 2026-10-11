@@ -303,7 +303,7 @@ describe("4. 같은 실패가 두 번이면 두 번 보인다 (재리뷰 P2-R1)"
     lead: "l",
     confirm: "c",
     item: "{field} {text} {reason}",
-    field: { title: "제목", body: "본문", caption: "설명", albumTitle: "앨범 이름" },
+    field: { title: "제목", body: "본문", caption: "설명", albumTitle: "글 제목", albumBody: "글 본문", vehicleName: "차량 이름", vehicleDescription: "차량 설명" },
     kind: { license: "r", rival: "r", internal: "r", unproven: "r", comparative: "r" } as CopyWarningLabels["kind"],
   };
   const panel = (attempt: number) => CopyWarningPanel({ warnings: WARN, labels: WARN_LABELS, pending: false, idPrefix: "t", attempt }) as ReactElement;

@@ -70,7 +70,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, test } from "vitest";
 
-import { withGalleryLock, withNotificationsLock, withShowcaseRoutesLock } from "./helpers/db-lock";
+import { withGalleryLock, withNotificationsLock, withShowcaseRoutesLock, withVehiclesLock } from "./helpers/db-lock";
 import { expectFunctionPrivilegeDenied, expectPermissionDenied, expectRaisedDenied, expectTablePrivilegeDenied } from "./helpers/expect-denied";
 import { dbSmokeEnv, dbWriteGate } from "./helpers/load-env-local";
 import { runLocalSql, runLocalSqlExpectingError, runLocalSuperuserSqlExpectingError, sqlCells, sqlErrorText } from "./helpers/local-stack-sql";
@@ -677,6 +677,9 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
     // 아래 "0016 실행 증명" 이 ICN→SEL 시드 행의 sort 를 바꿨다 되돌린다 — 16행 전체를 대조하는 블록(places·queries)과 줄 세운다.
     // **순서 고정**: notifications → gallery → showcase-routes (tests/helpers/db-lock.ts SHOWCASE_ROUTES_LOCK 주석).
     withShowcaseRoutesLock();
+    // 같은 테스트가 vehicles 시드 행(bus45)을 0024 함수로 고쳤다 되돌린다 — 활성 차량 전체를 대조하는 블록(queries)과 줄 세운다.
+    // **순서 고정**: … → showcase-routes → vehicles (tests/helpers/db-lock.ts VEHICLES_LOCK 주석).
+    withVehiclesLock();
 
     const baseUrl = () => process.env.NEXT_PUBLIC_SUPABASE_URL as string;
     const serviceHeaders = {
@@ -1123,18 +1126,18 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
     // -------------------------------------------------------------------------
     test("0016 실행 증명 — 관리자 세션이 gallery_albums·gallery 에 쓰고 지운다 (REFERENCES·TRIGGER 회수 뒤에도 · 0020 뒤로는 definer 함수로)", async () => {
       // ① 앨범 만들기 — 비활성으로 만든다(다른 파일의 "공개는 활성만 본다" 단언과 겹치지 않게).
-      const albumSlug = `p512-${RUN}`;
+      // 0025(T4-2) — 앨범은 "글" 이고 slug 는 DB 가 짓는다(인자가 없다) · 고치기는 slug 를 받지 않는다.
       const albumId = await rpcChangedId(
         adminToken,
         "admin_create_album",
-        { p_slug: albumSlug, p_title: `P5-12 ${RUN}`, p_sort: 910001, p_active: false },
+        { p_title: `P5-12 ${RUN}`, p_body: null, p_published_at: "2000-01-01", p_active: false },
         "관리자 화면이 죽었다 — admin_create_album",
       );
 
       await rpcChangedId(
         adminToken,
         "admin_update_album",
-        { p_id: albumId, p_slug: albumSlug, p_title: `P5-12 ${RUN} edit`, p_sort: 910001, p_active: false },
+        { p_id: albumId, p_title: `P5-12 ${RUN} edit`, p_body: "P5-12", p_published_at: "2000-01-01", p_active: false },
         "admin_update_album",
       );
 
@@ -1196,10 +1199,10 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
      * `showcase_routes` 는 **행을 늘리지 않는다** — 다른 파일이 16행 전체를 단언한다(§5-4 의 사유와 같다).
      * 실제 관리 화면과 같은 update 를 definer 함수로 치고 되돌린다.
      *
-     * `vehicles` 는 **관리자 쓰기 경로가 저장소에 하나도 없다**(P5-16 실측 — lib/queries/vehicles.ts 의 읽기뿐).
-     * 그래서 0020 은 그 표에 함수를 만들지 않고 회수만 했다. 여기서는 "읽기는 살아 있고 쓰기 경로는 없다" 를 단언한다.
+     * `vehicles` — 0020 은 회수만 했고 **0024(T4-1)가 관리자 쓰기 경로를 definer 함수로 열었다**(옛 단언 "쓰기 RPC 가 없다(PGRST202)" 를
+     * 반대로 고쳐 썼다). 표 직접 쓰기는 여전히 막혀 있고(§6 행렬), 함수로 고친 값은 같은 값으로 되돌린다.
      */
-    test("0016·0020 실행 증명 — 관리자가 showcase_routes 를 definer 함수로 고치고 되돌린다 · vehicles 는 읽기 전용이다", async () => {
+    test("0016·0020·0024 실행 증명 — 관리자가 showcase_routes·vehicles 를 definer 함수로 고치고 되돌린다", async () => {
       const before = await rest("GET", "/showcase_routes?select=id,origin_code,destination_code,price_from,sort,active&origin_code=eq.ICN&destination_code=eq.SEL");
       const row = (before.body as { id: number; origin_code: string; destination_code: string; price_from: number | null; sort: number | null; active: boolean }[])[0];
       expect(row, "showcase_routes 의 시드 행을 찾지 못했다 — 이전 마이그레이션이 적용되지 않았다").toBeDefined();
@@ -1225,15 +1228,25 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
       // 노출 토글도 같은 경로다 — 되돌리기까지 한 쌍으로.
       await rpcChangedId(adminToken, "admin_set_route_active", { p_id: row.id, p_active: row.active }, "admin_set_route_active");
 
-      // vehicles — 읽기는 관리자·anon 모두 200, 쓰기 RPC 는 아예 없다(PGRST202).
-      const read = await asUser(adminToken, "GET", "/vehicles?select=id,slug&slug=eq.bus45");
+      // vehicles — 0024 의 definer 함수로 고치고 되돌린다(관리자 차량 화면과 같은 호출). 표 직접 PATCH 는 거부된다.
+      const read = await asUser(adminToken, "GET", "/vehicles?select=id,slug,name_ko,name_en,capacity,description_ko,image_path,active&slug=eq.bus45");
       expect(read.status, `관리자가 vehicles 를 읽지 못한다: ${JSON.stringify(read.body).slice(0, 200)}`).toBe(200);
-      expect((read.body as unknown[]).length, "vehicles 시드 행이 없다").toBe(1);
-      for (const fn of ["admin_update_vehicle", "admin_set_vehicle_active"]) {
-        const r = await rpcAsUser(adminToken, fn, { p_id: 0 });
-        expect(r.status, `/rpc/${fn} 이 생겼다 — vehicles 관리 화면이 없는데 쓰기 경로가 열렸다`).toBe(404);
-        expect((r.body as { code?: string } | null)?.code).toBe("PGRST202");
-      }
+      const v = (read.body as { id: number; name_ko: string; name_en: string; capacity: number; description_ko: string | null; image_path: string | null; active: boolean }[])[0];
+      expect(v, "vehicles 시드 행이 없다").toBeDefined();
+      const upd = (description_ko: string | null) =>
+        rpcAsUser(adminToken, "admin_update_vehicle", {
+          p_id: v.id, p_name_ko: v.name_ko, p_name_en: v.name_en, p_capacity: v.capacity, p_description_ko: description_ko, p_image_path: v.image_path,
+        });
+      const changed = await upd("0024 실행 증명");
+      expect(changed.status, JSON.stringify(changed.body).slice(0, 300)).toBe(200);
+      expect(changed.body, "admin_update_vehicle 이 고치지 못했다").toBe("updated");
+      const restored = await upd(v.description_ko);
+      expect(restored.body, "차량 설명을 되돌리지 못했다").toBe("updated");
+      const after = await rest("GET", `/vehicles?select=description_ko&id=eq.${v.id}`);
+      expect((after.body as { description_ko: string | null }[])[0].description_ko).toBe(v.description_ko);
+      await rpcChangedId(adminToken, "admin_set_vehicle_active", { p_id: v.id, p_active: v.active }, "admin_set_vehicle_active");
+      const direct = await asUser(adminToken, "PATCH", `/vehicles?id=eq.${v.id}`, { description_ko: "직접" });
+      expectPermissionDenied(direct, "관리자 세션의 vehicles 직접 PATCH");
     });
 
     test("0016 실행 증명 — `places` 는 관리자 세션도 쓰지 못하고(4xx) 읽기는 200 이다", async () => {
@@ -1298,7 +1311,7 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
         const cases: [string, string, Record<string, unknown>][] = [
           ["admin_create_notice", "admin_delete_notice", { p_title: `P514-${RUN}`, p_body: "P5-14", p_category: "info", p_published_at: "2000-01-01", p_active: false }],
           ["admin_create_popup", "admin_delete_popup", { p_title: `P514-${RUN}`, p_body: "P5-14", p_image_path: null, p_starts_at: "2000-01-01", p_ends_at: "2000-01-02", p_active: false }],
-          ["admin_create_album", "admin_delete_album", { p_slug: `p514-${RUN}`, p_title: `P5-14 ${RUN}`, p_sort: 910014, p_active: false }],
+          ["admin_create_album", "admin_delete_album", { p_title: `P5-14 ${RUN}`, p_body: null, p_published_at: "2000-01-01", p_active: false }],
         ];
         for (const [create, remove, args] of cases) {
           const id = await rpcChangedId(adminToken, create, args, `관리자 화면이 새 글을 못 쓴다 — ${create}`);
@@ -1401,8 +1414,8 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
             "admin_create_album",
             "admin_update_album",
             "admin_delete_album",
-            { p_slug: `p515-${RUN}`, p_title: `P5-15 ${RUN}`, p_sort: 910015, p_active: false },
-            { p_slug: `p515-${RUN}`, p_title: `P5-15 ${RUN} edit`, p_sort: 910015, p_active: false },
+            { p_title: `P5-15 ${RUN}`, p_body: null, p_published_at: "2000-01-01", p_active: false },
+            { p_title: `P5-15 ${RUN} edit`, p_body: "P5-15", p_published_at: "2000-01-01", p_active: false },
           ],
         ] as const) {
           const id = await rpcChangedId(adminToken, create, args, `0019·0020 뒤 관리자 ${create}`);
@@ -3797,13 +3810,26 @@ const ADMIN_CONTENT_FNS = [
   "admin_update_gallery_photo(integer,text,integer,integer)",
   "admin_set_gallery_photo_active(integer,boolean)",
   "admin_delete_gallery_photo(integer)",
-  "admin_create_album(text,text,integer,boolean)",
-  "admin_update_album(integer,text,text,integer,boolean)",
+  // 0025(T4-2) 가 두 앨범 함수의 서명을 바꿨다(slug·sort → 본문·게시일) — 같은 트랜잭션에서 revoke/grant 를 다시 적었다.
+  "admin_create_album(text,text,date,boolean)",
+  "admin_update_album(integer,text,text,date,boolean)",
   "admin_set_album_active(integer,boolean)",
   "admin_delete_album(integer)",
   "admin_update_route(integer,text,text,integer,integer,boolean)",
   "admin_set_route_active(integer,boolean)",
 ] as const;
+
+/**
+ * **0020 파일이 만든** 시그니처 — §21·§22 는 0020·그 롤백 **파일의 글자**를 본다. 0025 가 두 앨범 함수의 서명을 바꿨으므로
+ * 지금 DB·runbook 행렬(ADMIN_CONTENT_FNS)과는 그 둘만 다르다.
+ */
+const ADMIN_CONTENT_FNS_0020: readonly string[] = ADMIN_CONTENT_FNS.map((sig) =>
+  sig === "admin_create_album(text,text,date,boolean)"
+    ? "admin_create_album(text,text,integer,boolean)"
+    : sig === "admin_update_album(integer,text,text,date,boolean)"
+      ? "admin_update_album(integer,text,text,integer,boolean)"
+      : sig,
+);
 
 /**
  * 0020 의 definer 가드가 던지는 문구 — 0010 의 네 함수와 같은 말이다.
@@ -3975,21 +4001,21 @@ describe("21. 0020_admin_content_writes.sql", () => {
     const code = sqlCode(UP20_SQL);
     // drop function 은 EXECUTE 를 공개 롤에 다시 열어 준다(CLAUDE.md §3) — 상행에는 없어야 한다.
     expect(code, "0020 이 drop function 을 쓴다").not.toMatch(/\bdrop\s+function\b/);
-    for (const sig of ADMIN_CONTENT_FNS) {
+    for (const sig of ADMIN_CONTENT_FNS_0020) {
       const name = fnName(sig);
       expect(code, `${name} 이 create or replace 로 만들어지지 않는다`).toContain(`create or replace function ${name}(`);
     }
     // 만드는 함수의 수와 목록이 정확히 같다(몰래 하나 더 만들지 않는다)
     const created = [...code.matchAll(/create or replace function (\w+)\(/g)].map((m) => m[1]).sort();
-    expect(created, "만드는 함수 목록이 다르다").toEqual([...ADMIN_CONTENT_FNS].map(fnName).sort());
+    expect(created, "만드는 함수 목록이 다르다").toEqual([...ADMIN_CONTENT_FNS_0020].map(fnName).sort());
     // security definer · pg_temp 를 **끝에** — 함수마다 확인한다
     const declared = [...code.matchAll(/create or replace function (\w+)\([^;]*?returns table \(id integer\) language plpgsql security definer set search_path = public, pg_temp as \$\$/g)].map((m) => m[1]).sort();
-    expect(declared, "security definer · search_path · 반환 모양이 18개 모두 같지 않다").toEqual([...ADMIN_CONTENT_FNS].map(fnName).sort());
+    expect(declared, "security definer · search_path · 반환 모양이 18개 모두 같지 않다").toEqual([...ADMIN_CONTENT_FNS_0020].map(fnName).sort());
   });
 
   test("🔴 모든 함수의 **첫 문장**이 `is_admin()` 가드다 — definer 는 RLS 를 우회하므로 가드가 유일한 방어선이다 (0010 규범)", () => {
     const code = sqlCode(UP20_SQL);
-    for (const sig of ADMIN_CONTENT_FNS) {
+    for (const sig of ADMIN_CONTENT_FNS_0020) {
       const name = fnName(sig);
       expect(code, `${name} 의 첫 문장이 가드가 아니다`).toContain(
         `begin if not is_admin() then raise exception '${name}: ${ADMIN_GUARD_PHRASE}' using errcode = '42501'; end if;`,
@@ -3997,12 +4023,12 @@ describe("21. 0020_admin_content_writes.sql", () => {
     }
     // 가드 문구는 앱(lib/admin/adminRpc.ts)이 EXECUTE 거부와 가르는 기준이다 — 두 쪽이 같은 글자여야 한다.
     expect(read("lib/admin/adminRpc.ts"), "앱의 가드 문구 상수가 마이그레이션과 다르다").toContain(`= "${ADMIN_GUARD_PHRASE}"`);
-    expect(code.match(new RegExp(ADMIN_GUARD_PHRASE, "g"))?.length ?? 0, "가드가 18개보다 적다").toBe(ADMIN_CONTENT_FNS.length);
+    expect(code.match(new RegExp(ADMIN_GUARD_PHRASE, "g"))?.length ?? 0, "가드가 18개보다 적다").toBe(ADMIN_CONTENT_FNS_0020.length);
   });
 
   test("🔴 EXECUTE — 18개 전부 `public, anon, service_role` 에서 회수하고 `authenticated` 에만 준다", () => {
     const exec = sqlExec(UP20_SQL);
-    for (const sig of ADMIN_CONTENT_FNS) {
+    for (const sig of ADMIN_CONTENT_FNS_0020) {
       const args = sig.slice(sig.indexOf("(") + 1, -1).split(",").join(", ");
       const withArgs = `${fnName(sig)}(${args})`;
       expect(exec, `${withArgs} 의 회수가 없다`).toContain(`revoke all on function ${withArgs} from public, anon, service_role;`);
@@ -4098,7 +4124,7 @@ describe("22. 0020 롤백", () => {
         `create policy ${t}_admin_all on ${t} for all to authenticated using (is_admin()) with check (is_admin())`,
       );
     }
-    for (const sig of ADMIN_CONTENT_FNS) {
+    for (const sig of ADMIN_CONTENT_FNS_0020) {
       const args = sig.slice(sig.indexOf("(") + 1, -1).split(",").join(", ");
       expect(exec, `${sig} 을 지우지 않는다`).toContain(`drop function if exists ${fnName(sig)}(${args});`);
     }

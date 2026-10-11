@@ -127,7 +127,9 @@ describe("2. 개발 용어 · 문구 사전", () => {
     expect(detail.result.cancelled).toBe("취소했어요. 고객에게 전화로 알려 주세요.");
     expect(detail.result.memoUpdated).toBe("메모를 저장했어요.");
     expect(res.sub).toContain("확정하면 고객에게 확정 안내 문자가 가요.");
-    expect((a.gallery as Record<string, string>).albumSlug).toBe("앨범 주소 (영문)");
+    // T4-2(0025) — 주소(slug) 입력란은 없어졌다(새 글은 DB 가 짓는다). 그 문구 키도 없다.
+    expect((a.gallery as Record<string, string>).albumSlug).toBeUndefined();
+    expect((a.gallery as Record<string, string>).albumNew).toBe("새 글 쓰기");
     expect((a.popups as Record<string, string>).empty).toBe("지금 등록된 팝업이 없어요.");
   });
 
@@ -155,7 +157,8 @@ describe("2. 개발 용어 · 문구 사전", () => {
     expect(a.popups.save).toBe(a.popups.create);
     expect(a.routes.save).toBe("노선 저장하기");
     expect(a.gallery.save).toBe("사진 정보 저장하기");
-    expect(a.gallery.albumSave).toBe("앨범 저장하기");
+    expect(a.gallery.albumSave).toBe("글 저장하기"); // T4-2 — 앨범은 "글" 이 됐다(새 글·고치기 같은 버튼)
+    expect(a.gallery.albumSave).toBe(a.gallery.albumCreate);
     expect(a.notices.editLink).toBe("공지 고치기");
     expect(a.popups.editLink).toBe("팝업 고치기");
     expect(a.routes.editLink).toBe("노선 고치기");
@@ -171,7 +174,7 @@ describe("2. 개발 용어 · 문구 사전", () => {
     }
     expect((ko.admin.detail as Record<string, string>).memoSave).toBe("메모 저장");
     expect(a.gallery.delete).toBe("사진 삭제");
-    expect(a.gallery.albumDelete).toBe("앨범 삭제");
+    expect(a.gallery.albumDelete).toBe("글 삭제"); // T4-2 — 앨범은 "글" 이 됐다
   });
 
   /** 재리뷰 P2-R2: 공지 화면 안내가 옛 버튼 이름("노출 중지")을 말하고 있었다 — 버튼 이름("노출 끄기")과 같은 말로 · 매뉴얼 인용도 같은 글자. */

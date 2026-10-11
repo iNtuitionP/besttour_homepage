@@ -62,7 +62,9 @@ const TABS_UI = "components/admin/AdminTabs.tsx";
 const POPUP_FORM = "components/admin/PopupForm.tsx";
 const NOTICE_FORM = "components/admin/NoticeForm.tsx";
 const PHOTO_CARD = "components/admin/GalleryPhotoCard.tsx";
-const ALBUMS_UI = "components/admin/GalleryAlbums.tsx";
+// T4-2 — 글(앨범) 삭제는 목록 줄이 아니라 글 고치기 화면의 폼으로 옮겼다.
+const ALBUMS_UI = "components/admin/AlbumPostForm.tsx";
+const VEHICLE_FORM = "components/admin/VehicleForm.tsx";
 const ADMIN_CSS = "components/admin/admin.module.css";
 const MANUAL = "docs/ops/admin-manual.md";
 const GATE_SCRIPT = path.join(ROOT, "scripts/check-admin-gate.mjs");
@@ -419,6 +421,7 @@ const TWO_STEP: ReadonlyArray<{ file: string; armLabel: string; confirmLabel: st
   { file: PHOTO_CARD, armLabel: adminMsg("gallery", "deleteArm"), confirmLabel: adminMsg("gallery", "deleteConfirm") },
   { file: POPUP_FORM, armLabel: adminMsg("popups", "deleteArm"), confirmLabel: adminMsg("popups", "deleteConfirm") },
   { file: ALBUMS_UI, armLabel: adminMsg("gallery", "albumDeleteArm"), confirmLabel: adminMsg("gallery", "albumDeleteConfirm") },
+  { file: VEHICLE_FORM, armLabel: adminMsg("fleet", "deleteArm"), confirmLabel: adminMsg("fleet", "deleteConfirm") },
 ];
 
 describe("6. 삭제 확인 2단계", () => {
@@ -434,12 +437,13 @@ describe("6. 삭제 확인 2단계", () => {
     });
   }
 
-  test("무장 문구는 네 화면이 **같은 문장**을 쓴다 — 새 경고 문구를 지어내지 않았다", () => {
+  test("무장 문구는 다섯 화면이 **같은 문장**을 쓴다 — 새 경고 문구를 지어내지 않았다 (T4-1 차량 포함)", () => {
     const arms = new Set([
       adminMsg("notices", "deleteArm"),
       adminMsg("gallery", "deleteArm"),
       adminMsg("popups", "deleteArm"),
       adminMsg("gallery", "albumDeleteArm"),
+      adminMsg("fleet", "deleteArm"),
     ]);
     expect([...arms]).toHaveLength(1);
   });
