@@ -374,11 +374,13 @@ function createdCustomerVariants(v: CustomerVars): MessageVariants {
 }
 
 /**
- * 확정 문자·알림톡의 제목 — 첫 줄 `[브랜드] 예약 확정 안내`(승인 초안). T2-4 전에는 문장 "예약이 확정되었습니다." 였다.
+ * 확정 문자·알림톡의 제목 — 첫 줄 `[브랜드] 상담 완료 · 예약 확정 안내`. T2-4 전에는 "예약이 확정되었습니다.", T2-4 부터 OF2-B 전에는
+ * "예약 확정 안내"(승인 초안)였다. OF2-B(사장님 요청 2026-10-15)가 관리자 상태 이름을 "확정" → "상담완료" 로 바꾸면서 손님 문자 제목에도
+ * "상담 완료" 를 앞에 붙였다 — **"예약 확정" 은 남긴다**: 이 문자가 계약 성립 통지다(약관 제5조 · 확정 시 계약이 성립).
  * verbatim("확인 후 연락드리겠습니다.")은 확정 문자·알림톡에 넣지 않는다 — 확정 통지에 붙으면 아직 확정 전인 것처럼 읽힌다
  * (사장님 요청 7 · 결정 3-2, 2026-10-10 · T2-2). tests/notify-templates.test.ts §1 · tests/booking-notice-t2-2.test.ts 가 그 부재를 잠근다.
  */
-export const CONFIRMED_HEADLINE = "예약 확정 안내";
+export const CONFIRMED_HEADLINE = "상담 완료 · 예약 확정 안내";
 
 /**
  * 확정 통지의 `■ 대금` · `■ 취소·환불` 블록 — 문자·알림톡이 같다. 줄은 전부 원장에서 온다(지어내지 않는다).
@@ -433,7 +435,7 @@ function confirmedCustomerVariants(v: CustomerVars): MessageVariants {
  * 그럴 수도 없다: 알림은 부분 유니크 때문에 "예약 하나 · event 하나당 한 번" 으로 묶여서(outbox.ts
  * `FAILURE_TEMPLATE_KEYS`) 접수 통지 두 건이 함께 죽어도 한 통이다 — 특정 행을 지목하는 문장은 애초에 쓸 수 없다.
  */
-const FAILURE_KIND_LABEL: Record<NotifyEvent, string> = { created: "접수", confirmed: "확정" };
+const FAILURE_KIND_LABEL: Record<NotifyEvent, string> = { created: "접수", confirmed: "상담완료" };
 
 /**
  * 사장님 발송 실패 알림 (P4-4) — 접수번호 · 어떤 통지가 못 나갔는지 · 다음에 할 일 · 발송 내역 링크.
@@ -594,8 +596,8 @@ const webLink = (name: string, pathname: string): AlimtalkButton => ({
 
 /** 확정 알림톡의 목록 이름 — 판마다 따로 심사받으므로 이름이 갈려야 한다(OF-T2-3). 개정 판은 시행일(KST 날짜)을 붙인다. */
 const CONFIRMED_ALIMTALK_NAME: Readonly<Record<RefundPolicyEdition, string>> = {
-  current: "예약 확정 안내",
-  next: `예약 확정 안내 (${REFUND_POLICY_EFFECTIVE_DATE} 접수분부터)`,
+  current: CONFIRMED_HEADLINE,
+  next: `${CONFIRMED_HEADLINE} (${REFUND_POLICY_EFFECTIVE_DATE} 접수분부터)`,
 };
 
 /**

@@ -773,10 +773,11 @@ describe("5. messages/ko.json admin.detail — 브리프 문구", () => {
   const sheet = detail.sheet as Record<string, unknown> & { reason: Record<string, string> };
 
   test("확정 시트", () => {
-    expect(sheet.confirmTitle).toBe("{name} 님 접수를 확정할까요?");
-    expect(sheet.confirmTitleNoName).toBe("이 접수를 확정할까요?");
-    expect(sheet.confirmBody).toBe("확정하면 고객에게 확정 안내 문자가 가요. 보낸 문자는 되돌릴 수 없어요.");
-    expect(sheet.confirmSubmit).toBe("확정하고 문자 보내기");
+    // OF2-B: 표시 이름 확정 → 상담완료. 문자는 그대로 "예약 확정 안내"(계약 성립 통지)라 본문이 그 이름을 말한다.
+    expect(sheet.confirmTitle).toBe("{name} 님 접수를 상담완료로 바꿀까요?");
+    expect(sheet.confirmTitleNoName).toBe("이 접수를 상담완료로 바꿀까요?");
+    expect(sheet.confirmBody).toBe("상담완료로 바꾸면 고객에게 예약 확정 안내 문자가 가요. 보낸 문자는 되돌릴 수 없어요.");
+    expect(sheet.confirmSubmit).toBe("상담완료로 바꾸고 문자 보내기");
     expect(sheet.close).toBe("닫기");
     expect(sheet.quickNote).toBe("간편 접수 — 차량·시각은 통화로 정한 대로");
   });
@@ -795,8 +796,8 @@ describe("5. messages/ko.json admin.detail — 브리프 문구", () => {
   test("처리 영역 — 취소는 글자 버튼 + 안내 한 줄 · 확정 안내", () => {
     expect(detail.cancel).toBe("이 접수 취소하기");
     expect(detail.cancelHint).toBe("취소하면 고객에게 문자가 가지 않아요. 전화로 알려 주세요.");
-    expect(detail.confirm).toBe("확정하기");
-    expect(detail.confirmHint).toBe("확정하면 고객에게 확정 안내 문자가 가요.");
+    expect(detail.confirm).toBe("상담완료로 바꾸기"); // OF2-B
+    expect(detail.confirmHint).toBe("상담완료로 바꾸면 고객에게 예약 확정 안내 문자가 가요.");
   });
 
   /**
@@ -804,7 +805,7 @@ describe("5. messages/ko.json admin.detail — 브리프 문구", () => {
    * 칸을 비우고 확정해도 서버는 메모를 지우지 않는다(0010 coalesce). 안내는 동작 그대로 — 고친 메모만 함께 저장되고, 다 지울 때는 '메모 저장'.
    */
   test("메모 안내 — 고친 메모만 함께 저장된다 · 다 지울 때는 '메모 저장'(동작과 같은 말)", () => {
-    expect(detail.memoHint).toBe("고객에게는 보이지 않아요. 고친 메모는 확정·취소·운행 완료를 누를 때 함께 저장돼요. 다 지울 때는 '메모 저장'을 눌러 주세요.");
+    expect(detail.memoHint).toBe("고객에게는 보이지 않아요. 고친 메모는 상담완료·취소·운행 완료를 누를 때 함께 저장돼요. 다 지울 때는 '메모 저장'을 눌러 주세요.");
     expect(detail.memoSave).toBe("메모 저장");
   });
 
@@ -813,7 +814,7 @@ describe("5. messages/ko.json admin.detail — 브리프 문구", () => {
   });
 
   test("결과 — 성공 토스트 3종 + 실패 배너(해요체)", () => {
-    expect(detail.result.confirmed).toBe("확정했어요. 확정 안내 문자를 보내고 있어요.");
+    expect(detail.result.confirmed).toBe("상담완료로 바꿨어요. 예약 확정 안내 문자를 보내고 있어요.");
     expect(detail.result.cancelled).toBe("취소했어요. 고객에게 전화로 알려 주세요.");
     expect(detail.result.memoUpdated).toBe("메모를 저장했어요.");
     expect(detail.result.failed.startsWith("처리하지 못했어요. 잠시 뒤 다시 눌러 주세요")).toBe(true);
@@ -828,7 +829,7 @@ describe("5. messages/ko.json admin.detail — 브리프 문구", () => {
     expect(l.sheet.cancel.reasons[0]).toEqual({ key: "schedule", label: "고객 일정 변경", line: "취소 사유: 고객 일정 변경" });
     expect(l.toastLink).toEqual({ label: detail.toastLink, href: "/admin/notifications" });
     // `{name}` 자리는 화면이 채운다(보간을 거치지 않은 원문)
-    expect(l.sheet.confirm.title).toBe("{name} 님 접수를 확정할까요?");
+    expect(l.sheet.confirm.title).toBe("{name} 님 접수를 상담완료로 바꿀까요?");
     expect(l.memoTooLong).toContain("{count}");
   });
 });
@@ -930,7 +931,7 @@ describe("6-b. 확인 시트 마크업", () => {
     const descId = attr(dialog, "aria-describedby");
     expect(titleId).toBeTruthy();
     expect(html).toContain(`<h2 id="${titleId}"`);
-    expect(text(new RegExp(`<h2 id="${titleId}"[^>]*>([\\s\\S]*?)</h2>`).exec(html)![1])).toBe(`${NAME} 님 접수를 확정할까요?`);
+    expect(text(new RegExp(`<h2 id="${titleId}"[^>]*>([\\s\\S]*?)</h2>`).exec(html)![1])).toBe(`${NAME} 님 접수를 상담완료로 바꿀까요?`);
     expect(text(new RegExp(`id="${descId}"[^>]*>([\\s\\S]*?)</p>`).exec(html)![1])).toBe(detail.sheet.confirmBody);
 
     const summary = text(zoneOf(html, "admin-sheet-summary"));
@@ -944,7 +945,7 @@ describe("6-b. 확인 시트 마크업", () => {
     expect(iClose).toBeGreaterThan(0);
     expect(iSubmit).toBeGreaterThan(iClose);
     expect(text(elementOf(html, "admin-sheet-close"))).toBe("닫기");
-    expect(text(elementOf(html, "admin-sheet-submit"))).toBe("확정하고 문자 보내기");
+    expect(text(elementOf(html, "admin-sheet-submit"))).toBe("상담완료로 바꾸고 문자 보내기");
     expect(attr(openTag(html, "admin-sheet-submit"), "data-variant")).toBe("primary");
     expect(attr(openTag(html, "admin-sheet-submit"), "class")).toBe(s.btnPrimary);
     expect(html).not.toContain('role="alert"');
@@ -952,7 +953,7 @@ describe("6-b. 확인 시트 마크업", () => {
 
   test("확정 — 이름을 읽지 못하면 이름 없는 제목 · 상세 접수면 간편 한 줄 없음", async () => {
     const html = await renderSheet("confirm", { customerName: "" }, { summary: { parts: ["서울 → 부산", "10월 1일 (목) 08:30"], quick: false } });
-    expect(text(html)).toContain("이 접수를 확정할까요?");
+    expect(text(html)).toContain("이 접수를 상담완료로 바꿀까요?");
     expect(text(html)).not.toContain(detail.sheet.quickNote as string);
     expect(text(zoneOf(html, "admin-sheet-summary"))).toBe("서울 → 부산 · 10월 1일 (목) 08:30");
   });

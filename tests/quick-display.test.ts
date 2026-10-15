@@ -89,6 +89,7 @@ const BASE: ReservationDetailRow = {
   retention_until: "2027-09-27T03:04:00.000Z",
   withdrawal_consent_at: "2026-09-27T03:04:00.000Z",
   withdrawal_consent_legacy: false,
+  hidden_from_feed: false,
 };
 
 const html = async (node: Promise<ReactElement>) => renderToStaticMarkup(await node);

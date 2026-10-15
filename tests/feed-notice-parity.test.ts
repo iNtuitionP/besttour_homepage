@@ -36,7 +36,7 @@ describe("publicFeedNotice ↔ RecentFeedItem 항목 대조", () => {
   test("고지의 상태 값 괄호가 화면 칩 문구(ko.json home.recentFeed.statusNew/statusConfirmed)와 글자까지 같다", () => {
     const feed = (ko as { home: { recentFeed: { statusNew: string; statusConfirmed: string } } }).home.recentFeed;
     expect(PRIVACY_NOTICE.publicFeedNotice).toContain(`(${feed.statusNew}/${feed.statusConfirmed})`);
-    expect(PRIVACY_NOTICE.publicFeedNotice).toContain("접수 상태(접수/확정)");
+    expect(PRIVACY_NOTICE.publicFeedNotice).toContain("접수 상태(접수/상담완료)");
   });
 
   test("고지에 없는 정보는 항목 타입에도 없다 — 시각·출발지·도착지·인원·전화·이메일", () => {

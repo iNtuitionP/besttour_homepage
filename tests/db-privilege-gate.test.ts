@@ -204,6 +204,7 @@ const AUTH_EXEC: Reasoned = {
   "admin_cancel_reservation(uuid,text)": "관리자 예약 취소 전이 (0010)",
   "admin_complete_reservation(uuid,text)": "관리자 예약 완료 전이 (0010)",
   "admin_update_memo(uuid,text)": "관리자 메모 수정 (0010)",
+  "admin_set_feed_hidden(uuid,boolean)": "관리자 홈 접수 현황 숨기기·다시 보이기 (0026 · definer · 첫 문장 is_admin 가드 · 손님 삭제 요청 대응)",
   "is_admin()": "RLS 정책이 부르는 관리자 판정 (0009) — 정책 평가가 호출자 권한으로 돈다",
   // 0020(P5-16) — 관리자 콘텐츠 쓰기 18개. 표 GRANT 를 회수한 대가로 생긴 경로다(AUTH_WRITE 가 비어 있는 이유).
   // 전부 definer + 첫 문장 is_admin() 가드 + search_path `public, pg_temp`. 그 셋은 아래 별도 검사가 본다.

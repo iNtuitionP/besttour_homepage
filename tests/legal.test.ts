@@ -317,7 +317,7 @@ describe("5-b. P1-7 원장 변경 — 브리프 문안과 바이트 일치", () 
       retention:
         "1 year from the date of your request (records of contracts, withdrawals, payments and service provision are kept for 5 years as required by law)",
       publicFeed:
-        "Our home page lists recent bookings with only part of the name (e.g. H**), the vehicle type, the travel date and the status (received or confirmed), masked.",
+        "Our home page lists recent bookings with only part of the name (e.g. H**), the vehicle type, the travel date and the status (received or consultation completed), masked.",
     });
   });
 

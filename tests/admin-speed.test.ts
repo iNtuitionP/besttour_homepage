@@ -626,6 +626,7 @@ const WIZARD_ROW = {
   retention_until: "2027-09-27T01:00:00.000Z",
   withdrawal_consent_at: "2026-09-27T01:00:00.000Z",
   withdrawal_consent_legacy: false,
+  hidden_from_feed: false,
 };
 
 const EMPTY_STATS = {

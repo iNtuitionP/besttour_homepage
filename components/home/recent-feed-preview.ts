@@ -23,6 +23,8 @@ export const PREVIEW_RECENT_ROWS: readonly PreviewRecentRow[] = [
     depart_at: "2026-09-19T23:00:00Z", // KST 9/20 — UTC 날짜(9/19)로 읽으면 하루 어긋나는 경계값
     status: "confirmed",
     created_at: "2026-09-13T01:00:00Z",
+    confirmed_at: "2026-09-13T03:00:00Z",
+    hidden_from_feed: false,
   },
   {
     name: "Kim Minjun",
@@ -32,6 +34,8 @@ export const PREVIEW_RECENT_ROWS: readonly PreviewRecentRow[] = [
     depart_at: "2026-10-02T22:30:00Z",
     status: "new",
     created_at: "2026-09-12T09:00:00Z",
+    confirmed_at: null,
+    hidden_from_feed: false,
   },
   {
     name: "박서연",
@@ -41,6 +45,8 @@ export const PREVIEW_RECENT_ROWS: readonly PreviewRecentRow[] = [
     depart_at: "2026-09-27T00:00:00Z",
     status: "new",
     created_at: "2026-09-11T12:00:00Z",
+    confirmed_at: null,
+    hidden_from_feed: false,
   },
 ];
 

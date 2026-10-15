@@ -4,7 +4,7 @@
  * 왜 예외인가: reservations 는 RLS 정책이 없다(0001 — "정책 없음 = 서비스 롤만 접근"). anon 으로는 0행이라
  * 이 계층의 원칙(anon + RLS, index.ts 헤더)으로는 사장님이 확정한 접수 현황 섹션을 만들 수 없다. 그래서 서버(RSC)가
  * 서비스 롤로 읽되, 누출을 구조로 막는다:
- *   1. select 는 RECENT_SELECT(화이트리스트 5컬럼)뿐 — 전화·이메일·메시지·id·public_code 는 메모리에도 올리지 않는다.
+ *   1. select 는 RECENT_SELECT(화이트리스트 7컬럼 — OF2-B 로 상담완료 시각·숨김 칸이 늘었다)뿐 — 전화·이메일·메시지·id·public_code 는 메모리에도 올리지 않는다.
  *   2. 반환 타입 RecentFeedItem(lib/recent-feed.ts)에는 원문 필드가 없다 — 실수로도 못 내린다. 마스킹은 lib/mask.ts maskName.
  *   3. 캐시는 모른다(ADR-3) — 호출부 app/[locale]/(site)/page.tsx 가 60초 태그 캐시(QUERY_TAGS.recent)로 감싼다.
  *      접수 서버액션(actions/reservation.ts, P3-3)이 성공 뒤 그 태그를 무효화하므로 새 접수는 즉시 반영된다.
@@ -21,7 +21,6 @@
 import { structuredLog, type StructuredLogEntry } from "../log";
 import {
   mapRecentRows,
-  RECENT_PUBLIC_STATUSES,
   RECENT_SELECT_COLUMNS,
   type RecentFeedItem,
   type RecentReservationRow,
@@ -33,7 +32,7 @@ export { RECENT_SELECT_COLUMNS, type RecentFeedItem } from "../recent-feed";
 export type ServiceClient = ReturnType<typeof createServiceClient>;
 
 /** 홈 섹션이 보여 주는 최대 건수. */
-export const DEFAULT_RECENT_LIMIT = 8;
+export const DEFAULT_RECENT_LIMIT = 10; // OF2-B(사장님 요청 2026-10-15): 최신 10건
 
 /**
  * 섹션이 "최근"이라고 말할 수 있는 범위 (일). **카피를 참으로 만드는 값이다** — P6-6 감사 R-1.
@@ -43,14 +42,13 @@ export const DEFAULT_RECENT_LIMIT = 8;
  * 몇 주 동안 "방금"으로 남는다. "오늘 접수 17건"을 지웠을 때 함께 지웠어야 할 같은 종류의 주장이다.
  *
  * 고친 방법은 둘 다다: (1) 카피를 "최근"으로 낮추고(messages/ko.json home.recentFeed) (2) 쿼리에 그 "최근"의
- * 범위를 실제로 걸었다. 30 일을 고른 근거는 **사장님이 준 값이 아니라 카피를 참으로 만드는 최소 범위**다 —
- * 한국어에서 "최근"이 가리킬 수 있는 가장 짧은 상식적 단위(한 달)를 골랐고, 더 길게 잡으면 다시 같은 문제가 된다.
- * 사장님이 다른 범위를 확인해 주면 이 상수만 바꾼다. [TEMP] RECENT_WINDOW_DAYS: 사장님 확인 전 잠정값
+ * 범위를 실제로 걸었다. 처음에는 30 일(카피를 참으로 만드는 최소 범위 — 사장님이 준 값이 아니었다)이었고,
+ * OF2-B(사장님 요청 2026-10-15)에서 **90 일**로 늘었다 — 사장님이 정한 값이라 더 이상 잠정값이 아니다.
  *
  * 0 건이면 홈이 섹션을 통째로 숨긴다(components/home/RecentFeed.tsx). 그 숨김은 **마케팅 섹션에만** 허용되며
  * 법정 고지의 빈 값 숨김과는 다른 규칙이다 — tests/recent-feed.test.ts 가 그 구분을 명시적으로 단언한다.
  */
-export const RECENT_WINDOW_DAYS = 30;
+export const RECENT_WINDOW_DAYS = 90;
 
 const DAY_MS = 86_400_000;
 
@@ -58,6 +56,9 @@ const DAY_MS = 86_400_000;
 export function recentWindowStart(now: Date = new Date()): string {
   return new Date(now.getTime() - RECENT_WINDOW_DAYS * DAY_MS).toISOString();
 }
+
+/** PostgREST `or` 필터 — 접수(new) 이거나 상담완료 시각이 있다. 매퍼(lib/recent-feed.ts publicStatusOf)와 같은 규칙이다. */
+export const RECENT_VISIBLE_FILTER = "status.eq.new,confirmed_at.not.is.null";
 
 /** PostgREST select 문자열 = 화이트리스트 join. 임베드·별칭 없음 — 다른 컬럼을 덧붙이는 경로가 없다. */
 export const RECENT_SELECT: string = RECENT_SELECT_COLUMNS.join(",");
@@ -88,7 +89,7 @@ function logFailure(table: RecentFeedLogEntry["table"], code: string | null | un
 }
 
 /**
- * 최근 `RECENT_WINDOW_DAYS` 일 안의 접수 `limit` 건(status new·confirmed, created_at 내림차순)을 마스킹한 항목으로.
+ * 최근 `RECENT_WINDOW_DAYS` 일 안의 접수 `limit` 건(숨기지 않은 접수 · 상담완료를 거친 건, created_at 내림차순)을 마스킹한 항목으로.
  * 실패 정책은 파일 헤더. `client`·`now` 는 테스트 주입용 — 운영 호출부는 넘기지 않는다.
  */
 export async function getRecentReservationsMasked(
@@ -108,7 +109,9 @@ export async function getRecentReservationsMasked(
       db
         .from("reservations")
         .select(RECENT_SELECT)
-        .in("status", [...RECENT_PUBLIC_STATUSES])
+        // OF2-B: 숨기지 않았고 + (접수이거나 상담완료를 거친 건 — 상담완료 뒤 취소·운행 완료 포함). 상담 없이 취소한 건은 빠진다.
+        .eq("hidden_from_feed", false)
+        .or(RECENT_VISIBLE_FILTER)
         .gte("created_at", since)
         .order("created_at", { ascending: false })
         .limit(limit)

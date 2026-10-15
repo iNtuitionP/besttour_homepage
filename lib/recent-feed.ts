@@ -8,7 +8,7 @@
  *   - RecentFeedItem         홈에 내려가는 항목. **원문 필드가 타입에 없다** — maskedName·vehicleLabel·departDateKst·status 뿐이라
  *                            phone·email·id·public_code 는 실수로도 못 내린다.
  *   - mapRecentRows          행 → 항목. 이름은 lib/mask.ts maskName 그대로(새 규칙 없음), 운행일은 lib/kst.ts 로 KST 달력 날짜 → "M/D".
- *                            공개 상태(new·confirmed)가 아니거나 라벨·날짜를 만들 수 없는 행은 **버린다**(fail-closed — slug·원문을 대신 보여 주지 않는다).
+ *                            노출 대상(접수이거나 상담완료를 거쳤고 숨기지 않음)이 아니거나 라벨·날짜를 만들 수 없는 행은 **버린다**(fail-closed — slug·원문을 대신 보여 주지 않는다).
  *
  * 왜 lib/types.ts 가 아니라 여기인가: 이 타입은 lib/queries/recent.ts(서비스 롤 읽기)와 components/home(렌더·프리뷰)이 함께 쓴다.
  * 홈 섹션 컴포넌트는 lib/queries 를 import 하지 않는 규약(tests/home.test.ts §8)이라 타입을 쿼리 모듈에 둘 수 없고,
@@ -26,19 +26,33 @@ export interface RecentReservationRow {
   status: string;
   /** 정렬용(최근순). 항목으로는 내려가지 않는다. */
   created_at: string;
+  /**
+   * 상담완료 시각(0001). **홈의 칩 이름과 노출을 정하는 값이다**(OF2-B): 있으면 상태와 무관하게 "상담완료" —
+   * 확정·운행 완료·상담완료 뒤 취소 모두. 취소는 이 칸을 지우지 않는다(0010 admin_cancel_reservation 은 status 만 바꾼다).
+   * 시각 자체는 항목으로 내려가지 않는다(있다/없다만 쓴다).
+   */
+  confirmed_at: string | null;
+  /** 0026 — 사장님이 홈에서 숨긴 접수(손님 삭제 요청 대응). true 면 어떤 상태여도 피드에 없다. */
+  hidden_from_feed: boolean;
 }
 
-/** reservations 에서 읽는 컬럼 전부. 이 배열이 곧 select 문자열이다(lib/queries/recent.ts RECENT_SELECT). */
+/** reservations 에서 읽는 컬럼 전부. 이 배열이 곧 select 문자열이다(lib/queries/recent.ts RECENT_SELECT). 새 두 칸은 개인정보가 아니다(시각 · 불리언). */
 export const RECENT_SELECT_COLUMNS = [
   "name",
   "vehicle_slug",
   "depart_at",
   "status",
   "created_at",
+  "confirmed_at",
+  "hidden_from_feed",
 ] as const satisfies readonly (keyof RecentReservationRow)[];
 export type RecentSelectColumn = (typeof RECENT_SELECT_COLUMNS)[number];
 
-/** 홈에 올리는 상태 — 취소·완료 건은 피드에 없다. 쿼리(.in)와 매퍼가 이중으로 거른다. */
+/**
+ * 홈 칩의 두 값 — "접수"(new) · "상담완료"(confirmed_at 이 있는 건). DB 의 status 값이 아니라 **표시 값**이다.
+ * 노출 규칙(OF2-B): 숨기지 않았고 ( status = 'new' 이거나 confirmed_at 이 있다 ). 상담 없이 취소한 건(confirmed_at 없음)은 없다 —
+ * "상담완료"로 보일 근거가 없고 "접수"로 두면 이미 취소된 건이 살아 있는 것처럼 보인다. 쿼리(.or)와 매퍼가 이중으로 거른다.
+ */
 export const RECENT_PUBLIC_STATUSES = ["new", "confirmed"] as const;
 export type RecentPublicStatus = (typeof RECENT_PUBLIC_STATUSES)[number];
 
@@ -55,8 +69,11 @@ export interface RecentFeedItem {
   status: RecentPublicStatus;
 }
 
-function isPublicStatus(status: string): status is RecentPublicStatus {
-  return (RECENT_PUBLIC_STATUSES as readonly string[]).includes(status);
+/** 행 → 표시 값. null 이면 홈에 올리지 않는다(숨김 · 상담 없이 취소 · 미지 상태). */
+function publicStatusOf(row: RecentReservationRow): RecentPublicStatus | null {
+  if (row.hidden_from_feed) return null;
+  if (row.confirmed_at !== null) return "confirmed";
+  return row.status === "new" ? "new" : null;
 }
 
 /** UTC 인스턴트 → KST 달력 "M/D". 서버 TZ 와 무관(lib/kst.ts). 유효하지 않은 Date 는 toKstDateString 이 throw 한다. */
@@ -81,7 +98,8 @@ export function mapRecentRows(
 ): RecentFeedItem[] {
   const items: RecentFeedItem[] = [];
   for (const row of rows) {
-    if (!isPublicStatus(row.status)) continue;
+    const status = publicStatusOf(row);
+    if (status === null) continue;
     // 차종이 없는 간편 접수(slug null)는 라벨 없이 싣는다. slug 가 **있는데** 라벨을 못 찾으면 예전처럼 버린다(slug 를 대신 보이지 않는다).
     let vehicleLabel: string | null = null;
     if (row.vehicle_slug !== null) {
@@ -95,7 +113,7 @@ export function mapRecentRows(
       maskedName: maskName(row.name),
       vehicleLabel,
       departDateKst: kstMonthDay(instant),
-      status: row.status,
+      status,
     });
   }
   return items;

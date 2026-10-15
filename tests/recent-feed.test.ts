@@ -85,7 +85,7 @@ function fakeClient(responses: Record<string, TableResponse>, recorded: Recorded
       recorded.push(rec);
       const resp = responses[table];
       const builder: Record<string, unknown> = {};
-      for (const op of ["select", "eq", "neq", "in", "is", "not", "gte", "lte", "order", "limit", "range", "overrideTypes"]) {
+      for (const op of ["select", "eq", "neq", "in", "is", "not", "or", "gte", "lte", "order", "limit", "range", "overrideTypes"]) {
         builder[op] = (...args: unknown[]) => {
           if (op === "select") rec.select = String(args[0]);
           else rec.calls.push({ op, args });
@@ -183,10 +183,18 @@ function makeCases(count: number, seed: number): Case[] {
         depart_at: depart.toISOString(),
         status,
         created_at: new Date(depart.getTime() - int(1, 30) * 86_400_000).toISOString(),
+        // OF2-B — 상담완료를 거쳤으면(확정·완료·확정 뒤 취소) 시각이 있다. 숨김 칸은 기본값.
+        // 상담 없이 취소한 건(짝수 번째 cancelled)은 시각이 없다 — 홈에서 빠져야 하는 경우.
+        confirmed_at: status === "new" || (status === "cancelled" && index % 2 === 0) ? null : depart.toISOString(),
+        hidden_from_feed: false,
       },
     };
   });
 }
+
+/** OF2-B — 새 두 칸의 기본값(상담 전 · 숨기지 않음). 줄마다 쓰지 않으려고 한곳에 둔다. */
+const FEED0 = { confirmed_at: null, hidden_from_feed: false } as const;
+const CONSULTED_AT = "2026-09-02T00:00:00Z";
 
 const CASE_COUNT = 100;
 const SEED = 20260913;
@@ -244,7 +252,8 @@ describe("1. 누출 0 property test (100 케이스, seed 고정)", () => {
     assertNoLeak(json, c);
     expect(/\d{4,}/.test(json), "4자리 이상 숫자열").toBe(false);
 
-    const isPublic = (RECENT_PUBLIC_STATUSES as readonly string[]).includes(c.row.status);
+    // OF2-B 규칙: 접수(new)이거나 상담완료를 거친 건(confirmed_at 있음 — 확정 뒤 취소·운행 완료 포함)
+    const isPublic = c.row.status === "new" || c.row.confirmed_at !== null;
     if (!isPublic) {
       expect(items).toEqual([]);
       return;
@@ -256,7 +265,7 @@ describe("1. 누출 0 property test (100 케이스, seed 고정)", () => {
     expect(item.maskedName).toMatch(/^[\s\S]\*{1,2}$/);
     expect(item.vehicleLabel).toBe(c.row.vehicle_slug === null ? null : LABELS.get(c.row.vehicle_slug));
     expect(item.departDateKst).toBe(kstMonthDay(new Date(c.row.depart_at)));
-    expect(item.status).toBe(c.row.status);
+    expect(item.status).toBe(c.row.confirmed_at !== null ? "confirmed" : "new");
   });
 
   test("100행을 한 번에 넣어도 전체 JSON 에 어떤 케이스의 원문 조각도 없다 (항목 사이 경계 포함)", async () => {
@@ -264,7 +273,7 @@ describe("1. 누출 0 property test (100 케이스, seed 고정)", () => {
     const items = await getRecentReservationsMasked(100, client);
     const json = JSON.stringify(items);
     for (const c of CASES) assertNoLeak(json, c);
-    expect(items.length).toBe(CASES.filter((c) => (RECENT_PUBLIC_STATUSES as readonly string[]).includes(c.row.status)).length);
+    expect(items.length).toBe(CASES.filter((c) => c.row.status === "new" || c.row.confirmed_at !== null).length);
     for (const it of items) expect(Object.keys(it).sort()).toEqual(["departDateKst", "maskedName", "status", "vehicleLabel"]);
   });
 
@@ -280,12 +289,22 @@ describe("1. 누출 0 property test (100 케이스, seed 고정)", () => {
 describe("2. select 화이트리스트", () => {
   beforeEach(() => logMock.mockClear());
 
-  test("RECENT_SELECT_COLUMNS 는 정확히 5컬럼이고 RECENT_SELECT 는 그 join 이다", () => {
-    expect([...RECENT_SELECT_COLUMNS].sort()).toEqual(["created_at", "depart_at", "name", "status", "vehicle_slug"]);
+  test("RECENT_SELECT_COLUMNS 는 정확히 7컬럼(OF2-B: 상담완료 시각 · 숨김 칸 추가 — 개인정보 아님)이고 RECENT_SELECT 는 그 join 이다", () => {
+    expect([...RECENT_SELECT_COLUMNS].sort()).toEqual([
+      "confirmed_at",
+      "created_at",
+      "depart_at",
+      "hidden_from_feed",
+      "name",
+      "status",
+      "vehicle_slug",
+    ]);
     expect(RECENT_SELECT.split(",").sort()).toEqual([...RECENT_SELECT_COLUMNS].sort());
-    for (const banned of ["*", "phone", "email", "message", "id", "public_code", "(", " "]) {
+    for (const banned of ["*", "phone", "email", "message", "public_code", "(", " "]) {
       expect(RECENT_SELECT.includes(banned), banned).toBe(false);
     }
+    // `id` 는 **컬럼 이름으로** 본다 — 부분 문자열로 보면 정당한 새 칸 hidden_from_feed("h·id·den")가 걸린다(OF2-B). 금지의 뜻(식별자 컬럼 없음)은 그대로다.
+    expect(RECENT_SELECT.split(","), "id 컬럼").not.toContain("id");
   });
 
   test("가짜 클라이언트가 받은 reservations select 문자열이 화이트리스트와 정확히 같다 (순서 무관, 그 외 0)", async () => {
@@ -296,11 +315,14 @@ describe("2. select 화이트리스트", () => {
     expect(res!.select!.split(",").map((s) => s.trim()).sort()).toEqual([...RECENT_SELECT_COLUMNS].sort());
   });
 
-  test("status in (new, confirmed) · created_at 내림차순 · limit 이 쿼리에 명시된다 (매퍼 필터와 이중 방어)", async () => {
+  test("숨기지 않은 행 · (접수 또는 상담완료 시각 있음) · created_at 내림차순 · limit 이 쿼리에 명시된다 (매퍼 필터와 이중 방어)", async () => {
     const { client, recorded } = fakeClient({ reservations: { data: [] }, vehicles: { data: VEHICLE_ROWS } });
     await getRecentReservationsMasked(5, client);
     const res = recorded.find((r) => r.table === "reservations")!;
-    expect(res.calls).toContainEqual({ op: "in", args: ["status", ["new", "confirmed"]] });
+    // OF2-B: 예전 `status in (new, confirmed)` 는 상담완료 뒤 취소·운행 완료를 빼 버렸다 — 규칙이 confirmed_at 으로 바뀌었다.
+    expect(res.calls).not.toContainEqual({ op: "in", args: ["status", ["new", "confirmed"]] });
+    expect(res.calls).toContainEqual({ op: "eq", args: ["hidden_from_feed", false] });
+    expect(res.calls).toContainEqual({ op: "or", args: ["status.eq.new,confirmed_at.not.is.null"] });
     expect(res.calls).toContainEqual({ op: "order", args: ["created_at", { ascending: false }] });
     expect(res.calls).toContainEqual({ op: "limit", args: [5] });
   });
@@ -313,8 +335,8 @@ describe("2. select 화이트리스트", () => {
     expect(veh.select!.split(",").map((s) => s.trim()).sort()).toEqual(["name_ko", "slug"]);
   });
 
-  test("기본 limit 은 8 이고, 양의 정수가 아니면 클라이언트를 건드리기 전에 throw", async () => {
-    expect(DEFAULT_RECENT_LIMIT).toBe(8);
+  test("기본 limit 은 10(OF2-B — 사장님 요청: 화면 최신 10건)이고, 양의 정수가 아니면 클라이언트를 건드리기 전에 throw", async () => {
+    expect(DEFAULT_RECENT_LIMIT).toBe(10);
     const { client, recorded } = fakeClient({ reservations: { data: [] }, vehicles: { data: VEHICLE_ROWS } });
     await expect(getRecentReservationsMasked(0, client)).rejects.toThrow();
     await expect(getRecentReservationsMasked(-1, client)).rejects.toThrow();
@@ -342,7 +364,7 @@ describe("3. RecentFeedItem 타입에 원문 키가 없다", () => {
 
   test("런타임에도 항목 키는 네 개뿐이다", () => {
     const [item] = mapRecentRows(
-      [{ name: "홍길동", vehicle_slug: "bus45", depart_at: "2026-09-19T23:00:00Z", status: "new", created_at: "2026-09-01T00:00:00Z" }],
+      [{ name: "홍길동", vehicle_slug: "bus45", depart_at: "2026-09-19T23:00:00Z", status: "new", created_at: "2026-09-01T00:00:00Z", ...FEED0 }],
       LABELS,
     );
     expect(Object.keys(item).sort()).toEqual(["departDateKst", "maskedName", "status", "vehicleLabel"]);
@@ -418,32 +440,44 @@ describe("4·8. components/home/RecentFeed.tsx 정적 검사", () => {
 // =============================================================================
 // 5. 상태 필터 — cancelled · done 제외 (쿼리 + 매퍼 이중)
 // =============================================================================
-describe("5. status 필터", () => {
-  const base = { vehicle_slug: "bus45", depart_at: "2026-09-19T23:00:00Z", created_at: "2026-09-01T00:00:00Z" };
+describe("5. 노출 규칙 — 접수 · 상담완료 · 상담완료 후 취소 · 상담 없이 취소 · 숨김 (OF2-B)", () => {
+  const base = { vehicle_slug: "bus45", depart_at: "2026-09-19T23:00:00Z", created_at: "2026-09-01T00:00:00Z", ...FEED0 };
 
-  test("매퍼: cancelled·done·미지 상태는 버리고 new·confirmed 만 남긴다 (순서 유지)", () => {
+  test("매퍼 4경우 — new=접수 · confirmed=상담완료 · 상담완료 뒤 취소=상담완료 · 운행 완료=상담완료 · 상담 없이 취소=제외 · 미지 상태(시각 없음)=제외 (순서 유지)", () => {
     const rows: RecentReservationRow[] = [
       { ...base, name: "가나다", status: "new" },
-      { ...base, name: "라마바", status: "cancelled" },
-      { ...base, name: "사아자", status: "confirmed" },
-      { ...base, name: "차카타", status: "done" },
-      { ...base, name: "파하거", status: "weird" },
+      { ...base, name: "라마바", status: "cancelled" }, // 상담 없이 취소 — 거짓 표시 방지로 뺀다
+      { ...base, name: "사아자", status: "confirmed", confirmed_at: CONSULTED_AT },
+      { ...base, name: "차카타", status: "cancelled", confirmed_at: CONSULTED_AT }, // 상담완료 뒤 취소 — 여전히 상담완료
+      { ...base, name: "파하거", status: "done", confirmed_at: CONSULTED_AT },
+      { ...base, name: "너더러", status: "weird" },
     ];
     const items = mapRecentRows(rows, LABELS);
     expect(items.map((i) => [i.maskedName, i.status])).toEqual([
       ["가**", "new"],
       ["사**", "confirmed"],
+      ["차**", "confirmed"],
+      ["파**", "confirmed"],
     ]);
   });
 
-  test("함수: 가짜 DB 가 cancelled·done 행을 돌려줘도 결과에 없고, 걸러진 행 수를 warn 로그 한 줄로 남긴다(개인정보 없이)", async () => {
+  test("매퍼 — 숨긴 행(hidden_from_feed)은 어떤 상태여도 버린다 (쿼리가 먼저 거르지만 매퍼가 한 번 더)", () => {
+    const rows: RecentReservationRow[] = [
+      { ...base, name: "가나다", status: "new", hidden_from_feed: true },
+      { ...base, name: "라마바", status: "confirmed", confirmed_at: CONSULTED_AT, hidden_from_feed: true },
+      { ...base, name: "사아자", status: "new" },
+    ];
+    expect(mapRecentRows(rows, LABELS).map((i) => i.maskedName)).toEqual(["사**"]);
+  });
+
+  test("함수: 가짜 DB 가 상담 없이 취소한 행·숨긴 행을 돌려줘도 결과에 없고, 걸러진 행 수를 warn 로그 한 줄로 남긴다(개인정보 없이)", async () => {
     logMock.mockClear();
     const { client } = fakeClient({
       reservations: {
         data: [
           { ...base, name: "가나다", status: "new" },
           { ...base, name: "라마바", status: "cancelled" },
-          { ...base, name: "차카타", status: "done" },
+          { ...base, name: "차카타", status: "new", hidden_from_feed: true },
         ],
       },
       vehicles: { data: VEHICLE_ROWS },
@@ -503,7 +537,7 @@ describe.each([["UTC"], ["Asia/Seoul"], ["America/Los_Angeles"]])("6. KST 운행
   test("depart_at=2026-09-19T23:00:00Z → 9/20 (UTC 날짜라면 9/19)", async () => {
     const { client } = fakeClient({
       reservations: {
-        data: [{ name: "가나다", vehicle_slug: "bus45", depart_at: "2026-09-19T23:00:00Z", status: "new", created_at: "2026-09-01T00:00:00Z" }],
+        data: [{ name: "가나다", vehicle_slug: "bus45", depart_at: "2026-09-19T23:00:00Z", status: "new", created_at: "2026-09-01T00:00:00Z", ...FEED0 }],
       },
       vehicles: { data: VEHICLE_ROWS },
     });
@@ -561,7 +595,7 @@ describe("7. 실패 정책", () => {
 
   test("vehicles 쿼리 error → 라벨을 만들 수 없으므로 [] + 로그 (slug 를 대신 노출하지 않는다)", async () => {
     const { client } = fakeClient({
-      reservations: { data: [{ name: "가나다", vehicle_slug: "bus45", depart_at: "2026-09-19T23:00:00Z", status: "new", created_at: "2026-09-01T00:00:00Z" }] },
+      reservations: { data: [{ name: "가나다", vehicle_slug: "bus45", depart_at: "2026-09-19T23:00:00Z", status: "new", created_at: "2026-09-01T00:00:00Z", ...FEED0 }] },
       vehicles: { error: { code: "PGRST000", message: "boom" } },
     });
     await expect(getRecentReservationsMasked(8, client)).resolves.toEqual([]);
@@ -581,7 +615,7 @@ describe("7. 실패 정책", () => {
 
   test("정상 경로에서는 로그 0", async () => {
     const { client } = fakeClient({
-      reservations: { data: [{ name: "가나다", vehicle_slug: "bus45", depart_at: "2026-09-19T23:00:00Z", status: "confirmed", created_at: "2026-09-01T00:00:00Z" }] },
+      reservations: { data: [{ name: "가나다", vehicle_slug: "bus45", depart_at: "2026-09-19T23:00:00Z", status: "confirmed", created_at: "2026-09-01T00:00:00Z", confirmed_at: CONSULTED_AT, hidden_from_feed: false }] },
       vehicles: { data: VEHICLE_ROWS },
     });
     const items = await getRecentReservationsMasked(8, client);
@@ -707,7 +741,7 @@ describe("11. recent-feed-preview.ts", () => {
 // 12. 기간 조건 — 카피가 "최근"이라고 말하는 범위를 쿼리가 실제로 건다 (P6-6 감사 R-1)
 // =============================================================================
 describe("12. '최근' 기간 창 — 경계 · 카피 대조 · 0건 숨김", () => {
-  const base = { vehicle_slug: "bus45", depart_at: "2026-09-19T23:00:00Z" };
+  const base = { vehicle_slug: "bus45", depart_at: "2026-09-19T23:00:00Z", ...FEED0 };
   const NOW = new Date("2026-09-16T00:00:00.000Z");
   const DAY_MS = 86_400_000;
 
@@ -721,7 +755,7 @@ describe("12. '최근' 기간 창 — 경계 · 카피 대조 · 0건 숨김", (
       from(table: string) {
         const builder: Record<string, unknown> = {};
         let data: unknown = table === "vehicles" ? VEHICLE_ROWS : rows;
-        for (const op of ["select", "in", "order", "limit", "overrideTypes"]) builder[op] = () => builder;
+        for (const op of ["select", "eq", "or", "order", "limit", "overrideTypes"]) builder[op] = () => builder;
         builder.gte = (col: string, value: string) => {
           if (table === "reservations" && col === "created_at") {
             seen.gte = value;
@@ -737,8 +771,8 @@ describe("12. '최근' 기간 창 — 경계 · 카피 대조 · 0건 숨김", (
     return { client: client as unknown as ServiceClient, seen };
   }
 
-  test("창 시작 시각은 now - RECENT_WINDOW_DAYS 일이다 (상수가 실제로 쓰인다)", () => {
-    expect(RECENT_WINDOW_DAYS).toBeGreaterThan(0);
+  test("창 시작 시각은 now - RECENT_WINDOW_DAYS 일이다 (상수가 실제로 쓰인다) — OF2-B: 90일", () => {
+    expect(RECENT_WINDOW_DAYS).toBe(90);
     expect(recentWindowStart(NOW)).toBe(new Date(NOW.getTime() - RECENT_WINDOW_DAYS * DAY_MS).toISOString());
   });
 
@@ -776,8 +810,8 @@ describe("12. '최근' 기간 창 — 경계 · 카피 대조 · 0건 숨김", (
     const feed = JSON.stringify(
       (JSON.parse(read("messages/ko.json")) as { home: { recentFeed: unknown } }).home.recentFeed,
     );
-    expect(feed.includes("방금"), "기간 조건이 30일인데 카피가 '방금'이라고 말한다").toBe(false);
-    expect(feed.includes("실시간"), "기간 조건이 30일인데 카피가 '실시간'이라고 말한다").toBe(false);
+    expect(feed.includes("방금"), "기간 조건이 90일인데 카피가 '방금'이라고 말한다").toBe(false);
+    expect(feed.includes("실시간"), "기간 조건이 90일인데 카피가 '실시간'이라고 말한다").toBe(false);
     expect(feed.includes("최근")).toBe(true);
   });
 
@@ -787,5 +821,14 @@ describe("12. '최근' 기간 창 — 경계 · 카피 대조 · 0건 숨김", (
     expect(RECENT_SELECT.includes("email")).toBe(false);
     expect(RECENT_SELECT.includes("message")).toBe(false);
     expect(RECENT_SELECT.includes("public_code")).toBe(false);
+  });
+
+  test("OF2-B — 칩 이름은 '상담완료' · '접수'뿐이고 홈에는 설명 문구 키가 없다 (결정: 설명 문구 절대 금지)", () => {
+    const feed = (JSON.parse(read("messages/ko.json")) as { home: { recentFeed: Record<string, string> } }).home.recentFeed;
+    expect(feed.statusNew).toBe("접수");
+    expect(feed.statusConfirmed).toBe("상담완료");
+    // 키 목록을 고정한다 — 누가 '상담완료일 뿐입니다' 같은 해설 키를 더하면 여기서 멈춘다.
+    expect(Object.keys(feed).sort()).toEqual(["eyebrow", "itemLabel", "itemLabelNoVehicle", "listLabel", "statusConfirmed", "statusNew", "title"]);
+    expect(JSON.stringify(feed)).not.toMatch(/일 뿐|뿐입니다|아닙니다|확정/);
   });
 });

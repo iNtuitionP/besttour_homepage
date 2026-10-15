@@ -34,6 +34,7 @@ import {
   ADMIN_NOTIFICATIONS_PATH,
   ADMIN_RESERVATIONS_PATH,
   CHECK_GUIDE_ITEM,
+  CONFIRMED_HEADLINE,
   CONTRACT_PARTY_LINE,
   GUIDE_PATH,
   renderTemplate,
@@ -502,7 +503,8 @@ describe("4. 문안", () => {
   const CUSTOMER: CustomerVars = { publicCode: "BT12ABCD", origin: ORIGIN, createdAt: CREATED_BEFORE_REFUND_CHANGE };
 
   test("실패 알림 2종이 렌더된다 — 접수번호 · 어떤 통지인지 · 발송 내역 링크 · 제목", () => {
-    const labels: Record<string, string> = { "created.owner.failure.email": "접수", "confirmed.owner.failure.email": "확정" };
+    // OF2-B: 관리자 상태 이름이 "확정" → "상담완료" 가 되어 사장님 실패 알림의 통지 종류도 같은 이름으로 말한다.
+    const labels: Record<string, string> = { "created.owner.failure.email": "접수", "confirmed.owner.failure.email": "상담완료" };
     for (const key of FAILURE_TEMPLATE_KEYS) {
       const r = renderTemplate(key, CUSTOMER);
       expect(r.key).toBe(key);
@@ -613,12 +615,20 @@ describe("4. 문안", () => {
     // T2-4 후속(2026-10-10): 확정 문안**만** 다시 떴다 — "■ 취소·환불" 아래 항목이 원장 CANCELLATION.smsLine("취소·환불 : …")에서
     // smsItem(머리말만 뺀 같은 문장)으로 바뀌어 제목과 항목의 낱말 겹침이 사라졌다. 다른 다섯 지문(위·아래)은 그대로다.
     // 그 직전 값(겹침이 있던 T2-4 첫 판): c44e9d4da965361eb58251de71a04a4cc6ca3448af05eaee34ef0004b7bc0503
+    //
+    // 2026-10-15 OF2-B(사장님 요청 · 결정 1): **고객 상담완료 문자 한 칸만** 다시 떴다 — 제목 줄 "예약 확정 안내" → "상담 완료 · 예약 확정 안내".
+    // 그 직전 값(OF2-B 전 T2-4 후속 판 · BEFORE_OF2_B_CONFIRMED): d5ff41dfe6d77cfa319d8fa22d37f9aa9eb69f304d048a26ff41a7f6b9e65221
+    // 다른 다섯 지문(위·아래)은 그대로다. 제목만 바뀌었다는 것은 아래 §7 OF2-B 테스트가 **되돌림**(새 제목 → 옛 제목)으로 옛 지문을 재현해 증명한다.
     "confirmed.customer.sms": {
-      sms: "d5ff41dfe6d77cfa319d8fa22d37f9aa9eb69f304d048a26ff41a7f6b9e65221",
-      lms: "d5ff41dfe6d77cfa319d8fa22d37f9aa9eb69f304d048a26ff41a7f6b9e65221",
+      sms: "7c1469edeba78c68b71da991e59167d66fa978459947e29644cb1685b52d6a82",
+      lms: "7c1469edeba78c68b71da991e59167d66fa978459947e29644cb1685b52d6a82",
       subject: null,
     },
   };
+
+  /** OF2-B 직전의 고객 상담완료 문자 지문(T2-4 후속 판) — 되돌림 사슬의 끝점이다. */
+  const BEFORE_OF2_B_CONFIRMED = "d5ff41dfe6d77cfa319d8fa22d37f9aa9eb69f304d048a26ff41a7f6b9e65221";
+  const BEFORE_OF2_B_HEADLINE = "예약 확정 안내";
 
   /** T2-4 기준선(2026-10-10) — 간편 접수분 사장님 알림(문자 · 메일 폴백). 옛 기준선에는 없던 칸이다(P3-8 이 간편 판을 더했을 때 지문을 두지 않았다). */
   const BASELINE_T2_4_QUICK: Record<string, { sms: string; lms: string; subject: string | null }> = {
@@ -699,6 +709,21 @@ describe("4. 문안", () => {
     }
   });
 
+  // OF2-B(2026-10-15 · 사장님 요청 · 결정 1): 고객 상담완료 문자의 지문이 바뀐 이유는 **제목 줄 하나**다 — 되돌림으로 증명한다.
+  test("§7 OF2-B — 고객 상담완료 문자의 바뀐 곳은 제목 줄뿐이다: 새 제목을 옛 제목으로 되돌리면 OF2-B 직전 지문이 그대로 나온다", () => {
+    const v = renderVariants("confirmed.customer.sms", CUSTOMER);
+    const newHead = `${BRAND_NOW} ${CONFIRMED_HEADLINE}`;
+    const oldHead = `${BRAND_NOW} ${BEFORE_OF2_B_HEADLINE}`;
+    expect(CONFIRMED_HEADLINE).toBe(`상담 완료 · ${BEFORE_OF2_B_HEADLINE}`);
+    expect(v.lms.startsWith(`${newHead}\n`), "제목이 첫 줄이 아니다").toBe(true);
+    expect(v.sms).toBe(v.lms);
+    const reverted = oldHead + v.lms.slice(newHead.length);
+    expect(sha(reverted), "제목 말고 다른 바이트가 바뀌었다").toBe(BEFORE_OF2_B_CONFIRMED);
+    expect(BASELINE_T2_4["confirmed.customer.sms"].lms).not.toBe(BEFORE_OF2_B_CONFIRMED);
+    // 접수 문자의 제목은 그대로다 — 이 변경이 번지지 않았다
+    expect(renderVariants("created.customer.sms", CUSTOMER).lms.split("\n")[0]).toBe(`${BRAND_NOW} 견적 신청 접수`);
+  });
+
   // T2-4(2026-10-10 · 사장님 요청 8 · 11 문자 줄 · 결정 12 · 사용자 승인 초안): 무엇이 바뀌었고 무엇이 그대로인지 — 지문을 새로 뜬 이유를 단언으로 남긴다.
   test("§7 T2-4 에서 바뀐 것(블록 서식 · 옛 줄 0)과 그대로인 것(브랜드 접두 · verbatim · 약관 제8조 줄 · 계약 주체 줄 · 접수번호 경계)", () => {
     // 이전 고리들이 확인한 원장 값은 그대로다(역사 값과 다르다는 것까지)
@@ -755,7 +780,8 @@ describe("4. 문안", () => {
           for (const old of ["견적 신청이 접수되었습니다.", "접수 내용은", `문의 ${COMPANY.consultTel}`, `확인 ${ORIGIN}`]) expect(v.lms, old).not.toContain(old);
           expect(v.lms, key).not.toContain(CONTRACT_PARTY_LINE);
         } else {
-          expect(rows[0]).toBe(`${BRAND_NOW} 예약 확정 안내`);
+          // OF2-B: 제목에 "상담 완료 · " 가 앞에 붙었다 — "예약 확정 안내" 는 그대로 남는다(계약 성립 통지 · 약관 제5조).
+          expect(rows[0]).toBe(`${BRAND_NOW} 상담 완료 · ${BEFORE_OF2_B_HEADLINE}`);
           // 그대로 ④ — 약관 제8조 고지 줄(위험 #9): 대금 · 계좌 · 취소·환불 · 청약철회 · 이용안내 링크가 모두 있다(모양만 블록 항목)
           expect(rows).toEqual(
             expect.arrayContaining([
