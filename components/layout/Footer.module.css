@@ -181,17 +181,9 @@
 }
 
 /* 두 번째 회사((주)베스트모빌리티) 줄 — 위 베스트투어 묶음과 한 줄 남짓 띄운다. '운영사'·'관계사' 배지와 점선은 사장님 요청 5(2026-10-10)로
- * 걷었다 — 계약 주체가 누구인지는 맨 아래 고지(.note — RELATED_COMPANY.note)가 이름으로 밝힌다. */
+ * 걷었다. 맨 아래 계약·대금 주체 문장(.note)도 OF2-A(2026-10-15)로 걷었다 — 그 고지는 /guide 에 있다. */
 .rowNextCompany {
   margin-top: var(--space-stack-xs);
-}
-
-.note {
-  margin: var(--space-stack-xs) 0 0;
-  font-size: 12.5px;
-  line-height: 1.8;
-  color: var(--text-secondary);
-  word-break: keep-all;
 }
 
 /* ── 법정 링크 ─────────────────────────────────────────────────────────── */

@@ -15,6 +15,8 @@ export const PHONE_KR_PATTERN = /^01[016789]-?\d{3,4}-?\d{4}$/;
 export const PHONE_INTL_PATTERN = /^\+[1-9]\d{6,14}$/;
 /** 달력 날짜 `YYYY-MM-DD` (`<input type="date">` 값 그대로). 달력에 실제로 있는지는 superRefine 이 따로 본다. */
 export const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+/** 시(KST 벽시계) 두 자리 00~23 — OF2-A 출발·도착 시각. 시각 전체(`Z`·분 포함)는 받지 않는다(CLAUDE.md §3). */
+export const HOUR_PATTERN = /^([01]\d|2[0-3])$/;
 
 /**
  * 장소 코드 = LOCATION_CODES(도시 PlaceCode ∪ 시도 RegionCode, 28개 — REVIEW-FIX M5).
@@ -31,8 +33,8 @@ export const PASSENGERS_RANGE = { min: 1, max: 900 } as const;
 /**
  * 간편 견적 입력의 **모양** (P3-8 — 공개 접수 경로는 이것 하나다). 날짜 규칙은 "오늘"이 필요해 아래 quickReservationSchema(now) 가 더한다.
  *
- * 받는 것: 이름 · 연락처(phone XOR phoneIntl) · 출발지 · 도착지 · 출발일 · 도착일 · 인원 · 로케일 · 동의 2종 + guard 필드.
- * 받지 않는 것(사장님이 전화로 확인): 차종 · 여행 목적 · 출발 시각 · 왕복 구분 · 대수 — 그리고 메일·경유지·요청사항.
+ * 받는 것: 이름 · 연락처(phone XOR phoneIntl) · 출발지 · 도착지 · 출발일 · 도착일 · 출발 시각(시, 필수) · 도착 시각(시, 선택 — OF2-A) · 인원 · 로케일 · 동의 2종 + guard 필드.
+ * 받지 않는 것(사장님이 전화로 확인): 차종 · 여행 목적 · 왕복 구분 · 대수 — 그리고 메일·경유지·요청사항.
  * 선택 동의(광고성 정보 수신)는 받지 않는다 — 서버가 marketing_consent_at 을 null 로 둔다(원장 고지와 같은 범위).
  * 계약 밖 키는 zod 가 버린다(strip) — 옛 위저드 필드(vehicleSlug 등)를 보내도 저장 경로로 가지 않는다.
  */
@@ -46,6 +48,9 @@ export const QuickReservationShape = z.object({
   destinationCode: LocationCodeEnum,
   departDate: z.string().regex(ISO_DATE_PATTERN),
   returnDate: z.string().regex(ISO_DATE_PATTERN),
+  // OF2-A: 출발 시각(시)은 필수, 도착 시각(시)은 선택. 둘 다 KST 벽시계의 시 두 자리 — 서버가 `${날짜}T${시}:00` 으로 Asia/Seoul 해석한다.
+  departHour: z.string().regex(HOUR_PATTERN),
+  returnHour: z.string().regex(HOUR_PATTERN).optional(),
   passengers: z.number().int().min(PASSENGERS_RANGE.min).max(PASSENGERS_RANGE.max),
   locale: z.enum(["ko", "en"]).default("ko"),
   turnstileToken: z.string(),
@@ -100,6 +105,17 @@ export function quickReservationSchema(now: Date) {
     if (departOk && returnOk && data.returnDate < data.departDate) {
       ctx.addIssue({ code: "custom", message: "도착일은 출발일과 같거나 뒤여야 합니다 (returnDate)", path: ["returnDate"] });
     }
+    // 규칙 3 (OF2-A)  같은 날 왕복이면 도착 시각 > 출발 시각 — 0001 CHECK `return_at > depart_at` 을 insert 전에 지킨다. 두 자리 문자열 비교 = 시 순서.
+    if (
+      departOk &&
+      returnOk &&
+      data.returnDate === data.departDate &&
+      data.returnHour !== undefined &&
+      HOUR_PATTERN.test(data.departHour) &&
+      data.returnHour <= data.departHour
+    ) {
+      ctx.addIssue({ code: "custom", message: "같은 날 도착 시각은 출발 시각보다 뒤여야 합니다 (returnHour)", path: ["returnHour"] });
+    }
   });
 }
 
@@ -131,7 +147,8 @@ export type ReservationIntake = (typeof RESERVATION_INTAKES)[number];
  *
  * 공개 접수는 **간편 견적 하나**다(P3-8) — 그래서 이 타입은 간편 행의 모양으로 좁혀져 있다:
  * intake 는 'quick' 리터럴, 손님이 고르지 않은 차종·목적·대수·왕복 구분은 **null 리터럴**이다(지어내지 않는다 — 0023 헤더).
- * 날짜만 받으므로 depart_at = 출발일 00:00 KST 의 인스턴트, return_at = 도착일 00:00 KST(같은 날이면 null)다.
+ * depart_at = 출발일 + 출발 시각(시:00 KST)의 인스턴트. return_at = 도착일 + 도착 시각(시:00 KST) — 도착 시각이 없으면 도착일 00:00(자리값),
+ * 같은 날인데 도착 시각도 없으면 null 이다(OF2-A).
  * 이메일·경유지·요청사항·연락/결제 방법·주차·부가세 칸은 보내지 않는다(DB 기본값·null 그대로 — 받은 적 없는 값이다).
  */
 export interface ReservationInsert extends ReservationConsentColumns {
@@ -146,9 +163,9 @@ export interface ReservationInsert extends ReservationConsentColumns {
   bus_count: null;
   origin_code: string;
   destination_code: string;
-  /** 출발일 00:00 KST 의 UTC 인스턴트(ISO). 시각은 의미가 없다 — 표시면은 intake='quick' 이면 날짜만 보인다. */
+  /** 출발일 + 출발 시각(시:00 KST)의 UTC 인스턴트(ISO). 00:00 KST 는 자리값(옛 접수) — lib/kst.ts quickClock 이 null 로 읽는다. */
   depart_at: string;
-  /** 도착일 00:00 KST(도착일이 출발일보다 뒤일 때만). 같은 날이면 null. */
+  /** 도착일 + 도착 시각(시:00 KST). 도착 시각이 없고 도착일이 뒤면 도착일 00:00(자리값). 같은 날 · 도착 시각 없음이면 null. */
   return_at: string | null;
   /** 도착일 − 출발일(KST 달력 일수). */
   nights: number;

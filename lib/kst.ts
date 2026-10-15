@@ -92,6 +92,19 @@ export function nightsBetween(departLocal: string, returnLocal: string): number 
 }
 
 /**
+ * 간편 접수(intake='quick')의 표시용 시각 `HH:mm`(KST). **00:00 KST 는 자리값**이라 null 이다 —
+ * 홈 견적이 시각을 받지 않던 시절의 행과, 도착 시각을 고르지 않은 여러 날 운행의 도착일이 00:00 으로 저장되어 있다
+ * (OF2-A: DB 칸을 더하지 않았으므로 자리값과 실제 자정 출발을 가를 수 없다). null 이면 날짜만 보인다 — 덜 알릴 뿐 거짓을 보이지 않는 쪽이다.
+ * 읽을 수 없는 값도 null.
+ */
+export function quickClock(iso: string): string | null {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
+  const hhmm = new Date(t + KST_OFFSET_HOURS * 60 * 60 * 1000).toISOString().slice(11, 16);
+  return hhmm === "00:00" ? null : hhmm;
+}
+
+/**
  * UTC 인스턴트를 KST 달력 날짜 문자열("YYYY-MM-DD")로 변환한다.
  *
  * 팝업 노출 기간처럼 "오늘"을 KST 벽시계로 판정할 때 쓴다. `new Date()` 를 그대로

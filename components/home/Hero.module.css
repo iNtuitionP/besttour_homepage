@@ -350,6 +350,8 @@
   /* P7-3: 칸 안의 열이 내용(날짜 입력의 고유 폭)만큼 늘지 않게 묶는다. 묶기 전에는 날짜 칸이 카드 밖으로 넘쳤다
    * (실측 — 375px: 옛 글꼴 22px · Pretendard 30px, 1280px: Pretendard 6px). 아래 날짜 칸 여백과 함께 고친다. */
   grid-template-columns: minmax(0, 1fr);
+  /* OF2-A: 옆 칸에 오류 문구가 붙어 줄이 길어져도 이 칸의 라벨·입력이 아래로 벌어지지 않게 위쪽에 모은다 */
+  align-content: start;
   gap: var(--space-stack-xs);
   min-width: 0;
 }
@@ -421,9 +423,15 @@
  * (320px 실측 — 연도 앞 두 자리가 밀려 "26-10-15" 로 보였다 · P7-3 독립 리뷰 P2-11). 그 폭에서만 날짜 두 칸을 한 줄씩 넓게 쓴다 —
  * 출발지·도착지는 두 열 그대로. :has() 를 모르는 브라우저는 이전 배치(두 열)로 남는다. */
 @media (max-width: 359px) {
-  .field:has(input[type="date"]) {
+  .field:has(input[type="date"]),
+  .fieldTime {
     grid-column: 1 / -1;
   }
+}
+/* 출발·도착 시각(OF2-A) — 날짜 칸 옆의 select. 도착일이 비면 도착 시각은 잠긴다(흐리게). */
+.ctrl select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 /* 360–374px: 두 열은 지키고 날짜 칸 안쪽 여백만 줄인다 — 빈 칸의 자리표시("yyyy-mm-dd" 등, 14.5px 굵게 ≈89px)가 129px 칸에서
  * 달력 아이콘에 잘렸다(360px 실측). 왼쪽 12 · 오른쪽 4 — 간격 토큰에서 계산한 값(px 리터럴 금지 규약). */

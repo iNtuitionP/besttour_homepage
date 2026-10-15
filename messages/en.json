@@ -100,6 +100,10 @@
         "dest": "To",
         "date": "Departure date",
         "returnDate": "Return date",
+        "departTime": "Departure time",
+        "returnTime": "Return time (optional)",
+        "timePlaceholder": "Select",
+        "timeNone": "Not set",
         "pax": "Passengers",
         "groupAirport": "Airport",
         "groupRegions": "Provinces & metropolitan cities",
@@ -112,6 +116,9 @@
           "departPast": "Please choose a departure date from today onward.",
           "returnDate": "Please choose a return date.",
           "returnBefore": "The return date must be the same as or after the departure date.",
+          "departHour": "Please choose a departure time.",
+          "returnHour": "Please choose the return time again.",
+          "returnHourBefore": "On the same day, the return time must be after the departure time.",
           "pax": "Please enter the number of passengers (1 to 900)."
         }
       }
@@ -144,7 +151,8 @@
     "how": {
       "eyebrow": "How it works",
       "title": "From request to payment in just <ac>four steps</ac>",
-      "desc": "We take care of the complicated parts. All you need to do is tell us where you are going, when, and how many people."
+      "descLead": "We take care of the complicated parts.",
+      "descBody": "All you need to do is tell us where you are going, when, and how many people."
     },
     "fleet": {
       "eyebrow": "Vehicles",
@@ -212,6 +220,8 @@
       "summaryPax": "Passengers",
       "routeValue": "{origin} → {destination}",
       "dateSingle": "{date} (same day)",
+      "dateTime": "{date} {time}",
+      "dateSameDayRange": "{date} {from} – {to} (same day)",
       "dateRange": "{from} – {to}",
       "paxValue": "{n, plural, one {# person} other {# people}}",
       "summaryHint": "We will confirm the vehicle type, departure time and other details with you by phone.",
@@ -268,7 +278,6 @@
     "sub": "Enter the mobile number and name you used for your quote request. You can see the status and trip schedule of your upcoming bookings.",
     "form": {
       "required": "Required",
-      "legacyCodeNote": "You no longer need the request number from earlier text messages.",
       "phoneLabel": "Mobile number",
       "phoneHint": "The number you entered with your request. For a non-Korean number, start with + and the country code.",
       "nameLabel": "Name on the booking",
@@ -341,6 +350,7 @@
       ],
       "facts": {
         "legalName": "Company name",
+        "address": "Address",
         "since": "Opened",
         "sinceValue": "{year}"
       },

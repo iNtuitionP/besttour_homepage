@@ -104,6 +104,8 @@ const SERVER_WIDGET_KEYS: Readonly<Record<WidgetField, string>> = {
   destinationCode: "home.hero.widget.errors.dest",
   departDate: "home.hero.widget.errors.departDate",
   returnDate: "home.hero.widget.errors.returnDate",
+  departHour: "home.hero.widget.errors.departHour",
+  returnHour: "home.hero.widget.errors.returnHour",
   passengers: "home.hero.widget.errors.pax",
 };
 const SERVER_MODAL_KEYS: Readonly<Record<string, string>> = {
@@ -282,6 +284,15 @@ export function QuickQuoteForm({
   const dates = publicDateLabels(tCommon.raw("dates"));
   const now = new Date();
   const day = (value: string) => formatPublicDate(value, dates, { style: "schedule", now }) ?? value;
+  // OF2-A: 날짜 옆에 시각(KST 벽시계 HH:00)을 붙인다 — 출발 시각은 필수, 도착 시각은 골랐을 때만.
+  const dayAt = (value: string, time: string | null) => (time === null ? day(value) : t("dateTime", { date: day(value), time }));
+  const span = dateSpan(fields);
+  const summaryDates =
+    span.kind === "single"
+      ? span.toTime === null
+        ? t("dateSingle", { date: dayAt(span.date, span.fromTime) })
+        : t("dateSameDayRange", { date: day(span.date), from: span.fromTime ?? "", to: span.toTime })
+      : t("dateRange", { from: dayAt(span.from, span.fromTime), to: dayAt(span.to, span.toTime) });
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -311,7 +322,6 @@ export function QuickQuoteForm({
     : submitBlock({ formToken: formToken ?? null, siteKey: turnstileSiteKey, privacyConsent, withdrawalConsent, pending });
   const notReady = !loading && block === "not-ready";
   const contact = splitPhone(phone);
-  const span = dateSpan(fields);
 
   // 서버 오류 문구 — reservation.errors.* 의 ratelimit·infra·server 가 {tel} 을 부른다(원장 값은 props 로 받았다).
   const resolve = useCallback((key: string) => tRoot(key, { tel: legal.tel.display }), [tRoot, legal.tel.display]);
@@ -394,7 +404,7 @@ export function QuickQuoteForm({
           </div>
           <div>
             <dt>{t("summaryDates")}</dt>
-            <dd>{span.kind === "single" ? t("dateSingle", { date: day(span.date) }) : t("dateRange", { from: day(span.from), to: day(span.to) })}</dd>
+            <dd>{summaryDates}</dd>
           </div>
           <div>
             <dt>{t("summaryPax")}</dt>
@@ -416,6 +426,8 @@ export function QuickQuoteForm({
         <input type="hidden" name={F.destinationCode} value={fields.destinationCode} />
         <input type="hidden" name={F.departDate} value={fields.departDate} />
         <input type="hidden" name={F.returnDate} value={fields.returnDate} />
+        <input type="hidden" name={F.departHour} value={fields.departHour} />
+        <input type="hidden" name={F.returnHour} value={fields.returnHour} />
         <input type="hidden" name={F.passengers} value={fields.passengers.trim()} />
         <input type="hidden" name={F.phone} value={contact.phone} />
         <input type="hidden" name={F.phoneIntl} value={contact.phoneIntl} />

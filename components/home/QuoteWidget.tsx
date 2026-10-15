@@ -19,7 +19,7 @@
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
-import { initialWidgetFields, validateWidget, withDepartDate, type FieldError, type WidgetField, type WidgetFields } from "@/components/quote/quick-quote";
+import { HOURS, hourClock, initialWidgetFields, validateWidget, withDepartDate, type FieldError, type WidgetField, type WidgetFields } from "@/components/quote/quick-quote";
 import { QuickQuoteModal, type QuickQuoteLegal } from "@/components/quote/QuickQuoteModal";
 import { toKstDateString } from "@/lib/kst";
 
@@ -42,6 +42,9 @@ export interface QuoteWidgetLabels {
   dest: string;
   date: string;
   returnDate: string;
+  /** 출발 시각(필수) · 도착 시각(선택) 칸 라벨 — OF2-A. */
+  departTime: string;
+  returnTime: string;
   pax: string;
   cta: string;
 }
@@ -79,7 +82,16 @@ export function QuoteWidget({
 
   const set = (field: WidgetField, value: string) => {
     setFields((f) => (field === "departDate" ? withDepartDate(f, value) : { ...f, [field]: value }));
-    setErrors((errs) => errs.filter((e) => e.field !== field && !(field === "departDate" && e.field === "returnDate")));
+    // 출발일이 바뀌면 도착일 오류도, 출발 시각이 바뀌면 도착 시각 오류도 함께 걷는다(서로 비교하는 칸이다).
+    setErrors((errs) =>
+      errs.filter(
+        (e) =>
+          e.field !== field &&
+          !(field === "departDate" && (e.field === "returnDate" || e.field === "returnHour")) &&
+          !(field === "departHour" && e.field === "returnHour") &&
+          !(field === "returnDate" && e.field === "returnHour"),
+      ),
+    );
   };
 
   const errorFor = (field: WidgetField) => {
@@ -127,10 +139,23 @@ export function QuoteWidget({
       </optgroup>
     ));
 
-  const fieldBox = (field: WidgetField, label: string, control: ReactNode, wide = false) => {
+  // 시각 선택지 — 빈 선택지 + 00:00~23:00(1시간 단위 · KST 벽시계). 표시는 언어와 무관한 24시간 표기라 카탈로그 문구가 없다.
+  const renderHourOptions = (emptyLabel: string) => (
+    <>
+      <option value="">{emptyLabel}</option>
+      {HOURS.map((hour) => (
+        <option key={hour} value={hour}>
+          {hourClock(hour)}
+        </option>
+      ))}
+    </>
+  );
+
+  const fieldBox = (field: WidgetField, label: string, control: ReactNode, wide = false, time = false) => {
     const err = errorFor(field);
+    const cls = [s.field, wide ? s.fieldWide : "", time ? s.fieldTime : ""].filter(Boolean).join(" ");
     return (
-      <div className={wide ? `${s.field} ${s.fieldWide}` : s.field} data-invalid={err ? "true" : undefined}>
+      <div className={cls} data-invalid={err ? "true" : undefined}>
         <label className={s.fieldLabel} htmlFor={`${id}-${field}`}>
           {label}
         </label>
@@ -204,6 +229,24 @@ export function QuoteWidget({
           </div>,
         )}
         {fieldBox(
+          "departHour",
+          labels.departTime,
+          <div className={`${s.ctrl} ${s.ctrlSelect}`}>
+            <select
+              id={`${id}-departHour`}
+              value={fields.departHour}
+              onChange={(e) => set("departHour", e.target.value)}
+              aria-invalid={invalid("departHour")}
+              aria-describedby={describedBy("departHour")}
+              data-testid="quote-depart-hour"
+            >
+              {renderHourOptions(tRoot("home.hero.widget.timePlaceholder"))}
+            </select>
+          </div>,
+          false,
+          true,
+        )}
+        {fieldBox(
           "returnDate",
           labels.returnDate,
           <div className={s.ctrl}>
@@ -218,6 +261,25 @@ export function QuoteWidget({
               data-testid="quote-return"
             />
           </div>,
+        )}
+        {fieldBox(
+          "returnHour",
+          labels.returnTime,
+          <div className={`${s.ctrl} ${s.ctrlSelect}`}>
+            <select
+              id={`${id}-returnHour`}
+              value={fields.returnHour}
+              onChange={(e) => set("returnHour", e.target.value)}
+              disabled={fields.returnDate === ""}
+              aria-invalid={invalid("returnHour")}
+              aria-describedby={describedBy("returnHour")}
+              data-testid="quote-return-hour"
+            >
+              {renderHourOptions(tRoot("home.hero.widget.timeNone"))}
+            </select>
+          </div>,
+          false,
+          true,
         )}
         {fieldBox(
           "passengers",

@@ -40,7 +40,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { isLocationCode, locationLabelKo } from "../codes";
 import { structuredLog, type StructuredLogEntry } from "../log";
-import { kstDate, kstWallClock } from "../reservation-check/view";
+import { kstWallClock, tripDateText } from "../reservation-check/view";
 import type { TemplateVarsPort } from "./solapi";
 import type { CustomerVars, OwnerVars } from "./templates";
 
@@ -329,7 +329,7 @@ export function templateVars(deps: TemplateVarsDeps): TemplateVarsPort {
       const passengers = nullableInteger(row, "passengers");
 
       if (intake === "quick") {
-        // P3-8 간편 접수 — 차종·대수는 받지 않았다(null). 운행일은 **날짜만**: 저장된 00:00 은 자리값이라 시각을 싣지 않는다.
+        // P3-8 간편 접수 — 차종·대수는 받지 않았다(null). 운행일은 날짜 + (고른 시각이 있으면) 시각: 저장된 00:00 은 자리값이라 시각을 싣지 않는다.
         // vehicles 는 읽지 않는다(읽을 slug 가 없다).
         return {
           publicCode,
@@ -339,8 +339,9 @@ export function templateVars(deps: TemplateVarsDeps): TemplateVarsPort {
           phone,
           intake,
           vehicleLabel: null,
-          departAtKst: kstDate(departAt),
-          returnDateKst: returnAt === null ? null : kstDate(returnAt),
+          // OF2-A: 시각이 있으면 "YYYY-MM-DD HH:mm", 00:00 자리값이면 날짜만(tripDateText 의 quick 판정)
+          departAtKst: tripDateText(departAt, "quick"),
+          returnDateKst: returnAt === null ? null : tripDateText(returnAt, "quick"),
           originLabel: labelOf(originCode),
           destinationLabel: labelOf(destinationCode),
           busCount: null,

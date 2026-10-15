@@ -374,9 +374,9 @@ describe("4·8. components/home/RecentFeed.tsx 정적 검사", () => {
     expect(/@\/lib\/queries|@\/lib\/supabase|createServiceClient|createAnonClient/.test(code)).toBe(false);
   });
 
-  test("법정 고지는 원장 PRIVACY_NOTICE.publicFeedNotice 를 import 해서 렌더한다 (리터럴 0)", () => {
-    expect(src).toMatch(/import\s*\{[^}]*PRIVACY_NOTICE[^}]*\}\s*from\s*["']@\/lib\/legal\/disclosures["']/);
-    expect(code).toMatch(/PRIVACY_NOTICE\.publicFeedNotice/);
+  test("OF2-A(4) 접수 현황 아래 고지 문장을 렌더하지 않는다 — 원장 import·OfficialKoreanNotice·recent-feed-notice 0 (고지는 동의 블록·/privacy 에 남는다)", () => {
+    expect(src).not.toMatch(/from\s*["']@\/lib\/legal\/disclosures["']/);
+    expect(code).not.toMatch(/PRIVACY_NOTICE|publicFeedNotice|OfficialKoreanNotice|recent-feed-notice/);
     expect(code.includes("마스킹하여")).toBe(false); // 마스킹하여
   });
 
@@ -762,13 +762,14 @@ describe("12. '최근' 기간 창 — 경계 · 카피 대조 · 0건 숨김", (
     expect(read(COMPONENT)).toMatch(/length\s*===\s*0\)\s*return\s+null/);
   });
 
-  test("이 '빈 값 숨김' 선례는 법정 고지에 인용할 수 없다 — 고지는 빈 값이어도 렌더된다", () => {
+  test("이 '빈 값 숨김' 선례는 법정 고지에 인용할 수 없다 — 홈 접수 현황에는 고지가 없고(OF2-A 4), 같은 고지는 동의 블록·/privacy 에서 조건 없이 렌더된다", () => {
     // P6-6 브리프 §(1-A) 2번: 마케팅 섹션의 숨김과 법정 고지의 숨김은 다른 규칙이다.
-    // 같은 컴포넌트 안에서 고지(PRIVACY_NOTICE.publicFeedNotice)는 조건 없이 렌더된다 — 숨김 분기 밖에 있다.
+    // OF2-A(4, 사장님 요청): 홈 접수 현황 아래의 고지 문장을 지웠다 — 이 컴포넌트는 더 이상 고지를 렌더하지 않는다.
+    // 손님 정보 일부를 홈에 공개한다는 고지 자체는 견적 모달 동의 블록(ConsentBlock)과 /privacy 에 그대로 있다(양쪽 모두 단언 — tests/of2a-copy.test.ts §2).
     const code = codeOf(COMPONENT);
-    const afterGuard = code.slice(code.indexOf("return null"));
-    expect(afterGuard).toMatch(/PRIVACY_NOTICE\.publicFeedNotice/);
-    expect(/publicFeedNotice[^\n]*&&/.test(code), "고지에 조건부 렌더가 붙었다").toBe(false);
+    expect(code).not.toMatch(/publicFeedNotice/);
+    expect(codeOf("components/quote/ConsentBlock.tsx")).toMatch(/publicFeedNotice/);
+    expect(codeOf("components/quote/ConsentBlock.tsx")).not.toMatch(/publicFeedNotice[^\n]*&&/); // 고지에 조건부 렌더가 붙지 않았다
   });
 
   test("카피가 시간 주장을 하지 않는다 — '방금'·'실시간' 0건, '최근' 은 있다", () => {

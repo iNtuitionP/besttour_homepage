@@ -119,6 +119,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("DB — 접수 뒤 즉시 
       destinationCode: "ICN",
       departDate: depart,
       returnDate: depart,
+      departHour: "08", // OF2-A — 출발 시각(시) 필수
       passengers: "30",
       locale: "ko",
       privacyConsent: "on",

@@ -102,14 +102,14 @@ export function ReservationCard({ view, bookingNotice, tel, onAgain, index = 0, 
             <dd>{tRoot(view.tripTypeKey)}</dd>
           </div>
         ) : null}
-        {/* 간편 접수는 날짜만 받는다 — 라벨도 "일시" 가 아니라 "일"(값은 view 가 날짜만 만든다). */}
+        {/* 간편 접수는 날짜 + (손님이 고른) 시각 — 시각이 값에 있으면 "일시", 날짜만이면 "일"(OF2-A: 값은 view 가 만든다 — 날짜만이면 10자). */}
         <div>
-          <dt>{view.intake === "quick" ? t("card.departDate") : t("card.departAt")}</dt>
+          <dt>{view.intake === "quick" && view.departAtKst.length <= 10 ? t("card.departDate") : t("card.departAt")}</dt>
           <dd>{when(view.departAtKst)}</dd>
         </div>
         {view.returnAtKst ? (
           <div>
-            <dt>{view.intake === "quick" ? t("card.returnDate") : t("card.returnAt")}</dt>
+            <dt>{view.intake === "quick" && view.returnAtKst.length <= 10 ? t("card.returnDate") : t("card.returnAt")}</dt>
             <dd>{when(view.returnAtKst)}</dd>
           </div>
         ) : null}

@@ -3,19 +3,16 @@
  *
  * 데이터는 페이지가 lib/queries/recent.ts(서비스 롤 · 60초 태그 캐시)로 받아 props 로 내린다 — 여기서는 조회하지 않는다.
  * 항목(RecentFeedItem, lib/recent-feed.ts)에는 원문 필드가 없다. 표시는 원장 PRIVACY_NOTICE.publicFeedNotice 의 범위 그대로
- * "성명 일부 · 차종 · 운행일 · 접수 상태" 뿐이고(ko.json itemLabel "{name} · {vehicle} · {date}" + 상태 칩), 그 고지를 목록 아래 한 줄로 그대로 렌더한다.
- * 고지의 열거와 항목 키의 대응은 tests/feed-notice-parity.test.ts 가 잠근다(항목에 키를 더하면 고지부터 고쳐야 컴파일된다).
+ * "성명 일부 · 차종 · 운행일 · 접수 상태" 뿐이다(ko.json itemLabel "{name} · {vehicle} · {date}" + 상태 칩).
+ * 그 고지 문장은 OF2-A(4, 사장님 요청 2026-10-15)로 이 목록 아래에서 걷었다 — 같은 고지는 견적 모달 동의 블록(ConsentBlock)과 /privacy 에 그대로 있다.
+ * 고지의 열거와 항목 키의 대응은 여전히 tests/feed-notice-parity.test.ts 가 잠근다(항목에 키를 더하면 고지부터 고쳐야 컴파일된다).
  * 목업의 "오늘 접수 N건 · 이번 주 N건" 줄은 실증 불가 수치라 없다(CLAUDE.md §3) — 개수는 어디에도 렌더하지 않는다.
  * 0건이면 섹션 자체를 숨긴다(빈 목록 금지). 문구는 ko.json home.recentFeed 키만 쓴다 — 이 파일에 한글 리터럴 없음.
  *
- * 로케일 (P2-6): 고지는 원장 한국어 그대로 — en 에서는 그 위에 컨트롤러 확정 안내, 고지에 lang="ko".
- * 차종 라벨은 항목의 vehicles.name_ko 를 `vehicleLabels`(name_ko → name_en, en 화면에서만 페이지가 넘긴다)로 바꿔 보인다.
+ * 로케일 (P2-6): 차종 라벨은 항목의 vehicles.name_ko 를 `vehicleLabels`(name_ko → name_en, en 화면에서만 페이지가 넘긴다)로 바꿔 보인다.
  */
-import { getLocale, getTranslations } from "next-intl/server";
+import { getTranslations } from "next-intl/server";
 
-import { OfficialKoreanNotice } from "@/components/legal/OfficialKoreanNotice";
-import { koLang, ledgerUi } from "@/lib/i18n/ledger-ui";
-import { PRIVACY_NOTICE } from "@/lib/legal/disclosures";
 import { recentStatusKey, type RecentFeedItem } from "@/lib/recent-feed";
 
 import h from "./home.module.css";
@@ -32,7 +29,7 @@ export async function RecentFeed({
   vehicleLabels?: ReadonlyMap<string, string>;
 }) {
   if (items.length === 0) return null;
-  const [t, locale] = await Promise.all([getTranslations("home.recentFeed"), getLocale()]);
+  const t = await getTranslations("home.recentFeed");
 
   return (
     <section id="recent" className={`${h.sectionTight} ${h.toneLav}`} aria-labelledby="recent-h" data-section="recent">
@@ -57,10 +54,6 @@ export async function RecentFeed({
             </li>
           ))}
         </ul>
-        <OfficialKoreanNotice notice={ledgerUi(locale).officialNotice} />
-        <p className={s.notice} data-testid="recent-feed-notice" lang={koLang(locale)}>
-          {PRIVACY_NOTICE.publicFeedNotice}
-        </p>
       </div>
     </section>
   );

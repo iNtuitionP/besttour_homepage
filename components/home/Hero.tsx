@@ -109,6 +109,8 @@ export async function Hero() {
             dest: t("widget.dest"),
             date: t("widget.date"),
             returnDate: t("widget.returnDate"),
+            departTime: t("widget.departTime"),
+            returnTime: t("widget.returnTime"),
             pax: t("widget.pax"),
             cta: t("widget.cta"),
           }}

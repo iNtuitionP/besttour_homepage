@@ -261,12 +261,16 @@ describe("17. 대표 노선 섹션 헤드 — 설명 문단 없이 한 열", () 
 // =============================================================================
 // 18. 이용 방법 설명 — "온라인 결제는 없습니다." 만 뺐다
 // =============================================================================
+// OF2-A(5, 2026-10-15): 첫 문장 뒤에서 줄이 바뀐다 — 한 키(desc)를 두 키(descLead · descBody)로 나눴다. 글자는 한 자도 안 바뀌었다
+// (옛 문안 = lead + " " + body 와 같다 — 아래 단언). 렌더(<br/> 위치)는 tests/of2a-copy.test.ts §5 가 잠근다.
 describe("18. 이용 방법 설명", () => {
-  test("ko — 새 문안 그대로", () => {
-    expect(at(ko, "home.how.desc")).toBe("복잡한 절차는 저희가 대신합니다. 고객님은 출발지·도착지와 날짜, 인원만 알려 주시면 됩니다.");
+  test("ko — 새 문안 그대로(두 문장)", () => {
+    expect(at(ko, "home.how.descLead")).toBe("복잡한 절차는 저희가 대신합니다.");
+    expect(at(ko, "home.how.descBody")).toBe("고객님은 출발지·도착지와 날짜, 인원만 알려 주시면 됩니다.");
+    expect(`${at(ko, "home.how.descLead")} ${at(ko, "home.how.descBody")}`).toBe("복잡한 절차는 저희가 대신합니다. 고객님은 출발지·도착지와 날짜, 인원만 알려 주시면 됩니다.");
   });
   test("en — 같은 뜻(마지막 문장만 뺐다)", () => {
-    expect(at(en, "home.how.desc")).toBe(
+    expect(`${at(en, "home.how.descLead")} ${at(en, "home.how.descBody")}`).toBe(
       "We take care of the complicated parts. All you need to do is tell us where you are going, when, and how many people.",
     );
   });

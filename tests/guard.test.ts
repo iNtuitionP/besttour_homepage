@@ -71,6 +71,7 @@ const VALID_RAW = {
   destinationCode: LOCATION_CODES[1],
   departDate: "2026-10-01",
   returnDate: "2026-10-02",
+  departHour: "08", // OF2-A — 출발 시각(시) 필수
   passengers: 30,
   turnstileToken: "tok-valid",
   privacyConsent: true,

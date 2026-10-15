@@ -187,6 +187,7 @@ function form(overrides: Record<string, FormValue> = {}): FormData {
     destinationCode: "ICN",
     departDate: DEPART_DATE,
     returnDate: RETURN_DATE,
+    departHour: "08", // OF2-A — 출발 시각(시) 필수
     passengers: "30",
     locale: "ko",
     privacyConsent: "on",
@@ -314,11 +315,11 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("E2E — 진짜 guards + �
     expect(row.name).toBe(MARK);
     expect(row.phone).toBe(CUSTOMER_PHONE_E164);
     expect(row.status).toBe("new");
-    // P3-8 — 간편 접수: 받지 않은 칸은 null(지어내지 않는다 · 0023), 날짜는 그날 00:00 KST 의 인스턴트
+    // P3-8 — 간편 접수: 받지 않은 칸은 null(지어내지 않는다 · 0023). OF2-A: 출발은 고른 시각(08시 KST), 도착 시각을 고르지 않은 도착일은 00:00 자리값
     expect(row.intake).toBe("quick");
     expect([row.vehicle_slug, row.purpose_code, row.bus_count, row.trip_type]).toEqual([null, null, null, null]);
     expect(row.passengers).toBe(30);
-    expect(new Date(row.depart_at).getTime()).toBe(parseKst(`${DEPART_DATE}T00:00`).getTime());
+    expect(new Date(row.depart_at).getTime()).toBe(parseKst(`${DEPART_DATE}T08:00`).getTime());
     expect(new Date(row.return_at as string).getTime()).toBe(parseKst(`${RETURN_DATE}T00:00`).getTime());
     expect(row.nights).toBe(1);
     expect(row.marketing_consent_at).toBeNull();

@@ -64,7 +64,7 @@ const titles = (inner: string) => [...inner.matchAll(/<h3\b[^>]*>([\s\S]*?)<\/h3
  * 태그·속성·클래스·순서는 캡처 그대로 박고, 글자는 원장·카탈로그 값을 끼운다(원장 문구가 나중에 확정돼 바뀌어도 이 잠금이 거짓으로 깨지지 않게).
  * 캡처 원본(1,317자)은 보고서 후속 ①에 있다.
  */
-const koMessages = JSON.parse(read("messages/ko.json")) as { home: { how: { eyebrow: string; title: string; desc: string } } };
+const koMessages = JSON.parse(read("messages/ko.json")) as { home: { how: { eyebrow: string; title: string; descLead: string; descBody: string } } };
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#x27;");
 function koGolden(): string {
   const how = koMessages.home.how;
@@ -76,7 +76,7 @@ function koGolden(): string {
     .join("");
   return (
     `<section class="_section_4bcd29 _toneWhite_4bcd29" aria-labelledby="how-h" data-section="how"><div class="_wrap_4bcd29">` +
-    `<div class="_head_4bcd29 _headSplit_4bcd29"><div><p class="_eyebrow_4bcd29">${esc(how.eyebrow)}</p><h2 class="_title_4bcd29" id="how-h">${title}</h2></div><p class="_desc_4bcd29">${esc(how.desc)}</p></div>` +
+    `<div class="_head_4bcd29 _headSplit_4bcd29"><div><p class="_eyebrow_4bcd29">${esc(how.eyebrow)}</p><h2 class="_title_4bcd29" id="how-h">${title}</h2></div><p class="_desc_4bcd29">${esc(how.descLead)}<br/>${esc(how.descBody)}</p></div>` + // OF2-A(5): 첫 문장 뒤 <br/> — 이 한 줄 말고는 캡처 그대로
     `<ol class="_steps_ce5c51" data-testid="how-steps">${steps}</ol>` +
     // T2-2(2026-10-10, 사장님 요청 7 · 20): 상자 안의 verbatim 줄(_stepsNote)과 대금 지급 줄을 뺐다 — 산정 기준 한 줄만 남는다.
     // 나머지 태그·속성·클래스·순서는 캡처 그대로다(이 두 줄 말고는 바뀌지 않았다는 잠금).

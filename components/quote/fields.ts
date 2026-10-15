@@ -18,6 +18,8 @@ export const F: typeof RESERVATION_FORM_FIELDS = {
   destinationCode: "destinationCode",
   departDate: "departDate",
   returnDate: "returnDate",
+  departHour: "departHour",
+  returnHour: "returnHour",
   passengers: "passengers",
   locale: "locale",
   privacyConsent: "privacyConsent",

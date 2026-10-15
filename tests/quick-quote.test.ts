@@ -40,6 +40,8 @@ import {
   dateSpan,
   formatKrPhone,
   formatPhoneInput,
+  HOURS,
+  hourClock,
   inertBackground,
   initialWidgetFields,
   isCalendarDate,
@@ -121,7 +123,15 @@ const DURATION_CLAIM = /\d+\s*(분|초)\s*(만에|안에|이내)/;
 
 const SECRET = "unit-test-guard-secret-0123456789abcdef0123456789abcdef";
 const TODAY = "2026-09-13";
-const FIELDS: WidgetFields = { originCode: "ICN", destinationCode: "SEL", departDate: "2026-10-01", returnDate: "2026-10-03", passengers: "30" };
+const FIELDS: WidgetFields = {
+  originCode: "ICN",
+  destinationCode: "SEL",
+  departDate: "2026-10-01",
+  returnDate: "2026-10-03",
+  departHour: "08", // OF2-A — 출발 시각(시)은 필수, 도착 시각은 선택("" = 고르지 않음)
+  returnHour: "",
+  passengers: "30",
+};
 
 // =============================================================================
 // 1. 순수 — 위젯 검증 · 도착일 채우기 · 연락처 한 칸
@@ -155,6 +165,59 @@ describe("1. 위젯 검증 — 빈 칸이면 그 자리에서 안내(모달을 �
     }
   });
 
+  test("OF2-A 출발 시각은 필수 — 비면 departHour 오류 · 00~23 두 자리 밖이면 오류 · 도착 시각은 비어도 통과", () => {
+    expect(validateWidget({ ...FIELDS, departHour: "" }, TODAY)).toEqual([{ field: "departHour", messageKey: "home.hero.widget.errors.departHour" }]);
+    for (const departHour of ["24", "8", "08:00", "abc"]) {
+      expect(validateWidget({ ...FIELDS, departHour }, TODAY).map((e) => e.field), departHour).toEqual(["departHour"]);
+    }
+    for (const departHour of ["00", "09", "23"]) expect(validateWidget({ ...FIELDS, departHour }, TODAY), departHour).toEqual([]);
+    expect(validateWidget({ ...FIELDS, returnHour: "" }, TODAY)).toEqual([]);
+  });
+
+  test("OF2-A 같은 날 왕복이면 도착 시각은 출발 시각보다 뒤 — 아니면 returnHour 오류 · 다른 날이면 앞서도 통과", () => {
+    const same = { ...FIELDS, departDate: "2026-10-01", returnDate: "2026-10-01", departHour: "08" };
+    expect(validateWidget({ ...same, returnHour: "18" }, TODAY)).toEqual([]);
+    for (const returnHour of ["08", "07", "00"]) {
+      expect(validateWidget({ ...same, returnHour }, TODAY), returnHour).toEqual([
+        { field: "returnHour", messageKey: "home.hero.widget.errors.returnHourBefore" },
+      ]);
+    }
+    expect(validateWidget({ ...FIELDS, returnDate: "2026-10-02", departHour: "18", returnHour: "06" }, TODAY)).toEqual([]);
+    // 형식이 틀린 도착 시각
+    expect(validateWidget({ ...FIELDS, returnHour: "25" }, TODAY).map((e) => e.field)).toEqual(["returnHour"]);
+  });
+
+  test("OF2-A 시각 목록 — HOURS 는 00~23 두 자리 24개 · 표시는 시각 하나(KST 벽시계, Z 없음)", () => {
+    expect(HOURS).toHaveLength(24);
+    expect(HOURS[0]).toBe("00");
+    expect(HOURS[23]).toBe("23");
+    for (const h of HOURS) expect(h).toMatch(/^([01]\d|2[0-3])$/);
+    expect(hourClock("08")).toBe("08:00");
+  });
+
+  test("OF2-A 요약용 시각 줄 — 출발 시각(필수) · 도착 시각(있을 때만)", () => {
+    expect(dateSpan({ ...FIELDS, departDate: "2026-10-01", returnDate: "2026-10-01", returnHour: "18" })).toEqual({
+      kind: "single",
+      date: "2026-10-01",
+      fromTime: "08:00",
+      toTime: "18:00",
+    });
+    expect(dateSpan({ ...FIELDS, departDate: "2026-10-01", returnDate: "2026-10-01", returnHour: "" })).toEqual({
+      kind: "single",
+      date: "2026-10-01",
+      fromTime: "08:00",
+      toTime: null,
+    });
+    expect(dateSpan({ ...FIELDS, returnDate: "2026-10-03", returnHour: "" })).toEqual({
+      kind: "range",
+      from: "2026-10-01",
+      to: "2026-10-03",
+      fromTime: "08:00",
+      toTime: null,
+    });
+    expect(dateSpan({ ...FIELDS, returnDate: "2026-10-03", returnHour: "17" })).toMatchObject({ kind: "range", fromTime: "08:00", toTime: "17:00" });
+  });
+
   test("출발일을 고르면 도착일이 같은 날로 채워진다 — 비었거나 앞일 때만(뒤 날짜는 지키기)", () => {
     const empty = { ...FIELDS, departDate: "", returnDate: "" };
     expect(withDepartDate(empty, "2026-10-05").returnDate).toBe("2026-10-05");
@@ -162,9 +225,9 @@ describe("1. 위젯 검증 — 빈 칸이면 그 자리에서 안내(모달을 �
     expect(withDepartDate({ ...FIELDS, returnDate: "2026-10-09" }, "2026-10-04").returnDate).toBe("2026-10-09");
   });
 
-  test("dateSpan — 같은 날은 하나(당일), 다르면 범위", () => {
-    expect(dateSpan({ departDate: "2026-10-01", returnDate: "2026-10-01" })).toEqual({ kind: "single", date: "2026-10-01" });
-    expect(dateSpan({ departDate: "2026-10-01", returnDate: "2026-10-03" })).toEqual({ kind: "range", from: "2026-10-01", to: "2026-10-03" });
+  test("dateSpan — 같은 날은 하나(당일), 다르면 범위 (날짜 부분 — 시각 부분은 위 OF2-A 테스트)", () => {
+    expect(dateSpan({ ...FIELDS, departDate: "2026-10-01", returnDate: "2026-10-01" })).toMatchObject({ kind: "single", date: "2026-10-01" });
+    expect(dateSpan({ ...FIELDS, departDate: "2026-10-01", returnDate: "2026-10-03" })).toMatchObject({ kind: "range", from: "2026-10-01", to: "2026-10-03" });
   });
 
   test("서버 규칙과 같은 값 — 이름 30 · 인원 1~900 · 휴대폰 패턴 소스 · 달력 판정", () => {
@@ -206,7 +269,7 @@ describe("2. 연락처 — 한 칸에서 `+` 로 시작하면 해외(phoneIntl),
   });
 
   test("서버 fieldErrors 키 분배 — 위젯 칸은 위젯으로, phoneIntl 은 모달의 한 칸(phone)으로", () => {
-    for (const f of ["originCode", "destinationCode", "departDate", "returnDate", "passengers"]) expect(isWidgetField(f), f).toBe(true);
+    for (const f of ["originCode", "destinationCode", "departDate", "returnDate", "departHour", "returnHour", "passengers"]) expect(isWidgetField(f), f).toBe(true);
     for (const f of ["name", "phone", "phoneIntl", "privacyConsent", "withdrawalConsent"]) expect(isWidgetField(f), f).toBe(false);
     expect(modalFieldOf("phoneIntl")).toBe("phone");
     expect(modalFieldOf("name")).toBe("name");
@@ -328,6 +391,8 @@ describe("4. 렌더 — 모달 열림 조건 · 요약 · 동의 · verbatim · 
           dest: "D",
           date: "DD",
           returnDate: "RD",
+          departTime: "DT",
+          returnTime: "RT",
           pax: "P",
           cta: "견적 신청하기",
         },
@@ -340,7 +405,13 @@ describe("4. 렌더 — 모달 열림 조건 · 요약 · 동의 · verbatim · 
       }),
     );
     expect(html).toMatch(/id="quote"/);
-    for (const id of ["quote-origin", "quote-dest", "quote-date", "quote-return", "quote-pax"]) expect(html, id).toContain(`data-testid="${id}"`);
+    for (const id of ["quote-origin", "quote-dest", "quote-date", "quote-return", "quote-depart-hour", "quote-return-hour", "quote-pax"]) expect(html, id).toContain(`data-testid="${id}"`);
+    // OF2-A: 시각 칸은 select — 00~23 스물네 개 + 빈 선택지(출발 '선택' · 도착 '선택 안 함')
+    const depart = html.match(/<select[^>]*data-testid="quote-depart-hour"[^>]*>([\s\S]*?)<\/select>/)?.[1] ?? "";
+    const ret = html.match(/<select[^>]*data-testid="quote-return-hour"[^>]*>([\s\S]*?)<\/select>/)?.[1] ?? "";
+    for (const body of [depart, ret]) expect(body.match(/<option /g)?.length, "빈 선택지 1 + 시각 24").toBe(25);
+    for (const hh of ["00", "08", "23"]) expect(depart).toContain(`value="${hh}"`);
+    expect(depart).toContain('value=""');
     expect(html).toMatch(/<button[^>]*type="button"[^>]*data-testid="quote-cta"/);
     expect(html).not.toMatch(/role="dialog"/);
     // 위젯은 더 이상 /quote 로 링크하지 않는다
@@ -411,6 +482,9 @@ describe("4. 렌더 — 모달 열림 조건 · 요약 · 동의 · verbatim · 
       expect(summary).toContain("10월 1일 (목)");
       expect(summary).toContain("10월 3일 (토)");
       expect(summary).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+      // OF2-A: 출발 시각은 출발일 옆에, 도착 시각은 비어 있으니 도착일 옆에 없다
+      expect(summary).toContain("10월 1일 (목) 08:00");
+      expect(summary).not.toContain("10월 3일 (토) ");
       expect(summary).toContain("30");
       expect(html).toMatch(/<button[^>]*data-testid="quick-quote-edit"/);
     } finally {
@@ -474,6 +548,8 @@ describe("4. 렌더 — 모달 열림 조건 · 요약 · 동의 · verbatim · 
     expect(hidden("destinationCode")).toBe("SEL");
     expect(hidden("departDate")).toBe("2026-10-01");
     expect(hidden("returnDate")).toBe("2026-10-03");
+    expect(hidden("departHour")).toBe("08"); // OF2-A — 시(두 자리). 서버가 KST 벽시계 YYYY-MM-DDTHH:00 으로 해석한다
+    expect(hidden("returnHour")).toBe(""); // 도착 시각은 선택 — 비면 서버 formData 가 undefined 로 본다
     expect(hidden("passengers")).toBe("30");
     const hp = html.match(/<input[^>]*name="website"[^>]*>/)?.[0] ?? "";
     expect(hp).toMatch(/tabindex="-1"/);
@@ -831,6 +907,8 @@ describe("8. 수정 라운드 — 토큰 재발급 · 배경 inert · 성공 뒤
       destinationCode: "SEL",
       departDate: "",
       returnDate: "",
+      departHour: "",
+      returnHour: "",
       passengers: "",
     });
   });

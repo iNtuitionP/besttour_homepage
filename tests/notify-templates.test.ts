@@ -412,6 +412,33 @@ describe("4. 개인정보 경계", () => {
     expect(text).not.toContain("~");
   });
 
+  // OF2-A: 홈 견적이 출발 시각(필수)·도착 시각(선택)을 받는다 — 간편 접수의 날짜 줄에 시각이 붙는다("11월 3일(화) 08:00").
+  // 시각이 없는 줄(옛 접수·00:00 자리값)은 위 두 테스트 그대로다(날짜만).
+  test("OF2-A 간편 접수 · 출발 시각 있음 — '10월 3일(토) 08:00' (같은 날 · 도착 시각 없음 · '당일' 꼬리 없음)", () => {
+    const v: OwnerVars = { ...QUICK_OWNER, departAtKst: "2026-10-03 08:00", returnDateKst: null };
+    for (const text of [renderVariants("created.owner.sms", v).lms, renderTemplate("created.owner.sms", v).text]) {
+      expect(text.split("\n")).toContain("- 날짜: 10월 3일(토) 08:00");
+      expect(text).not.toContain("당일");
+    }
+  });
+
+  test("OF2-A 같은 날 왕복 · 도착 시각 있음 — '10월 3일(토) 08:00 ~ 10월 3일(토) 18:00'", () => {
+    const v: OwnerVars = { ...QUICK_OWNER, departAtKst: "2026-10-03 08:00", returnDateKst: "2026-10-03 18:00" };
+    expect(renderVariants("created.owner.sms", v).lms.split("\n")).toContain("- 날짜: 10월 3일(토) 08:00 ~ 10월 3일(토) 18:00");
+  });
+
+  test("OF2-A 여러 날 — 도착 시각 없으면 도착일은 날짜만 · 있으면 시각까지", () => {
+    const base: OwnerVars = { ...QUICK_OWNER, departAtKst: "2026-10-03 08:00" };
+    expect(renderVariants("created.owner.sms", { ...base, returnDateKst: "2026-10-05" }).lms.split("\n")).toContain("- 날짜: 10월 3일(토) 08:00 ~ 10월 5일(월)");
+    expect(renderVariants("created.owner.sms", { ...base, returnDateKst: "2026-10-05 17:00" }).lms.split("\n")).toContain("- 날짜: 10월 3일(토) 08:00 ~ 10월 5일(월) 17:00");
+  });
+
+  test("OF2-A 접수 문자(손님)에는 운행 정보가 없다 — 시각도 싣지 않는다", () => {
+    const text = renderVariants("created.customer.sms", CUSTOMER).lms;
+    expect(text).not.toMatch(/\d{1,2}:\d{2}/);
+    expect(text).not.toContain("날짜");
+  });
+
   // P3-8 때는 "위저드 접수분의 사장님 알림은 한 글자도 바뀌지 않았다(옛 문안 그대로)" 를 옛 문안 전문으로 잠갔다(T2-1 은 접두만 되돌려 대조).
   // T2-4(사장님 요청 8 · 결정 12 · 2026-10-10 사용자 승인 초안)가 **일부러** 그 문안을 블록 서식으로 바꿨다 — 새 문안의 줄 단위 잠금은
   // 아래 "T2-4" 절의 WIZARD_DRAFT 다. 여기서는 옛 문안의 줄이 하나도 남지 않았다는 것만 잠근다(옛 판으로 되돌아가는 회귀를 막는다).

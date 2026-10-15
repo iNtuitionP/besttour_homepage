@@ -623,6 +623,22 @@ describe("3. lookupReservation — 없음 = 이름 불일치 = 범위 밖, 일�
     expect(d.veh).not.toHaveBeenCalled();
   });
 
+  test("(c'') OF2-A 간편 접수에 시각이 있으면 날짜+시각(KST 벽시계) · 카드는 '일시' 라벨, 날짜만이면 '일' 라벨", async () => {
+    const quick: ReservationCheckRow = {
+      ...ROW,
+      intake: "quick",
+      trip_type: null,
+      vehicle_slug: null,
+      bus_count: null,
+      passengers: 30,
+      depart_at: "2026-09-30T23:00:00.000Z", // KST 2026-10-01 08:00
+      return_at: "2026-10-01T09:00:00.000Z", // KST 2026-10-01 18:00
+    };
+    const got = await run([quick]).out;
+    if (!got.found) throw new Error("unreachable");
+    expect(got.views[0]).toMatchObject({ intake: "quick", departAtKst: "2026-10-01 08:00", returnAtKst: "2026-10-01 18:00" });
+  });
+
   test("(c) 4자리 이상 숫자열은 날짜·대수·인원·마스킹 뒷자리 외 0 · 5자리 이상 숫자열 0 (전화 원문이 어떤 형식으로도 없다)", async () => {
     const got = await run([ROW]).out;
     if (!got.found) throw new Error("unreachable");
@@ -1223,13 +1239,14 @@ describe("7. 카탈로그 — 휴대폰 번호 + 예약자 이름, 접수번호 
     for (const w of ["exist", "does not match", "wrong", "not registered"]) expect(e.toLowerCase().includes(w), w).toBe(false);
   });
 
-  test("🔴 손님 화면에서 접수번호·뒷 4자리 안내가 사라졌다 — 남은 것은 '예전 문자의 접수번호는 필요 없다' 한 줄뿐", () => {
+  // OF2-A(6): 마지막 남은 '예전 문자의 접수번호는 필요 없다' 안내(form.legacyCodeNote)도 걷었다 — 이제 접수번호라는 말은 이 카탈로그 어디에도 없다.
+  test("🔴 손님 화면에서 접수번호·뒷 4자리 안내가 사라졌다 — 예전 접수번호 안내 한 줄(legacyCodeNote)도 없다 (OF2-A)", () => {
     for (const [root, codeWord, last4] of [
       [ko, /접수번호/, /뒷\s*4|뒷자리/],
       [en, /request number/i, /last 4|last four|last digits/i],
     ] as const) {
       const rc = leaves(at(root, "reservationCheck"), "reservationCheck");
-      expect(rc.filter(([, v]) => codeWord.test(v)).map(([p]) => p)).toEqual(["reservationCheck.form.legacyCodeNote"]);
+      expect(rc.filter(([, v]) => codeWord.test(v)).map(([p]) => p)).toEqual([]);
       expect(rc.filter(([, v]) => last4.test(v)).map(([p]) => p)).toEqual([]);
       const done = leaves(at(root, "quote.modal.done"), "quote.modal.done");
       expect(done.filter(([, v]) => codeWord.test(v) || last4.test(v)).map(([p]) => p)).toEqual([]);
@@ -1238,8 +1255,8 @@ describe("7. 카탈로그 — 휴대폰 번호 + 예약자 이름, 접수번호 
       }
       for (const gone of ["codeLabel", "codeHint", "noCode"]) expect(at(root, `quote.modal.done.${gone}`), gone).toBeUndefined();
     }
-    expect(at(ko, "reservationCheck.form.legacyCodeNote")).toBe("예전 문자에 적힌 접수번호는 이제 입력하지 않으셔도 됩니다.");
-    expect(at(en, "reservationCheck.form.legacyCodeNote")).toBe("You no longer need the request number from earlier text messages.");
+    expect(at(ko, "reservationCheck.form.legacyCodeNote")).toBeUndefined();
+    expect(at(en, "reservationCheck.form.legacyCodeNote")).toBeUndefined();
   });
 
   test("완료 화면 — 접수번호 대신 '예약 확인에서 휴대폰 번호와 이름으로' 안내(ko·en)", () => {
@@ -1258,7 +1275,7 @@ describe("7. 카탈로그 — 휴대폰 번호 + 예약자 이름, 접수번호 
       for (const s of RESERVATION_STATUSES) expect(typeof at(root, `reservationCheck.status.${s}`), s).toBe("string");
       expect(at(root, "reservationCheck.meta.title")).toContain("{brand}");
       for (const k of ["title", "sub", "eyebrow"]) expect(typeof at(root, `reservationCheck.${k}`), k).toBe("string");
-      for (const k of ["required", "nameLabel", "nameHint", "phoneLabel", "phoneHint", "submit", "submitting", "errorSummary", "nameError", "phoneError", "help", "legacyCodeNote", "security", "notReadyTitle", "notReadyBody"]) {
+      for (const k of ["required", "nameLabel", "nameHint", "phoneLabel", "phoneHint", "submit", "submitting", "errorSummary", "nameError", "phoneError", "help", "security", "notReadyTitle", "notReadyBody"]) {
         expect(typeof at(root, `reservationCheck.form.${k}`), k).toBe("string");
       }
       for (const k of ["title", "count", "status", "name", "phone", "vehicle", "route", "tripType", "departAt", "returnAt", "busCount", "passengers", "createdAt", "again", "call", "help"]) {
@@ -1346,7 +1363,9 @@ describe("8. 컴포넌트·페이지", () => {
     expect(src).toMatch(/formatPhoneInput\(/);
     expect(src).toMatch(/autoComplete="tel"/);
     expect(src).toMatch(/autoComplete="name"/);
-    expect(src).toMatch(/data-testid="reservation-check-legacy-note"/);
+    // OF2-A(6): 예전 접수번호 안내 줄을 지웠다 — 마크업·키·스타일 클래스 모두
+    expect(src).not.toMatch(/reservation-check-legacy-note|legacyCodeNote|legacyNote/);
+    expect(read(`${COMPONENT_DIR}/check.module.css`)).not.toMatch(/legacyNote/);
     expect(CF).toEqual(CHECK_FORM_FIELDS);
     expect(CG).toEqual(CHECK_GUARD_FORM_FIELDS);
   });
@@ -1374,7 +1393,9 @@ describe("8. 컴포넌트·페이지", () => {
     expect(withKey).toContain('name="phone"');
     expect(withKey).toContain('name="name"');
     expect(withKey).not.toMatch(/name="(publicCode|phoneLast4)"/);
-    expect(withKey).toContain("예전 문자에 적힌 접수번호는 이제 입력하지 않으셔도 됩니다.");
+    // OF2-A(6): 예전 접수번호 안내 줄은 폼에서 걷었다 — 문구도 마크업도 없다
+    expect(withKey).not.toContain("예전 문자에 적힌 접수번호");
+    expect(withKey).not.toContain('data-testid="reservation-check-legacy-note"');
     const noKey = await renderWithIntl(createElement(CheckForm, { ...base, turnstileSiteKey: "" }));
     expect(noKey).toContain('data-testid="reservation-check-not-ready"');
     expect(noKey).not.toContain('data-testid="turnstile"');
@@ -1443,6 +1464,29 @@ describe("8. 컴포넌트·페이지", () => {
     expect(html).toContain('data-testid="reservation-call"');
     expect(html).toContain('data-testid="reservation-again"');
     expect(html).not.toContain('data-testid="reservation-code"');
+  });
+
+  test("OF2-A 간편 접수 카드 — 시각이 있으면 '일시' 라벨 + 08:00·18:00 · 날짜만이면 '일' 라벨 + 시각 0", async () => {
+    const { createElement } = await import("react");
+    const { ReservationCard } = await import("@/components/reservation-check/ReservationCard");
+    const { consultPhone } = await import("@/lib/contact-phone");
+    const base = toReservationView(
+      { ...ROW, intake: "quick", trip_type: null, vehicle_slug: null, bus_count: null, passengers: 30, depart_at: "2026-09-30T23:00:00.000Z", return_at: "2026-10-01T09:00:00.000Z" },
+      null,
+    );
+    const card = (view: typeof base) =>
+      renderWithIntl(createElement(ReservationCard, { view, bookingNotice: VERBATIM.bookingNotice, tel: consultPhone("ko"), onAgain: () => {} }));
+    const withTime = await card(base);
+    expect(withTime).toContain("08:00");
+    expect(withTime).toContain("18:00");
+    const labels = (ko as { reservationCheck: { card: Record<string, string> } }).reservationCheck.card;
+    expect(withTime).toContain(`<dt>${labels.departAt}</dt>`);
+    expect(withTime).toContain(`<dt>${labels.returnAt}</dt>`);
+    const dateOnly = await card({ ...base, departAtKst: "2026-10-01", returnAtKst: "2026-10-03" });
+    expect(dateOnly).not.toContain("08:00"); // 접수 시각 줄(createdAt)의 시각은 따로 있다 — 운행일 줄에만 시각이 없다
+    expect(dateOnly).not.toContain("18:00");
+    expect(dateOnly).toContain(`<dt>${labels.departDate}</dt>`);
+    expect(dateOnly).toContain(`<dt>${labels.returnDate}</dt>`);
   });
 
   test("개발 프리뷰(?previewResult=) — NODE_ENV 가드 뒤에서만 searchParams · 모드 5종(ok·quick·multi·not_found·ratelimit)", () => {

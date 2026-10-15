@@ -64,6 +64,7 @@ const validInput = {
   destinationCode: "BSN" as const,
   departDate: "2026-10-01",
   returnDate: "2026-10-01",
+  departHour: "08", // OF2-A — 출발 시각(시) 필수
   passengers: 30,
   locale: "ko" as const,
   turnstileToken: "test-turnstile-token",

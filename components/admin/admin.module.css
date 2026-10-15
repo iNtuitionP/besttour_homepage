@@ -2931,7 +2931,12 @@ a.hubItem:hover {
   gap: var(--space-stack-xs);
   margin-top: var(--space-stack-xs);
 }
+/* OF2-A(7): 편집기 틀은 카드 좌우를 꽉 채운다(폭 100%) — overflow 를 걸지 않는다(걸면 안쪽 툴바의 sticky 가 죽는다) */
+.rte {
+  width: 100%;
+}
 .rteEditor {
+  width: 100%;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-control);
   background: var(--bg-surface);
@@ -2940,27 +2945,61 @@ a.hubItem:hover {
   border-width: 2px;
   border-color: var(--border-strong);
 }
+/* 한 줄 툴바(워드·티스토리 모양) — 쓰는 칸 위에 붙고, 스크롤하면 화면 위에 고정된다(sticky).
+ * 위 제목줄(.topbar — 1024px 미만에서 56px · z-index 25) 아래에 붙는다. 1024px 이상은 제목줄이 없어 맨 위(0). */
 .rteToolbar {
+  position: sticky;
+  top: 3.5rem; /* 제목줄 높이(.topbar min-height 56px = 3.5rem) 바로 아래 */
+  z-index: 20;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: var(--space-inline-xs);
   padding: var(--space-stack-xs);
+  overflow-x: auto;
   border-bottom: 1px solid var(--border-decorative);
+  border-radius: var(--radius-control) var(--radius-control) 0 0;
+  background: var(--bg-subtle);
+}
+@media (min-width: 1024px) {
+  .rteToolbar {
+    top: 0;
+  }
+}
+/* 그룹 사이 세로 구분선 */
+.rteSeparator {
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: 1px;
+  margin: var(--space-stack-xs) var(--space-inline-xs);
+  background: var(--border-subtle);
 }
 .rteButton {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 40px;
   min-height: 40px;
-  padding: 0 var(--space-inline-sm);
-  border: 1px solid var(--border-subtle);
+  padding: 0;
+  border: 1px solid transparent;
   border-radius: var(--radius-control);
-  background: var(--bg-surface);
+  background: transparent;
   color: var(--text-primary);
-  font-size: 14px;
-  font-weight: 700;
   cursor: pointer;
 }
+.rteButton:hover:not(:disabled) {
+  background: var(--bg-surface);
+  border-color: var(--border-subtle);
+}
+/* 눌린 상태(켜진 서식) — 배경 + 굵은 테두리 */
 .rteButton[aria-pressed="true"] {
   border-color: var(--border-strong);
-  background: var(--bg-subtle);
+  background: var(--bg-surface);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.rteIcon {
+  display: block;
+  pointer-events: none;
 }
 .rteButton:disabled {
   color: var(--action-disabled-fg);
@@ -2973,8 +3012,8 @@ a.hubItem:hover {
   outline-offset: 2px;
 }
 .rteContent {
-  min-height: 160px;
-  padding: var(--space-stack-xs) var(--space-inline-sm);
+  min-height: 320px;
+  padding: var(--space-stack-sm) var(--space-inline-md);
   font-size: 16px; /* 16px 미만이면 iOS 가 포커스 시 화면을 확대한다 */
   line-height: 1.7;
   color: var(--text-primary);
@@ -2985,7 +3024,7 @@ a.hubItem:hover {
   outline-offset: -2px;
 }
 .rteLoading {
-  min-height: 210px;
+  min-height: 380px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-control);
   background: var(--bg-subtle);

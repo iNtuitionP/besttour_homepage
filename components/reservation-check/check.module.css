@@ -23,16 +23,6 @@
   display: grid;
   gap: var(--space-stack-md);
 }
-/* T2-5 — 예전 문자의 접수번호는 이제 필요 없다는 안내 한 줄(옛 문자 링크로 들어온 손님이 칸을 찾지 않게) */
-.legacyNote {
-  margin: 0 0 var(--space-stack-md);
-  padding: var(--space-stack-xs) var(--space-inline-sm);
-  border-radius: var(--radius-chip);
-  background: var(--bg-subtle);
-  color: var(--text-secondary);
-  font-size: 14px;
-  line-height: 1.6;
-}
 .security {
   margin: var(--space-stack-md) 0 0;
 }

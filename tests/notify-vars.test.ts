@@ -387,6 +387,17 @@ describe("3. 누출", () => {
     expect(v?.returnDateKst).toBeNull();
   });
 
+  test("OF2-A 간편 접수 · 시각이 있으면 KST 벽시계 일시로 싣는다(출발 08:00 · 같은 날 도착 18:00) · 00:00 자리값은 날짜만", async () => {
+    const withTimes = { ...QUICK_ROW, depart_at: "2026-09-30T23:00:00.000Z", return_at: "2026-10-01T09:00:00.000Z" };
+    const a = await templateVars({ client: fakeClient({ reservation: withTimes }).client, origin: ORIGIN }).ownerVars(RID);
+    expect(a?.departAtKst).toBe("2026-10-01 08:00");
+    expect(a?.returnDateKst).toBe("2026-10-01 18:00");
+    // 출발만 시각이 있고 도착일은 00:00 자리값(도착 시각 안 고름)이면 도착은 날짜만
+    const b = await templateVars({ client: fakeClient({ reservation: { ...withTimes, return_at: "2026-10-02T15:00:00.000Z" } }).client, origin: ORIGIN }).ownerVars(RID);
+    expect(b?.departAtKst).toBe("2026-10-01 08:00");
+    expect(b?.returnDateKst).toBe("2026-10-03");
+  });
+
   test("위저드 접수분에 차종이나 대수가 비어 있으면 throw — 반쯤 빈 문안을 보내지 않는다(0023 CHECK 가 막는 모양)", async () => {
     for (const patch of [{ vehicle_slug: null }, { bus_count: null }]) {
       const { client } = fakeClient({ reservation: { ...ROW, ...patch } });

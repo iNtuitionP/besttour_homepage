@@ -30,7 +30,7 @@ import { LegalRecordList } from "@/components/legal/LegalTable";
 import { PageHeader } from "@/components/pages/PageHeader";
 import { consultPhone, localPhone } from "@/lib/contact-phone";
 import { koLang, ledgerUi } from "@/lib/i18n/ledger-ui";
-import { COMPANY } from "@/lib/legal/disclosures";
+import { COMPANY, RELATED_COMPANY } from "@/lib/legal/disclosures";
 import { pageAlternates } from "@/lib/site-url";
 
 import h from "@/components/home/home.module.css";
@@ -85,6 +85,8 @@ export default async function AboutPage({ params }: { params: Params }) {
     consultTel: contact.consultTel,
     fax: contact.fax,
     email: contact.email,
+    // OF2-A(2): (주)베스트모빌리티 줄의 주소 — 본사·지사 라벨과 따로 '주소'(이 페이지 카탈로그 pages.about.facts.address)
+    address: t("facts.address"),
   } as const;
   const facts = {
     legalName: COMPANY.legalName,
@@ -99,6 +101,13 @@ export default async function AboutPage({ params }: { params: Params }) {
     // 팩스 — en 은 +82 표기(P7-4 · localPhone — 원장 값은 그대로, 표시만)
     fax: localPhone(COMPANY.fax, locale).display,
     email: COMPANY.email,
+  };
+  // OF2-A(2): 합자회사 베스트투어 다음 줄 — (주)베스트모빌리티(상호·대표·사업자등록번호·주소). '관계사·운영사' 꼬리표 없이, 값은 원장 그대로.
+  const relatedFacts = {
+    legalName: RELATED_COMPANY.legalName,
+    representative: RELATED_COMPANY.representative,
+    bizRegNo: RELATED_COMPANY.bizRegNo,
+    address: RELATED_COMPANY.address,
   };
 
   const query = encodeURIComponent(COMPANY.address);
@@ -125,9 +134,15 @@ export default async function AboutPage({ params }: { params: Params }) {
           <OfficialKoreanNotice notice={ui.officialNotice} />
           <LegalRecordList
             labels={factLabels}
-            records={[facts]}
+            records={[facts, relatedFacts]}
             testId="company-facts"
-            valueLangs={{ legalName: valueLang, mailOrder: valueLang, headOffice: valueLang, branch: valueLang }}
+            valueLangs={{
+              legalName: valueLang,
+              mailOrder: valueLang,
+              headOffice: valueLang,
+              branch: valueLang,
+              address: valueLang,
+            }}
           />
         </div>
       </section>

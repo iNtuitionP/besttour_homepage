@@ -11,9 +11,10 @@
  *
  * 구조 — 스펙 §13.1(목업 variant-08 §FOOTER)에서 사장님 요청 5 · 결정 2(2026-10-10 · T2-1)로 바꿨다(스펙 §13.13):
  *   합자회사 베스트투어 사업자 정보(통신판매업 신고번호 바로 뒤에 '사업자정보 확인' 링크) → 주소·연락처·계좌 → 개인정보 보호책임자
- *   → (주)베스트모빌리티 정보 → 계약·대금 주체 고지(RELATED_COMPANY.note) → 법정 링크 → 메뉴
- *   - '운영사'·'관계사' 배지와 그 사이 점선을 걷었다. 두 회사를 가르는 것은 순서(베스트투어 먼저)와 맨 아래 고지 문장이다 —
- *     고지는 계약·개인정보 처리 주체(합자회사 베스트투어)와 대금 수령 주체((주)베스트모빌리티)를 이름으로 밝힌다(전자상거래법 §13①1호).
+ *   → (주)베스트모빌리티 정보 → 법정 링크 → 메뉴
+ *   - '운영사'·'관계사' 배지와 그 사이 점선을 걷었다. 두 회사를 가르는 것은 순서(베스트투어 먼저)다.
+ *   - 맨 아래 계약·대금 주체 문장(RELATED_COMPANY.note)은 OF2-A(1, 사장님 요청 2026-10-15)로 푸터에서 걷었다. 그 고지(전자상거래법 §13①1호 —
+ *     계약·개인정보 처리 주체는 합자회사 베스트투어, 대금 수령 주체는 (주)베스트모빌리티)는 /guide 대금 지급 절에 그대로 있다. 원장 값은 그대로.
  *   - '사업자정보 확인'(공정위 조회 — wrkr_no 는 베스트투어 등록번호)을 법정 링크 줄에서 베스트투어 줄로 옮겼다. 배지가 없어진 뒤
  *     링크가 바로 앞의 베스트모빌리티 줄의 것으로 읽히지 않게 한다(계획 결정 2 ②의 오독 위험).
  *   - 로고(사장님 요청 2): 간판 브랜드 best mobility 가로형(public/brand/logo-bestmobility.png · alt = ledgerUi(locale).brand).
@@ -172,10 +173,6 @@ export default async function Footer() {
           <FactList facts={officer} className={styles.row} valueLang={valueLang} />
           {/* 두 번째 회사 줄 — 배지·점선 없이 위 줄과 조금 띄운다(사장님 요청 5) */}
           <FactList facts={related} className={`${styles.row} ${styles.rowNextCompany}`} valueLang={valueLang} />
-
-          <p className={styles.note} lang={valueLang}>
-            {RELATED_COMPANY.note}
-          </p>
         </section>
 
         <nav className={styles.legalNav} aria-label={ui.labels.legalNav}>

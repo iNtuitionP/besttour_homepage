@@ -49,9 +49,3 @@
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
-.notice {
-  margin: var(--space-stack-md) 0 0;
-  font-size: 12.5px;
-  line-height: 1.7;
-  color: var(--text-secondary);
-}

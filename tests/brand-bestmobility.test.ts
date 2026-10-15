@@ -382,10 +382,11 @@ describe.each(["ko", "en"] as const)("6. 푸터 사업자 정보 (%s)", (locale)
     expect(html).not.toMatch(/_related_/);
   });
 
-  test("순서 — 합자회사 베스트투어 · 통신판매업 신고번호 · 사업자정보 확인 링크 → (주)베스트모빌리티 → 계약·대금 주체 고지", async () => {
+  // OF2-A(1): 맨 아래 계약·대금 주체 고지(RELATED_COMPANY.note)를 푸터에서 걷었다 — 순서 끝이 (주)베스트모빌리티 줄이다.
+  test("순서 — 합자회사 베스트투어 · 통신판매업 신고번호 · 사업자정보 확인 링크 → (주)베스트모빌리티 (그 뒤 고지 문장 없음)", async () => {
     const html = await companyInfo();
     const ftc = `href="${esc(LEGAL_LINKS.ftcBizInfo)}"`;
-    const order = [esc(COMPANY.legalName), esc(COMPANY.mailOrderNo), ftc, esc(RELATED_COMPANY.legalName), esc(RELATED_COMPANY.note)];
+    const order = [esc(COMPANY.legalName), esc(COMPANY.mailOrderNo), ftc, esc(RELATED_COMPANY.legalName)];
     const idx = order.map((s) => html.indexOf(s));
     for (const [i, s] of order.entries()) expect(idx[i], `${s} 가 없다`).toBeGreaterThan(-1);
     expect([...idx].sort((a, b) => a - b)).toEqual(idx);
@@ -395,9 +396,9 @@ describe.each(["ko", "en"] as const)("6. 푸터 사업자 정보 (%s)", (locale)
     expect(count(html, ftc)).toBe(1);
   });
 
-  test("계약·대금 주체 고지(RELATED_COMPANY.note)는 한 번 그대로 · 계좌 줄에 '관계사' 없음", async () => {
+  test("OF2-A(1) 계약·대금 주체 고지(RELATED_COMPANY.note)는 푸터에 없다(/guide 에는 있다 — tests/of2a-copy.test.ts) · 계좌 줄은 그대로 · '관계사' 없음", async () => {
     const html = await companyInfo();
-    expect(count(html, esc(RELATED_COMPANY.note))).toBe(1);
+    expect(count(html, esc(RELATED_COMPANY.note))).toBe(0);
     expect(html).toContain(esc(PAYMENT.accountLine));
   });
 });

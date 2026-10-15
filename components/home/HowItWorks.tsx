@@ -38,7 +38,19 @@ export async function HowItWorks() {
   return (
     <section className={`${h.section} ${h.toneWhite}`} aria-labelledby="how-h" data-section="how">
       <div className={h.wrap}>
-        <SectionHead id="how-h" eyebrow={t("eyebrow")} title={t.rich("title", RICH)} desc={t("desc")} />
+        {/* OF2-A(5): 설명은 두 문장 — 첫 문장 뒤에서 줄이 바뀐다(ko·en 같은 자리) */}
+        <SectionHead
+          id="how-h"
+          eyebrow={t("eyebrow")}
+          title={t.rich("title", RICH)}
+          desc={
+            <>
+              {t("descLead")}
+              <br />
+              {t("descBody")}
+            </>
+          }
+        />
 
         <ol className={s.steps} data-testid="how-steps">
           {steps.map((step, i) => (

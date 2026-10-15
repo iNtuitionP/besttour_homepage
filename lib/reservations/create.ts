@@ -9,9 +9,9 @@
  * 흐름 (P3-8 — 공개 접수는 홈 간편 견적 하나다. intake='quick')
  *   0. quickReservationSchema(now).safeParse 를 **다시** 한다(방어 심층). runGuards 가 이미 통과시켰지만, 실패하면 호출자 버그라 throw.
  *   1. origin/destination 코드를 isLocationCode 로 재확인 — 이 컬럼들엔 DB CHECK 가 없다(0001, 리뷰 M5).
- *   2. 날짜(`YYYY-MM-DD`, KST 달력) → `${날짜}T00:00` 을 parseKst 로 인스턴트. 서버 TZ 와 무관(CLAUDE.md §3).
- *      depart_at = 출발일 00:00 KST · return_at = 도착일 00:00 KST(도착일이 뒤일 때만, 같은 날이면 null) · nights = 두 날짜 차.
- *      **00:00 은 의미 없는 자리값이다** — 손님은 시각을 고르지 않았다. 모든 표시면이 intake='quick' 이면 날짜만 보인다.
+ *   2. 날짜(`YYYY-MM-DD`, KST 달력) + 시(`HH`) → `${날짜}T${시}:00` 을 parseKst 로 인스턴트. 서버 TZ 와 무관(CLAUDE.md §3).
+ *      depart_at = 출발일 + 출발 시각(OF2-A 필수) · return_at = 도착일 + 도착 시각(선택 — 없으면 도착일 00:00 자리값, 같은 날이면 null) ·
+ *      nights = 두 날짜 차(시각 무관). **00:00 KST 는 자리값으로 읽는다**(옛 접수 · 도착 시각 안 고름) — 표시면은 그 경우 날짜만 보인다(lib/kst.ts quickClock).
  *   2'. 차종·목적·대수·왕복 구분은 **null** 로 보낸다(지어내지 않는다 — 0023 이 intake='quick' 에만 허용한다).
  *   3. phone ← contactPhone(input).e164 (`+82…`). 동의 컬럼 ← consentFields(input + marketingConsent:false, now).
  *   4. reservations insert. public_code 는 randomBytes → 31자 알파벳 8자(publicCode.ts). unique 충돌(23505)이면 최대 3회 재생성.
@@ -117,23 +117,34 @@ function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-/** 날짜의 자리값 시각 — 손님은 시각을 고르지 않았다(표시면은 날짜만 보인다). KST 벽시계로 해석한다(CLAUDE.md §3). */
+/**
+ * 도착 시각을 고르지 않았을 때 도착일에 두는 자리값 — 표시면은 이 00:00 을 시각 없음으로 읽는다(lib/kst.ts quickClock).
+ * 시각은 항상 KST 벽시계로 해석한다(CLAUDE.md §3).
+ */
 export const QUICK_DATE_TIME = "00:00";
 
 /**
- * 운행일 — KST 달력 날짜 → 그 날 00:00 KST 의 인스턴트 + nights.
- * 도착일이 출발일보다 뒤일 때만 return_at 을 둔다(같은 날 = 당일 운행 → null). 0001 의 `return_at > depart_at` 을 insert 전에 지킨다.
+ * 운행 일시 — KST 벽시계(`${날짜}T${시}:00`)를 Asia/Seoul 로 해석한 인스턴트 + nights(날짜 기준).
+ * depart_at = 출발일 + 출발 시각(OF2-A 필수). return_at:
+ *   - 같은 날 + 도착 시각 있음 → 같은 날 그 시각(출발 시각보다 뒤여야 한다 — 0001 의 `return_at > depart_at` 을 insert 전에 지킨다)
+ *   - 같은 날 + 도착 시각 없음 → null (당일 운행)
+ *   - 다른 날 → 도착일 + 도착 시각(없으면 00:00 자리값)
  */
 function scheduleColumns(data: QuickReservationInput): Pick<ReservationInsert, "depart_at" | "return_at" | "nights"> {
-  const departLocal = `${data.departDate}T${QUICK_DATE_TIME}`;
-  const returnLocal = `${data.returnDate}T${QUICK_DATE_TIME}`;
+  const departLocal = `${data.departDate}T${data.departHour}:00`;
+  const returnLocal = `${data.returnDate}T${data.returnHour === undefined ? QUICK_DATE_TIME : `${data.returnHour}:00`}`;
   const departAt = parseKst(departLocal);
   const returnAt = parseKst(returnLocal);
-  if (returnAt.getTime() < departAt.getTime()) {
+  if (data.returnDate < data.departDate) {
     throw callerBug(`도착일(${data.returnDate})이 출발일(${data.departDate})보다 앞선다`);
   }
-  if (returnAt.getTime() === departAt.getTime()) {
-    return { depart_at: departAt.toISOString(), return_at: null, nights: 0 };
+  if (data.returnDate === data.departDate) {
+    if (data.returnHour === undefined) {
+      return { depart_at: departAt.toISOString(), return_at: null, nights: 0 };
+    }
+    if (returnAt.getTime() <= departAt.getTime()) {
+      throw callerBug(`같은 날 도착 시각(${data.returnHour}시)이 출발 시각(${data.departHour}시)보다 앞서거나 같다`);
+    }
   }
   return { depart_at: departAt.toISOString(), return_at: returnAt.toISOString(), nights: nightsBetween(departLocal, returnLocal) };
 }

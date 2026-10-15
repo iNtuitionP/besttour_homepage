@@ -48,7 +48,8 @@ import { CompanyIntro } from "@/components/home/CompanyIntro";
 import h from "@/components/home/home.module.css";
 import { TrustBar } from "@/components/home/TrustBar";
 import { PageHeader } from "@/components/pages/PageHeader";
-import { COMPANY } from "@/lib/legal/disclosures";
+import { ledgerUi } from "@/lib/i18n/ledger-ui";
+import { COMPANY, RELATED_COMPANY } from "@/lib/legal/disclosures";
 
 import { stripComments } from "./helpers/strip-comments";
 
@@ -230,5 +231,61 @@ describe("9. 개업 연도 — /about 표는 연도만, 홈 신뢰 바는 그대
     const code = codeOf("app/[locale]/(site)/about/page.tsx");
     expect(code).toMatch(/since:\s*t\(\s*["']facts\.sinceValue["']\s*,\s*\{\s*year:\s*String\(\s*COMPANY\.establishedYear\s*\)\s*\}\s*\)/);
     expect(code).not.toMatch(/["']home\.trust["']/);
+  });
+});
+
+// =============================================================================
+// OF2-A(2) /about 회사 정보 표 — (주)베스트모빌리티 줄(상호·대표·사업자등록번호·주소)이 합자회사 베스트투어 다음에 있다
+// =============================================================================
+describe.each(["ko", "en"] as const)("OF2-A 2. /about 회사 정보 표 (%s) — (주)베스트모빌리티", (locale) => {
+  const ui = ledgerUi(locale);
+  const reEsc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); // 상호 "(주)…"·주소 "(식사동)" 의 괄호
+  const row = (label: string, value: string) => new RegExp(`<th scope="row">${reEsc(esc(label))}</th><td[^>]*>${reEsc(esc(value))}</td>`);
+  const factsHtml = async () => {
+    const facts = mustFind(await aboutTree(locale), (el) => el.props.testId === "company-facts", "company-facts");
+    return renderToStaticMarkup(facts);
+  };
+
+  test("표가 둘 — 합자회사 베스트투어 → (주)베스트모빌리티 순서 · 같은 라벨(상호·대표·사업자등록번호) + 주소", async () => {
+    const out = await factsHtml();
+    expect(count(out, "<table")).toBe(2);
+    const first = out.indexOf(esc(COMPANY.legalName));
+    const second = out.indexOf(esc(RELATED_COMPANY.legalName));
+    expect(first).toBeGreaterThan(-1);
+    expect(second).toBeGreaterThan(first);
+    const tables = out.split("<table").slice(1);
+    expect(tables[0]).toContain(esc(COMPANY.legalName));
+    expect(tables[0]).not.toContain(esc(RELATED_COMPANY.legalName));
+    // 두 번째 표 — 상호·대표·사업자등록번호·주소
+    const label = str(locale, "pages.about.facts.legalName");
+    expect(tables[1]).toMatch(row(label, RELATED_COMPANY.legalName));
+    expect(tables[1]).toMatch(row(ui.labels.footer.representative, RELATED_COMPANY.representative));
+    expect(tables[1]).toMatch(row(ui.labels.footer.bizRegNo, RELATED_COMPANY.bizRegNo));
+    expect(tables[1]).toMatch(row(str(locale, "pages.about.facts.address"), RELATED_COMPANY.address));
+    // 베스트모빌리티 줄에는 통신판매업·개업·전화·팩스·이메일 줄이 없다(원장에 없는 값을 지어내지 않는다)
+    for (const gone of [ui.labels.footer.mailOrder, str(locale, "pages.about.facts.since"), ui.labels.contact.consultTel, ui.labels.contact.fax, ui.labels.contact.email]) {
+      expect(tables[1].includes(`<th scope="row">${esc(gone)}</th>`), gone).toBe(false);
+    }
+  });
+
+  test("합자회사 베스트투어 표는 그대로 — 본사·지사 라벨 · 사업자등록번호는 베스트투어 값", async () => {
+    const out = await factsHtml();
+    const first = out.split("<table")[1];
+    expect(first).toMatch(row(ui.labels.footer.headOffice, COMPANY.address));
+    expect(first).toMatch(row(ui.labels.footer.bizRegNo, COMPANY.bizRegNo));
+    expect(first).not.toContain(esc(RELATED_COMPANY.bizRegNo));
+    expect(first.includes(`<th scope="row">${esc(str(locale, "pages.about.facts.address"))}</th>`), "베스트투어 표에는 '주소' 행이 없다(본사·지사)").toBe(false);
+  });
+
+  test("'관계사·운영사' 꼬리표 0 (영문 Affiliate · Operator 도)", async () => {
+    const out = await factsHtml();
+    for (const word of ["관계사", "운영사", "Affiliate", "Operator"]) expect(out.includes(word), word).toBe(false);
+  });
+
+  test("값은 원장 그대로 — 소스에 상호·사업자번호 리터럴 0 · 원장 RELATED_COMPANY 를 읽는다", () => {
+    const code = codeOf("app/[locale]/(site)/about/page.tsx");
+    expect(code).toMatch(/RELATED_COMPANY\.legalName/);
+    expect(code).toMatch(/RELATED_COMPANY\.bizRegNo/);
+    expect(code).not.toMatch(/베스트모빌리티|342-88-03855/);
   });
 });

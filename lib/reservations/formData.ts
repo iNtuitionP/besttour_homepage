@@ -10,6 +10,7 @@
  * | phone / phoneIntl           | phone / phoneIntl   | XOR (M6) — 둘 중 정확히 하나. 빈 칸은 보내지 않는다 |
  * | originCode / destinationCode| 〃                  | lib/codes.ts LOCATION_CODES                    |
  * | departDate / returnDate     | 〃                  | `YYYY-MM-DD` (KST 달력 날짜, `<input type="date">` 값 그대로) |
+ * | departHour / returnHour     | 〃                  | OF2-A — 시 두 자리 `00`~`23`(KST 벽시계). departHour 필수 · returnHour 선택(빈 칸은 보내지 않는다) |
  * | passengers                  | passengers          | number, 필수 1~900                              |
  * | locale                      | locale              | ko / en                                        |
  * | privacyConsent              | privacyConsent      | checkbox — 없으면 zod 실패(필수 동의)            |
@@ -18,7 +19,7 @@
  * | formToken                   | (guard)             | 타임트랩 — 모달을 열 때 서버액션이 발급한 값        |
  * | cf-turnstile-response       | (guard)             | Turnstile 위젯이 넣는 표준 이름 — zod 밖          |
  *
- * 받지 않는 것(P3-8 사용자 결정 — 사장님이 전화로 확인): 차종 · 여행 목적 · 출발 시각 · 왕복 구분 · 대수. 메일·경유지·요청사항·
+ * 받지 않는 것(P3-8 사용자 결정 — 사장님이 전화로 확인): 차종 · 여행 목적 · 왕복 구분 · 대수. (출발·도착 시각은 OF2-A 부터 받는다.) 메일·경유지·요청사항·
  * 광고성 정보 수신 동의도 없다. 옛 위저드 키(vehicleSlug·busCount·marketingConsent …)가 와도 **읽지 않는다**(계약 밖 키).
  *
  * 변환 규칙 — 모양만 바꾼다. 검증은 guard 의 zod(quickReservationSchema)가 한다. 여기서 zod 를 돌리지 않는다.
@@ -48,6 +49,8 @@ export const RESERVATION_FORM_FIELDS = {
   destinationCode: "destinationCode",
   departDate: "departDate",
   returnDate: "returnDate",
+  departHour: "departHour",
+  returnHour: "returnHour",
   passengers: "passengers",
   locale: "locale",
   privacyConsent: "privacyConsent",
