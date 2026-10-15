@@ -21,6 +21,7 @@ import { routing } from "@/i18n/routing";
 import { LEGACY_CONTACT_METHODS, LEGACY_PAYMENT_METHODS, getReservation, isUuid, type ReservationDetailRow } from "@/lib/admin/reservations";
 import { requireAdmin } from "@/lib/auth/requireAdmin";
 import { PURPOSES, isLocationCode, locationLabelKo } from "@/lib/codes";
+import { quickClock } from "@/lib/kst";
 import { domesticPhoneText } from "@/lib/phone-format";
 import { getVehicles } from "@/lib/queries";
 import { TRIP_TYPES } from "@/lib/reservation-check/view";
@@ -202,13 +203,18 @@ export default async function AdminReservationDetailPage({ params, searchParams 
   // 간편 접수는 도착일이 출발일과 같으면 저장값이 null 이다 — 오는 날 = 가는 날(P3-8). 상세 접수의 null 은 돌아오는 날 없음(편도).
   const back = row.return_at === null ? (quick ? go : null) : dayParts(row.return_at, now);
   const goText = go === null ? none : dayLabel(go, dayTpl);
-  const backText = back === null ? none : quick ? dayLabel(back, dayTpl) : `${dayLabel(back, dayTpl)} ${clock(back.hour, back.minute)}`;
+  // 시각 — 상세 접수는 늘 보인다. 간편 접수는 손님이 고른 시각이 있을 때만(OF2-A): 저장된 00:00 은 자리값이라 날짜만(lib/kst.ts quickClock).
+  // 오는 날의 시각은 return_at 이 있을 때만 — 간편 접수의 같은 날 · 도착 시각 없음(return_at null)은 가는 날의 시각을 빌리지 않는다.
+  const goClock = go !== null && (!quick || quickClock(row.depart_at) !== null) ? clock(go.hour, go.minute) : null;
+  const backClock =
+    back !== null && row.return_at !== null && (!quick || quickClock(row.return_at) !== null) ? clock(back.hour, back.minute) : null;
+  const backText = back === null ? none : backClock === null ? dayLabel(back, dayTpl) : `${dayLabel(back, dayTpl)} ${backClock}`;
   // 확인 시트의 요약 상자 — 구간 · 날짜 · 인원. 이름·전화·메일은 넣지 않는다(P5-19 그대로). 날짜는 **이 화면과 같은 표기**다
   // ("10월 10일 (토)" · 해가 다르면 연도까지 — P5-22 수정 라운드 · 컨트롤러 결정): 간편 접수는 날짜만(00:00 은 자리값), 상세 접수는 출발 시각까지.
   const summary: ReservationSummary = {
     parts: [
       routeText,
-      quick || go === null ? goText : `${goText} ${clock(go.hour, go.minute)}`,
+      goClock === null ? goText : `${goText} ${goClock}`,
       ...(row.passengers === null ? [] : [tRoot("reservationCheck.card.passengersValue", { n: row.passengers })]),
     ],
     quick,
@@ -321,7 +327,7 @@ export default async function AdminReservationDetailPage({ params, searchParams 
                 <dt>{t("trip.pax")}</dt>
                 <dd>{row.passengers === null ? none : fillTemplate(rowLabels.paxValue, { n: row.passengers })}</dd>
                 <dt>{t("trip.time")}</dt>
-                {quick || go === null ? undecided() : <dd>{clock(go.hour, go.minute)}</dd>}
+                {goClock === null ? undecided() : <dd>{goClock}</dd>}
                 <dt>{t("field.vehicle")}</dt>
                 {quick || vehicleName === null ? (
                   undecided()

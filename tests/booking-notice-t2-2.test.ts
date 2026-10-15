@@ -175,12 +175,13 @@ function block(tree: ReactNode, pred: (el: El) => boolean, what: string): string
 describe.each(["ko", "en"] as const)("2-a. 지운 자리 (%s) — 푸터 · 홈 이용 방법 · /guide · 견적 위젯", (locale) => {
   const notice = locale === "ko" ? NEW_KO : NEW_EN;
 
-  test("푸터 사업자 정보 블록에 verbatim 0 · 계약·대금 주체 고지는 그대로", async () => {
+  test("푸터 사업자 정보 블록에 verbatim 0 · (OF2-A 1) 계약·대금 주체 문장은 푸터에서 걷었다 — 블록은 비지 않았다(사업자 줄·계좌 줄)", async () => {
     state.locale = locale;
     const html = block(await Footer(), (el) => el.props["data-testid"] === "footer-company-info", "footer-company-info");
     expect(html).not.toContain(esc(notice));
     expect(html).not.toContain(esc(VERBATIM.bookingNotice));
-    expect(count(html, esc(RELATED_COMPANY.note))).toBe(1); // 블록이 비지 않았다 — 같은 자리의 다른 고지는 남는다
+    expect(count(html, esc(RELATED_COMPANY.note))).toBe(0);
+    expect(count(html, esc(RELATED_COMPANY.legalName))).toBeGreaterThan(0); // 블록이 비지 않았다 — 두 번째 회사 줄은 그대로
     expect(codeOf("components/layout/Footer.tsx")).not.toMatch(/bookingNotice|localizeVerbatim|\bVERBATIM\b/);
   });
 

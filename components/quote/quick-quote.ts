@@ -26,6 +26,12 @@ export const PHONE_KR_INPUT_PATTERN = /^01[016789]-?\d{3,4}-?\d{4}$/;
 export const PHONE_INTL_INPUT_PATTERN = /^\+[1-9]\d{6,14}$/;
 export const PHONE_KR_MAX_DIGITS = 11;
 export const ISO_DATE_INPUT_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+/** = lib/types HOUR_PATTERN (시 두 자리 00~23). */
+export const HOUR_INPUT_PATTERN = /^([01]\d|2[0-3])$/;
+/** 시각 선택지 — `00`~`23` 스물네 개(1시간 단위). */
+export const HOURS: readonly string[] = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
+/** 시 → `HH:00` 표시(KST 벽시계). */
+export const hourClock = (hour: string): string => `${hour}:00`;
 
 // =============================================================================
 // 위젯 — 출발지 · 도착지 · 출발일 · 도착일 · 인원
@@ -37,6 +43,10 @@ export interface WidgetFields {
   /** `YYYY-MM-DD` — `<input type="date">` 값 그대로(KST 달력 날짜로 해석된다). */
   departDate: string;
   returnDate: string;
+  /** 출발 시각(시) — `00`~`23` 두 자리 · 필수. KST 벽시계의 시(서버가 `${출발일}T${시}:00` 으로 Asia/Seoul 해석 · OF2-A). 비면 "". */
+  departHour: string;
+  /** 도착 시각(시) — 선택. 비면 "". */
+  returnHour: string;
   /** 입력칸 문자열 그대로 — 숫자 변환은 검증 뒤. */
   passengers: string;
 }
@@ -81,9 +91,20 @@ export function validateWidget(f: WidgetFields, today: string): FieldError[] {
   if (!departOk) push("departDate", "departDate");
   else if (today !== "" && f.departDate < today) push("departDate", "departPast");
 
+  const hourOk = HOUR_INPUT_PATTERN.test(f.departHour);
+  if (!hourOk) push("departHour", "departHour");
+
   const returnOk = isCalendarDate(f.returnDate);
   if (!returnOk) push("returnDate", "returnDate");
   else if (departOk && f.returnDate < f.departDate) push("returnDate", "returnBefore");
+
+  // 도착 시각은 선택 — 골랐다면 형식이 맞아야 하고, 같은 날 왕복이면 출발 시각보다 뒤여야 한다(서버 규칙 3).
+  if (f.returnHour !== "") {
+    if (!HOUR_INPUT_PATTERN.test(f.returnHour)) push("returnHour", "returnHour");
+    else if (departOk && returnOk && hourOk && f.returnDate === f.departDate && f.returnHour <= f.departHour) {
+      push("returnHour", "returnHourBefore");
+    }
+  }
 
   if (!isIntIn(f.passengers, PASSENGERS_RANGE.min, PASSENGERS_RANGE.max)) push("passengers", "pax");
   return errors;
@@ -147,7 +168,7 @@ export function validateContact(c: ContactFields): FieldError[] {
 }
 
 /** 서버 fieldErrors 의 키 — 위젯 칸(출발지·도착지·날짜·인원)인가, 모달 칸(이름·연락처·동의)인가. */
-const WIDGET_SERVER_FIELDS: ReadonlySet<string> = new Set(["originCode", "destinationCode", "departDate", "returnDate", "passengers"]);
+const WIDGET_SERVER_FIELDS: ReadonlySet<string> = new Set(["originCode", "destinationCode", "departDate", "returnDate", "departHour", "returnHour", "passengers"]);
 export function isWidgetField(field: string): field is WidgetField {
   return WIDGET_SERVER_FIELDS.has(field);
 }
@@ -160,11 +181,20 @@ export function modalFieldOf(field: string): string {
 // 요약 — "이 내용으로 견적 신청하기" 의 출발→도착 · 날짜 · 인원
 // =============================================================================
 
-/** 같은 날이면 한 날짜(당일), 다르면 범위. 표시 형식(`YYYY-MM-DD`)은 입력값 그대로 — 변환하지 않는다. */
-export function dateSpan(f: Pick<WidgetFields, "departDate" | "returnDate">): { kind: "single"; date: string } | { kind: "range"; from: string; to: string } {
+/**
+ * 같은 날이면 한 날짜(당일), 다르면 범위. 표시 형식(`YYYY-MM-DD`)은 입력값 그대로 — 변환하지 않는다.
+ * OF2-A: 출발 시각(fromTime — 필수라 거의 항상 있다)과 도착 시각(toTime — 고르지 않았으면 null)을 `HH:00` 으로 함께 돌려준다.
+ */
+export type DateSpan =
+  | { kind: "single"; date: string; fromTime: string | null; toTime: string | null }
+  | { kind: "range"; from: string; to: string; fromTime: string | null; toTime: string | null };
+
+export function dateSpan(f: Pick<WidgetFields, "departDate" | "returnDate" | "departHour" | "returnHour">): DateSpan {
+  const fromTime = HOUR_INPUT_PATTERN.test(f.departHour) ? hourClock(f.departHour) : null;
+  const toTime = HOUR_INPUT_PATTERN.test(f.returnHour) ? hourClock(f.returnHour) : null;
   return f.departDate === f.returnDate || f.returnDate === ""
-    ? { kind: "single", date: f.departDate }
-    : { kind: "range", from: f.departDate, to: f.returnDate };
+    ? { kind: "single", date: f.departDate, fromTime, toTime }
+    : { kind: "range", from: f.departDate, to: f.returnDate, fromTime, toTime };
 }
 
 // =============================================================================
@@ -173,7 +203,7 @@ export function dateSpan(f: Pick<WidgetFields, "departDate" | "returnDate">): { 
 
 /** 위젯의 처음 상태 — 기본 출발·도착만 두고 날짜·인원은 비운다. 접수 성공 뒤 이 상태로 되돌린다(같은 내용 재접수 방지 · P2-11). */
 export function initialWidgetFields(defaults: { origin: string; dest: string }): WidgetFields {
-  return { originCode: defaults.origin, destinationCode: defaults.dest, departDate: "", returnDate: "", passengers: "" };
+  return { originCode: defaults.origin, destinationCode: defaults.dest, departDate: "", returnDate: "", departHour: "", returnHour: "", passengers: "" };
 }
 
 /**

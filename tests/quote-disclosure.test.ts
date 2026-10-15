@@ -480,7 +480,7 @@ async function modalHtml(locale: "ko" | "en"): Promise<string> {
   const ui = ledgerUi(locale);
   return render(
     createElement(QuickQuoteForm, {
-      fields: { originCode: "ICN", destinationCode: "SEL", departDate: "2026-10-01", returnDate: "2026-10-03", passengers: "30" },
+      fields: { originCode: "ICN", destinationCode: "SEL", departDate: "2026-10-01", returnDate: "2026-10-03", departHour: "08", returnHour: "", passengers: "30" },
       placeLabels: { origin: locale === "en" ? "Incheon Airport" : "인천공항", dest: locale === "en" ? "Seoul" : "서울" },
       locale,
       legal: {

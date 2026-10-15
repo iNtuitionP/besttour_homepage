@@ -30,6 +30,7 @@ const BASE = {
   destinationCode: "SEL",
   departDate: "2026-10-01",
   returnDate: "2026-10-01",
+  departHour: "08", // OF2-A: 출발 시각(시)은 필수
   passengers: 30,
   turnstileToken: "tok",
   privacyConsent: true,
@@ -59,15 +60,15 @@ describe("기본 — 유효한 간편 입력은 통과하고, 기본값(locale k
     for (const k of ["vehicleSlug", "busCount", "marketingConsent"]) expect(k in r.data, k).toBe(false);
   });
 
-  test("스키마 키 = 이름·연락처2·출발지·도착지·출발일·도착일·인원·locale·turnstileToken·website·동의2 (차종·목적·시각·왕복·대수 없음)", () => {
+  test("스키마 키 = 이름·연락처2·출발지·도착지·출발일·도착일·출발 시각·도착 시각·인원·locale·turnstileToken·website·동의2 (차종·목적·왕복·대수 없음)", () => {
     expect(Object.keys(QuickReservationShape.shape).sort()).toEqual(
-      ["name", "phone", "phoneIntl", "originCode", "destinationCode", "departDate", "returnDate", "passengers", "locale", "turnstileToken", "website", "privacyConsent", "withdrawalConsent"].sort(),
+      ["name", "phone", "phoneIntl", "originCode", "destinationCode", "departDate", "returnDate", "departHour", "returnHour", "passengers", "locale", "turnstileToken", "website", "privacyConsent", "withdrawalConsent"].sort(),
     );
   });
 });
 
 describe("필수 누락", () => {
-  test.each(["name", "originCode", "destinationCode", "departDate", "returnDate", "passengers", "privacyConsent", "withdrawalConsent"])(
+  test.each(["name", "originCode", "destinationCode", "departDate", "returnDate", "departHour", "passengers", "privacyConsent", "withdrawalConsent"])(
     "%s 누락 → 그 필드 issue",
     (field) => {
       expect(at(input({ [field]: undefined }), field).length).toBeGreaterThan(0);
@@ -126,6 +127,43 @@ describe("날짜 — 달력 · 과거 · 도착 < 출발", () => {
 
   test("출발일이 달력에 없으면 도착일 비교는 건너뛴다(이중 issue 없음)", () => {
     expect(at(input({ departDate: "2026-02-30", returnDate: "2026-01-01" }), "returnDate")).toHaveLength(0);
+  });
+});
+
+describe("OF2-A 출발·도착 시각(시) — 출발 필수 · 도착 선택 · 00~23 두 자리 · KST 벽시계", () => {
+  test.each(["00", "08", "09", "13", "23"])("출발 시각 %s → 통과", (departHour) => {
+    expect(ok(input({ departHour, returnHour: undefined }))).toBe(true);
+  });
+
+  test.each(["8", "24", "-1", "08:00", "2026-10-01T08:00", "08Z", "", " 8", "٠٨"])("출발 시각 '%s' → departHour issue", (departHour) => {
+    expect(at(input({ departHour }), "departHour").length).toBeGreaterThan(0);
+  });
+
+  test("출발 시각은 문자열만 — 숫자 8 은 거부(폼은 문자열로 보낸다)", () => {
+    expect(at(input({ departHour: 8 }), "departHour").length).toBeGreaterThan(0);
+  });
+
+  test("도착 시각은 선택 — 없어도 통과 · 있으면 같은 형식(00~23)이어야 한다", () => {
+    expect(ok(input({ returnHour: undefined }))).toBe(true);
+    expect(ok(input({ returnHour: "18" }))).toBe(true);
+    for (const returnHour of ["24", "7", "18:00", "abc"]) {
+      expect(at(input({ returnHour }), "returnHour").length, returnHour).toBeGreaterThan(0);
+    }
+  });
+
+  test("같은 날 왕복 — 도착 시각은 출발 시각보다 뒤여야 한다 (0001 CHECK return_at > depart_at)", () => {
+    expect(at(input({ departHour: "08", returnHour: "08" }), "returnHour")).toHaveLength(1);
+    expect(at(input({ departHour: "18", returnHour: "08" }), "returnHour")).toHaveLength(1);
+    expect(ok(input({ departHour: "08", returnHour: "09" }))).toBe(true);
+    expect(ok(input({ departHour: "00", returnHour: "23" }))).toBe(true);
+  });
+
+  test("다른 날이면 도착 시각이 출발 시각보다 앞서도 된다(1박 이상)", () => {
+    expect(ok(input({ departDate: "2026-10-01", returnDate: "2026-10-02", departHour: "18", returnHour: "08" }))).toBe(true);
+  });
+
+  test("서버는 Z 가 붙은 UTC 입력을 받지 않는다 — 시각은 시 두 자리만(CLAUDE.md §3)", () => {
+    expect(at(input({ departHour: "08Z" }), "departHour").length).toBeGreaterThan(0);
   });
 });
 

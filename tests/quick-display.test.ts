@@ -193,3 +193,62 @@ describe("3. 관리자 목록 — 간편 칩 · 날짜만(시각 미정) · 차�
     expect(wizard).not.toContain(res.timeUndecided);
   });
 });
+
+/**
+ * OF2-A — 홈 견적이 출발 시각(필수)·도착 시각(선택)을 받는다. 시각이 있는 간편 접수는 그 시각을 보인다.
+ * 규칙: 저장된 **00:00 KST 는 자리값**(시각을 받지 않던 시절의 행 · 도착 시각을 고르지 않은 여러 날 운행의 도착일)이라 계속 날짜만 보인다.
+ * (자정 출발을 고른 손님도 날짜만 보인다 — 거짓 시각을 보이는 쪽보다 덜 알리는 쪽을 택했다. 보고서 §판단.)
+ */
+describe("4. OF2-A 시각이 있는 간편 접수 — 관리자 상세·목록·예약확인 표시", () => {
+  const WITH_TIME = {
+    ...BASE,
+    depart_at: "2026-09-30T23:00:00.000Z", // KST 2026-10-01 08:00
+    return_at: "2026-10-01T09:00:00.000Z", // KST 2026-10-01 18:00 (같은 날 왕복)
+  };
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-28T01:00:00.000Z"));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  test("tripDateText — 시각이 있는 quick 은 날짜+시각 · 00:00 자리값은 날짜만 · wizard 는 그대로", () => {
+    expect(tripDateText("2026-09-30T23:00:00.000Z", "quick")).toBe("2026-10-01 08:00");
+    expect(tripDateText("2026-10-01T09:00:00.000Z", "quick")).toBe("2026-10-01 18:00");
+    expect(tripDateText("2026-09-30T15:00:00.000Z", "quick")).toBe("2026-10-01"); // 00:00 KST
+    expect(tripDateText("2026-09-30T23:30:00.000Z", "wizard")).toBe("2026-10-01 08:30");
+  });
+
+  test("관리자 상세 — 출발 시각 줄에 08:00(미정 아님) · 오는 날에 18:00 · 가는 날 줄에는 00:00 도 없다", async () => {
+    vi.mocked(getReservation).mockResolvedValue(WITH_TIME);
+    const out = await html(AdminReservationDetailPage({ params: Promise.resolve({ id: ID }) }));
+    const body = text(out);
+    expect(body).toContain("08:00");
+    expect(body).toContain(`${day(10, 1, 4)} 18:00`); // 오는 날 = 같은 날 18:00
+    expect(body.split(UNDECIDED).length - 1, "출발 시각이 미정이 아니므로 하나 줄어 셋").toBe(3);
+    expect(body).not.toMatch(/\d{4}-\d{2}-\d{2} 0?8:00/); // 운행일 표시에 원문 일시 없음
+  });
+
+  test("관리자 상세 — 도착 시각을 고르지 않은 여러 날 운행(도착일 00:00)은 오는 날이 날짜만", async () => {
+    vi.mocked(getReservation).mockResolvedValue({ ...WITH_TIME, return_at: "2026-10-02T15:00:00.000Z" }); // KST 10-03 00:00
+    const body = text(await html(AdminReservationDetailPage({ params: Promise.resolve({ id: ID }) })));
+    expect(body).toContain("08:00");
+    expect(body).toContain(day(10, 3, 6));
+    expect(body).not.toContain(`${day(10, 3, 6)} 00:00`);
+  });
+
+  test("관리자 목록 — 시각 자리에 08:00~18:00 (같은 날 왕복) · 도착 시각이 없으면 08:00 만 · 둘 다 '시각 미정' 아님", async () => {
+    vi.mocked(listReservations).mockResolvedValue({
+      items: [WITH_TIME, { ...WITH_TIME, id: "9c9e6679-7425-40de-944b-e07fc1f90ae9", public_code: "QK9999AB", return_at: null }],
+      hasMore: false,
+      nextCursor: null,
+    });
+    const out = await html(AdminReservationsPage({ searchParams: Promise.resolve({}) }));
+    const rows = [...out.matchAll(/<li[^>]*data-row-id="[^"]+"[^>]*>[\s\S]*?<\/li>/g)].map((m) => text(m[0]));
+    const res = t.raw("admin.reservations" as never) as Record<string, string>;
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toContain("08:00~18:00");
+    expect(rows[1]).toContain("08:00");
+    expect(rows[1]).not.toContain("~");
+    for (const r of rows) expect(r).not.toContain(res.timeUndecided);
+  });
+});

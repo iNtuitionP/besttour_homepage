@@ -441,7 +441,7 @@ const LEDGER_ON_EN: ReadonlyArray<{ file: string; refs: readonly string[]; scree
   // R3 [P2-F]: 제7조(취소 및 환불) 아래에 CANCELLATION.scope(규정의 적용 범위 — 고객 사정 취소 · 법정 권리 보존)를 붙였다.
   { file: "app/[locale]/(legal)/terms/page.tsx", screen: "/en/terms 본문 전체(P1-7: 제8조 아래 청약철회 제한 고지 · R3: 제7조 아래 취소·환불 적용 범위 · OF-T2-3: 시행일 전 예고)", notice: true, refs: ["TERMS", "refundChangeTexts(ko)", "refundPolicyAt"] },
   { file: "components/legal/LegalArticle.tsx", screen: "/en/terms 조 번호(제N조)", notice: { via: "app/[locale]/(legal)/terms/page.tsx" }, refs: ["LEGAL_LABELS"] },
-  { file: "app/[locale]/(site)/about/page.tsx", screen: "/en/about 회사 정보 표 · 찾아오시는 길 주소", notice: true, refs: ["COMPANY.address", "COMPANY.branchAddress", "COMPANY.legalName", "COMPANY.mailOrderIssuer", "COMPANY.mailOrderNo"] },
+  { file: "app/[locale]/(site)/about/page.tsx", screen: "/en/about 회사 정보 표((주)베스트모빌리티 줄 포함 — OF2-A) · 찾아오시는 길 주소", notice: true, refs: ["COMPANY.address", "COMPANY.branchAddress", "COMPANY.legalName", "COMPANY.mailOrderIssuer", "COMPANY.mailOrderNo", "RELATED_COMPANY"] },
   { file: "app/[locale]/(site)/fleet/page.tsx", screen: "/en/fleet 보험 본문", notice: true, refs: ["INSURANCE"] },
   // P3-8: 위저드(/quote)를 지우고 홈 간편 견적 모달로 옮겼다 — 동의 고지 본문은 Hero(서버)가 원장에서 읽어 모달에 내린다.
   { file: "components/home/Hero.tsx", screen: "/en 간편 견적 모달의 개인정보 수집·이용 고지 본문", notice: true, refs: ["PRIVACY_NOTICE"] },
@@ -451,7 +451,8 @@ const LEDGER_ON_EN: ReadonlyArray<{ file: string; refs: readonly string[]; scree
   // P7-4 후속 ①: 4단계는 원장 영문(GUIDE_SECTIONS.flow.stepsEn — 컨트롤러 작성)이라 영문으로 보인다. 한국어로 남는 것은 산정 기준 한 줄
   // (T2-2 — 사장님 요청 20: 대금 지급 줄은 홈 이용 방법에서 뺐다. 견적 모달·/guide 에는 남는다).
   { file: "components/home/HowItWorks.tsx", screen: "/en 이용 방법 — 산정 기준 한 줄(4단계는 원장 stepsEn 영문)", notice: true, refs: ["GUIDE_SECTIONS", "QUOTE_BASIS"] },
-  { file: "components/home/RecentFeed.tsx", screen: "/en 접수 현황 공개 고지(행이 있을 때만)", notice: true, refs: ["PRIVACY_NOTICE"] },
+  // OF2-A(4): 홈 접수 현황 아래 공개 고지를 지웠다 — components/home/RecentFeed.tsx 는 한국어 원장을 더 이상 읽지 않는다(행 삭제).
+  // 같은 고지는 /en 견적 모달(components/home/Hero.tsx · 위 행)과 /en/privacy 에 남는다.
   { file: "components/home/TrustBar.tsx", screen: "/en 신뢰 지표 — 통신판매업 신고번호 · 법인 상호", notice: false, refs: ["COMPANY.legalName", "COMPANY.mailOrderNo"] },
   // P1-7: 계좌는 COMPANY.bankAccount 에서 PAYMENT.accountLine(관계사 명의)으로 옮겼다.
   { file: "components/layout/Footer.tsx", screen: "/en/* 푸터 사업자 정보", notice: true, refs: ["COMPANY.address", "COMPANY.branchAddress", "COMPANY.legalName", "COMPANY.mailOrderIssuer", "COMPANY.mailOrderNo", "COMPANY.privacyOfficer", "PAYMENT", "RELATED_COMPANY"] },

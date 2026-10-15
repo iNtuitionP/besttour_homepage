@@ -85,6 +85,9 @@ const FORM_FIELD_CONTRACT = {
   destinationCode: "destinationCode",
   departDate: "departDate",
   returnDate: "returnDate",
+  // OF2-A — 출발 시각(필수)·도착 시각(선택): 시 두 자리 문자열. 서버가 KST 벽시계 YYYY-MM-DDTHH:00 으로 해석한다.
+  departHour: "departHour",
+  returnHour: "returnHour",
   passengers: "passengers",
   locale: "locale",
   privacyConsent: "privacyConsent",
@@ -117,6 +120,7 @@ function form(overrides: Record<string, FormValue> = {}): FormData {
     destinationCode: "ICN",
     departDate: "2026-10-01",
     returnDate: "2026-10-02",
+    departHour: "08",
     passengers: "40",
     locale: "ko",
     privacyConsent: "on",
@@ -665,12 +669,17 @@ describe("5. formDataToRaw — 모양만 바꾼다(zod 는 guard 가 돌린다)"
       destinationCode: "ICN",
       departDate: "2026-10-01",
       returnDate: "2026-10-02",
+      departHour: "08",
+      returnHour: undefined, // 도착 시각은 선택 — 빈 칸은 보내지 않은 것과 같다
       passengers: 40,
       locale: "ko",
       privacyConsent: true,
       withdrawalConsent: true,
       turnstileToken: "unit-test-turnstile-token",
     });
+    // OF2-A: 도착 시각을 보내면 그대로(문자열 · trim) · 빈 문자열은 undefined
+    expect(formDataToRaw(form({ returnHour: " 18 " })).raw.returnHour).toBe("18");
+    expect(formDataToRaw(form({ returnHour: "" })).raw.returnHour).toBeUndefined();
     expect(guardFields).toEqual({ website: "", formToken: token, turnstileToken: "unit-test-turnstile-token" });
     expect(HONEYPOT_FIELD in raw).toBe(false);
     expect("formToken" in raw).toBe(false);

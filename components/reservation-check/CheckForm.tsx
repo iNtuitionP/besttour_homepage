@@ -145,10 +145,6 @@ function CheckRound({ bookingNotice, tel, turnstileSiteKey, turnstileAction, pre
         <input id={id("website")} type="text" name={CG.website} tabIndex={-1} autoComplete="off" aria-hidden="true" defaultValue="" />
       </div>
 
-      <p className={s.legacyNote} data-testid="reservation-check-legacy-note">
-        {t("form.legacyCodeNote")}
-      </p>
-
       <div
         ref={liveRef}
         className={`${q.live} ${s.alertFocus}`}

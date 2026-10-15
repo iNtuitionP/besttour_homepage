@@ -271,10 +271,11 @@ describe("3. components/layout/** — 한글 리터럴 0건 + 원장 import", ()
       "COMPANY.mailOrderNo",
       "COMPANY.privacyOfficer",
       "RELATED_COMPANY.bizRegNo",
-      "RELATED_COMPANY.note",
     ]) {
       expect(src, field).toContain(field);
     }
+    // OF2-A(1, 사장님 요청): 푸터 맨 아래 계약·대금 주체 문장(RELATED_COMPANY.note)은 지웠다 — /guide 대금 지급 절에 남는다(전자상거래법 §13①1호).
+    expect(stripComments(src, `${LAYOUT_DIR}/Footer.tsx`)).not.toMatch(/RELATED_COMPANY\.note/);
     // T2-2(2026-10-10): 접수 안내 verbatim 은 푸터에서 뺐다 — 주석을 걷은 코드에 그 참조가 없다.
     expect(stripComments(src, `${LAYOUT_DIR}/Footer.tsx`)).not.toMatch(/VERBATIM|bookingNotice|localizeVerbatim/);
   });

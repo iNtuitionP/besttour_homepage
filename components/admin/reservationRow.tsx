@@ -31,6 +31,7 @@ import type { ReactElement, ReactNode } from "react";
 
 import type { ReservationListRow } from "@/lib/admin/reservations";
 import { isLocationCode, locationLabelKo } from "@/lib/codes";
+import { quickClock } from "@/lib/kst";
 
 import { detailHref, elapsedSince, kstDayDiff, kstParts, listPhoneText, stayNights, telHref, type ListTab } from "./reservation-list";
 import type { ReservationRowLabels } from "./reservationRowLabels";
@@ -99,10 +100,21 @@ function rangeNode(range: string): ReactNode {
   );
 }
 
-/** 출발 시각 — 간편 접수는 "시각 미정"(00:00 은 자리값). */
+/**
+ * 출발 시각 — 간편 접수는 손님이 고른 출발 시각(OF2-A), 00:00 은 자리값(옛 접수)이라 "시각 미정".
+ * 같은 날 왕복이고 도착 시각이 있으면 "08:00~18:00"(도착 시각만 따로 보이는 칸이 목록에 없다).
+ */
 function timeText(row: ReservationListRow, ctx: ReservationRowContext): { text: string; undecided: boolean } {
-  if (row.intake === "quick") return { text: ctx.labels.timeUndecided, undecided: true };
   const p = kstParts(row.depart_at);
+  if (row.intake === "quick") {
+    if (p === null || quickClock(row.depart_at) === null) return { text: ctx.labels.timeUndecided, undecided: true };
+    const from = fillTemplate(ctx.labels.time, { hour: p.hour, minute: p.minute });
+    const back = row.return_at === null ? null : kstParts(row.return_at);
+    if (back !== null && back.dateKey === p.dateKey && quickClock(row.return_at ?? "") !== null) {
+      return { text: `${from}~${fillTemplate(ctx.labels.time, { hour: back.hour, minute: back.minute })}`, undecided: false };
+    }
+    return { text: from, undecided: false };
+  }
   return p === null ? { text: "", undecided: false } : { text: fillTemplate(ctx.labels.time, { hour: p.hour, minute: p.minute }), undecided: false };
 }
 

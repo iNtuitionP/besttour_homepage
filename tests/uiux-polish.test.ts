@@ -528,7 +528,7 @@ describe("4-b. 원문 날짜 0 — 렌더 (견적 모달 요약 · 예약확인 
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(NOW_2026);
     const props = (locale: "ko" | "en") => ({
-      fields: { originCode: "ICN", destinationCode: "SEL", departDate: "2026-10-01", returnDate: "2026-10-03", passengers: "30" },
+      fields: { originCode: "ICN", destinationCode: "SEL", departDate: "2026-10-01", returnDate: "2026-10-03", departHour: "08", returnHour: "", passengers: "30" },
       placeLabels: { origin: "A", dest: "B" },
       locale,
       legal: {
@@ -563,10 +563,11 @@ describe("4-b. 원문 날짜 0 — 렌더 (견적 모달 요약 · 예약확인 
     const summaryOf = (html: string) => textOf(html.match(/<dl[^>]*data-testid="quick-quote-summary"[\s\S]*?<\/dl>/)?.[0] ?? "");
     const k = summaryOf(withIntl("ko", createElement(QuickQuoteForm, props("ko") as never)));
     expect(k).not.toMatch(RAW_DATE);
-    expect(k).toContain("10월 1일 (목) ~ 10월 3일 (토)");
+    // OF2-A: 출발 시각(필수 · 픽스처 08시)이 출발일 옆에 붙는다 — 도착 시각은 고르지 않아 도착일은 날짜만. 날짜 표기(공용 틀)는 그대로다.
+    expect(k).toContain("10월 1일 (목) 08:00 ~ 10월 3일 (토)");
     const e = summaryOf(withIntl("en", createElement(QuickQuoteForm, props("en") as never)));
     expect(e).not.toMatch(RAW_DATE);
-    expect(e).toContain("Thu, Oct 1 – Sat, Oct 3");
+    expect(e).toContain("Thu, Oct 1 08:00 – Sat, Oct 3");
   });
 
   test("법정 시행일 — <time dateTime=\"2026-09-21\"> 은 기계용 원문, 보이는 글자는 \"2026년 9월 21일\"", () => {

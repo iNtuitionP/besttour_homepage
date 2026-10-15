@@ -10,7 +10,7 @@
  * (en 은 name_en, 비면 name_ko, 차량 행이 없으면 slug 폴백 — P7-4). 금액·가격 필드 0.
  */
 import { isLocationCode, locationLabel } from "../codes";
-import { toKstDateString } from "../kst";
+import { quickClock, toKstDateString } from "../kst";
 import { maskName, maskStoredPhone } from "../mask";
 import type { ReservationCheckRow } from "./lookup";
 
@@ -97,11 +97,15 @@ export function kstDate(iso: string): string {
 }
 
 /**
- * 운행일 표시 — **간편 접수(0023 intake='quick')는 날짜만**. 손님은 시각을 고르지 않았고 저장된 00:00 은 자리값이다
- * (시각을 보이면 "자정 출발" 로 읽힌다). 위저드 접수는 KST 벽시계 일시 그대로. 관리자 화면·예약확인·통지 문안이 같은 판정을 쓴다.
+ * 운행일 표시 — **간편 접수(0023 intake='quick')는 날짜 + (있으면) 시각**. OF2-A 부터 손님이 출발 시각(필수)·도착 시각(선택)을 고른다.
+ * 저장된 00:00 KST 는 자리값(옛 접수 · 도착 시각을 고르지 않은 도착일)이라 날짜만 보인다(lib/kst.ts quickClock — 시각을 보이면 "자정 출발" 로 읽힌다).
+ * 위저드 접수는 KST 벽시계 일시 그대로. 관리자 화면·예약확인·통지 문안이 같은 판정을 쓴다.
  */
 export function tripDateText(iso: string, intake: string | null | undefined): string {
-  return intake === "quick" ? kstDate(iso) : kstWallClock(iso);
+  if (intake !== "quick") return kstWallClock(iso);
+  const date = kstDate(iso);
+  const clock = quickClock(iso);
+  return clock === null ? date : `${date} ${clock}`;
 }
 
 /** 0023 intake 값 — 모르는 값·누락은 wizard 로 본다(0023 이전 코드 경로의 행 모양). */

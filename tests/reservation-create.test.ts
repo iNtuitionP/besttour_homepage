@@ -81,6 +81,7 @@ function validInput(overrides: Partial<QuickReservationInput> = {}): QuickReserv
     destinationCode: "BSN",
     departDate: "2026-09-13",
     returnDate: "2026-09-14",
+    departHour: "00", // OF2-A: 출발 시각(시) 필수 — 00 이면 아래 기존 단언(그날 00:00 KST)이 그대로 성립한다
     passengers: 40,
     locale: "ko",
     turnstileToken: "test-token",
@@ -261,6 +262,51 @@ describe.each(TZ_CASES)("KST 해석 (process.env.TZ=$tz)", ({ tz, localCtorInsta
     await createReservation(validInput({ returnDate: "2026-09-16" }), deps);
     expect(inserts()[0].return_at).toBe("2026-09-15T15:00:00.000Z");
     expect(inserts()[0].nights).toBe(3);
+  });
+
+  // ── OF2-A 시각(시) ──────────────────────────────────────────────────────
+  test("OF2-A 출발 시각 08 → depart_at = 그날 08:00 KST = '2026-09-12T23:00:00.000Z' (TZ 무관)", async () => {
+    const { db, inserts } = fakeDb();
+    const { deps } = makeDeps(db);
+    await createReservation(validInput({ departHour: "08", returnDate: "2026-09-13" }), deps);
+    const row = inserts()[0];
+    expect(row.depart_at).toBe("2026-09-12T23:00:00.000Z");
+    expect(row.depart_at).toBe(parseKst("2026-09-13T08:00").toISOString());
+    expect(row.return_at).toBeNull(); // 도착 시각 없음 · 같은 날 → 이전처럼 null
+    expect(row.nights).toBe(0);
+  });
+
+  test("OF2-A 같은 날 왕복 — 도착 시각 18 → return_at = 같은 날 18:00 KST · nights 0 · return_at > depart_at", async () => {
+    const { db, inserts } = fakeDb();
+    const { deps } = makeDeps(db);
+    await createReservation(validInput({ departHour: "08", returnDate: "2026-09-13", returnHour: "18" }), deps);
+    const row = inserts()[0];
+    expect(row.depart_at).toBe("2026-09-12T23:00:00.000Z");
+    expect(row.return_at).toBe(parseKst("2026-09-13T18:00").toISOString());
+    expect(row.return_at).toBe("2026-09-13T09:00:00.000Z");
+    expect(row.nights).toBe(0); // 날짜 기준 그대로
+    expect(Date.parse(row.return_at!)).toBeGreaterThan(Date.parse(row.depart_at));
+  });
+
+  test("OF2-A 여러 날 — 도착 시각 있으면 도착일 그 시각 · 없으면 도착일 00:00(예전 자리값) · nights 는 날짜 기준", async () => {
+    const { db, inserts } = fakeDb();
+    const { deps } = makeDeps(db);
+    await createReservation(validInput({ departHour: "22", returnDate: "2026-09-14", returnHour: "06" }), deps);
+    await createReservation(validInput({ departHour: "22", returnDate: "2026-09-14" }), deps);
+    const [withHour, without] = inserts();
+    expect(withHour.return_at).toBe(parseKst("2026-09-14T06:00").toISOString());
+    expect(withHour.nights).toBe(1); // 22:00 → 다음 날 06:00 도 1박(날짜 차)
+    expect(without.return_at).toBe(parseKst("2026-09-14T00:00").toISOString());
+    expect(without.nights).toBe(1);
+  });
+
+  test("OF2-A 같은 날 도착 시각 ≤ 출발 시각 → throw(호출자 버그 — 0001 CHECK 이전에 막는다), insert 0", async () => {
+    const { db, inserts } = fakeDb();
+    const { deps } = makeDeps(db);
+    await expect(
+      createReservation(validInput({ departHour: "18", returnDate: "2026-09-13", returnHour: "09" }), deps),
+    ).rejects.toThrow(/호출자 버그/);
+    expect(inserts()).toHaveLength(0);
   });
 });
 

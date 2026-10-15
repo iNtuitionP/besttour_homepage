@@ -292,11 +292,19 @@ const smsDate = (kst: string, withTime: boolean): string =>
 
 const route = (v: OwnerVars): string => `${oneLine(v.originLabel)} → ${oneLine(v.destinationLabel)}`;
 
-/** 운행 날짜 — 간편 접수는 날짜만(같은 날이면 "… 당일", 다르면 "… ~ …" · 저장된 00:00 은 자리값), 위저드는 출발 일시. */
+/** KST 벽시계에 시각이 붙어 있는가(`YYYY-MM-DD HH:mm` — 날짜만이면 10자). */
+const hasClock = (kst: string): boolean => kst.length > 10;
+
+/**
+ * 운행 날짜 — 위저드는 출발 일시. 간편 접수는 날짜 + (OF2-A: 손님이 고른) 시각 — 저장된 00:00 자리값은 변환 단계(vars.ts)에서 이미 날짜만이 된다.
+ *   시각 없음(옛 접수): 같은 날이면 "… 당일", 다르면 "… ~ …"
+ *   시각 있음: 출발만 "11월 3일(화) 08:00" · 도착 시각까지 있으면 "… 08:00 ~ 11월 3일(화) 18:00" · 여러 날이고 도착 시각이 없으면 "… 08:00 ~ 11월 5일(목)"
+ */
 const tripDate = (v: OwnerVars): string => {
   if (v.intake !== "quick") return smsDate(v.departAtKst, true);
-  const from = smsDate(v.departAtKst, false);
-  return v.returnDateKst === null ? `${from} 당일` : `${from} ~ ${smsDate(v.returnDateKst, false)}`;
+  const from = smsDate(v.departAtKst, hasClock(v.departAtKst));
+  if (v.returnDateKst === null) return hasClock(v.departAtKst) ? from : `${from} 당일`;
+  return `${from} ~ ${smsDate(v.returnDateKst, hasClock(v.returnDateKst))}`;
 };
 
 /** 제목의 접수 경로 — 관리자 상세의 낱말과 같다(admin 카탈로그 intakeWizard "상세 접수" · quickBadge "간편 접수"). */
