@@ -2,8 +2,8 @@
  * P1-6 — 법정 페이지 3종 `/privacy` `/terms` `/guide` 계약 테스트 (플랜 v4 P1-6 · ADR-5).
  *
  * 브리프 §검증을 그대로 단언한다:
- *   1. 원장 소스 — TERMS 12조(no 1..12 연속·title/body 비어 있지 않음) · PRIVACY_POLICY_SECTIONS 13절
- *      (rights·destruction·safety·cookies·remedy·changes·publicFeed 포함) · GUIDE_SECTIONS 8절 · LEGAL_PAGES
+ *   1. 원장 소스 — TERMS 12조(no 1..12 연속·title/body 비어 있지 않음) · PRIVACY_POLICY_SECTIONS 14절
+ *      (rights·destruction·safety·cookies·siteStats·remedy·changes·publicFeed 포함) · GUIDE_SECTIONS 8절 · LEGAL_PAGES
  *   2. 조문 ↔ 원장 키 ↔ 페이지 경로 매핑표(상수, 20행 이상) — 각 원장 키가 실제 export 되고 값이 비어 있지 않으며,
  *      해당 페이지 소스가 그 최상위 상수를 import 한다(정적 grep). "섹션 존재" 가 아니라 "법적 요건 → 코드 위치" 를 잠근다.
  *   3. 페이지 3개 + 레이아웃 + 컴포넌트 소스에 한글 리터럴 0건(주석 제외) — 문구는 전부 원장 import
@@ -165,11 +165,13 @@ describe("1. 원장 소스 — 새 상수 4종", () => {
     expect(art5?.body).toContain("계약이 성립");
   });
 
-  test("PRIVACY_POLICY_SECTIONS 13절 — 비평이 지적한 7항목 포함, key 중복 없음", () => {
-    expect(PRIVACY_POLICY_SECTIONS).toHaveLength(13);
+  test("PRIVACY_POLICY_SECTIONS 14절 — 비평이 지적한 7항목 + 자체 방문 통계(OF2-C) 포함, key 중복 없음", () => {
+    expect(PRIVACY_POLICY_SECTIONS).toHaveLength(14);
     const keys = PRIVACY_POLICY_SECTIONS.map((s) => s.key);
-    expect(new Set(keys).size).toBe(13);
-    for (const k of ["rights", "destruction", "safety", "cookies", "remedy", "changes", "publicFeed"]) {
+    expect(new Set(keys).size).toBe(14);
+    // 자체 방문 통계 절은 자동 수집 장치(cookies) 바로 뒤다 — 같은 주제(방문 통계)가 이어 읽힌다
+    expect(keys.indexOf("siteStats")).toBe(keys.indexOf("cookies") + 1);
+    for (const k of ["rights", "destruction", "safety", "cookies", "siteStats", "remedy", "changes", "publicFeed"]) {
       expect(keys, k).toContain(k);
     }
     for (const k of ["purpose", "items", "retention", "processors", "overseas", "officer"]) {
@@ -180,7 +182,7 @@ describe("1. 원장 소스 — 새 상수 4종", () => {
 
   test("PRIVACY_POLICY_SECTIONS 의 body 절은 비어 있지 않고, from 절은 원장 상수와 동일 참조다", () => {
     const byKey = Object.fromEntries(PRIVACY_POLICY_SECTIONS.map((s) => [s.key, s]));
-    for (const k of ["rights", "destruction", "safety", "cookies", "remedy", "changes"]) {
+    for (const k of ["rights", "destruction", "safety", "cookies", "siteStats", "remedy", "changes"]) {
       const s = byKey[k] as { body?: string };
       expect(s.body?.trim().length, k).toBeGreaterThan(0);
     }
@@ -321,10 +323,12 @@ export const LEGAL_MAPPING: readonly MappingRow[] = [
   { law: "PIPA §30①8호 / §29 — 안전성 확보 조치", ledgerKey: "PRIVACY_POLICY_SECTIONS.7.body", page: "/privacy" },
   { law: "PIPA §30①9호 / §31 — 개인정보 보호책임자", ledgerKey: "COMPANY.privacyOfficer", page: "/privacy" },
   { law: "시행령 §31①2호 — 자동 수집 장치 설치·운영·거부", ledgerKey: "PRIVACY_POLICY_SECTIONS.8.body", page: "/privacy" },
-  { law: "시행령 §31①3호 — 권익침해 구제 방법", ledgerKey: "PRIVACY_POLICY_SECTIONS.11.body", page: "/privacy" },
-  { law: "시행령 §31② — 처리방침 변경 공지", ledgerKey: "PRIVACY_POLICY_SECTIONS.12.body", page: "/privacy" },
+  // OF2-C — 자체 방문 통계 절이 cookies(8) 뒤 9번에 들어와 그 아래 절(공개 접수 현황·책임자·구제·변경)의 번호가 하나씩 밀렸다: 구제 11→12 · 변경 12→13.
+  { law: "시행령 §31①2호 — 자체 방문 통계(IP 원문 비저장 · 일회용 값 사흘 내 삭제 · 거부 시 미집계 · 국내 저장, OF2-C)", ledgerKey: "PRIVACY_POLICY_SECTIONS.9.body", page: "/privacy" },
+  { law: "시행령 §31①3호 — 권익침해 구제 방법", ledgerKey: "PRIVACY_POLICY_SECTIONS.12.body", page: "/privacy" },
+  { law: "시행령 §31② — 처리방침 변경 공지", ledgerKey: "PRIVACY_POLICY_SECTIONS.13.body", page: "/privacy" },
   { law: "플랜 ADR-6 — 접수 현황 마스킹 공개 고지", ledgerKey: "PRIVACY_NOTICE.publicFeedNotice", page: "/privacy" },
-  { law: "PIPA §30① — 처리방침 절 순서·제목 13절", ledgerKey: "PRIVACY_POLICY_SECTIONS", page: "/privacy" },
+  { law: "PIPA §30① — 처리방침 절 순서·제목 14절", ledgerKey: "PRIVACY_POLICY_SECTIONS", page: "/privacy" },
   { law: "PIPA §30①2호 — 처리하는 개인정보 항목(지금 받는 것 + 보관 중인 옛 접수분, P3-8)", ledgerKey: "PRIVACY_POLICY_ITEMS", page: "/privacy" },
   { law: "PIPA §30② — 처리방침 제목·시행일 공개", ledgerKey: "LEGAL_PAGES.privacy", page: "/privacy" },
   // ── 공통 셸 ──

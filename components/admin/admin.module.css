@@ -3794,6 +3794,123 @@ a.hubItem:hover {
   background: var(--icon-default);
 }
 
+/* ── 방문자 통계 (OF2-C · /admin/stats 맨 위) ───────────────────────────────
+ * 위: 조회수 3장 | 방문자 3장(오늘·어제·누적). 아래: 최근 30일 선 그래프(인라인 SVG — 새 패키지 없음).
+ * 색은 역할 토큰만. 두 선은 색만으로 가르지 않는다 — 조회수 = 원 · 방문자 = 네모(범례 견본도 같은 모양).
+ * 375px: 카드 셋이 한 줄(minmax(0,1fr))에 들어가도록 숫자를 줄인다. 그래프 폭은 컴포넌트가 상자를 재서 그린다(가로 스크롤 없음).
+ */
+.siteCards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-stack-md);
+  margin: var(--space-stack-sm) 0 var(--space-stack-md);
+}
+@media (min-width: 900px) {
+  .siteCards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.siteCardRow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-stack-sm);
+  margin: var(--space-stack-xs) 0 0;
+}
+.siteCardRow .statCard {
+  padding: var(--space-stack-sm) var(--space-inline-xs);
+  text-align: center;
+}
+.siteCardRow .statValue {
+  font-size: 22px;
+}
+@media (min-width: 400px) {
+  .siteCardRow .statValue {
+    font-size: 26px;
+  }
+}
+.siteChart {
+  position: relative;
+  padding: var(--space-stack-sm) var(--space-inline-sm);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-surface);
+  background: var(--bg-surface);
+}
+.siteChartSvg {
+  display: block;
+  max-width: 100%;
+  touch-action: pan-y;
+  cursor: crosshair;
+}
+.siteChartSvg:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.siteGrid {
+  stroke: var(--border-subtle);
+  stroke-width: 1;
+}
+.siteGuide {
+  stroke: var(--icon-default);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.siteAxisText {
+  fill: var(--text-muted);
+  font-size: 13px;
+}
+.siteLineViews,
+.siteLineVisitors {
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.siteLineViews {
+  stroke: var(--text-brand);
+}
+.siteLineVisitors {
+  stroke: var(--accent-decorative-strong);
+}
+.siteDotViews {
+  fill: var(--bg-surface);
+  stroke: var(--text-brand);
+  stroke-width: 1.5;
+}
+.siteDotVisitors {
+  fill: var(--bg-surface);
+  stroke: var(--accent-decorative-strong);
+  stroke-width: 1.5;
+}
+.siteSwatchViews,
+.siteSwatchVisitors {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--text-brand);
+  background: var(--bg-surface);
+}
+.siteSwatchViews {
+  border-radius: 50%;
+}
+.siteSwatchVisitors {
+  border-color: var(--accent-decorative-strong);
+}
+.siteTip {
+  position: absolute;
+  top: 0;
+  z-index: 1;
+  transform: translateX(-50%);
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  box-shadow: var(--elevation-overlay);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* 칸이 적은 표 — `.table` 의 `min-width: 68rem` 은 열 열 개짜리 예약 목록을 위한 값이다(그 표는 좁은 화면에서
  * 가로로 스크롤하는 것이 맞다). 통계의 구간 표는 칸이 셋뿐이라 그 하한을 풀어 **375px 에 그대로 들어가게** 한다. */
 .tableNarrow {
