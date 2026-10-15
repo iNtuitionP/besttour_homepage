@@ -1265,7 +1265,8 @@ describe("7. 카탈로그 — 휴대폰 번호 + 예약자 이름, 접수번호 
   });
 
   test("상태 라벨 4종 · 운행 구분 3종 (그대로)", () => {
-    expect(at(ko, "reservationCheck.status")).toEqual({ new: "접수", confirmed: "확정", cancelled: "취소", done: "완료" });
+    // OF2-B: 표시 이름 확정 → 상담완료(DB 값 confirmed 그대로 · 키도 그대로). 나머지 셋은 그대로다.
+    expect(at(ko, "reservationCheck.status")).toEqual({ new: "접수", confirmed: "상담완료", cancelled: "취소", done: "완료" });
     expect(Object.keys((at(ko, "reservationCheck.tripType") ?? {}) as object).sort()).toEqual(["oneway", "oneway_oneway", "round"]);
   });
 

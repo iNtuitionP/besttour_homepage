@@ -392,7 +392,7 @@ describe("3. lib/admin/reservations.ts — 목록·상세 쿼리", () => {
   test("상세 select 는 목록 + 나머지다 — 파기 예정 시각·동의 시각·청약철회 제한 확인 시각(0021)을 사장님에게 보여 준다", () => {
     const cols = [...RESERVATION_DETAIL_COLUMNS];
     for (const c of RESERVATION_LIST_COLUMNS) expect(cols).toContain(c);
-    for (const c of ["email", "purpose_code", "waypoint_codes", "contact_method", "payment_method", "parking_included", "vat_included", "message", "admin_memo", "privacy_consent_at", "marketing_consent_at", "retention_until", "withdrawal_consent_at", "withdrawal_consent_legacy"]) {
+    for (const c of ["email", "purpose_code", "waypoint_codes", "contact_method", "payment_method", "parking_included", "vat_included", "message", "admin_memo", "privacy_consent_at", "marketing_consent_at", "retention_until", "withdrawal_consent_at", "withdrawal_consent_legacy", "hidden_from_feed"]) {
       expect(cols, c).toContain(c);
     }
     expect(new Set(cols).size, "중복 컬럼이 있다").toBe(cols.length);

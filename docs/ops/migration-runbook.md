@@ -26,16 +26,16 @@ select version, name from supabase_migrations.schema_migrations order by version
 
 ### 🔴 적용 경로 — `supabase db push` 하나 (P5-15 R6 · 컨트롤러 결정 2026-09-17)
 - 🔴 **2026-09-21 부터: 시험 프로젝트(`gjnieoojgmhulkohdcnl`)에 먼저, 운영에 나중.** 시험 프로젝트가 생겼다(`docs/ops/environments.md`). 새 마이그레이션은 CI green 뒤 **시험 프로젝트에 `db push --db-url` 로 먼저** 적용하고, 자기검증 통과·프리뷰 정상을 본 뒤 운영에 아래 절차대로 적용한다. 저장소의 `supabase link` 는 운영을 가리키므로 **시험 프로젝트로 다시 link 하지 않는다.**
-- **0012~0025 의 원격 적용 경로는 `supabase db push` 하나다.** CLI 는 마이그레이션 파일 하나를 한 트랜잭션으로 돌리고, 성공한 버전을 `supabase_migrations.schema_migrations` 에 기록한다.
+- **0012~0026 의 원격 적용 경로는 `supabase db push` 하나다.** CLI 는 마이그레이션 파일 하나를 한 트랜잭션으로 돌리고, 성공한 버전을 `supabase_migrations.schema_migrations` 에 기록한다.
 - **SQL Editor 는 읽기 확인 전용이다** — 적용 전·후 행렬, 이력 조회처럼 카탈로그를 읽는 질의만 붙인다. **마이그레이션 본문을 SQL Editor 에 붙여 적용하지 않는다**: 그러면 이력이 남지 않아, 다음 `supabase db push` 가 **같은 마이그레이션을 다시 돌린다**(두 번 도는 것을 전제로 검토한 파일이 아니다).
 - **`psql -f` 도 쓰지 않는다**(리뷰 K1 — 파일이 원자적이지 않다. 이력도 남지 않는다).
 - 🔴 **적용 직후 필수 — 이력 확인**(읽기 질의):
   ```sql
   select version, name from supabase_migrations.schema_migrations order by version;
   ```
-  기대: 적용 전 목록 뒤에 이번에 적용한 버전이 한 줄씩 붙고, 저장소의 마지막 마이그레이션과 같은 번호로 끝난다 — 지금은 **마지막이 `0025`**(T4-1 `0024` · T4-2 `0025` 가 `0023` 뒤에 더했다). 한 줄이라도 빠졌거나 마지막이 `0025` 가 아니면 **멈추고 컨트롤러에게 보고한다**(`db push` 는 실패한 파일에서 멈추고 그 뒤 버전을 돌리지 않는다 — 어디서 멈췄는지가 이 목록에 보인다). (2026-09-21 의 첫 적용에서는 `0011` 뒤에 `0012`~`0019` 여덟 줄이, 두 번째 적용에서는 `0020` 한 줄이 붙는 것이 기대였고 그대로 됐다 — 맨 아래 「원격 적용 기록」.)
+  기대: 적용 전 목록 뒤에 이번에 적용한 버전이 한 줄씩 붙고, 저장소의 마지막 마이그레이션과 같은 번호로 끝난다 — 지금은 **마지막이 `0026`**(T4-1 `0024` · T4-2 `0025` · OF2-B `0026` 이 `0023` 뒤에 더했다). 한 줄이라도 빠졌거나 마지막이 `0026` 이 아니면 **멈추고 컨트롤러에게 보고한다**(`db push` 는 실패한 파일에서 멈추고 그 뒤 버전을 돌리지 않는다 — 어디서 멈췄는지가 이 목록에 보인다). (2026-09-21 의 첫 적용에서는 `0011` 뒤에 `0012`~`0019` 여덟 줄이, 두 번째 적용에서는 `0020` 한 줄이 붙는 것이 기대였고 그대로 됐다 — 맨 아래 「원격 적용 기록」.)
 - **예외 — 이미 수동 적용(SQL Editor·psql)을 해 버렸다면**: 본문이 실제로 전부 적용됐는지 해당 절의 행렬로 먼저 확인한 뒤, `supabase migration repair --status applied <번호>` 로 이력을 맞춘다 — **이 경로는 컨트롤러 승인이 있을 때만 쓴다.** `repair` 는 이력만 고치고 본문을 돌리지 않으므로, 적용되지 않은 버전을 `applied` 로 적으면 그 마이그레이션은 **영영 건너뛰어진다**.
-- **잠금 대기 상한 — 파일 안의 `set local lock_timeout = '5s';`** (P5-15 R7 · 컨트롤러 결정): 0012 이후 파일(0012~0025, 열네 개) 모두 **첫 실행문**이 이것이고, 둘째 실행문이 **그 시점에 `lock_timeout` 이 실제로 `5s` 인지**만 확인한다 — 아니면 아무것도 바꾸기 전에 멈춘다. ⚠️ 이 확인은 **원자성을 증명하지 않는다**(astra R7 P2-b): 자동 커밋 세션이라도 서버·롤·DB 기본값이 이미 5초면 통과한다. 잡아 주는 것은 "`set local` 이 그 문장에서 끝나 설정이 남지 않은 경우"(예: 기본값이 5초가 아닌 서버에서 `psql -f`)뿐이다. **파일 하나가 한 트랜잭션이라는 보장은 적용 경로(`supabase db push`)에서 오고**, 아래 실측이 그것을 확인한 것이다. CLI 는 파일 하나를 한 트랜잭션으로 보내므로 이 설정은 **그 파일에만** 걸리고 다음 파일로 새지 않는다. 어떤 문장이 잠금을 5초 넘게 기다리면 `ERROR: canceling statement due to lock timeout (SQLSTATE 55P03)` 로 그 파일이 실패한다 — 접수 트랜잭션을 줄 세우지 않는다.
+- **잠금 대기 상한 — 파일 안의 `set local lock_timeout = '5s';`** (P5-15 R7 · 컨트롤러 결정): 0012 이후 파일(0012~0026, 열다섯 개) 모두 **첫 실행문**이 이것이고, 둘째 실행문이 **그 시점에 `lock_timeout` 이 실제로 `5s` 인지**만 확인한다 — 아니면 아무것도 바꾸기 전에 멈춘다. ⚠️ 이 확인은 **원자성을 증명하지 않는다**(astra R7 P2-b): 자동 커밋 세션이라도 서버·롤·DB 기본값이 이미 5초면 통과한다. 잡아 주는 것은 "`set local` 이 그 문장에서 끝나 설정이 남지 않은 경우"(예: 기본값이 5초가 아닌 서버에서 `psql -f`)뿐이다. **파일 하나가 한 트랜잭션이라는 보장은 적용 경로(`supabase db push`)에서 오고**, 아래 실측이 그것을 확인한 것이다. CLI 는 파일 하나를 한 트랜잭션으로 보내므로 이 설정은 **그 파일에만** 걸리고 다음 파일로 새지 않는다. 어떤 문장이 잠금을 5초 넘게 기다리면 `ERROR: canceling statement due to lock timeout (SQLSTATE 55P03)` 로 그 파일이 실패한다 — 접수 트랜잭션을 줄 세우지 않는다.
 - **부분 적용 — push 전체는 원자적이지 않다**: 한 파일이 시간 초과(또는 다른 오류)로 실패하면 **앞 파일들은 커밋·기록된 채 남고**, **그 파일은 롤백되며**(이력에도 없다), 뒤 파일은 돌지 않는다. 막던 세션이 끝난 뒤 **다음 `supabase db push` 가 그 파일부터** 이어서 적용한다. 시간 초과는 **멈추고 보고할 일**이다 — 수동 적용이나 `repair` 로 건너뛰지 않는다. 어디서 멈췄는지는 적용 직후 이력 확인이 보여 준다.
 - **실측** (2026-09-17 · supabase CLI 2.117.0 · 로컬 전용 `--db-url postgresql://…@127.0.0.1:…`):
   - 합성 마이그레이션(PG 15.17 일회용 컨테이너 · PG 17.6 로컬 스택의 일회용 DB 둘 다): 한 파일의 행들이 **같은 xid**, `set local` 뒤 `lock_timeout=5s`, 다음 파일에서는 `0`(새지 않음). 다른 세션이 표를 쥔 채 push → 약 5초 뒤 `55P03` · 그 파일의 표·행·이력 없음 · 앞 파일 이력 유지 → 풀린 뒤 push 가 그 파일부터 재개. 대조군(`set local` 없음)은 잠금이 풀릴 때까지 **기다렸다**(20초 잡음 → 20초 걸림).
@@ -1305,6 +1305,26 @@ Vercel 은 GitHub 앱으로 연결돼 있다. GitHub 배포 기록(`GET /repos/�
 - **순서: DB → 코드.** DB 적용 뒤 코드가 나가기 전 몇 분 동안 옛 관리자 화면의 앨범 만들기·고치기는 실패한다(공개 화면 영향 없음).
   롤백은 **코드 먼저** → `supabase/rollbacks/0025_gallery_posts.down.sql`(옛 서명 복원 + revoke/grant + 0015 트리거 복원 + 칸 drop) →
   `supabase migration repair --status reverted 0025`. 0024·0025 를 함께 되돌리면 **0025 먼저**.
+
+## 0026 — 홈 접수 현황 한 건 숨기기 (독립 리뷰 승인 2026-10-15 · 원격 적용 전/후는 아래 기록 · OF2-B · 사장님 요청 2026-10-15)
+
+> 롤백 주의(리뷰 P2-2): 숨긴 행이 하나라도 있으면 **코드 롤백도 보류**한다 — 옛 코드의 홈 피드는 `hidden_from_feed` 를 몰라 손님이 내려 달라던 접수가 다시 나온다.
+
+- `reservations.hidden_from_feed boolean not null default false` — 숨긴 접수는 상태와 무관하게 홈 "최근 견적현황" 에 나오지 않는다(손님 삭제 요청 대응).
+  상수 기본값이라 표를 다시 쓰지 않는다. **표 권한·RLS 는 바꾸지 않는다** — anon 은 `reservations` SELECT 가 없고(0017) authenticated 는 표 UPDATE 가 없다(0010).
+- `admin_set_feed_hidden(p_id uuid, p_hidden boolean)` → `outcome`('hidden'|'shown'|'noop') — **유일한 쓰기 길**. definer · search_path `public, pg_temp` · 첫 문장 `is_admin()` 가드.
+  🔴 새 함수라 기본으로 공개 롤에 EXECUTE 가 열린다 — **같은 파일에서** `revoke all … from public, anon, service_role` + `grant execute … to authenticated`.
+- **취소·확정·완료 함수는 건드리지 않았다.** 취소(`admin_cancel_reservation`)는 `confirmed_at` 을 지우지 않는다(0010 — status·메모만) → "상담완료 뒤 취소" 가 홈에서 "상담완료" 로 남는다(결정).
+  홈 피드 규칙(앱 · `lib/queries/recent.ts`): 숨기지 않았고 + (`status='new'` 이거나 `confirmed_at` 있음) · 최근 90일 · 화면 10건.
+- 자기검증(파일 끝 `do` 블록): 칸 모양 · `has_column_privilege` 로 anon 4종 전부 false · authenticated 는 SELECT 만 · service_role SELECT true ·
+  PUBLIC(컬럼 ACL `attacl` · 표 ACL `relacl`) 0 · `has_any_column_privilege` 로 컬럼 단위 grant 0 · 함수 `has_function_privilege`(anon·service_role false · authenticated true) ·
+  EXECUTE 보유자 = authenticated 하나(`aclexplode`) · definer · search_path · 첫 문장 가드.
+- 로컬 실측(2026-10-15): anon SELECT false · authenticated UPDATE false · authenticated SELECT true · service_role SELECT true · 함수 EXECUTE anon false / service_role false / authenticated true.
+  롤백 → 재적용 → 재적용(재실행 안전) 통과, 숨긴 행이 있으면 롤백이 멈추는 것도 확인.
+- **순서: DB → 코드.** 새 코드는 `hidden_from_feed` 를 SELECT 하고 `admin_set_feed_hidden` 을 부른다 — 코드가 먼저 나가면 홈 접수 현황이 통째로 사라지고(피드 쿼리 실패 → 섹션 숨김) 관리자 숨기기가 실패한다.
+  롤백은 **코드 먼저** → `supabase/rollbacks/0026_feed_hidden.down.sql`(함수 drop + 칸 drop · **숨긴 행이 있으면 멈춘다** — 손님이 내려 달라던 접수가 옛 코드의 홈에 다시 나온다.
+  정말 되돌리려면 같은 세션에서 `set besttour.allow_unhide = 'yes';` 를 먼저) → `supabase migration repair --status reverted 0026`.
+- 같은 변경에서 손님 상담완료 문자 제목이 **"상담 완료 · 예약 확정 안내"** 로 바뀌었다(코드) — 알림톡은 판(옛·개정) 두 건의 **목록 이름·본문 제목**이 달라지므로 **이미 심사를 낸 상태라면 다시 내야 한다**(아직 안 냈다면 새 제목으로 낸다).
 
 # 원격 적용 기록 — 0023 (2026-09-27 · 컨트롤러) — 시험 먼저, **운영 22:39 KST(사용자 승인 "DB 적용해")**
 

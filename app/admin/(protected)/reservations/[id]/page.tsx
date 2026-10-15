@@ -3,6 +3,7 @@ import { getTranslations } from "next-intl/server";
 
 import { formatAdminDate } from "@/components/admin/admin-date";
 import { getAdminDateLabels } from "@/components/admin/adminDateLabels";
+import { FeedHideToggle, type FeedHideLabels } from "@/components/admin/FeedHideToggle";
 import { ReservationActions } from "@/components/admin/ReservationActions";
 import { ReservationProcess } from "@/components/admin/ReservationProcess";
 import { SheetTrigger } from "@/components/admin/SheetTrigger";
@@ -168,6 +169,16 @@ export default async function AdminReservationDetailPage({ params, searchParams 
     getReservationRowLabels(),
     getAdminDateLabels(),
   ]);
+  // 홈 숨기기 토글의 문구 — 클라이언트는 useTranslations 를 쓸 수 없어(관리자는 로케일 밖) 서버가 풀어 내린다.
+  const feedLabels: FeedHideLabels = {
+    title: t("feed.title"),
+    hint: t("feed.hint"),
+    hide: t("feed.hide"),
+    show: t("feed.show"),
+    stateHidden: t("feed.stateHidden"),
+    processing: t("feed.processing"),
+    results: { hidden: t("feed.resultHidden"), shown: t("feed.resultShown"), failed: t("feed.resultFailed") },
+  };
   // 접수 기록의 시각 — 관리자 날짜 틀("9월 28일 (월) 20:02" · 올해가 아니면 연도까지 — P5-23 라운드 2 A-3). 읽지 못하면 "—".
   const stamp = (iso: string): string => formatAdminDate(iso, now, dateLabels, { time: true }) ?? none;
   const routeText = tRoot("admin.reservations.routeValue", {
@@ -302,6 +313,8 @@ export default async function AdminReservationDetailPage({ params, searchParams 
               ) : null}
             </section>
             <ReservationProcess id={row.id} status={row.status} labels={actionLabels} layout="card" />
+            {/* OF2-B — 손님이 홈 접수 현황에서 내려 달라고 할 때(0026). 상태와 무관하게 늘 보인다. */}
+            <FeedHideToggle id={row.id} hidden={row.hidden_from_feed} labels={feedLabels} />
           </div>
 
           <div className={a.detailMain} data-testid="admin-detail-main">

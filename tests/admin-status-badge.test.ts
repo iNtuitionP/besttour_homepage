@@ -197,7 +197,7 @@ describe("3. StatusBadge 마크업", () => {
   test.each([
     [{ kind: "new" } as StatusBadgeModel, "새 접수", "attention", "dot"],
     [{ kind: "waiting", days: 5 } as StatusBadgeModel, "5일째 대기", "urgent", "alert"],
-    [{ kind: "confirmed" } as StatusBadgeModel, "확정", "confirmed", "check"],
+    [{ kind: "confirmed" } as StatusBadgeModel, "상담완료", "confirmed", "check"], // OF2-B: 표시 이름만 바뀌었다(톤·표식 그대로)
     [{ kind: "done" } as StatusBadgeModel, "운행 완료", "closed", "none"],
     [{ kind: "cancelled" } as StatusBadgeModel, "취소", "closed", "x"],
     [{ kind: "quick" } as StatusBadgeModel, "간편 접수", "quick", "phone"],
@@ -267,6 +267,7 @@ const BASE: ReservationDetailRow = {
   retention_until: "2027-09-27T03:04:00.000Z",
   withdrawal_consent_at: "2026-09-27T03:04:00.000Z",
   withdrawal_consent_legacy: false,
+  hidden_from_feed: false,
 };
 
 describe("4. 교체한 곳", () => {

@@ -20,6 +20,8 @@ vi.mock("next/headers", () => ({ cookies: vi.fn(async () => ({ getAll: () => [] 
 vi.mock("@/lib/auth/requireAdmin", () => ({ requireAdmin: vi.fn(async () => ({ userId: "test" })) }));
 const captured = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
 // 처리 영역(클라이언트)은 **받은 props 만** 기록한다 — 경계를 넘는 값이 무엇인지가 이 파일의 관심사다.
+// OF2-B 클라이언트 섬(홈 숨기기 토글 — useRouter 를 쓴다) — 이 파일의 관심사가 아니다
+vi.mock("@/components/admin/FeedHideToggle", () => ({ FeedHideToggle: () => null }));
 vi.mock("@/components/admin/ReservationActions", () => ({
   ReservationActions: (props: Record<string, unknown>) => {
     captured.props.push(props);
@@ -94,6 +96,7 @@ const ROW: ReservationDetailRow = {
   retention_until: "2027-09-27T03:04:00.000Z",
   withdrawal_consent_at: "2026-09-27T03:04:00.000Z",
   withdrawal_consent_legacy: false,
+  hidden_from_feed: false,
 };
 
 async function render(row: ReservationDetailRow): Promise<{ html: string; props: Record<string, unknown> }> {
@@ -130,7 +133,7 @@ describe("1. 처리 영역 props — 개인정보 원문 0 (이름·전화·메�
   test("제목 틀은 이름 자리({name})가 빈 **틀** 이다 — 값이 아니다", async () => {
     const { props } = await render(ROW);
     const labels = props.labels as ReservationActionLabels;
-    expect(labels.sheet.confirm.title).toBe("{name} 님 접수를 확정할까요?");
+    expect(labels.sheet.confirm.title).toBe("{name} 님 접수를 상담완료로 바꿀까요?"); // OF2-B
     expect(labels.sheet.cancel.title).toBe("{name} 님 접수를 취소할까요?");
     expect(labels.sheet.complete.title).toContain("{name}");
     // 메뉴 이름과 같은 말(P5-21 부터 '발송 기록' — 그 화면에 메일 행도 있다 · 컨트롤러 결정). 가는 곳은 그대로 발송 내역 화면.

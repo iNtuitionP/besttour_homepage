@@ -743,7 +743,7 @@ describe("4-b. 화면 — 행 한 벌 · 간편 접수 · 가린 번호 · 전�
     const html = await render({ status: "confirmed" }, { items: [], past: { items: [p1], total: 1 } });
     expect(html).toMatch(/data-testid="admin-list-past"/);
     expect(text(html)).toContain(res.upcomingEmpty);
-    expect(res.upcomingEmpty).toBe("다가오는 확정 운행이 없어요.");
+    expect(res.upcomingEmpty).toBe("다가오는 상담완료 운행이 없어요."); // OF2-B: 표시 이름 확정 → 상담완료(DB 값 confirmed 그대로)
     expect(text(html)).not.toContain(res.empty);
     // 번호 가림 안내는 행이 있으면 보인다
     expect(text(html)).toContain(res.privacyNote);

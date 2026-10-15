@@ -132,6 +132,8 @@ export interface ReservationDetailRow extends ReservationListRow {
   withdrawal_consent_at: string | null;
   /** 0021 적용 순간에 이미 있던 접수(동의 기록 도입 전) — 적용 때 한 번 정해지고 트리거가 바꾸지 못하게 한다(P1-7 R2). */
   withdrawal_consent_legacy: boolean;
+  /** 0026 — 사장님이 홈 접수 현황에서 숨긴 접수(손님 삭제 요청 대응). 상세의 "홈에서 숨기기/다시 보이기" 토글이 읽는다. */
+  hidden_from_feed: boolean;
 }
 
 /** 목록 화이트리스트 — 행을 식별하고 전화를 걸고 상태를 판단하는 데 필요한 것만. */
@@ -170,6 +172,7 @@ export const RESERVATION_DETAIL_ONLY_COLUMNS = [
   "retention_until",
   "withdrawal_consent_at",
   "withdrawal_consent_legacy",
+  "hidden_from_feed",
 ] as const satisfies readonly (keyof ReservationDetailRow)[];
 
 export const RESERVATION_DETAIL_COLUMNS = [...RESERVATION_LIST_COLUMNS, ...RESERVATION_DETAIL_ONLY_COLUMNS] as const;

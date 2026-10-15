@@ -195,7 +195,7 @@
       "title": "People who recently <ac>requested quotes</ac>",
       "listLabel": "Recent quote requests",
       "statusNew": "Received",
-      "statusConfirmed": "Confirmed",
+      "statusConfirmed": "Consultation completed",
       "itemLabel": "{name} · {vehicle} · {date}",
       "itemLabelNoVehicle": "{name} · {date}"
     }
@@ -317,7 +317,7 @@
     },
     "status": {
       "new": "Received",
-      "confirmed": "Confirmed",
+      "confirmed": "Consultation completed",
       "cancelled": "Cancelled",
       "done": "Completed"
     },

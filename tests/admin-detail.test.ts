@@ -30,7 +30,21 @@ vi.mock("@/lib/auth/requireAdmin", () => ({ requireAdmin: vi.fn(async () => ({ u
 vi.mock("next/link", () => ({
   default: ({ href, children, ...rest }: { href: string; children: ReactNode } & Record<string, unknown>) => createElement("a", { href, ...rest }, children),
 }));
-const captured = vi.hoisted(() => ({ actions: [] as Record<string, unknown>[], triggers: [] as Record<string, unknown>[] }));
+const captured = vi.hoisted(() => ({
+  actions: [] as Record<string, unknown>[],
+  triggers: [] as Record<string, unknown>[],
+  feeds: [] as Record<string, unknown>[],
+}));
+// OF2-B 클라이언트 섬(홈 숨기기 토글 — useRouter·서버액션을 쓴다) — 받은 props 만 기록하고 표식 하나만 그린다
+vi.mock("@/components/admin/FeedHideToggle", async () => {
+  const { createElement: ce } = await import("react");
+  return {
+    FeedHideToggle: (props: Record<string, unknown>) => {
+      captured.feeds.push(props);
+      return ce("section", { "data-testid": "admin-feed-hide", "data-hidden": String(props.hidden) });
+    },
+  };
+});
 // 클라이언트 섬 — 받은 props 만 기록하고, 자리를 알 수 있게 표식 하나만 그린다
 vi.mock("@/components/admin/ReservationActions", async () => {
   const { createElement: ce } = await import("react");
@@ -165,6 +179,7 @@ const QUICK_ROW: ReservationDetailRow = {
   retention_until: "2027-09-28T00:35:00.000Z",
   withdrawal_consent_at: "2026-09-28T00:35:00.000Z",
   withdrawal_consent_legacy: false,
+  hidden_from_feed: false,
 };
 const WIZARD_ROW: ReservationDetailRow = {
   ...QUICK_ROW,
@@ -204,6 +219,7 @@ const dump = (v: unknown) => JSON.stringify(v, (_k, val: unknown) => (typeof val
 beforeEach(() => {
   captured.actions.length = 0;
   captured.triggers.length = 0;
+  captured.feeds.length = 0;
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
 });
@@ -541,7 +557,7 @@ describe("5. 개인정보 — 이름·번호·메일·요청 사항은 서버가
 
   test("정적 — 페이지는 클라이언트 섬에 row.name·phone·email·message·public_code 를 넘기지 않는다 · 행을 받는 서버 부품이 없다(개발 모드가 props 를 HTML 에 싣는다)", () => {
     const src = codeOf(DETAIL_PAGE);
-    for (const tag of src.match(/<(ReservationActions|SheetTrigger|ReservationProcess)\b[\s\S]*?\/>/g) ?? []) {
+    for (const tag of src.match(/<(ReservationActions|SheetTrigger|ReservationProcess|FeedHideToggle)\b[\s\S]*?\/>/g) ?? []) {
       for (const f of ["name", "phone", "email", "message", "public_code"]) expect(tag, `${f}`).not.toMatch(new RegExp(`row\\.${f}\\b`));
     }
     // 이름 칸 — 제목 안의 span 하나(P5-19 시트가 읽는 id)
@@ -549,6 +565,34 @@ describe("5. 개인정보 — 이름·번호·메일·요청 사항은 서버가
     // 이 파일 안에서 컴포넌트로 쓰는 것은 import 한 부품뿐 — 행을 props 로 받는 지역 부품이 없다
     const local = [...src.matchAll(/^function ([A-Z]\w*)\(/gm)].map((m) => m[1]);
     expect(local).toEqual([]);
+  });
+
+  test("OF2-B — 홈 숨기기 토글: 상태와 무관하게 늘 그려지고 · 숨김 여부(hidden_from_feed)를 그대로 받고 · props 는 uuid·숨김·문구뿐(개인정보 0)", async () => {
+    for (const hidden of [false, true]) {
+      for (const status of ["new", "confirmed", "done", "cancelled"] as const) {
+        captured.feeds.length = 0;
+        const html = await render({ ...WIZARD_ROW, status, hidden_from_feed: hidden });
+        expect(captured.feeds, `${status}/${hidden}`).toHaveLength(1);
+        expect(attr(openTag(html, "admin-feed-hide"), "data-hidden")).toBe(String(hidden));
+        const props = captured.feeds[0];
+        expect(Object.keys(props).sort()).toEqual(["hidden", "id", "labels"]);
+        expect(props.id).toBe(WIZARD_ROW.id);
+        expect(props.hidden).toBe(hidden);
+      }
+    }
+    const labels = captured.feeds[0].labels as Record<string, unknown>;
+    expect(Object.keys(labels).sort()).toEqual(["hide", "hint", "processing", "results", "show", "stateHidden", "title"]);
+    expect(labels.hide).toBe("홈에서 숨기기");
+    expect(labels.show).toBe("홈에 다시 보이기");
+    const all = dump(captured.feeds);
+    for (const [key, value] of Object.entries(PII)) expect(all, `props 에 ${key} 원문`).not.toContain(value);
+    expect(all).not.toContain(WIZARD_ROW.public_code);
+  });
+
+  test("OF2-B — 홈 숨기기 토글은 처리 카드 바로 아래(같은 오른쪽 열)에 있다", async () => {
+    const html = await render(QUICK_ROW);
+    expect(at(html, "admin-feed-hide")).toBeGreaterThan(at(html, "admin-reservation-actions"));
+    expect(at(html, "admin-feed-hide")).toBeLessThan(at(html, "admin-detail-main"));
   });
 
   test("정적 — 처리 영역은 접수마다 새로 만든다(key = uuid) — 체크리스트 체크·메모 편집이 다른 접수로 넘어가지 않는다(개인정보 아님 · uuid 만)", () => {
@@ -697,7 +741,7 @@ describe("8. 게이트 · 규약", () => {
   test("매뉴얼 동조화 — 상세 화면 절이 새 배치의 화면 문구를 그대로 인용한다(카탈로그에서 읽는다 · 문서가 조용히 낡지 않게)", () => {
     const manual = read("docs/ops/admin-manual.md");
     const start = manual.indexOf("### 상세 화면");
-    const end = manual.indexOf("### 확정 · 취소 · 완료");
+    const end = manual.indexOf("### 상담완료 · 취소 · 완료"); // OF2-B: 절 이름만 바뀌었다(확정 → 상담완료)
     expect(start).toBeGreaterThan(0);
     expect(end).toBeGreaterThan(start);
     const section = manual.slice(start, end);

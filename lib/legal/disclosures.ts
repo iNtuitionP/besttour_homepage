@@ -216,14 +216,15 @@ export const PRIVACY_NOTICE = {
     retention:
       "1 year from the date of your request (records of contracts, withdrawals, payments and service provision are kept for 5 years as required by law)",
     publicFeed:
-      "Our home page lists recent bookings with only part of the name (e.g. H**), the vehicle type, the travel date and the status (received or confirmed), masked.",
+      "Our home page lists recent bookings with only part of the name (e.g. H**), the vehicle type, the travel date and the status (received or consultation completed), masked.",
   },
   retentionDays: 365, // 위 retention 문안의 숫자값(사장님 확정 2026-09-21) — lib/reservations/consent.ts 가 retention_until 계산에 읽는다. 문안과 함께 바꾼다
   refusal: "동의를 거부하실 수 있으며, 거부 시 견적 상담과 예약 접수가 제한됩니다.",
   consentLabel: "위 내용을 확인했으며 개인정보 수집·이용에 동의합니다. (필수)",
   marketingConsentLabel: "할인·이벤트 안내 문자 수신에 동의합니다. (선택)",
   // 2026-09-13 P3-5 독립 리뷰 M-1: 화면이 접수 상태(접수/확정) 칩도 보여 주므로 한정 열거에 넣었다. tests/feed-notice-parity.test.ts 가 항목 키와 대조한다.
-  publicFeedNotice: "접수 현황은 성명 일부(예: 한**)·차종·운행일·접수 상태(접수/확정)만 마스킹하여 홈에 공개됩니다.",
+  // 2026-10-15 사장님 추가 요청: 화면의 상태 칩이 "접수/상담완료" 로 바뀌었다(확정 → 상담완료 — 표시 이름만, 컨트롤러 작성 · 독립 리뷰 서명 대상).
+  publicFeedNotice: "접수 현황은 성명 일부(예: 한**)·차종·운행일·접수 상태(접수/상담완료)만 마스킹하여 홈에 공개됩니다.",
   source: "스펙 §13.10 / 플랜 ADR-6 / UIUX 브리프 §3-② · items: P3-8 · retentionSummary·summaryEn: 컨트롤러 2026-09-27(P7-3, 독립 리뷰 서명)",
 } as const;
 
