@@ -17,12 +17,25 @@
  *   - 실제 수집은 Vercel 대시보드에서 Web Analytics 를 켜야 시작된다(사람 몫). 운영 스크립트는 같은 출처 `/_vercel/insights/script.js` 다.
  */
 import { Analytics } from "@vercel/analytics/next";
-import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 
 import { ANALYTICS_OPTOUT_EVENT, liveAnalyticsBeforeSend, readAnalyticsSignals, shouldLoadAnalytics } from "@/lib/analytics/before-send";
+import { browserBeaconSender, sendViewBeacon } from "@/lib/stats/site-view";
 
 export function SiteAnalytics() {
   const [allowed, setAllowed] = useState(false);
+  const pathname = usePathname();
+  const lastCounted = useRef<string | null>(null);
+
+  // 자체 방문자 통계(OF2-C · /api/stats/view) — 페이지 진입(첫 화면 · 이후 클라이언트 이동)마다 한 번.
+  // 렌더 허용 상태(allowed)를 믿지 않고 **보내는 순간의 신호**를 다시 읽는다 — 거부 버튼을 누른 직후에도 즉시 막힌다.
+  // 거부(저장 표시 · DNT · GPC · 저장소 읽기 실패)면 sendViewBeacon 이 아무것도 보내지 않는다. 같은 경로를 연달아 세지 않는다(개발 모드 이중 실행 포함).
+  useEffect(() => {
+    if (!pathname || lastCounted.current === pathname) return;
+    lastCounted.current = pathname;
+    sendViewBeacon(pathname, { signals: readAnalyticsSignals(), send: browserBeaconSender() });
+  }, [pathname]);
 
   useEffect(() => {
     const check = () => setAllowed(shouldLoadAnalytics(readAnalyticsSignals()));

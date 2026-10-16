@@ -169,7 +169,7 @@ function decodeSafely(pathname: string): string | null {
 }
 
 /** 관리자 경로인가 — 로케일 접두사를 떼고 첫 세그먼트가 admin 으로 시작하면 참. 디코딩할 수 없으면 참(보내지 않는 쪽). */
-function isAdminPath(pathname: string): boolean {
+export function isAdminPath(pathname: string): boolean {
   const decoded = decodeSafely(pathname);
   if (decoded === null) return true;
   const path = decoded.toLowerCase().replace(LOCALE_PREFIX, "");

@@ -229,6 +229,8 @@ const AUTH_EXEC: Reasoned = {
   "admin_set_route_active(integer,boolean)": "관리자 대표 노선 노출 토글 (0020)",
   // 0022(P5-17) — 관리자 통계. **읽기 전용 집계**이고 결과는 (버킷·코드, 건수)뿐이다(개인정보 0 · 1~2건 칸은 함수가 가린다).
   "admin_stats(date,date)": "관리자 통계 집계 (0022, definer · 첫 문장 is_admin 가드 · 읽기 전용)",
+  // 0027(OF2-C) — 자체 방문자 통계의 읽기. 결과는 날짜별 숫자뿐(개인정보 0). 쓰기(record_site_view)·삭제(purge_site_visitors_seen)는 service_role 전용이라 여기 없다.
+  "admin_site_stats(integer)": "관리자 방문자 통계 (0027, definer · 첫 문장 is_admin 가드 · 읽기 전용 · 날짜별 숫자만)",
   // 0024(T4-1) — 관리자 차량 쓰기 다섯. definer + 첫 문장 is_admin() 가드. 접수 기록이 있으면 이름·정원 'locked' · 삭제 'referenced'.
   "admin_create_vehicle(text,text,integer,text,text,boolean)": "관리자 차량 만들기 (0024)",
   "admin_update_vehicle(integer,text,text,integer,text,text)": "관리자 차량 고치기 (0024 · 접수 기록이 있으면 이름·정원 잠금)",

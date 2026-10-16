@@ -26,16 +26,16 @@ select version, name from supabase_migrations.schema_migrations order by version
 
 ### 🔴 적용 경로 — `supabase db push` 하나 (P5-15 R6 · 컨트롤러 결정 2026-09-17)
 - 🔴 **2026-09-21 부터: 시험 프로젝트(`gjnieoojgmhulkohdcnl`)에 먼저, 운영에 나중.** 시험 프로젝트가 생겼다(`docs/ops/environments.md`). 새 마이그레이션은 CI green 뒤 **시험 프로젝트에 `db push --db-url` 로 먼저** 적용하고, 자기검증 통과·프리뷰 정상을 본 뒤 운영에 아래 절차대로 적용한다. 저장소의 `supabase link` 는 운영을 가리키므로 **시험 프로젝트로 다시 link 하지 않는다.**
-- **0012~0026 의 원격 적용 경로는 `supabase db push` 하나다.** CLI 는 마이그레이션 파일 하나를 한 트랜잭션으로 돌리고, 성공한 버전을 `supabase_migrations.schema_migrations` 에 기록한다.
+- **0012~0027 의 원격 적용 경로는 `supabase db push` 하나다.** CLI 는 마이그레이션 파일 하나를 한 트랜잭션으로 돌리고, 성공한 버전을 `supabase_migrations.schema_migrations` 에 기록한다.
 - **SQL Editor 는 읽기 확인 전용이다** — 적용 전·후 행렬, 이력 조회처럼 카탈로그를 읽는 질의만 붙인다. **마이그레이션 본문을 SQL Editor 에 붙여 적용하지 않는다**: 그러면 이력이 남지 않아, 다음 `supabase db push` 가 **같은 마이그레이션을 다시 돌린다**(두 번 도는 것을 전제로 검토한 파일이 아니다).
 - **`psql -f` 도 쓰지 않는다**(리뷰 K1 — 파일이 원자적이지 않다. 이력도 남지 않는다).
 - 🔴 **적용 직후 필수 — 이력 확인**(읽기 질의):
   ```sql
   select version, name from supabase_migrations.schema_migrations order by version;
   ```
-  기대: 적용 전 목록 뒤에 이번에 적용한 버전이 한 줄씩 붙고, 저장소의 마지막 마이그레이션과 같은 번호로 끝난다 — 지금은 **마지막이 `0026`**(T4-1 `0024` · T4-2 `0025` · OF2-B `0026` 이 `0023` 뒤에 더했다). 한 줄이라도 빠졌거나 마지막이 `0026` 이 아니면 **멈추고 컨트롤러에게 보고한다**(`db push` 는 실패한 파일에서 멈추고 그 뒤 버전을 돌리지 않는다 — 어디서 멈췄는지가 이 목록에 보인다). (2026-09-21 의 첫 적용에서는 `0011` 뒤에 `0012`~`0019` 여덟 줄이, 두 번째 적용에서는 `0020` 한 줄이 붙는 것이 기대였고 그대로 됐다 — 맨 아래 「원격 적용 기록」.)
+  기대: 적용 전 목록 뒤에 이번에 적용한 버전이 한 줄씩 붙고, 저장소의 마지막 마이그레이션과 같은 번호로 끝난다 — 지금은 **마지막이 `0027`**(T4-1 `0024` · T4-2 `0025` · OF2-B `0026` · OF2-C `0027` 이 `0023` 뒤에 더했다). 한 줄이라도 빠졌거나 마지막이 `0027` 이 아니면 **멈추고 컨트롤러에게 보고한다**(`db push` 는 실패한 파일에서 멈추고 그 뒤 버전을 돌리지 않는다 — 어디서 멈췄는지가 이 목록에 보인다). (2026-09-21 의 첫 적용에서는 `0011` 뒤에 `0012`~`0019` 여덟 줄이, 두 번째 적용에서는 `0020` 한 줄이 붙는 것이 기대였고 그대로 됐다 — 맨 아래 「원격 적용 기록」.)
 - **예외 — 이미 수동 적용(SQL Editor·psql)을 해 버렸다면**: 본문이 실제로 전부 적용됐는지 해당 절의 행렬로 먼저 확인한 뒤, `supabase migration repair --status applied <번호>` 로 이력을 맞춘다 — **이 경로는 컨트롤러 승인이 있을 때만 쓴다.** `repair` 는 이력만 고치고 본문을 돌리지 않으므로, 적용되지 않은 버전을 `applied` 로 적으면 그 마이그레이션은 **영영 건너뛰어진다**.
-- **잠금 대기 상한 — 파일 안의 `set local lock_timeout = '5s';`** (P5-15 R7 · 컨트롤러 결정): 0012 이후 파일(0012~0026, 열다섯 개) 모두 **첫 실행문**이 이것이고, 둘째 실행문이 **그 시점에 `lock_timeout` 이 실제로 `5s` 인지**만 확인한다 — 아니면 아무것도 바꾸기 전에 멈춘다. ⚠️ 이 확인은 **원자성을 증명하지 않는다**(astra R7 P2-b): 자동 커밋 세션이라도 서버·롤·DB 기본값이 이미 5초면 통과한다. 잡아 주는 것은 "`set local` 이 그 문장에서 끝나 설정이 남지 않은 경우"(예: 기본값이 5초가 아닌 서버에서 `psql -f`)뿐이다. **파일 하나가 한 트랜잭션이라는 보장은 적용 경로(`supabase db push`)에서 오고**, 아래 실측이 그것을 확인한 것이다. CLI 는 파일 하나를 한 트랜잭션으로 보내므로 이 설정은 **그 파일에만** 걸리고 다음 파일로 새지 않는다. 어떤 문장이 잠금을 5초 넘게 기다리면 `ERROR: canceling statement due to lock timeout (SQLSTATE 55P03)` 로 그 파일이 실패한다 — 접수 트랜잭션을 줄 세우지 않는다.
+- **잠금 대기 상한 — 파일 안의 `set local lock_timeout = '5s';`** (P5-15 R7 · 컨트롤러 결정): 0012 이후 파일(0012~0027, 열여섯 개) 모두 **첫 실행문**이 이것이고, 둘째 실행문이 **그 시점에 `lock_timeout` 이 실제로 `5s` 인지**만 확인한다 — 아니면 아무것도 바꾸기 전에 멈춘다. ⚠️ 이 확인은 **원자성을 증명하지 않는다**(astra R7 P2-b): 자동 커밋 세션이라도 서버·롤·DB 기본값이 이미 5초면 통과한다. 잡아 주는 것은 "`set local` 이 그 문장에서 끝나 설정이 남지 않은 경우"(예: 기본값이 5초가 아닌 서버에서 `psql -f`)뿐이다. **파일 하나가 한 트랜잭션이라는 보장은 적용 경로(`supabase db push`)에서 오고**, 아래 실측이 그것을 확인한 것이다. CLI 는 파일 하나를 한 트랜잭션으로 보내므로 이 설정은 **그 파일에만** 걸리고 다음 파일로 새지 않는다. 어떤 문장이 잠금을 5초 넘게 기다리면 `ERROR: canceling statement due to lock timeout (SQLSTATE 55P03)` 로 그 파일이 실패한다 — 접수 트랜잭션을 줄 세우지 않는다.
 - **부분 적용 — push 전체는 원자적이지 않다**: 한 파일이 시간 초과(또는 다른 오류)로 실패하면 **앞 파일들은 커밋·기록된 채 남고**, **그 파일은 롤백되며**(이력에도 없다), 뒤 파일은 돌지 않는다. 막던 세션이 끝난 뒤 **다음 `supabase db push` 가 그 파일부터** 이어서 적용한다. 시간 초과는 **멈추고 보고할 일**이다 — 수동 적용이나 `repair` 로 건너뛰지 않는다. 어디서 멈췄는지는 적용 직후 이력 확인이 보여 준다.
 - **실측** (2026-09-17 · supabase CLI 2.117.0 · 로컬 전용 `--db-url postgresql://…@127.0.0.1:…`):
   - 합성 마이그레이션(PG 15.17 일회용 컨테이너 · PG 17.6 로컬 스택의 일회용 DB 둘 다): 한 파일의 행들이 **같은 xid**, `set local` 뒤 `lock_timeout=5s`, 다음 파일에서는 `0`(새지 않음). 다른 세션이 표를 쥔 채 push → 약 5초 뒤 `55P03` · 그 파일의 표·행·이력 없음 · 앞 파일 이력 유지 → 풀린 뒤 push 가 그 파일부터 재개. 대조군(`set local` 없음)은 잠금이 풀릴 때까지 **기다렸다**(20초 잡음 → 20초 걸림).
@@ -708,6 +708,7 @@ select
   coalesce((select 'SERVICE_MAINTAIN_LOST ' || string_agg(c.relname, ' ')
      from pg_class c join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'public' and c.relkind = 'r'
+      and c.relname not in ('site_stats_daily', 'site_visitors_seen')
       and not has_table_privilege('service_role', c.oid, 'MAINTAIN')), 'SERVICE_MAINTAIN_OK') as svc,
   coalesce((select 'MAINTAIN_PUBLIC_ACL ' || string_agg(c.relname, ' ')
      from pg_class c join pg_namespace n on n.oid = c.relnamespace
@@ -716,6 +717,8 @@ select
   (select 'BASELINE_PRESENT ' || count(*) from unnest(array['public.notices','public.popups','public.gallery','public.gallery_albums','public.showcase_routes','public.vehicles','public.places','public.reservations','public.notifications_log']) t(n) where to_regclass(t.n) is not null) as baseline;
 ```
 <!-- P515:MAINTAIN_MATRIX_SQL:END -->
+
+(OF2-C, 0027: `site_stats_daily`·`site_visitors_seen` 두 표는 **service_role 에게도 모든 표 권한을 회수한 표**다 — 쓰기·삭제는 definer 함수만 한다. 그래서 서비스 롤 대조군(`SERVICE_MAINTAIN_OK`)만 이 두 표를 제외했다. 공개 롤(anon·authenticated)·PUBLIC 검사는 이 두 표도 포함해 그대로다.)
 
 ⚠️ **`SERVICE_MAINTAIN_LOST …` 가 나와도 곧바로 실패가 아니다**(astra P2-6). 원격이 16→17 업그레이드 DB 면 기존 표 ACL 에 `m` 이 원래 없을 수 있다 — 0019 는 service_role 을 건드리지 않는다(상행 ② 는 "불변" 을 본다). **적용 직전 스냅샷과 대조**해서, 스냅샷에 `service_role=…m…` 이 있던 표만 문제로 본다. 롤백의 같은 검사도 그래서 경고(`WARNING`)만 한다.
 
@@ -1325,6 +1328,18 @@ Vercel 은 GitHub 앱으로 연결돼 있다. GitHub 배포 기록(`GET /repos/�
   롤백은 **코드 먼저** → `supabase/rollbacks/0026_feed_hidden.down.sql`(함수 drop + 칸 drop · **숨긴 행이 있으면 멈춘다** — 손님이 내려 달라던 접수가 옛 코드의 홈에 다시 나온다.
   정말 되돌리려면 같은 세션에서 `set besttour.allow_unhide = 'yes';` 를 먼저) → `supabase migration repair --status reverted 0026`.
 - 같은 변경에서 손님 상담완료 문자 제목이 **"상담 완료 · 예약 확정 안내"** 로 바뀌었다(코드) — 알림톡은 판(옛·개정) 두 건의 **목록 이름·본문 제목**이 달라지므로 **이미 심사를 낸 상태라면 다시 내야 한다**(아직 안 냈다면 새 제목으로 낸다).
+
+## 0027 — 자체 방문자 통계 (독립 리뷰 대기 · 원격 미적용 · OF2-C · 사장님 요청 2026-10-15)
+
+- 표 `site_stats_daily(day date pk, views, visitors)` — **날짜별 숫자만 영구 보관**. 표 `site_visitors_seen(day, vid)` — "오늘 이미 센 사람인가" 만 가리는 하루짜리 일회용 값(vid = sha256(GUARD_SECRET + KST날짜 + IP + UA) 앞 32자 · **IP·UA 원문은 이 DB 에 들어올 길이 없다** — 칸이 없고 함수가 32자 hex 만 받는다).
+  어제보다 오래된 일회용 값은 `record_site_view` 가 부를 때, 그리고 매일 크론(`/api/cron/purge` → `purge_site_visitors_seen`)이 지운다 → 가장 오래 남는 값도 사흘 미만(고지 "사흘 안에 삭제").
+- 함수 셋 — `record_site_view(p_vid text) → boolean`(유일한 쓰기 길 · **service_role 만**) · `purge_site_visitors_seen() → integer`(**service_role 만**) · `admin_site_stats(p_days integer) → jsonb`(읽기 전용 · 첫 문장 `is_admin()` · **authenticated 만**). 전부 definer · search_path `public, pg_temp`.
+- 🔴 권한(CLAUDE.md §3): 두 표 RLS 켬(정책 0) + **anon·authenticated·service_role·PUBLIC 의 표 권한 전부 회수**(TRUNCATE 포함 · MAINTAIN 은 `server_version_num >= 170000` 조건부 동적 SQL 로 한 번 더 명시). service_role 도 표를 직접 못 만진다(함수만).
+  함수는 같은 파일에서 넷(PUBLIC 포함) 모두 회수한 뒤 필요한 롤에만 grant. 자기검증(파일 끝 `do` 블록)이 `acldefault` + 실제 ACL 에서 권한 종류를 **열거**해 `has_table_privilege`(grant option 포함)·`has_any_column_privilege`·`aclexplode`(PUBLIC)로 실측한다.
+  로컬 변이 시험(2026-10-15): 자기검증 — service_role 에 MAINTAIN · PUBLIC 에 TRUNCATE · anon 에 함수 EXECUTE 를 일부러 주면 각각 이름을 대며 멈춘다. DB 테스트 — authenticated 에 MAINTAIN / purge 함수 EXECUTE 를 주면 각각 빨개진다. 전부 되돌렸다.
+- **순서: DB → 코드.** 코드가 먼저 나가면 비콘 라우트는 조용히 204(세지 못할 뿐), 관리자 통계의 방문자 칸은 "불러오지 못했어요", 매일 크론 로그에 `site_visitors_purge_error` 가 찍힌다(접수 파기 응답은 영향 없음).
+  롤백은 **코드 먼저** → `supabase/rollbacks/0027_site_stats.down.sql`(함수 셋 drop + 표 둘 drop · **집계 숫자가 있으면 멈춘다** — 정말 지우려면 같은 세션에서 `set besttour.allow_drop_site_stats = 'yes';`) → `supabase migration repair --status reverted 0027`.
+- 로컬 적용은 `npx supabase migration up --local`. 한도: 방문 통계 비콘은 접수와 **다른 한도**(Upstash `guard:stats:*` — known 10분 60·1시간 300 · unknown 20·100)를 쓴다.
 
 # 원격 적용 기록 — 0023 (2026-09-27 · 컨트롤러) — 시험 먼저, **운영 22:39 KST(사용자 승인 "DB 적용해")**
 

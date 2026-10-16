@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 
 import { formatAdminDate, formatAdminMonth } from "@/components/admin/admin-date";
+import { SiteStatsPanel } from "@/components/admin/SiteStatsPanel";
 import { getAdminDateLabels } from "@/components/admin/adminDateLabels";
 import { segments, splitSegments } from "@/components/admin/segments";
 import { StatusBadge } from "@/components/admin/StatusBadge";
@@ -127,6 +128,9 @@ export default async function AdminStatsPage({ searchParams }: { searchParams: S
           <h1 className={q.title}>{t("title")}</h1>
           <p className={q.sub}>{t("sub")}</p>
         </header>
+
+        {/* OF2-C — 방문자 통계(오늘·어제·누적 + 최근 30일 그래프). 아래 접수 통계의 기간 필터와 무관하다. requireAdmin() 은 이 함수 첫 줄에서 이미 거쳤다. */}
+        <SiteStatsPanel />
 
         <nav className={a.filters} aria-label={t("periodLabel")}>
           <span className={a.filterLabel}>{t("periodLabel")}</span>

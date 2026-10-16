@@ -38,13 +38,32 @@ function json(body: unknown, status: number): Response {
   });
 }
 
+/**
+ * 방문 통계의 일회용 방문자 값 삭제 (OF2-C · 0027 purge_site_visitors_seen) — 어제보다 오래된 것을 지운다.
+ * 처리방침(siteStats)의 "일회용 값은 사흘 안에 삭제" 를 방문이 끊긴 날에도 지키려고 매일 크론이 부른다(방문이 있으면 record_site_view 가 같은 일을 한다).
+ * **dry-run 과 무관하게 항상 지운다** — dry 는 접수 개인정보 파기를 위한 안전장치이고, 이 값은 하루짜리 해시라 되돌릴 것이 없다.
+ * 실패해도 접수 파기 응답을 깨지 않는다(로그만). 응답 본문(PurgeReport)에는 섞지 않는다.
+ */
+async function purgeSiteVisitors(service: ReturnType<typeof createServiceClient>): Promise<void> {
+  try {
+    const { data, error } = await service.rpc("purge_site_visitors_seen");
+    if (error) throw new Error(`[${error.code ?? "?"}] ${error.message}`);
+    console.info(JSON.stringify({ event: "site_visitors_purged", count: typeof data === "number" ? data : null }));
+  } catch (err) {
+    console.error(JSON.stringify({ event: "site_visitors_purge_error", message: err instanceof Error ? err.message : String(err) }));
+  }
+}
+
 export async function GET(request: Request): Promise<Response> {
   if (!isAuthorized(request.headers.get("authorization"))) {
     return json({ error: "unauthorized" }, 401);
   }
   const dryRun = new URL(request.url).searchParams.get("dry") !== "0";
   try {
-    const client = supabasePurgeClient(createServiceClient());
+    const service = createServiceClient();
+    const client = supabasePurgeClient(service);
+    // 방문 통계의 일회용 값 삭제를 먼저 한다 — 접수 파기가 던져도 처리방침의 "사흘 안에 삭제"가 지켜지게(이 함수는 던지지 않는다).
+    await purgeSiteVisitors(service);
     const report = await purge({ dryRun }, client);
     return json(report, 200);
   } catch (err) {
