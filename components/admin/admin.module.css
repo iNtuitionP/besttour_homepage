@@ -2557,6 +2557,10 @@ a.hubItem:hover {
   gap: var(--space-stack-xs);
   margin: 0 0 var(--space-stack-md);
 }
+/* hidden 속성은 위 display:flex 에 덮이므로 따로 다시 건다(팝업 폼의 "사진만 보이기" 가 본문 칸을 숨긴다 · OF3-R2) */
+.field[hidden] {
+  display: none;
+}
 .input {
   width: 100%;
   padding: var(--space-stack-xs) var(--space-inline-xs);
@@ -2844,10 +2848,14 @@ a.hubItem:hover {
   flex-direction: column;
   gap: var(--space-stack-xs);
 }
+/* 한 줄 = 위 단(.sortMain: 손잡이·↑↓·순번·이름) + 아래/오른쪽 단(.sortSide: 상태·[수정]·[켜기/끄기]). 좁은 폭에서는 두 단으로 접힌다(OF3-R2). */
 .sortRow {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-inline-xs);
+  justify-content: space-between;
+  column-gap: var(--space-inline-sm);
+  row-gap: var(--space-stack-xs);
   min-height: 52px;
   padding: var(--space-stack-xs) var(--space-inline-xs);
   border: 1px solid var(--border-decorative);
@@ -2897,9 +2905,20 @@ a.hubItem:hover {
   color: var(--text-secondary);
   text-align: right;
 }
-.sortLabel {
+.sortMain {
+  display: flex;
+  align-items: center;
+  gap: var(--space-inline-xs);
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+.sortText {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   min-width: 0;
+}
+.sortLabel {
   font-size: 15px;
   font-weight: 700;
   color: var(--text-primary);
@@ -2908,20 +2927,61 @@ a.hubItem:hover {
 .sortMeta {
   font-size: 14px;
   color: var(--text-secondary);
-  white-space: nowrap;
 }
 .sortButtons {
   display: inline-flex;
   gap: var(--space-inline-xs);
+}
+/* 상태 딱지 + 줄 끝 슬롯. 넓은 폭에서는 이름 오른쪽에 붙고, 좁아서 접히면 다음 단 전체 폭을 쓴다. */
+.sortSide {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-inline-sm);
+  flex: 0 1 auto;
+}
+.sortEnd {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-inline-sm);
+}
+.sortEnd > .btnSecondary,
+.sortEnd > .rowLink {
+  white-space: nowrap;
+}
+/* 순서가 바뀌어 저장 전 — 잠긴 줄 끝 슬롯은 흐리게(inert 라 눌리지도 탭으로 가지도 않는다) */
+.sortEnd[data-locked="true"] {
+  opacity: 0.45;
+}
+/* 순서가 바뀔 때만 목록 위에 나타나는 막대 */
+.sortBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-stack-xs) var(--space-inline-sm);
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+}
+.sortBarNote {
+  margin: 0;
+  flex: 1 1 14rem;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-primary);
 }
 .sortActions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-inline-xs);
 }
-@media (max-width: 479.98px) {
-  .sortMeta {
-    display: none;
+/* 좁은 폭(두 단 접힘) — 위: 손잡이·↑↓·이름 / 아래: 상태·[수정]·[켜기/끄기] 가 한 줄 전체를 쓴다 */
+@media (max-width: 639.98px) {
+  .sortSide {
+    flex: 1 1 100%;
   }
 }
 /* T3-4 — 서식 편집기(TipTap) · 실시간 미리보기 */

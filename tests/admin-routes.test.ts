@@ -972,7 +972,8 @@ describe("6. T3-5 순서 바꾸기", () => {
     expect(src).not.toMatch(/dangerouslySetInnerHTML/);
     const ko = JSON.parse(read("messages/ko.json")) as { admin: { routes: Record<string, unknown> } };
     const order = ko.admin.routes.order as Record<string, string>;
-    for (const k of ["title", "hint", "save", "reset", "up", "down", "handle", "moved", "saved", "failed"]) expect(order[k], k).toBeTruthy();
+    // OF3-R2: «순서 바꾸기» 섹션 제목(title)은 목록이 하나가 되며 없어졌고, 순서가 바뀐 동안의 잠금 안내(locked)가 생겼다
+    for (const k of ["hint", "save", "reset", "locked", "up", "down", "handle", "moved", "saved", "failed"]) expect(order[k], k).toBeTruthy();
     expect((ko.admin.routes.result as Record<string, string>).reordered).toBeTruthy();
   });
 });

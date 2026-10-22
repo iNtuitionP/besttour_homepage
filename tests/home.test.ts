@@ -430,7 +430,7 @@ describe("8. app/[locale]/(site)/page.tsx", () => {
   });
 
   test("데이터는 페이지가 lib/queries 로 받아 props 로 내린다 (섹션 컴포넌트는 fetch 하지 않는다)", () => {
-    for (const fn of ["getShowcaseRoutes", "getVehicles", "getGallery", "getNotices", "getActivePopup"]) {
+    for (const fn of ["getShowcaseRoutes", "getVehicles", "getGallery", "getNotices", "getActivePopups"]) {
       expect(page, fn).toMatch(new RegExp(`${fn}\\(`));
     }
     for (const { file, code } of homeCode) {

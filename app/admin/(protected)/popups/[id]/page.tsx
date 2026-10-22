@@ -13,6 +13,7 @@ import { routing } from "@/i18n/routing";
 import { ADMIN_POPUPS_PATH, getAdminPopup } from "@/lib/admin/popups";
 import { parsePopupId } from "@/lib/admin/popupInput";
 import { requireAdmin } from "@/lib/auth/requireAdmin";
+import { isAlwaysEndsAt, isImageOnlyPopup } from "@/lib/popup-display";
 
 import a from "@/components/admin/admin.module.css";
 import q from "@/components/quote/quote.module.css";
@@ -66,8 +67,11 @@ export default async function AdminPopupEditPage({ params }: { params: Params })
     copyWarning: t("result.copyWarning"),
   };
   // 부제의 노출 기간 — 관리자 날짜 틀("10월 13일 ~ 11월 13일" · P5-23 라운드 2 A-3). 입력 칸(type=date)의 값은 그대로다.
-  const periodText =
-    formatAdminPeriod(row.starts_at, row.ends_at, new Date(), await getAdminDateLabels()) ?? t("periodValue", { start: row.starts_at, end: row.ends_at });
+  // 상시 게시(종료일 9999-12-31)는 날짜가 아니라 "상시 게시" 로 보인다(OF3-R2)
+  const always = isAlwaysEndsAt(row.ends_at);
+  const periodText = always
+    ? t("alwaysValue")
+    : (formatAdminPeriod(row.starts_at, row.ends_at, new Date(), await getAdminDateLabels()) ?? t("periodValue", { start: row.starts_at, end: row.ends_at }));
 
   return (
     <main className={q.main} data-testid="admin-popup-edit">
@@ -92,8 +96,11 @@ export default async function AdminPopupEditPage({ params }: { params: Params })
               body: row.body,
               imagePath: row.image_path ?? "",
               startsAt: row.starts_at,
-              endsAt: row.ends_at,
+              // 상시면 종료일 칸은 숨겨진 채 열린다 — 체크를 풀면 새로 고르게 빈 값(9999-12-31 을 날짜 칸에 띄우지 않는다)
+              endsAt: always ? "" : row.ends_at,
               active: row.active,
+              always,
+              imageOnly: isImageOnlyPopup({ body: row.body, imagePath: row.image_path }),
             }}
             labels={{
               field: {
@@ -104,6 +111,8 @@ export default async function AdminPopupEditPage({ params }: { params: Params })
                 endsAt: t("field.endsAt"),
                 period: t("field.period"),
                 active: t("field.active"),
+                always: t("field.always"),
+                imageOnly: t("field.imageOnly"),
               },
               hint: {
                 title: t("hint.title"),
@@ -111,6 +120,10 @@ export default async function AdminPopupEditPage({ params }: { params: Params })
                 imagePath: t("hint.imagePath"),
                 period: t("hint.period"),
                 active: t("hint.active"),
+                always: t("hint.always"),
+                imageOnly: t("hint.imageOnly"),
+                imageOnlyDropsBody: t("hint.imageOnlyDropsBody"),
+                imageOnlyNeedsPhoto: t("hint.imageOnlyNeedsPhoto"),
               },
               notice: t("notice"),
               submit: t("save"),
@@ -131,16 +144,18 @@ export default async function AdminPopupEditPage({ params }: { params: Params })
           <h2 className={a.sectionTitle}>{t("sample.title")}</h2>
           <PopupSample labels={{ show: t("sample.show"), hide: t("sample.hide"), note: t("sample.note") }}>
             <HomePopup
-              popup={{
-                id: row.id,
-                title: row.title,
-                body: row.body,
-                imagePath: row.image_path,
-                startsAt: row.starts_at,
-                endsAt: row.ends_at,
-                active: row.active,
-                createdAt: row.created_at,
-              }}
+              popups={[
+                {
+                  id: row.id,
+                  title: row.title,
+                  body: row.body,
+                  imagePath: row.image_path,
+                  startsAt: row.starts_at,
+                  endsAt: row.ends_at,
+                  active: row.active,
+                  createdAt: row.created_at,
+                },
+              ]}
             />
           </PopupSample>
         </section>

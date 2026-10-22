@@ -14,13 +14,17 @@ import a from "@/components/admin/admin.module.css";
 import q from "@/components/quote/quote.module.css";
 
 /**
- * /admin/routes — 홈 대표 노선 목록 (P5-6).
+ * /admin/routes — 홈 대표 노선 목록 (P5-6 · OF3-R2 한 목록).
  *
  * (protected) 그룹 안이라 레이아웃이 이미 게이트를 걸었지만 **여기서 다시, 본문 첫 문장으로** requireAdmin() 을 부른다.
  * 조건도 try 도 붙이지 않는다 — scripts/check-admin-gate.mjs 가 그 형태를 구조로 강제한다.
  *
  * **추가·삭제가 없다.** 16개는 스펙 §13.2 가 고정하고 0002 가 지도 핀과 FK 로 묶은 집합이라 값만 고친다
- * (근거는 lib/admin/routes.ts 헤더). 목록에서 할 수 있는 것은 수정으로 들어가기와 노출 중지/재개뿐이다.
+ * (근거는 lib/admin/routes.ts 헤더). 목록에서 할 수 있는 것은 수정으로 들어가기·노출 중지/재개·순서 바꾸기뿐이다.
+ *
+ * **목록은 하나다**(OF3-R2). 예전에는 위에 표(수정·켜기/끄기), 아래에 따로 «순서 바꾸기» 목록이 있어 같은 노선이 두 번 나왔다.
+ * 이제 공용 SortableList 한 줄이 손잡이·↑↓·노선 이름·금액·상태·[수정]·[켜기/끄기]를 모두 담는다. 순서가 바뀌어 저장 전인 동안
+ * 목록 위에 «순서 저장 / 처음 순서로» 막대가 나타나고 줄 끝 단추는 잠긴다(components/admin/SortableList.tsx).
  *
  * **가격 표시는 홈과 같은 함수**(components/KrMap/format.ts `formatPriceKrw`)로 그린다 — 관리자가 두 번째 포맷을 만들면
  * 사장님이 보는 금액과 방문자가 보는 금액이 갈린다. 빈 문자열이 돌아오면 홈에서도 라벨이 숨는다는 뜻이라 그대로 알려 준다.
@@ -59,117 +63,57 @@ export default async function AdminRoutesPage() {
           <p className={a.hint}>{t("fixedNote")}</p>
         </section>
 
-        <section className={a.section} aria-labelledby="route-list-title">
+        <section className={a.section} aria-labelledby="route-list-title" data-testid="admin-routes-list">
           <h2 className={a.sectionTitle} id="route-list-title">
             {t("listLabel")}
           </h2>
           {rows.length === 0 ? (
             <p className={a.empty}>{t("empty")}</p>
           ) : (
-            <div className={`${a.tableWrap} ${a.contentWrap}`}>
-              {/* 표 이름은 섹션 제목이 말한다 — 같은 말의 캡션을 또 적지 않는다(P5-20) */}
-              {/* 칸마다 세로 가운데(P5-23 라운드 2 B-8) — 노선 이름·금액·배지·버튼이 한 줄에 선다. 1024px 미만은 공지·팝업과 같은 카드
-                  (노선 이름을 한 덩어리로 두자 375 표가 옆으로 173px 밀렸다 — 카드면 밀리지 않고 버튼이 늘 보인다) */}
-              <table className={`${a.tablePopups} ${a.contentTable} ${a.tableMiddle}`} aria-labelledby="route-list-title" data-testid="admin-routes-table">
-                <thead>
-                  <tr>
-                    <th className={a.th} scope="col">
-                      {t("col.route")}
-                    </th>
-                    <th className={a.th} scope="col">
-                      {t("col.price")}
-                    </th>
-                    <th className={a.th} scope="col">
-                      {t("col.sort")}
-                    </th>
-                    <th className={a.th} scope="col">
-                      {t("col.state")}
-                    </th>
-                    <th className={a.th} scope="col">
-                      {t("col.actions")}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row) => {
-                    const amount = formatPriceKrw(row.price_from);
-                    return (
-                      <tr key={row.id}>
-                        {/* 노선 이름("서울 → 부산")은 한 덩어리 — 좁은 폭에서 "서울 → / 부산" 으로 갈리지 않는다(C-14 · 표는 자기 상자 안에서 옆으로 밀린다) */}
-                        <td className={`${a.td} ${a.tdStrong} ${a.tdNowrap}`} data-cell="title">
-                          <Link className={a.rowLink} href={`${ADMIN_ROUTES_PATH}/${row.id}`}>
-                            {t("routeValue", {
-                              origin: routePlaceLabel(row.origin_code),
-                              destination: routePlaceLabel(row.destination_code),
-                            })}
-                          </Link>
-                        </td>
-                        <td className={`${a.td} ${a.tdNowrap}`} data-cell="meta">
-                          {amount === "" ? t("noPrice") : amount}
-                        </td>
-                        <td className={`${a.td} ${a.tdNowrap}`} data-cell="meta">
-                          {/* 카드에서만 보이는 칸 이름(순서 숫자만으로는 뜻을 모른다) — 표에서는 머리글이 말한다 */}
-                          <span className={a.cellLabel}>{t("col.sort")}</span> {row.sort === null ? t("noSort") : row.sort}
-                        </td>
-                        <td className={a.td} data-cell="meta">
-                          <span className={a.badge} data-state={row.active ? "live" : "off"}>
-                            {row.active ? t("state.live") : t("state.off")}
-                          </span>
-                        </td>
-                        <td className={a.td} data-cell="actions">
-                          <div className={a.rowActions}>
-                            <Link className={a.rowLink} href={`${ADMIN_ROUTES_PATH}/${row.id}`}>
-                              {t("editLink")}
-                            </Link>
-                            <RouteToggle
-                              id={row.id}
-                              active={row.active}
-                              labels={{ turnOn: t("turnOn"), turnOff: t("turnOff"), processing: t("processing"), results }}
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <>
+              {/* 항목이 하나뿐이면 옮길 곳이 없다 — 순서 안내도, 줄의 손잡이·↑↓ 도 없다(SortableList 가 count ≤ 1 이면 그리지 않는다) */}
+              {rows.length > 1 ? <p className={a.hint}>{t("order.hint")}</p> : null}
+              <RouteOrder
+                items={rows.map((row) => {
+                  const amount = formatPriceKrw(row.price_from);
+                  return {
+                    id: row.id,
+                    label: t("routeValue", { origin: routePlaceLabel(row.origin_code), destination: routePlaceLabel(row.destination_code) }),
+                    meta: amount === "" ? t("noPrice") : amount,
+                    status: { text: row.active ? t("state.live") : t("state.off"), live: row.active },
+                    end: (
+                      <>
+                        <Link className={a.rowLink} href={`${ADMIN_ROUTES_PATH}/${row.id}`}>
+                          {t("editLink")}
+                        </Link>
+                        <RouteToggle
+                          id={row.id}
+                          active={row.active}
+                          labels={{ turnOn: t("turnOn"), turnOff: t("turnOff"), processing: t("processing"), results }}
+                        />
+                      </>
+                    ),
+                  };
+                })}
+                labels={{
+                  save: t("order.save"),
+                  reset: t("order.reset"),
+                  processing: t("processing"),
+                  up: t.raw("order.up") as string,
+                  down: t.raw("order.down") as string,
+                  handle: t.raw("order.handle") as string,
+                  moved: t.raw("order.moved") as string,
+                  picked: t.raw("order.picked") as string,
+                  canceled: t("order.canceled"),
+                  instructions: t("order.instructions"),
+                  locked: t("order.locked"),
+                }}
+                saved={t("order.saved")}
+                failed={t("order.failed")}
+              />
+            </>
           )}
         </section>
-
-        {/* T3-5 — 순서 바꾸기(끌기 · ↑/↓ · «순서 저장»). 수정 화면의 순서 숫자 칸을 대신한다 */}
-        {rows.length > 1 ? (
-          <section className={a.section} aria-labelledby="route-order-title">
-            <h2 className={a.sectionTitle} id="route-order-title">
-              {t("order.title")}
-            </h2>
-            <p className={a.hint}>{t("order.hint")}</p>
-            <RouteOrder
-              items={rows.map((row) => {
-                const amount = formatPriceKrw(row.price_from);
-                return {
-                  id: row.id,
-                  label: t("routeValue", { origin: routePlaceLabel(row.origin_code), destination: routePlaceLabel(row.destination_code) }),
-                  meta: `${amount === "" ? t("noPrice") : amount}${row.active ? "" : ` · ${t("state.off")}`}`,
-                };
-              })}
-              labels={{
-                save: t("order.save"),
-                reset: t("order.reset"),
-                processing: t("processing"),
-                up: t.raw("order.up") as string,
-                down: t.raw("order.down") as string,
-                handle: t.raw("order.handle") as string,
-                moved: t.raw("order.moved") as string,
-                picked: t.raw("order.picked") as string,
-                canceled: t("order.canceled"),
-                instructions: t("order.instructions"),
-              }}
-              saved={t("order.saved")}
-              failed={t("order.failed")}
-            />
-          </section>
-        ) : null}
       </div>
     </main>
   );

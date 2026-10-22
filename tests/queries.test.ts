@@ -4,9 +4,10 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import { PLACES, SHOWCASE_ROUTE_SEED, type PlaceCode } from "@/lib/codes";
 import { parseKst, toKstDateString } from "@/lib/kst";
 import { PLACE_POINTS } from "@/lib/map-coords";
+import { sortHomePopups } from "@/lib/popup-display";
 import {
   QUERY_TAGS,
-  getActivePopup,
+  getActivePopups,
   getNotices,
   getPlaces,
   getShowcaseRoutes,
@@ -419,7 +420,7 @@ describe.skipIf(!hasAnon)("DB 읽기 — anon 키 + RLS (원격, 읽기 전용)"
     await expect(getNotices(1.5)).rejects.toThrow();
   });
 
-  test("getActivePopup: popups 에 (RLS 로 보이는) 행이 없으면 null, 있으면 KST 오늘 기준 노출 중인 것", async () => {
+  test("getActivePopups: popups 에 (RLS 로 보이는) 행이 없으면 빈 배열, 있으면 KST 오늘 기준 노출 중인 것만 — 상시 먼저 · 최대 POPUP_HOME_LIMIT 개", async () => {
     // 브리프: 별도 anon 클라이언트(순수 fetch)로 같은 테이블을 읽어 대조한다.
     const res = await fetch(`${supabaseUrl}/rest/v1/popups?select=id,starts_at,ends_at,active`, {
       headers: anonHeaders,
@@ -427,9 +428,9 @@ describe.skipIf(!hasAnon)("DB 읽기 — anon 키 + RLS (원격, 읽기 전용)"
     expect(res.ok).toBe(true);
     const visible = (await res.json()) as { id: number; starts_at: string; ends_at: string; active: boolean }[];
 
-    const popup = await getActivePopup();
+    const popups = await getActivePopups();
     if (visible.length === 0) {
-      expect(popup).toBeNull();
+      expect(popups).toEqual([]);
       return;
     }
     const today = toKstDateString(new Date());
@@ -437,15 +438,21 @@ describe.skipIf(!hasAnon)("DB 읽기 — anon 키 + RLS (원격, 읽기 전용)"
       isActiveOn({ active: p.active, startsAt: p.starts_at, endsAt: p.ends_at }, today),
     );
     if (candidates.length === 0) {
-      expect(popup).toBeNull();
+      expect(popups).toEqual([]);
       return;
     }
-    expect(popup).not.toBeNull();
-    expect(isActiveOn(popup!, today)).toBe(true);
-    expect(candidates.map((c) => c.id)).toContain(popup!.id);
+    expect(popups.length).toBeGreaterThan(0);
+    expect(popups.length).toBeLessThanOrEqual(4);
+    const candidateIds = candidates.map((c) => c.id);
+    for (const p of popups) {
+      expect(isActiveOn(p, today)).toBe(true);
+      expect(candidateIds).toContain(p.id);
+    }
+    // 정렬 규칙은 순수 함수와 같다(상시 → 시작일 최신 → id 최신)
+    expect(popups.map((p) => p.id)).toEqual(sortHomePopups(popups).map((p) => p.id));
   });
 
-  test("getActivePopup: 주입한 now(2000-01-01) 기준으로는 항상 null", async () => {
-    expect(await getActivePopup({ now: new Date("2000-01-01T00:00:00Z") })).toBeNull();
+  test("getActivePopups: 주입한 now(2000-01-01) 기준으로는 항상 빈 배열", async () => {
+    expect(await getActivePopups({ now: new Date("2000-01-01T00:00:00Z") })).toEqual([]);
   });
 });

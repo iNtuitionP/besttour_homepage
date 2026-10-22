@@ -25,5 +25,5 @@ export {
   parseAlbumSlug,
   type AlbumRow,
 } from "./albums";
-export { getActivePopup, isActiveOn, type GetActivePopupOptions, type PopupRow } from "./popups";
+export { getActivePopups, isActiveOn, type GetActivePopupsOptions, type PopupRow } from "./popups";
 export type { GalleryAlbum, GalleryItem, Notice, Place, PlacePin, Popup, ShowcaseRouteView, Vehicle } from "../types";

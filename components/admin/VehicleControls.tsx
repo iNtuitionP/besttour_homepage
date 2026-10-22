@@ -59,7 +59,7 @@ export function VehicleOrder({ items, labels, saved, failed }: { items: readonly
   return (
     <>
       <SortableList
-        key={items.map((it) => `${it.id}:${it.meta ?? ""}`).join(",")}
+        key={items.map((it) => `${it.id}:${it.meta ?? ""}:${it.status?.text ?? ""}`).join(",")}
         items={items}
         labels={labels}
         testId="admin-vehicle-order"

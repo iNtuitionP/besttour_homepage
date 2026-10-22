@@ -152,7 +152,7 @@ describe("C-14 · C-15 — 메타 줄 조각 · 문장 조각", () => {
     expect(row).toMatch(/keepLastWord\(fillTemplate\(ctx\.labels\.busValue/);
     expect(row).toMatch(/\{range\.slice\(0, at \+ 1\)\}\s*<wbr \/>\s*\{range\.slice\(at \+ 1\)\}/);
     expect(row).toMatch(/rangeNode\(stay\.range\)/);
-    expect(codeOf("app/admin/(protected)/routes/page.tsx")).toMatch(/className=\{`\$\{a\.td\} \$\{a\.tdStrong\} \$\{a\.tdNowrap\}`\}/);
+    // 노선 이름 한 덩어리는 OF3-R2 에서 표가 한 목록(SortableList)이 되며 이름 칸(.sortLabel)의 overflow-wrap 규칙으로 옮겨 갔다(tests/of3-r2-list.test.ts)
     // 통계 확정률 "17건 중 9건 · 53%" 도 조각(좁은 카드에서 '·' 가 줄 끝에 남았다)
     expect(codeOf("app/admin/(protected)/stats/page.tsx")).toMatch(/segments\(splitSegments\(t\("overview\.confirmedValue"/);
     // 업로드 안내의 형식 나열은 쉼표(가운데점이 줄 끝에 남았다)
@@ -357,8 +357,7 @@ describe("B-5 · B-6 · B-8 — 목록 표와 카드", () => {
     for (const [page, table] of [
       ["app/admin/(protected)/notices/page.tsx", "admin-notices-table"],
       ["app/admin/(protected)/popups/page.tsx", "admin-popups-table"],
-      // 대표 노선도 같은 카드(노선 이름을 한 덩어리로 두자 375 표가 옆으로 밀렸다 — 라운드 2 실측)
-      ["app/admin/(protected)/routes/page.tsx", "admin-routes-table"],
+      // 대표 노선·차량은 OF3-R2 에서 표를 버리고 한 목록(SortableList)이 됐다 — 구조는 tests/of3-r2-list.test.ts 가 잠근다
     ] as const) {
       const src = codeOf(page);
       expect(src, page).toContain(`data-testid="${table}"`);
@@ -390,7 +389,7 @@ describe("B-5 · B-6 · B-8 — 목록 표와 카드", () => {
 
   test("B-8 대표 노선 — 칸마다 세로 가운데(글자·배지·버튼이 한 줄에) · 공지·팝업 표도 같은 규칙", () => {
     expect(decl(bodyOf(".tableMiddle .td"), "vertical-align")).toBe("middle");
-    for (const page of ["app/admin/(protected)/routes/page.tsx", "app/admin/(protected)/notices/page.tsx", "app/admin/(protected)/popups/page.tsx"]) {
+    for (const page of ["app/admin/(protected)/notices/page.tsx", "app/admin/(protected)/popups/page.tsx"]) {
       expect(codeOf(page), page).toMatch(/a\.tableMiddle/);
     }
     // 발송 기록(여러 줄 칸)은 위 맞춤 그대로

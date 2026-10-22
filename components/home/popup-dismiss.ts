@@ -12,3 +12,11 @@ export const POPUP_DISMISS_PREFIX = "popup-dismissed";
 export function dismissKey(popupId: number, now: Date): string {
   return `${POPUP_DISMISS_PREFIX}:${popupId}:${toKstDateString(now)}`;
 }
+
+/**
+ * 오늘 하루 보지 않기로 숨긴 팝업을 뺀 id 목록 — 순서는 그대로(여러 창이 뜨는 순서 = 서버가 정한 순서).
+ * 남은 것이 0개면 빈 배열이고, 그때는 어두운 막도 그리지 않는다. `isDismissed` 는 저장소 읽기(실패는 false) — 호출자가 넘긴다.
+ */
+export function undismissedIds(ids: readonly number[], now: Date, isDismissed: (key: string) => boolean): number[] {
+  return ids.filter((id) => !isDismissed(dismissKey(id, now)));
+}
