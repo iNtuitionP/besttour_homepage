@@ -72,6 +72,36 @@
   border-radius: var(--radius-chip);
 }
 
+/* 큰 번호 아래 한 줄 "예약 문의 010-…"(ko 만 · OF3-C). 큰 번호보다 작게 — 같은 줄에서 라벨 + 번호, 좁은 폭에서는 줄바꿈 */
+.booking {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-inline-sm);
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+.bookingLabel {
+  font-weight: 600;
+}
+.bookingTel {
+  /* 누르는 영역 44px(P7-4) — 글자는 그대로 */
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--size-target-min);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.bookingTel:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}
+
 .menuCol {
   min-width: 0;
 }

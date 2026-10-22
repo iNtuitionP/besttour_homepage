@@ -426,13 +426,18 @@ describe("5-b. P1-7 원장 변경 — 브리프 문안과 바이트 일치", () 
     expect(Object.keys(labels).sort()).toEqual(["browserRefused", "optIn", "optOut", "storageFailed"]);
   });
 
-  // P1-7 R2 [P2-9] — 처리방침에 표시하는 시행일과 동의 기록의 방침 버전은 같은 상수다.
+  // P1-7 R2 [P2-9] — 처리방침에 표시하는 시행일과 동의 기록의 방침 버전은 같은 날짜다.
+  // OF3-H: 개정 시행일(PRIVACY_POLICY_REVISION.effectiveDate) 전에는 기존 시행일, 그 날부터는 개정 시행일 — 판정은 lib/privacy-revision.ts 한 곳.
   test("처리방침 시행일 = 동의 기록 버전 (한 곳에서 읽는다) · 값 2026-10-09(오픈일) · TEMP 해제", async () => {
-    const { PRIVACY_POLICY_VERSION } = await import("@/lib/reservations/consent");
+    const { privacyPolicyVersion } = await import("@/lib/reservations/consent");
+    const { privacyEffectiveDate } = await import("@/lib/privacy-revision");
     expect(ledger.LEGAL_PAGES.privacy.effectiveDate).toBe("2026-10-09");
-    expect(PRIVACY_POLICY_VERSION).toBe(ledger.LEGAL_PAGES.privacy.effectiveDate);
+    const before = new Date("2026-10-22T00:00:00+09:00");
+    expect(privacyPolicyVersion(before)).toBe(ledger.LEGAL_PAGES.privacy.effectiveDate);
+    expect(privacyPolicyVersion(before)).toBe(privacyEffectiveDate(before));
     const consentSrc = readFileSync(path.join(ROOT, "lib/reservations/consent.ts"), "utf8");
-    expect(consentSrc).toMatch(/export const PRIVACY_POLICY_VERSION(?:: string)? = LEGAL_PAGES\.privacy\.effectiveDate;/);
+    expect(consentSrc).toMatch(/export function privacyPolicyVersion\(\s*now: Date\s*\): string \{\s*return privacyEffectiveDate\(now\);/);
+    expect(consentSrc).not.toMatch(/PRIVACY_POLICY_VERSION/);
     expect(ledgerLines.some((l) => l.includes(`${TEMP_MARKER} LEGAL_PAGES.privacy.effectiveDate:`))).toBe(false);
   });
 

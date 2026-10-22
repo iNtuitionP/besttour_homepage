@@ -355,7 +355,7 @@ export const CHECK_GUIDE_ITEM = "휴대폰 번호와 예약자 이름으로 조�
  * verbatim("확인 후 연락드리겠습니다.")은 여기 남긴다(T2-2 판단, 2026-10-10): 접수 직후에 보내는 문자라 "확인한 뒤 연락한다" 는 뜻이
  * 사실과 맞는다. 사이트의 완료 화면·예약 확인 카드(접수 상태)와 같은 말이다. 줄 전체로 한 번 — 바이트 그대로.
  * 주소는 지금 문자와 같은 형식(origin + 경로 = `https://…`)을 유지한다 — 문자앱이 링크로 알아본다(초안은 `https://` 를 줄여 적었다).
- * 전화는 원장 COMPANY.consultTel — 손님에게 "여기로 전화하라" 고 안내하는 번호다(사이트의 전화번호는 이것 하나 — P7-5).
+ * 전화는 원장 COMPANY.consultTel — 손님에게 "여기로 전화하라" 고 안내하는 예약·상담 번호다(OF3-C: 대표번호 mainTel 은 헤더·푸터 전용 — 문자에는 쓰지 않는다).
  */
 function createdCustomerVariants(v: CustomerVars): MessageVariants {
   return sameBody(

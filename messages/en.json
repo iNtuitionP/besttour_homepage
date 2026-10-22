@@ -27,6 +27,12 @@
     "menuHeading": "Menu",
     "supportHeading": "Customer support",
     "contactChannels": "Contact channels",
+    "bookingLabel": "Bookings",
+    "privacyRevision": {
+      "upcomingTitle": "Upcoming revision",
+      "upcomingIntro": "This privacy policy will be revised from {date} as described below (announced {announced}). The Korean text is the official version.",
+      "appliesFromMark": "(applies from the effective date)"
+    },
     "kakaoChannel": "Chat with us on the KakaoTalk channel",
     "naverChannel": "Chat with us on Naver TalkTalk",
     "menu": {
@@ -463,6 +469,7 @@
       "legalNav": "Legal notices",
       "contact": {
         "tel": "Phone",
+        "mainTel": "Main line",
         "consultTel": "Bookings & inquiries",
         "fax": "Fax",
         "email": "Email"

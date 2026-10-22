@@ -27,6 +27,12 @@
     "menuHeading": "메뉴",
     "supportHeading": "고객센터",
     "contactChannels": "문의 채널",
+    "bookingLabel": "예약 문의",
+    "privacyRevision": {
+      "upcomingTitle": "개정 예정 안내",
+      "upcomingIntro": "이 처리방침은 {date}부터 아래와 같이 개정됩니다. ({announced} 공지)",
+      "appliesFromMark": "(시행일부터 적용)"
+    },
     "kakaoChannel": "카카오톡 채널 상담",
     "naverChannel": "네이버 톡톡 상담",
     "menu": {

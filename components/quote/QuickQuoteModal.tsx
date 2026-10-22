@@ -31,6 +31,7 @@ import { useActionState, useCallback, useEffect, useId, useRef, useState, type F
 import { requestQuoteFormToken } from "@/actions/quote-form-token";
 import { submitReservation } from "@/actions/reservation";
 import { Link } from "@/i18n/navigation";
+import { trackNaverLead } from "@/lib/analytics/naver-wcs";
 import type { ContactPhone } from "@/lib/contact-phone";
 import { formatPublicDate, publicDateLabels } from "@/lib/public-date";
 import type { SubmitResult } from "@/lib/reservations/submitResult";
@@ -237,6 +238,8 @@ function ModalShell({ onClose, onEdit, onWidgetErrors, onSubmitted, ...common }:
               onStaleToken={loadFormToken}
               onDone={() => {
                 setDone(true);
+                // 네이버 전환(OF3-H) — 접수 성공 한 번만. 게이트(환경변수·시행일·거부)는 헬퍼가 그 순간 다시 확인한다. 인자 없음 = 이름·전화를 넘길 길이 없다.
+                trackNaverLead();
                 // 위젯이 칸을 비운다 — 완료 화면을 닫고 다시 [견적 신청하기] 를 눌러도 같은 내용이 또 접수되지 않게(P2-11).
                 onSubmitted();
               }}

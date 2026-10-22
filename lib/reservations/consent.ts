@@ -12,15 +12,21 @@
  *   - 값은 ISO 8601 UTC 문자열('Z')이다. timestamptz 는 인스턴트를 저장한다 — CLAUDE.md §3 의 "KST 벽시계
  *     문자열" 규칙은 방문자가 입력하는 운행 일시에 대한 것이고, 서버가 찍는 동의·파기 시각은 인스턴트가 맞다.
  */
-import { LEGAL_PAGES, PRIVACY_NOTICE } from "../legal/disclosures";
+import { PRIVACY_NOTICE } from "../legal/disclosures";
+import { privacyEffectiveDate } from "../privacy-revision";
 import type { ReservationConsentColumns } from "../types";
 
 /**
- * 개인정보 처리방침 문안 버전 — 처리방침 페이지(`/privacy`)가 표시하는 **시행일(원장 LEGAL_PAGES.privacy.effectiveDate)을 그대로 읽는다**(P1-7 R2 [P2-9]).
+ * 개인정보 처리방침 문안 버전 — 처리방침 페이지(`/privacy`)가 그 시각에 표시하는 **시행일을 그대로 돌려준다**(P1-7 R2 [P2-9] · OF3-H).
  * 예전에는 여기 날짜를 따로 적어, 동의 기록은 2026-09-21 을, 공개된 방침은 2026-09-11 을 가리키는 어긋남이 생겼다.
- * 이제 방침 문안이 바뀌면 원장의 시행일 하나만 올린다 — 행마다 "동의 당시 버전"이 남아, 나중에 문안이 바뀌어도 그때 무엇에 동의했는지 말할 수 있다.
+ * 이제 판정은 lib/privacy-revision.ts 한 곳이다 — 개정 시행일(KST) 전 접수분은 기존 시행일, 그 날부터는 개정 시행일.
+ * 모듈 로드 때 한 번 굳는 상수가 아니라 **접수 시각(now)** 으로 고른다 — 상수는 배포 뒤 시행일이 와도 옛 값을 기록한다(리뷰 F6).
+ * 행마다 "동의 당시 버전"이 남아, 나중에 문안이 바뀌어도 그때 무엇에 동의했는지 말할 수 있다.
+ * (2026-10-15 ~ 개정 시행일 전날 접수분의 기록값 "2026-10-09" 는 10-15 문안을 뜻한다 — 데이터는 고치지 않는다. 원장 PRIVACY_POLICY_REVISION 주석.)
  */
-export const PRIVACY_POLICY_VERSION: string = LEGAL_PAGES.privacy.effectiveDate;
+export function privacyPolicyVersion(now: Date): string {
+  return privacyEffectiveDate(now);
+}
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -65,7 +71,7 @@ export function consentFields(input: ConsentInput, now: Date): ReservationConsen
   const at = now.toISOString();
   return {
     privacy_consent_at: at,
-    privacy_policy_version: PRIVACY_POLICY_VERSION,
+    privacy_policy_version: privacyPolicyVersion(now),
     marketing_consent_at: input.marketingConsent === true ? at : null,
     retention_until: retentionUntil(now).toISOString(),
     withdrawal_consent_at: at,

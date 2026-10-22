@@ -6,7 +6,7 @@
  *
  * 담는 것은 넷이다 — 로고 · 위 메뉴(HEADER_MENU — P7-6 사용자 결정: 회사소개 · 차량소개·보험내용 · 견적요청 · 예약확인 · 공지사항 · 갤러리
  * + env 가 있을 때 네이버 블로그) · 예약·상담 전화 · 언어 전환(P2-6b). 이용안내는 위 메뉴에서 빠지고 푸터에 남는다.
- *   - 전화는 예약·상담 전화(P1-7 — COMPANY.consultTel, 영문은 +82 표기) — 사이트의 전화번호는 이것 하나다(P7-5).
+ *   - 전화는 대표번호(OF3-C — ko 는 COMPANY.mainTel 1566-…, 영문은 예약·상담 전화 +82 표기: 1566 은 해외에서 걸리지 않는다). 예약·상담 010 번호는 플로팅 버튼이 맡는다.
  *     모바일 패널 맨 아래에도 같은 번호의 전화 버튼을 둔다(목업 variant-08 .drawer .btn).
  *   - 로고는 간판 브랜드 best mobility 하나(사장님 요청 2 · 결정 1 — 2026-10-10, 스펙 §13.13. 그 전 §13.1 의 "bestour 단독" 을 뒤집었다).
  *     두 로고를 나란히 두지 않는다는 원칙은 그대로다. 가로가 긴 로고(7.96:1)라 좁은 폰에서는 로고 칸만 줄어든다(Header.module.css .brand).
@@ -19,14 +19,14 @@
  * 고쳤다. 줄의 내용(로고·메뉴·전화·언어 전환)은 여기서 children 으로 넘긴다.
  *
  * 로케일 (P2-6): 메뉴 라벨은 messages layout.menu(ko 는 LEGACY_MENU.labelKo 와 같은 글자 — tests/i18n-en.test.ts §5),
- * 로고 alt·대표전화 라벨은 ledgerUi(locale)(ko 는 원장 그대로, en 은 원장 영문 상호·en.json legal).
+ * 로고 alt·전화 라벨은 ledgerUi(locale)(ko 는 원장 그대로, en 은 원장 영문 상호·en.json legal). 라벨은 번호 종류를 따른다 — ko '대표번호' · en 'Bookings & inquiries'.
  */
 
 import Image from "next/image";
 import { getLocale, getTranslations } from "next-intl/server";
 
 import { Link } from "@/i18n/navigation";
-import { consultPhone } from "@/lib/contact-phone";
+import { hasSeparateMainLine, mainPhone } from "@/lib/contact-phone";
 import { ledgerUi } from "@/lib/i18n/ledger-ui";
 import { HEADER_MENU, LEGACY_MENU } from "@/lib/legacy-menu-map";
 
@@ -39,8 +39,10 @@ export default async function Header() {
   const [t, locale] = await Promise.all([getTranslations("layout"), getLocale()]);
   const ui = ledgerUi(locale);
   const menuLabels = Object.fromEntries(LEGACY_MENU.map((m) => [m.key, t(`menu.${m.key}`)]));
-  const phone = consultPhone(locale);
-  const phoneLabel = `${ui.labels.contact.consultTel} ${phone.display}`;
+  const phone = mainPhone(locale);
+  // 대표번호가 따로 있는 화면(ko)만 '대표번호' 라벨 — en 은 자리의 번호가 예약·상담 번호라 그 라벨이다.
+  const telLabel = hasSeparateMainLine(locale) ? ui.labels.contact.mainTel : ui.labels.contact.consultTel;
+  const phoneLabel = `${telLabel} ${phone.display}`;
 
   return (
     <header className={styles.header}>
@@ -52,7 +54,7 @@ export default async function Header() {
         items={HEADER_MENU}
         itemLabels={menuLabels}
         labels={{ open: t("menuOpen"), close: t("menuClose"), nav: t("mobileNav") }}
-        call={{ href: phone.href, label: ui.labels.contact.consultTel, number: phone.display }}
+        call={{ href: phone.href, label: telLabel, number: phone.display }}
       >
         <Link className={styles.brand} href="/">
           <Image

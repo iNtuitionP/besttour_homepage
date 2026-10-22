@@ -131,7 +131,7 @@ export interface ReservationConsentColumns {
   withdrawal_consent_at: string;
   /** 필수 동의 시각(서버 수신 인스턴트). */
   privacy_consent_at: string;
-  /** 동의 당시 방침 버전 (consent.ts PRIVACY_POLICY_VERSION, 'YYYY-MM-DD'). */
+  /** 동의 당시 방침 버전 (consent.ts privacyPolicyVersion(접수 시각), 'YYYY-MM-DD'). */
   privacy_policy_version: string;
   /** 선택 동의(광고성 정보 수신) 시각. null = 미동의. */
   marketing_consent_at: string | null;

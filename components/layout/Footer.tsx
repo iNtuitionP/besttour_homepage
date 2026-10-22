@@ -1,9 +1,10 @@
 /**
  * 공개 푸터 (P2-3 · ADR-1 · ADR-5) — 서버 컴포넌트.
  *
- * 전화 (P1-7 · P7-5): 사이트의 전화번호는 예약·상담 전화 하나다(lib/contact-phone — ko 010-…, en +82 …). 로고 아래 큰 전화 링크와
- * 사업자 정보 블록(data-testid="footer-company-info")의 전화 줄(전자상거래법 §10① — 줄은 남긴다)이 같은 번호다.
- * 옛 대표전화·휴대전화 줄은 P7-5 에서 지웠다 — tests/contact-phone.test.ts 가 렌더에서 확인한다.
+ * 전화 (P1-7 · P7-5 · OF3-C): 번호는 둘이다(lib/contact-phone). 로고 아래 큰 전화 링크와 사업자 정보 블록(data-testid="footer-company-info")의
+ * 전화 줄(전자상거래법 §10① — 줄은 남긴다)은 **대표번호**(mainPhone — ko 1566-…, en 은 예약·상담 번호 +82 …)다. ko 에서는 큰 번호 바로 아래에
+ * 한 줄 "예약 문의 010-…"(consultPhone · data-testid="footer-booking-line")을 더한다 — en 은 큰 번호가 이미 그 번호라 줄을 중복하지 않는다.
+ * 보호책임자 연락처는 예약·상담 번호 그대로. 옛 대표전화(끝자리 8)·옛 휴대전화 줄은 지웠다 — tests/contact-phone.test.ts 가 렌더에서 확인한다.
  *
  * 이 파일에는 한글 법정 리터럴이 한 글자도 없다. 상호·대표·등록번호·주소·계좌·보호책임자·
  * 계약·대금 주체 고지까지 전부 원장 lib/legal/disclosures.ts 에서 온다. 문구를 고쳐야 하면
@@ -30,7 +31,7 @@
  * 로케일 (P2-6): 라벨·링크 제목·대표자는 ledgerUi(locale)(ko 는 원장 그대로).
  * 사업자 정보의 **값**(상호·주소·계좌·보호책임자·관계사 고지)은 원장 한국어 그대로다 — 영문판은 컨트롤러가 따로 확정한다.
  * en 에서는 그 블록 위에 컨트롤러 확정 안내를 두고, 한국어 값에 lang="ko" 를 단다(ko 화면은 둘 다 내지 않는다).
- * 전화번호 (P7-4): 팩스·보호책임자 연락처는 en 에서 +82 표기(localPhone — 원장 값은 그대로, 표시만). 전화 줄은 consultPhone(locale).
+ * 전화번호 (P7-4): 팩스·보호책임자 연락처는 en 에서 +82 표기(localPhone — 원장 값은 그대로, 표시만). 전화 줄은 mainPhone(locale).
  */
 
 import Image from "next/image";
@@ -38,7 +39,7 @@ import { getLocale, getTranslations } from "next-intl/server";
 
 import { OfficialKoreanNotice } from "@/components/legal/OfficialKoreanNotice";
 import { Link } from "@/i18n/navigation";
-import { consultPhone, localPhone } from "@/lib/contact-phone";
+import { consultPhone, hasSeparateMainLine, localPhone, mainPhone } from "@/lib/contact-phone";
 import { koLang, ledgerUi } from "@/lib/i18n/ledger-ui";
 import { COMPANY, LEGAL_LINKS, PAYMENT, RELATED_COMPANY } from "@/lib/legal/disclosures";
 import { LEGACY_MENU, MENU_BY_GROUP } from "@/lib/legacy-menu-map";
@@ -87,8 +88,11 @@ export default async function Footer() {
   const valueLang = koLang(locale);
   const menuLabels = Object.fromEntries(LEGACY_MENU.map((m) => [m.key, t(`menu.${m.key}`)]));
   const year = new Date().getFullYear();
-  // 로고 아래 큰 전화 링크와 사업자 정보의 전화 줄은 같은 예약·상담 전화다(P1-7 · P7-5).
-  const phone = consultPhone(locale);
+  // 로고 아래 큰 전화 링크와 사업자 정보의 전화 줄은 같은 대표번호다(OF3-C). 예약·상담 번호는 ko 의 '예약 문의' 줄과 보호책임자 연락처가 맡는다.
+  const phone = mainPhone(locale);
+  const booking = consultPhone(locale);
+  const separateMain = hasSeparateMainLine(locale);
+  const phoneLabel = separateMain ? contactLabels.mainTel : contactLabels.consultTel;
 
   const operator: Fact[] = [
     { value: COMPANY.legalName, strong: true, ko: true },
@@ -132,7 +136,7 @@ export default async function Footer() {
     <footer className={styles.footer}>
       <div className={styles.inner}>
         <div className={styles.top}>
-          <div className={styles.brandCol}>
+          <div className={styles.brandCol} data-testid="footer-brand">
             <Image
               className={styles.logo}
               src="/brand/logo-bestmobility.png"
@@ -140,9 +144,17 @@ export default async function Footer() {
               width={215}
               height={27}
             />
-            <a className={styles.tel} href={phone.href} aria-label={`${contactLabels.consultTel} ${phone.display}`}>
+            <a className={styles.tel} href={phone.href} aria-label={`${phoneLabel} ${phone.display}`}>
               {phone.display}
             </a>
+            {separateMain ? (
+              <p className={styles.booking} data-testid="footer-booking-line">
+                <span className={styles.bookingLabel}>{t("bookingLabel")}</span>
+                <a className={styles.bookingTel} href={booking.href} aria-label={`${contactLabels.consultTel} ${booking.display}`}>
+                  {booking.display}
+                </a>
+              </p>
+            ) : null}
           </div>
 
           <div className={styles.menuCol}>

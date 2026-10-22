@@ -19,7 +19,7 @@ import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
 
 import { PRIVACY_NOTICE } from "@/lib/legal/disclosures";
-import { PRIVACY_POLICY_VERSION, consentFields, retentionUntil } from "@/lib/reservations/consent";
+import { consentFields, privacyPolicyVersion, retentionUntil } from "@/lib/reservations/consent";
 import { quickReservationSchema } from "@/lib/types";
 import { dbSmokeEnv, dbWriteGate, isLocalStack, isLocalStackUrl } from "./helpers/load-env-local";
 import { stripComments } from "./helpers/strip-comments";
@@ -247,10 +247,13 @@ describe("retentionUntil / PRIVACY_POLICY_VERSION", () => {
     expect(() => retentionUntil(new Date("not a date"))).toThrow();
   });
 
-  test("PRIVACY_POLICY_VERSION 은 'YYYY-MM-DD' 형식의 실존 날짜다", () => {
-    expect(PRIVACY_POLICY_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    const d = new Date(`${PRIVACY_POLICY_VERSION}T00:00:00Z`);
-    expect(d.toISOString().slice(0, 10)).toBe(PRIVACY_POLICY_VERSION);
+  test("privacyPolicyVersion(now) 은 'YYYY-MM-DD' 형식의 실존 날짜다 — 시행 전·후 모두 (OF3-H: 접수 시각으로 고르는 함수)", () => {
+    for (const at of [new Date("2026-09-11T00:00:00Z"), new Date("2027-01-01T00:00:00Z")]) {
+      const v = privacyPolicyVersion(at);
+      expect(v).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      const d = new Date(`${v}T00:00:00Z`);
+      expect(d.toISOString().slice(0, 10)).toBe(v);
+    }
   });
 });
 
@@ -264,7 +267,7 @@ describe("consentFields", () => {
     const f = consentFields({ privacyConsent: true, marketingConsent: false, withdrawalConsent: true }, now);
     expect(f).toEqual({
       privacy_consent_at: now.toISOString(),
-      privacy_policy_version: PRIVACY_POLICY_VERSION,
+      privacy_policy_version: privacyPolicyVersion(now),
       marketing_consent_at: null,
       retention_until: retentionUntil(now).toISOString(),
       withdrawal_consent_at: now.toISOString(),
@@ -509,7 +512,7 @@ describe.skipIf(!gate.allowed || !env.hasServiceRole)("DB — 0003 제약 실증
     const r = await insert(row);
     expect(r.status, JSON.stringify(r.body)).toBe(201);
     const [saved] = r.body as Record<string, unknown>[];
-    expect(saved.privacy_policy_version).toBe(PRIVACY_POLICY_VERSION);
+    expect(saved.privacy_policy_version).toBe(privacyPolicyVersion(new Date(row.privacy_consent_at as string)));
     expect(saved.marketing_consent_at).toBeNull();
     expect(new Date(saved.privacy_consent_at as string).toISOString()).toBe(row.privacy_consent_at);
     expect(new Date(saved.retention_until as string).toISOString()).toBe(row.retention_until);
