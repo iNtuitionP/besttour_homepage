@@ -9,7 +9,10 @@
  * PLACES:  도시 단위 장소 카탈로그(스펙 §13.2, 플랜 v4 P1-2). DB `places` 테이블과
  *          `supabase/migrations/0002_places.sql` 시드의 단일 소스 — tests/places.test.ts 가
  *          SQL 텍스트를 파싱해 이 배열과 1:1 일치함을 단언한다.
+ * SIGUNGU: 행안부 시군구 5자리(229개) — lib/codes-sigungu.ts(데이터 전용). 견적 출발·도착을 시·군·구까지 고르는 두 단 선택(OF3-G)이 쓴다.
  */
+import { SIGUNGU } from "./codes-sigungu";
+
 export const REGIONS = [
   "ICN",
   "SEL",
@@ -212,10 +215,37 @@ export const REGION_LABELS_EN: Readonly<Record<RegionCode, string>> = {
   JJ: "Jeju",
 };
 
-/** 접수 폼이 받는 장소 코드 — 도시(PlaceCode) 또는 시도(RegionCode). */
+/** 접수 폼이 받는 장소 코드(옛 28개) — 도시(PlaceCode) 또는 시도(RegionCode). 시·군·구까지 넓은 집합은 AnyLocationCode. */
 export type LocationCode = PlaceCode | RegionCode;
 
+/** 행안부 시군구 5자리(`41110` 수원시) — lib/codes-sigungu.ts. 타입은 숫자 문자열, 실제 집합은 isLocationCode 가 본다. */
+export type SigunguCode = `${number}`;
+
+/** 접수 폼이 받는 모든 장소 코드 — 옛 28개 ∪ 시·군·구 229개(OF3-G). 저장값은 언제나 코드다. */
+export type AnyLocationCode = LocationCode | SigunguCode;
+
 const PLACE_BY_CODE: ReadonlyMap<string, Place> = new Map(PLACES.map((p) => [p.code, p]));
+
+/** 시군구 코드 → [코드, 소속 시·도, 한글 이름]. 소속 시·도는 lib/codes-sigungu.ts 가 REGIONS 코드로 적어 둔다(tests/of3-sigungu.test.ts 가 대조). */
+const SIGUNGU_BY_CODE: ReadonlyMap<string, readonly [code: string, region: string, ko: string]> = new Map(SIGUNGU.map((r) => [r[0], r]));
+
+/**
+ * 대표 노선 도시 10곳 — 시·군을 고르면 **옛 코드로 저장**한다(새 5자리 대신). 옛 예약·대표 노선 기본값·showcase_routes FK 가 그대로 유효하다.
+ * 나머지 대표 도시(서울·부산·대구·광주·대전·세종)는 시·도 단위라 시·군·구 칸에 나오지 않는다.
+ */
+export const LEGACY_CITY_BY_SIGUNGU: Readonly<Record<string, PlaceCode>> = {
+  "48220": "TYG", // 통영시
+  "47110": "PHG", // 포항시
+  "52110": "JJU", // 전주시
+  "12130": "YSU", // 여수시
+  "12790": "HNM", // 해남군
+  "51210": "SCH", // 속초시
+  "51150": "GNG", // 강릉시
+  "51190": "TBK", // 태백시
+  "51720": "HCN", // 홍천군
+  "51130": "WJU", // 원주시
+};
+const SIGUNGU_BY_LEGACY: ReadonlyMap<string, string> = new Map(Object.entries(LEGACY_CITY_BY_SIGUNGU).map(([sg, legacy]) => [legacy, sg]));
 
 /**
  * ReservationInput.originCode / destinationCode / waypointCodes 가 받는 코드 집합(28개).
@@ -231,35 +261,108 @@ export const LOCATION_CODES: readonly LocationCode[] = [
   ...REGIONS.filter((r) => !PLACE_BY_CODE.has(r)),
 ];
 
+/**
+ * 접수 스키마(zod enum)가 받는 모든 코드 — 옛 28개(LOCATION_CODES) 뒤에 시군구 229개(OF3-G).
+ * lib/reservations/create.ts 의 isLocationCode 재확인과 **따로** 만든 목록이다(방어 심층 — 같은 함수 하나가 두 겹을 겸하지 않는다).
+ */
+export const ALL_LOCATION_CODES = [...LOCATION_CODES, ...SIGUNGU.map((r) => r[0] as SigunguCode)] as [AnyLocationCode, ...AnyLocationCode[]];
+
 const LOCATION_CODE_SET: ReadonlySet<string> = new Set(LOCATION_CODES);
 
-/** 입력 문자열이 LOCATION_CODES 에 있는지 — 대소문자·공백을 관대하게 보지 않는다(코드는 canonical 그대로). */
-export function isLocationCode(x: string): x is LocationCode {
-  return LOCATION_CODE_SET.has(x);
+/**
+ * 입력 문자열이 접수 폼이 받는 장소 코드인지 — 옛 28개(LOCATION_CODES) 또는 시군구 229개(OF3-G).
+ * 대소문자·공백을 관대하게 보지 않는다(코드는 canonical 그대로). 서버 zod(lib/types.ts)·접수 재검증(lib/reservations/create.ts)이 이 함수를 쓴다.
+ */
+export function isLocationCode(x: string): x is AnyLocationCode {
+  return LOCATION_CODE_SET.has(x) || SIGUNGU_BY_CODE.has(x);
 }
 
 /**
- * 시도 단위 집계용 — 도시면 PLACES.regionCode, 시도면 자기 자신.
+ * 시도 단위 집계용 — 시군구면 소속 시·도, 도시면 PLACES.regionCode, 시도면 자기 자신.
  * ICN 은 양쪽에 있는데 카탈로그가 우선이라 INC(인천)로 간다. 공항 여부는 코드 자체(=== "ICN")로 판별할 것.
  */
-export function locationRegion(code: LocationCode): RegionCode {
+export function locationRegion(code: AnyLocationCode): RegionCode {
+  const sigungu = SIGUNGU_BY_CODE.get(code);
+  if (sigungu) return sigungu[1] as RegionCode;
   const place = PLACE_BY_CODE.get(code);
   return place ? place.regionCode : (code as RegionCode);
 }
 
-/** 표시용 한글 라벨 — 도시면 nameKo, 시도면 REGION_LABELS_KO. 표시 전용, DB 저장 금지. */
-export function locationLabelKo(code: LocationCode): string {
+/**
+ * 표시용 한글 라벨 — 시군구면 "경기 수원시"(시·도 + 시·군·구), 도시면 nameKo, 시도면 REGION_LABELS_KO. 표시 전용, DB 저장 금지.
+ * 대표 도시의 옛 코드(TYG 등)는 예전 표시("통영") 그대로다 — 관리자 노선 화면·옛 예약과 같은 글자.
+ */
+export function locationLabelKo(code: AnyLocationCode): string {
+  const sigungu = SIGUNGU_BY_CODE.get(code);
+  if (sigungu) return `${REGION_LABELS_KO[sigungu[1] as RegionCode]} ${sigungu[2]}`;
   const place = PLACE_BY_CODE.get(code);
   return place ? place.nameKo : REGION_LABELS_KO[code as RegionCode];
 }
 
-/** 표시용 영문 라벨 — 도시면 nameEn, 시도면 REGION_LABELS_EN. 표시 전용, DB 저장 금지 (P2-6). */
-export function locationLabelEn(code: LocationCode): string {
+/**
+ * 표시용 영문 라벨 — 도시면 nameEn, 시도면 REGION_LABELS_EN. 표시 전용, DB 저장 금지 (P2-6).
+ * 시군구는 시·도의 영문까지만 — 공식 영문 표기 자료가 없어 시·군·구 영문 이름을 지어내지 않았다(사유 · 임시 표시는 lib/codes-sigungu.ts 머리 주석).
+ */
+export function locationLabelEn(code: AnyLocationCode): string {
+  const sigungu = SIGUNGU_BY_CODE.get(code);
+  if (sigungu) return REGION_LABELS_EN[sigungu[1] as RegionCode];
   const place = PLACE_BY_CODE.get(code);
   return place ? place.nameEn : REGION_LABELS_EN[code as RegionCode];
 }
 
 /** 로케일별 표시 라벨 — en 이면 영문, 그 밖(기본 로케일 ko 포함)은 한글. 저장값은 언제나 코드다. */
-export function locationLabel(code: LocationCode, locale: string): string {
+export function locationLabel(code: AnyLocationCode, locale: string): string {
   return locale === "en" ? locationLabelEn(code) : locationLabelKo(code);
+}
+
+// =============================================================================
+// 두 단 선택 — ① 시·도(+ 인천공항) ② 시·군·구(선택, 기본 "전체")  (OF3-G)
+// =============================================================================
+
+/**
+ * 첫 번째 칸 — 인천공항 + 시·도 17곳(세종 포함). REGIONS 순서에 세종(SJG)을 광역시 묶음 끝(울산 뒤)에 끼운다.
+ * 세종은 REGIONS 에 없다(스펙 고정 목록) — PLACES 의 도시 코드 SJG 를 그대로 쓴다. 하위가 없다.
+ */
+export const LOCATION_TOP_LEVEL: readonly (RegionCode | "SJG")[] = [...REGIONS.slice(0, REGIONS.indexOf("ULS") + 1), "SJG", ...REGIONS.slice(REGIONS.indexOf("ULS") + 1)];
+
+export interface SigunguOption {
+  /** 저장할 코드 — 대표 도시 10곳은 옛 코드(TYG 등), 나머지는 행안부 5자리. */
+  value: string;
+  /** 시·군·구 이름(시·도 이름 제외). */
+  label: string;
+}
+
+const SIGUNGU_OPTIONS_BY_REGION: ReadonlyMap<string, readonly SigunguOption[]> = (() => {
+  const m = new Map<string, SigunguOption[]>();
+  for (const [code, region, ko] of SIGUNGU) {
+    const list = m.get(region) ?? [];
+    list.push({ value: LEGACY_CITY_BY_SIGUNGU[code] ?? code, label: ko });
+    m.set(region, list);
+  }
+  return m;
+})();
+
+/**
+ * 두 번째 칸의 선택지(코드순). 하위가 없는 시·도(세종·인천공항)와 영문 화면은 빈 배열 —
+ * 영문 화면은 시·도까지만 고른다(시·군·구 공식 영문 표기 자료가 없다 — lib/codes-sigungu.ts).
+ */
+export function sigunguOptions(region: string, locale: string): readonly SigunguOption[] {
+  if (locale === "en") return [];
+  return SIGUNGU_OPTIONS_BY_REGION.get(region) ?? [];
+}
+
+/**
+ * 저장된 코드 → 두 칸의 선택값. 시군구·대표 도시는 (소속 시·도, 그 코드), 시·도·세종·공항은 (자기 자신, "" = 전체).
+ * 예: 41110 → (GG, 41110) · TYG → (GN, TYG) · SEL → (SEL, "") · SJG → (SJG, "").
+ */
+export function splitLocation(code: string): { region: string; sigungu: string } {
+  const sigungu = SIGUNGU_BY_CODE.get(code);
+  if (sigungu) return { region: sigungu[1], sigungu: code };
+  if (SIGUNGU_BY_LEGACY.has(code)) return { region: PLACE_BY_CODE.get(code)!.regionCode, sigungu: code };
+  return { region: code, sigungu: "" };
+}
+
+/** 두 칸의 선택값 → 저장할 코드. 시·군·구를 골랐으면 그 코드, "전체"(빈 값)면 시·도 코드. */
+export function pickedCode(region: string, sigungu: string): string {
+  return sigungu !== "" ? sigungu : region;
 }

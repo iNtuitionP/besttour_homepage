@@ -165,8 +165,9 @@ describe("1. 입력 검증", () => {
     if (!tooLong.ok) expect(tooLong.result.fieldErrors?.title).toBe(true);
   });
 
-  test("본문 — 비면 거부, 상한을 넘으면 거부, 줄바꿈은 살린다", () => {
-    expect(parsePopupForm(validForm({ [POPUP_FIELDS.body]: "" })).ok).toBe(false);
+  test("본문 — 사진도 없이 비면 거부(OF3-R2: 사진이 있으면 빈 본문은 사진만 팝업이라 허용), 상한을 넘으면 거부, 줄바꿈은 살린다", () => {
+    expect(parsePopupForm(validForm({ [POPUP_FIELDS.body]: "", [POPUP_FIELDS.imagePath]: "" })).ok).toBe(false);
+    expect(parsePopupForm(validForm({ [POPUP_FIELDS.body]: "" })).ok).toBe(true);
     expect(parsePopupForm(validForm({ [POPUP_FIELDS.body]: "나".repeat(POPUP_BODY_MAX + 1) })).ok).toBe(false);
     const parsed = parsePopupForm(validForm({ [POPUP_FIELDS.body]: "첫 줄\n둘째 줄" }));
     expect(parsed.ok).toBe(true);

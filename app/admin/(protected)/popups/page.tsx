@@ -12,6 +12,7 @@ import { routing } from "@/i18n/routing";
 import { ADMIN_POPUPS_PATH, listAdminPopups, popupState } from "@/lib/admin/popups";
 import { requireAdmin } from "@/lib/auth/requireAdmin";
 import { toKstDateString } from "@/lib/kst";
+import { isAlwaysEndsAt, POPUP_HOME_LIMIT } from "@/lib/popup-display";
 
 import a from "@/components/admin/admin.module.css";
 import q from "@/components/quote/quote.module.css";
@@ -44,6 +45,8 @@ export default async function AdminPopupsPage() {
   const dateLabels = await getAdminDateLabels();
   const now = new Date();
   const today = toKstDateString(now);
+  // 홈에는 최대 POPUP_HOME_LIMIT 개만 뜬다 — 노출 중인 것이 그보다 많으면 목록 위에서 알린다(OF3-R2)
+  const liveCount = rows.filter((row) => popupState(row, today) === "live").length;
 
   const results = {
     created: t("result.created"),
@@ -71,6 +74,11 @@ export default async function AdminPopupsPage() {
           <h2 className={a.sectionTitle} id="popup-list-title">
             {t("listLabel")}
           </h2>
+          {liveCount > POPUP_HOME_LIMIT ? (
+            <p className={a.hint} role="note" data-testid="admin-popups-limit-note">
+              {t("limitNote", { n: liveCount, max: POPUP_HOME_LIMIT })}
+            </p>
+          ) : null}
           {rows.length === 0 ? (
             // 빈 상태 — 방향이 아니라 다음 행동(팝업 만들기 → 같은 화면의 제목 칸)과 짝짓는다(P5-20)
             <div className={a.empty}>
@@ -108,7 +116,9 @@ export default async function AdminPopupsPage() {
                         </Link>
                       </td>
                       <td className={`${a.td} ${a.tdNowrap}`} data-cell="meta">
-                        {formatAdminPeriod(row.starts_at, row.ends_at, now, dateLabels) ?? t("periodValue", { start: row.starts_at, end: row.ends_at })}
+                        {isAlwaysEndsAt(row.ends_at)
+                          ? t("alwaysValue")
+                          : (formatAdminPeriod(row.starts_at, row.ends_at, now, dateLabels) ?? t("periodValue", { start: row.starts_at, end: row.ends_at }))}
                       </td>
                       <td className={a.td} data-cell="meta">
                         <span className={a.badge} data-state={popupState(row, today)}>
@@ -142,7 +152,7 @@ export default async function AdminPopupsPage() {
           <PopupForm
             mode="create"
             listHref={ADMIN_POPUPS_PATH}
-            initial={{ title: "", body: "", imagePath: "", startsAt: today, endsAt: today, active: true }}
+            initial={{ title: "", body: "", imagePath: "", startsAt: today, endsAt: today, active: true, always: false, imageOnly: false }}
             labels={{
               field: {
                 title: t("field.title"),
@@ -152,6 +162,8 @@ export default async function AdminPopupsPage() {
                 endsAt: t("field.endsAt"),
                 period: t("field.period"),
                 active: t("field.active"),
+                always: t("field.always"),
+                imageOnly: t("field.imageOnly"),
               },
               hint: {
                 title: t("hint.title"),
@@ -159,6 +171,10 @@ export default async function AdminPopupsPage() {
                 imagePath: t("hint.imagePath"),
                 period: t("hint.period"),
                 active: t("hint.active"),
+                always: t("hint.always"),
+                imageOnly: t("hint.imageOnly"),
+                imageOnlyDropsBody: t("hint.imageOnlyDropsBody"),
+                imageOnlyNeedsPhoto: t("hint.imageOnlyNeedsPhoto"),
               },
               notice: t("notice"),
               submit: t("create"),

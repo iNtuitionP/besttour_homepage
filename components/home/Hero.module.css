@@ -313,7 +313,8 @@
 /* ── 견적 위젯 (P3-8 — 접수 경로의 입구: 다섯 칸 → 간편 견적 모달) ────── */
 .quote {
   position: relative;
-  overflow: hidden;
+  /* OF3-A: 달력(DatePicker)이 카드 아래로 펼쳐지므로 overflow 를 막지 않는다(전에는 hidden — 달력이 카드 가장자리에서 잘린다).
+   * 카드의 둥근 모서리에 닿는 면 배경이 없어 시각 차이는 없다(머리·폼·버튼 줄 모두 투명 배경 + 안쪽 여백). */
   /* `/#quote` 로 들어오면 — 붙어 있는 머리글의 높이는 문서의 scroll-padding 이 뺀다(P7-4 · Header.module.css :global(html):has(.header)).
    * 여기는 머리글과 위젯 사이의 작은 틈만(두 번 빼지 않는다). */
   scroll-margin-top: var(--space-stack-sm);
@@ -413,33 +414,25 @@
 }
 /* 날짜 칸 — 달력 아이콘 앞뒤 여백을 줄여 좁은 열(375px 에서 137px)에서도 날짜가 아이콘에 잘리지 않게 한다(P7-3).
  * 왼쪽 여백은 다른 칸과 같게 둬 글자 시작선이 맞는다. */
-.ctrl input[type="date"] {
-  padding-right: var(--space-inline-xs);
-}
-.ctrl input[type="date"]::-webkit-calendar-picker-indicator {
-  margin-inline-start: 0;
-}
-/* 아주 좁은 화면(360px 미만): 두 열이면 날짜 칸이 109px 라 "2026-10-15"(14.5px 굵게 ≈82px)가 달력 아이콘 자리와 겹쳐 잘렸다
- * (320px 실측 — 연도 앞 두 자리가 밀려 "26-10-15" 로 보였다 · P7-3 독립 리뷰 P2-11). 그 폭에서만 날짜 두 칸을 한 줄씩 넓게 쓴다 —
- * 출발지·도착지는 두 열 그대로. :has() 를 모르는 브라우저는 이전 배치(두 열)로 남는다. */
+/* 아주 좁은 화면(360px 미만): 두 열이면 날짜 칸이 109px 라 달력 아이콘 자리와 겹쳤다(320px 실측 · P7-3 독립 리뷰 P2-11).
+ * 그 폭에서만 날짜 두 칸을 한 줄씩 넓게 쓴다 — 출발지·도착지는 두 열 그대로. OF3-A: 날짜 칸이 직접 만든 달력(DatePicker)으로 바뀌어
+ * :has(input[type="date"]) 대신 .fieldDate 로 직접 가리킨다(QuoteWidget fieldBox). */
 @media (max-width: 359px) {
-  .field:has(input[type="date"]),
+  .fieldDate,
   .fieldTime {
     grid-column: 1 / -1;
   }
+}
+/* 출발지·도착지 두 단 선택(OF3-G) — 시·도 select 아래에 시·군·구 select 가 붙는다. */
+.locStack {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-stack-xs);
 }
 /* 출발·도착 시각(OF2-A) — 날짜 칸 옆의 select. 도착일이 비면 도착 시각은 잠긴다(흐리게). */
 .ctrl select:disabled {
   opacity: 0.55;
   cursor: not-allowed;
-}
-/* 360–374px: 두 열은 지키고 날짜 칸 안쪽 여백만 줄인다 — 빈 칸의 자리표시("yyyy-mm-dd" 등, 14.5px 굵게 ≈89px)가 129px 칸에서
- * 달력 아이콘에 잘렸다(360px 실측). 왼쪽 12 · 오른쪽 4 — 간격 토큰에서 계산한 값(px 리터럴 금지 규약). */
-@media (min-width: 360px) and (max-width: 374px) {
-  .ctrl input[type="date"] {
-    padding-left: calc(var(--space-inline-sm) - var(--space-inline-xs) / 2);
-    padding-right: calc(var(--space-inline-xs) / 2);
-  }
 }
 .ctrlSelect::after {
   content: "";

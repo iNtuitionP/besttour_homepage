@@ -21,6 +21,7 @@
 import { z } from "zod";
 
 import { RICH_TEXT_RAW_FACTOR, normalizeRichText, toPlainText } from "../content/richText";
+import { POPUP_ALWAYS_ENDS_AT } from "../popup-display";
 
 import type { CopyWarning } from "./copyWarning";
 
@@ -33,6 +34,10 @@ export const POPUP_FIELDS = {
   startsAt: "startsAt",
   endsAt: "endsAt",
   active: "active",
+  /** OF3-R2 — "상시 게시(종료일 없음)" 체크. 켜면 종료일 칸 값은 버리고 종료일을 POPUP_ALWAYS_ENDS_AT 로 저장한다. */
+  always: "always",
+  /** OF3-R2 — "사진만 보이기" 체크. 켜면 본문은 버리고 '' 로 저장한다(사진이 없으면 저장 불가). */
+  imageOnly: "imageOnly",
 } as const;
 export type PopupField = keyof typeof POPUP_FIELDS;
 
@@ -80,14 +85,12 @@ export const PopupInput = z
   .object({
     title: z.string().trim().min(1).max(POPUP_TITLE_MAX),
     // T3-4 — 본문은 제한 서식 문자열. 정규형으로 다시 쓰고, 길이는 **보이는 글자**로 잰다(서식 기호는 세지 않는다)
+    // OF3-R2 — 본문은 비워도 된다(사진만 팝업 · DB 에는 ''). 단 본문도 사진도 없는 팝업은 빈 창이라 아래 superRefine 이 거부한다.
     body: z
       .string()
       .max(POPUP_BODY_MAX * RICH_TEXT_RAW_FACTOR)
       .transform(normalizeRichText)
-      .refine((v) => {
-        const n = toPlainText(v).length;
-        return n >= 1 && n <= POPUP_BODY_MAX;
-      }),
+      .refine((v) => toPlainText(v).length <= POPUP_BODY_MAX),
     imagePath: z.string().trim().max(POPUP_IMAGE_PATH_MAX).nullable(),
     startsAt: z.string().trim(),
     endsAt: z.string().trim(),
@@ -96,6 +99,9 @@ export const PopupInput = z
   .superRefine((v, ctx) => {
     if (v.imagePath !== null && !isPopupImagePath(v.imagePath)) {
       ctx.addIssue({ code: "custom", path: ["imagePath"], message: "image path must be a storage or local image path" });
+    }
+    if (v.imagePath === null && toPlainText(v.body) === "") {
+      ctx.addIssue({ code: "custom", path: ["body"], message: "a popup needs a body or an image" });
     }
     const startsOk = isKstDateString(v.startsAt);
     const endsOk = isKstDateString(v.endsAt);
@@ -156,12 +162,18 @@ export type ParsedPopupForm = { ok: true; value: PopupValues } | { ok: false; re
 /** FormData → 값. 실패는 필드별 표시가 붙은 결과로 돌려준다(예외를 던지지 않는다). */
 export function parsePopupForm(formData: FormData): ParsedPopupForm {
   const rawImage = text(formData.get(POPUP_FIELDS.imagePath)).trim();
+  const always = isChecked(formData.get(POPUP_FIELDS.always));
+  const imageOnly = isChecked(formData.get(POPUP_FIELDS.imageOnly));
+  // 사진만 보이기 — 사진이 없으면 저장하지 않는다(보일 것이 없는 창이 된다). 사진 칸을 고치라고 표시한다.
+  if (imageOnly && rawImage === "") return { ok: false, result: popupValidationFailed({ imagePath: true }) };
   const parsed = PopupInput.safeParse({
     title: text(formData.get(POPUP_FIELDS.title)),
-    body: text(formData.get(POPUP_FIELDS.body)),
+    // 사진만 — 이미 쓴 본문은 버린다(DB 에는 ''). 홈은 "본문이 비어 있고 사진이 있으면" 사진만 모드로 판정한다(isImageOnlyPopup).
+    body: imageOnly ? "" : text(formData.get(POPUP_FIELDS.body)),
     imagePath: rawImage === "" ? null : rawImage,
     startsAt: text(formData.get(POPUP_FIELDS.startsAt)),
-    endsAt: text(formData.get(POPUP_FIELDS.endsAt)),
+    // 상시 — 종료일 칸은 화면에서 숨겨지고, 보내온 값이 있어도 버린다.
+    endsAt: always ? POPUP_ALWAYS_ENDS_AT : text(formData.get(POPUP_FIELDS.endsAt)),
     active: isChecked(formData.get(POPUP_FIELDS.active)),
   });
 

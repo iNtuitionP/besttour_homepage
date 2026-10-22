@@ -1,0 +1,177 @@
+/*
+ * 직접 만든 달력 (OF3-A) — 색·간격·라운드·고도는 styles/semantic.css 역할 토큰만(tests/layout.test.ts §4 가 검사한다).
+ * 날짜 칸 하나의 누르는 면적은 40×40px 이상(엄지 기준). 팝업 폭은 DatePicker.tsx 가 화면 폭에 맞춰 inline 으로 정한다
+ * (최대 320px · 좌우 16px 안쪽 — 375px 에서 가로 스크롤 0).
+ */
+
+.root {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+/* 닫힌 칸 — Hero.module.css 의 .ctrl select/input 과 같은 모양(글꼴·높이·글자 굵기). 테두리는 바깥 .ctrl 이 그린다. */
+.trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-inline-xs);
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 var(--space-inline-xs) 0 var(--space-inline-sm);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+}
+.trigger:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.value {
+  min-width: 0;
+}
+.placeholder {
+  min-width: 0;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.icon {
+  flex: none;
+  color: var(--icon-brand);
+}
+
+/* 열린 달력 */
+.panel {
+  position: absolute;
+  top: 100%;
+  z-index: 30;
+  box-sizing: border-box;
+  margin-top: calc(var(--space-stack-xs) / 2);
+  padding: var(--space-inline-xs);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--elevation-overlay);
+  color: var(--text-primary);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-inline-xs);
+  padding-bottom: var(--space-stack-xs);
+}
+.title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  text-align: center;
+}
+.nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--border-decorative);
+  border-radius: var(--radius-control);
+  background: var(--action-secondary-bg);
+  color: var(--action-secondary-fg);
+  cursor: pointer;
+}
+.nav:hover:not(:disabled) {
+  background: var(--action-secondary-bg-hover);
+}
+.nav:disabled {
+  color: var(--action-disabled-fg);
+  background: var(--action-disabled-bg);
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.nav:focus-visible,
+.day:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.grid {
+  display: grid;
+}
+.row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+.weekday {
+  padding: calc(var(--space-stack-xs) / 2) 0;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.day {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  width: 100%;
+  height: 40px;
+  padding: 0;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.day:hover {
+  background: var(--action-secondary-bg-hover);
+}
+.dayOutside {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+/* 오늘 = 테두리 */
+.dayToday {
+  border-color: var(--border-strong);
+}
+/* 선택 = 채움 */
+.day[aria-selected="true"] {
+  background: var(--action-primary-bg);
+  border-color: var(--action-primary-bg);
+  color: var(--action-primary-fg);
+}
+.day[aria-selected="true"]:hover {
+  background: var(--action-primary-bg-hover);
+}
+/* 비활성 — 흐리게, 누를 수 없음(aria-disabled) */
+.day[aria-disabled="true"] {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.day[aria-disabled="true"]:hover {
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .nav,
+  .day {
+    transition: background var(--motion-base);
+  }
+}

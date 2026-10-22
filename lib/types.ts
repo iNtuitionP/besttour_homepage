@@ -6,7 +6,7 @@
  * canonical code(enum)로만 받는다 — 번역 문자열은 허용하지 않는다.
  */
 import { z } from "zod";
-import { LOCATION_CODES, type LocationCode, type PlaceKind } from "./codes";
+import { ALL_LOCATION_CODES, type PlaceKind } from "./codes";
 import { toKstDateString } from "./kst";
 
 /** 국내 휴대전화(01x, 하이픈 선택). lib/reservations/phone.ts contactPhone() 이 +82 E.164 로 정규화한다. */
@@ -22,8 +22,10 @@ export const HOUR_PATTERN = /^([01]\d|2[0-3])$/;
  * 장소 코드 = LOCATION_CODES(도시 PlaceCode ∪ 시도 RegionCode, 28개 — REVIEW-FIX M5).
  * 시도 17개만 받던 옛 enum 은 홈 대표 노선 16개 중 11개(통영·포항·전주·여수·해남·세종·속초·강릉·태백·홍천·원주)를
  * 접수에서 거부했다. zod 만 넓혔다 — DB 컬럼은 CHECK 없는 text 라 마이그레이션이 없다.
+ * OF3-G: 시·군·구 229개(행안부 5자리 — lib/codes-sigungu.ts)도 받는다(ALL_LOCATION_CODES = 옛 28개 + 시군구).
+ * 모르는 코드는 거부한다 — 번역 문자열("수원시")·빈 문자열·옛 폐지 코드.
  */
-const LocationCodeEnum = z.enum(LOCATION_CODES as [LocationCode, ...LocationCode[]]);
+const LocationCodeEnum = z.enum(ALL_LOCATION_CODES);
 
 /** 간편 견적의 이름 길이 상한 — 0001 CHECK `char_length(name) between 1 and 30` 과 같다. */
 export const NAME_MAX_LENGTH = 30;

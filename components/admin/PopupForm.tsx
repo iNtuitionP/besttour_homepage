@@ -41,13 +41,18 @@ export interface PopupFormValues {
   body: string;
   imagePath: string;
   startsAt: string;
+  /** 상시(always)이면 빈 문자열로 둔다 — 상시를 끄면 사장님이 새로 고르게(9999-12-31 이 날짜 칸에 뜨지 않게) */
   endsAt: string;
   active: boolean;
+  /** OF3-R2 — 상시 게시(종료일 없음). 저장된 종료일이 POPUP_ALWAYS_ENDS_AT 이면 켜진 채 열린다 */
+  always: boolean;
+  /** OF3-R2 — 사진만 보이기. 저장된 본문이 비어 있고 사진이 있으면(isImageOnlyPopup) 켜진 채 열린다 */
+  imageOnly: boolean;
 }
 
 export interface PopupFormLabels {
-  field: Record<"title" | "body" | "imagePath" | "startsAt" | "endsAt" | "period" | "active", string>;
-  hint: Record<"title" | "body" | "imagePath" | "period" | "active", string>;
+  field: Record<"title" | "body" | "imagePath" | "startsAt" | "endsAt" | "period" | "active" | "always" | "imageOnly", string>;
+  hint: Record<"title" | "body" | "imagePath" | "period" | "active" | "always" | "imageOnly" | "imageOnlyDropsBody" | "imageOnlyNeedsPhoto", string>;
   notice: string;
   submit: string;
   processing: string;
@@ -89,6 +94,9 @@ export function PopupForm({
   /** 저장이 경고로 멈춘 횟수 — 같은 경고가 다시 와도 패널이 다시 보이는 자리로 온다(재리뷰 P2-R1 · CopyWarningPanel attempt). */
   const [warningRound, setWarningRound] = useState(0);
   const [ack, setAck] = useState<string[]>([]);
+  /** OF3-R2 — 켜면 본문 칸을 숨기고(저장 때 본문은 '' 로 보낸다) / 종료일 칸을 숨긴다(종료일은 서버가 상시 값으로 정한다) */
+  const [imageOnly, setImageOnly] = useState(initial.imageOnly);
+  const [always, setAlways] = useState(initial.always);
 
   const mark = (field: PopupField): "true" | undefined => (invalid[field] ? "true" : undefined);
 
@@ -102,6 +110,15 @@ export function PopupForm({
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
+    if (imageOnly) {
+      // 사진만 — 사진이 없으면 보낼 것이 없다(서버도 거부한다). 이미 쓴 본문은 버린다(안내 문구가 화면에 있다).
+      if (String(formData.get(POPUP_FIELDS.imagePath) ?? "").trim() === "") {
+        setInvalid({ imagePath: true });
+        setBanner(labels.hint.imageOnlyNeedsPhoto);
+        return;
+      }
+      formData.set(POPUP_FIELDS.body, "");
+    }
     // 경고 패널의 "그대로 저장하기"로 보낸 제출에만 확인 키를 붙인다. 일반 저장은 언제나 다시 대조된다.
     if (isCopyAckSubmitter((event.nativeEvent as SubmitEvent).submitter)) {
       for (const key of ack) formData.append(COPY_ACK_FIELD, key);
@@ -126,6 +143,8 @@ export function PopupForm({
         formRef.current?.reset();
         // 편집기·사진 고르기는 자기 상태를 들고 있어 reset 이 닿지 않는다 — 새로 만든다(T3-3·T3-4)
         setResetKey((k) => k + 1);
+        setImageOnly(initial.imageOnly);
+        setAlways(initial.always);
       }
       router.refresh();
     });
@@ -167,7 +186,8 @@ export function PopupForm({
         />
       </div>
 
-      <div className={s.field}>
+      {/* 사진만 보이기를 켜면 본문 칸을 숨긴다(hidden — 편집기는 그대로 떠 있어 껐다 켜도 쓴 글이 남지만, 저장하면 본문은 버려진다) */}
+      <div className={s.field} hidden={imageOnly} data-testid="admin-popup-body-field">
         <span className={s.label} id="popup-body-label">
           {labels.field.body}
         </span>
@@ -206,6 +226,29 @@ export function PopupForm({
           invalid={mark("imagePath") === "true"}
           hintId="popup-image-hint"
         />
+        {/* OF3-R2 — 사진만 보이기. 사진이 없으면 저장되지 않는다(위 onSubmit · 서버 parsePopupForm) */}
+        <div className={s.checkRow}>
+          <input
+            id="popup-image-only"
+            name={POPUP_FIELDS.imageOnly}
+            type="checkbox"
+            checked={imageOnly}
+            onChange={(e) => setImageOnly(e.currentTarget.checked)}
+            disabled={pending}
+            aria-describedby="popup-image-only-hint"
+          />
+          <label className={s.label} htmlFor="popup-image-only">
+            {labels.field.imageOnly}
+          </label>
+        </div>
+        <p className={s.hint} id="popup-image-only-hint">
+          {labels.hint.imageOnly}
+        </p>
+        {imageOnly ? (
+          <p className={s.hint} data-testid="admin-popup-image-only-note">
+            {labels.hint.imageOnlyDropsBody}
+          </p>
+        ) : null}
       </div>
 
       {/* 노출 기간 — 다른 칸과 같은 순서(이름 → 안내 → 입력칸 · P5-23 라운드 2 B-9). 두 날짜 칸을 한 묶음으로 읽게 group 으로 이름을 단다. */}
@@ -233,23 +276,43 @@ export function PopupForm({
               aria-invalid={mark("startsAt")}
             />
           </div>
-          <div className={s.dateCol}>
-            <label className={s.label} htmlFor="popup-ends">
-              {labels.field.endsAt}
-            </label>
-            <input
-              id="popup-ends"
-              className={s.input}
-              name={POPUP_FIELDS.endsAt}
-              type="date"
-              defaultValue={initial.endsAt}
-              required
-              disabled={pending}
-              aria-describedby="popup-period-hint"
-              aria-invalid={mark("endsAt")}
-            />
-          </div>
+          {/* 상시 게시면 종료일 칸을 아예 그리지 않는다(숨긴 required 칸이 제출을 막지 않게) — 종료일은 서버가 상시 값으로 정한다 */}
+          {always ? null : (
+            <div className={s.dateCol}>
+              <label className={s.label} htmlFor="popup-ends">
+                {labels.field.endsAt}
+              </label>
+              <input
+                id="popup-ends"
+                className={s.input}
+                name={POPUP_FIELDS.endsAt}
+                type="date"
+                defaultValue={initial.endsAt}
+                required
+                disabled={pending}
+                aria-describedby="popup-period-hint"
+                aria-invalid={mark("endsAt")}
+              />
+            </div>
+          )}
         </div>
+        <div className={s.checkRow}>
+          <input
+            id="popup-always"
+            name={POPUP_FIELDS.always}
+            type="checkbox"
+            checked={always}
+            onChange={(e) => setAlways(e.currentTarget.checked)}
+            disabled={pending}
+            aria-describedby="popup-always-hint"
+          />
+          <label className={s.label} htmlFor="popup-always">
+            {labels.field.always}
+          </label>
+        </div>
+        <p className={s.hint} id="popup-always-hint">
+          {labels.hint.always}
+        </p>
       </div>
 
       <div className={s.field}>

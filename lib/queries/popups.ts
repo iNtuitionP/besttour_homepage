@@ -5,13 +5,14 @@
  * 전날로 판정된다. 날짜 계산은 lib/kst.ts 의 toKstDateString 이, 노출 판정은 순수 함수 isActiveOn 이 한다.
  */
 import { toKstDateString } from "../kst";
+import { POPUP_HOME_LIMIT, sortHomePopups } from "../popup-display";
 import { createAnonClient, type AnonClient } from "../supabase/anon";
 import type { Popup } from "../types";
 
 const SELECT = "id,title,body,image_path,starts_at,ends_at,active,created_at";
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-/** 기간이 겹치는 팝업이 여럿일 때 후보로 가져올 상한 — 그중 starts_at 최신(동률은 id 최신) 하나를 고른다. */
-const CANDIDATE_LIMIT = 5;
+/** 기간이 겹치는 팝업의 후보 상한 — 이 안에서 정렬한 뒤 POPUP_HOME_LIMIT 개만 남긴다(상시 팝업이 상한에 잘리지 않게 넉넉히). */
+const CANDIDATE_LIMIT = 50;
 
 export interface PopupRow {
   id: number;
@@ -56,24 +57,26 @@ export function isActiveOn(popup: Pick<Popup, "active" | "startsAt" | "endsAt">,
   return popup.active && popup.startsAt <= kstDate && kstDate <= popup.endsAt;
 }
 
-export interface GetActivePopupOptions {
+export interface GetActivePopupsOptions {
   /** 판정 기준 인스턴트. 기본 `new Date()`. 테스트·프리뷰에서 주입한다. */
   now?: Date;
   client?: AnonClient;
 }
 
 /**
- * 오늘(KST) 노출 중인 활성 팝업 1개 또는 null.
+ * 오늘(KST) 노출 중인 활성 팝업 전부 — 최대 POPUP_HOME_LIMIT(4)개 (OF3-R2 · 여러 팝업 동시).
  *
  * DB 필터(active ∧ starts_at ≤ 오늘 ≤ ends_at)로 후보를 좁히고, 최종 판정은 isActiveOn 이 한다(기준 하나).
- * 여럿이면 starts_at 최신 → id 최신 순으로 하나.
+ * 순서는 상시(종료일 9999-12-31) 맨 앞 → starts_at 최신 → id 최신(lib/popup-display.ts sortHomePopups). 이 순서로 앞 4개만 돌려준다.
+ * 정렬은 코드에서 한다 — "상시 먼저" 는 DB 정렬 하나로 표현되지 않아, 상한을 DB 에서 먼저 자르면 상시 팝업이 잘릴 수 있다.
+ * 그래서 DB 에서는 넉넉한 후보(CANDIDATE_LIMIT)만 가져오고 자르기는 정렬 뒤에 한다. 없으면 빈 배열.
  *
  * 알려진 정책 이슈: 0001 의 popups_select_active 는 `current_date`(DB 세션 TZ — Supabase 기본 UTC)로도
  * 거른다. 그래서 KST 00:00~08:59 에는 그날 시작하는 팝업이 정책에 가려 이 함수에도 오지 않는다
  * (반대로 끝난 다음 날 같은 시간대에 정책이 아직 보여주는 행은 여기서 isActiveOn 이 걸러낸다).
  * 키를 올려 우회하지 않는다 — 정책을 KST 기준으로 고치는 것이 맞다(P2-1 보고서).
  */
-export async function getActivePopup(options: GetActivePopupOptions = {}): Promise<Popup | null> {
+export async function getActivePopups(options: GetActivePopupsOptions = {}): Promise<Popup[]> {
   const today = toKstDateString(options.now ?? new Date());
   const db = options.client ?? createAnonClient();
   const { data, error } = await db
@@ -87,6 +90,6 @@ export async function getActivePopup(options: GetActivePopupOptions = {}): Promi
     .limit(CANDIDATE_LIMIT)
     .overrideTypes<PopupRow[], { merge: false }>();
 
-  if (error) throw new Error(`getActivePopup: ${error.message}`);
-  return data.map(toPopup).find((p) => isActiveOn(p, today)) ?? null;
+  if (error) throw new Error(`getActivePopups: ${error.message}`);
+  return sortHomePopups(data.map(toPopup).filter((p) => isActiveOn(p, today))).slice(0, POPUP_HOME_LIMIT);
 }

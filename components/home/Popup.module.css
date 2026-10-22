@@ -1,7 +1,12 @@
 /*
- * 홈 팝업 — "오늘 하루 보지 않기" 모달 (목업 variant-08 .ov/.modal/.pop__*). PC 폭의 창 위치만 목업(가운데)과 다르다 — 아래 1024px 규칙.
+ * 홈 팝업 — "오늘 하루 보지 않기" 모달 (목업 variant-08 .ov/.modal/.pop__*). 창 위치·여러 창은 목업(가운데 한 창)과 다르다 — 아래 1024px 규칙(사용자 결정 · OF3-F).
  * 색·간격·라운드·고도는 역할 토큰만, 간격 px 0건(home.module.css 헤더 참조).
  * z-index 120 — 헤더(80)·플로팅 문의(70) 위.
+ *
+ * 구조: .overlay(어두운 막 · 스크롤) > .stack(창들을 담는 줄) > .modal(창 하나).
+ * 휴대폰·태블릿(1024px 미만)은 창을 **세로로 쌓고** 가운데에 둔다(.stack 의 margin auto — 창이 길어 넘치면 위에서부터 보이고 막 안에서 스크롤).
+ * PC(1024px 이상)는 **왼쪽 위부터 가로로 나란히**, 넘치면 다음 줄이다.
+ * .stack 은 클릭을 통과시킨다(pointer-events) — 창 사이 빈 곳을 눌러도 막을 누른 것이 되어 열린 창이 전부 닫힌다.
  */
 
 .overlay {
@@ -9,18 +14,25 @@
   inset: 0;
   z-index: 120;
   display: flex;
-  align-items: center;
-  justify-content: center;
   padding: var(--space-inline-sm);
   background: var(--overlay-medium);
   overflow-y: auto;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-stack-sm);
+  width: 100%;
+  margin: auto;
+  pointer-events: none;
 }
 
 .modal {
   position: relative;
   width: 100%;
   max-width: 432px;
-  margin: auto;
   overflow: hidden;
   background: var(--bg-surface);
   color: var(--text-primary);
@@ -28,21 +40,49 @@
   box-shadow: var(--elevation-overlay);
   word-break: keep-all;
   overflow-wrap: anywhere;
+  pointer-events: auto;
 }
 
-/* PC(1024px 이상)는 창을 화면 왼쪽 위에 둔다 — 사장님 요청 22(OF-T1-3). 휴대폰·태블릿은 위 기본 규칙대로 가운데.
- * 위치만 바꾼다: 어두운 배경·닫기·배경 스크롤 잠금·포커스 가두기는 그대로인 모달이다.
+/* 사진만 보이는 팝업 — 세로 포스터가 나란히 놓이도록 창 폭을 좁게, 사진은 화면 높이 안에 들어오게 줄인다(잘림 없음).
+ * 빼는 값 = 위아래 막 여백 + 아래 띠(오늘 하루 보지 않기 · 닫기). (vh 줄은 dvh 를 모르는 브라우저용 대체값) */
+.modalImageOnly {
+  max-width: 360px;
+}
+.modalImageOnly .phImg {
+  max-height: calc(100vh - 8.5rem);
+  max-height: calc(100dvh - 8.5rem);
+}
+
+/* PC(1024px 이상): 창을 화면 왼쪽 위에서부터 가로로 나란히 — 사장님 요청 22(OF-T1-3) · OF3-F.
+ * 어두운 배경·닫기·배경 스크롤 잠금·포커스 가두기는 그대로인 모달이다.
  * 위 여백 = 붙어 있는 머리글 높이(역할 토큰 — 1280px 이상에서 커진다) + 16px. 머리글은 어두운 배경 아래 그대로 보이고, 창은 그 밑에서 시작한다.
- * 왼쪽 여백 = 머리글 줄과 같은 페이지 좌우 여백(1280px 까지는 로고 왼쪽 끝과 같은 선). 아래 여백은 기본 규칙의 값 그대로(긴 창은 배경 안에서 스크롤). */
+ * 좌우 여백 = 머리글 줄과 같은 페이지 좌우 여백(1280px 까지는 로고 왼쪽 끝과 같은 선). 아래 여백은 기본 규칙의 값 그대로(긴 창은 배경 안에서 스크롤). */
 @media (min-width: 1024px) {
   .overlay {
-    align-items: flex-start;
-    justify-content: flex-start;
     padding-top: calc(var(--layout-header-h) + var(--space-stack-sm));
     padding-left: var(--space-page-x);
+    padding-right: var(--space-page-x);
+  }
+  .stack {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    align-content: flex-start;
+    justify-content: flex-start;
+    margin: 0;
+    gap: var(--space-inline-sm);
   }
   .modal {
-    margin: 0;
+    width: 432px;
+    flex: 0 0 auto;
+  }
+  .modalImageOnly {
+    width: 360px;
+  }
+  /* 사진만 창이 머리글 아래에서 시작하므로 그만큼 더 뺀다 */
+  .modalImageOnly .phImg {
+    max-height: calc(100vh - var(--layout-header-h) - 10.5rem);
+    max-height: calc(100dvh - var(--layout-header-h) - 10.5rem);
   }
 }
 
@@ -76,13 +116,20 @@
   stroke-linecap: round;
 }
 
+/* 사진 — 원래 비율 그대로, 잘리지 않는다(예전: 16:9 틀에 꽉 채우기라 세로 포스터의 위아래가 잘렸다 · OF3-J).
+ * 너비는 창에 맞추고 높이는 비율대로 · 최대 높이(일반 팝업은 화면 절반, 사진만 팝업은 위 규칙)를 넘으면 contain 이 줄여 보여 준다(남는 양옆은 어두운 바탕). */
 .ph {
-  position: relative;
-  aspect-ratio: 16 / 9;
+  display: flex;
+  justify-content: center;
   background: var(--bg-inverse);
 }
 .phImg {
-  object-fit: cover;
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: min(50vh, 26rem);
+  max-height: min(50dvh, 26rem);
+  object-fit: contain;
 }
 
 .bd {

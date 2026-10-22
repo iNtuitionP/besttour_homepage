@@ -8,6 +8,8 @@
  *
  * 개발 전용 분기(production 빌드에서는 죽은 코드 — searchParams 를 읽지 않으므로 라우트가 동적으로 떨어지지 않는다):
  *   ?previewPopup=1  원격 popups 가 비어 있을 때 더미 팝업을 props 로 주입해 dismiss·ESC·재방문을 실측한다(원격에 행을 넣지 않는다)
+ *   ?previewPopup=multi  더미 팝업 4개(상시·사진만 포함)로 여러 창 배치·창별 닫기·막 클릭/Esc 전부 닫기를 실측한다
+ *   팝업은 한국어 홈에서만 부른다(OF3-R2) — 영문 홈은 쿼리도 렌더도 없다
  *   ?previewFeed=1   원격 reservations 가 비어 있을 때 더미 **원문 행** 3건을 실제 매퍼(mapRecentRows)에 통과시켜 접수 현황을 실측한다
  *                    (원격에 행을 넣지 않는다 — 고객 개인정보 테이블). DOM 텍스트에 원문 이름·전화가 0건이어야 한다
  *   ?boom=1          (site)/error.tsx 바운더리 훈련 — 옛 /dev/krmap?boom=1 을 대체한다(P2-4 에서 dev 라우트 삭제)
@@ -23,13 +25,13 @@ import { Hero } from "@/components/home/Hero";
 import { HomePopup } from "@/components/home/HomePopup";
 import { HowItWorks } from "@/components/home/HowItWorks";
 import { NoticeSection } from "@/components/home/NoticeSection";
-import { PREVIEW_POPUP } from "@/components/home/popup-preview";
+import { PREVIEW_POPUP, PREVIEW_POPUPS_MULTI } from "@/components/home/popup-preview";
 import { PREVIEW_RECENT_ROWS } from "@/components/home/recent-feed-preview";
 import { RecentFeed } from "@/components/home/RecentFeed";
 import { RoutesSection } from "@/components/home/RoutesSection";
 import { TrustBar } from "@/components/home/TrustBar";
 import { ledgerUi } from "@/lib/i18n/ledger-ui";
-import { getActivePopup, getGallery, getNotices, getShowcaseRoutes, getVehicles, QUERY_TAGS } from "@/lib/queries";
+import { getActivePopups, getGallery, getNotices, getShowcaseRoutes, getVehicles, QUERY_TAGS } from "@/lib/queries";
 import { getRecentReservationsMasked } from "@/lib/queries/recent";
 import { mapRecentRows } from "@/lib/recent-feed";
 import { pageAlternates } from "@/lib/site-url";
@@ -84,15 +86,23 @@ export default async function HomePage({ params, searchParams }: { params: Param
     throw new Error("home boom drill: internal detail that must not reach the screen");
   }
 
-  const [routes, vehicles, gallery, notices, remotePopup, remoteRecent] = await Promise.all([
+  // 팝업은 사장님이 한국어로 쓴 글이라 한국어 홈에만 뜬다 — 영문 홈은 조회도 하지 않는다(OF3-R2)
+  const isKo = locale === "ko";
+  const [routes, vehicles, gallery, notices, remotePopups, remoteRecent] = await Promise.all([
     getShowcaseRoutes(),
     getVehicles(),
     getGallery(),
     getNotices(5),
-    getActivePopup(),
+    isKo ? getActivePopups() : Promise.resolve([]),
     getRecentFeedCached(),
   ]);
-  const popup = dev.previewPopup === "1" ? PREVIEW_POPUP : remotePopup;
+  const popups = !isKo
+    ? []
+    : dev.previewPopup === "multi"
+      ? PREVIEW_POPUPS_MULTI
+      : dev.previewPopup === "1"
+        ? [PREVIEW_POPUP]
+        : remotePopups;
   // 프리뷰는 더미 원문 행을 실제 매퍼에 통과시킨다 — 차종 라벨도 실제 vehicles 에서 (프리뷰가 곧 마스킹 경로의 실측)
   const recent =
     dev.previewFeed === "1"
@@ -114,7 +124,7 @@ export default async function HomePage({ params, searchParams }: { params: Param
       <CompanyIntro />
       <GallerySection items={gallery} />
       <NoticeSection notices={notices} />
-      <HomePopup popup={popup} />
+      <HomePopup popups={popups} />
     </main>
   );
 }

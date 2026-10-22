@@ -9,6 +9,8 @@
  *   - 통과하면 모달(components/quote/QuickQuoteModal.tsx)을 연다 — 이름·연락처·동의 2종·Turnstile 은 모달 안에만 있다.
  *     이 위젯 자체는 개인정보를 받지 않는다.
  *   - 출발일을 고르면 도착일이 같은 날로 채워진다(비었거나 앞일 때만).
+ *   - OF3-A: 날짜 칸은 native `<input type="date">` 가 아니라 직접 만든 달력(components/ui/DatePicker.tsx) — 브라우저 언어와 무관하게 페이지 언어로 그린다.
+ *   - OF3-G: 출발지·도착지는 두 단 선택(components/home/LocationSelect.tsx) — 시·도 → 시·군·구. 저장값은 코드 하나(lib/codes.ts pickedCode).
  *   - `id="quote"` — 대표 노선 카드·헤더 메뉴·옛 /quote 리디렉트가 `/#quote` 로 여기를 가리킨다.
  *   - 닫히면 여는 버튼으로, [수정]이면 첫 칸으로 포커스를 돌려준다.
  *   - 선택지·라벨·법정 문구(verbatim·동의·청약철회)는 서버 Hero 가 props 로 넣는다. 이 파일에 한글 리터럴·원장 import 없음.
@@ -21,10 +23,14 @@ import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 
 
 import { HOURS, hourClock, initialWidgetFields, validateWidget, withDepartDate, type FieldError, type WidgetField, type WidgetFields } from "@/components/quote/quick-quote";
 import { QuickQuoteModal, type QuickQuoteLegal } from "@/components/quote/QuickQuoteModal";
+import { DatePicker } from "@/components/ui/DatePicker";
+import { isLocationCode, locationLabel } from "@/lib/codes";
 import { toKstDateString } from "@/lib/kst";
+import { publicDateLabels } from "@/lib/public-date";
 
 import h from "./home.module.css";
 import s from "./Hero.module.css";
+import { LocationSelect } from "./LocationSelect";
 
 export interface QuoteOption {
   value: string;
@@ -67,6 +73,15 @@ export function QuoteWidget({
   turnstileAction: string;
 }) {
   const tRoot = useTranslations();
+  const tCommon = useTranslations("common");
+  const dateLabels = publicDateLabels(tCommon.raw("dates"));
+  const calendarLabels = {
+    prev: tRoot("home.hero.widget.calendar.prevMonth"),
+    next: tRoot("home.hero.widget.calendar.nextMonth"),
+    // 틀({year}·{month}·{field})은 달력이 채운다 — next-intl 의 보간을 거치지 않도록 원문(raw)을 받는다.
+    monthYear: tRoot.raw("home.hero.widget.calendar.monthYear") as string,
+    dialog: tRoot.raw("home.hero.widget.calendar.dialog") as string,
+  };
   const id = useId();
   const [fields, setFields] = useState<WidgetFields>(() => initialWidgetFields(defaults));
   const [errors, setErrors] = useState<FieldError[]>([]);
@@ -126,18 +141,10 @@ export function QuoteWidget({
     setErrors([]);
   }, [defaults]);
 
-  const labelOf = (code: string) => groups.flatMap((g) => g.options).find((o) => o.value === code)?.label ?? code;
-
-  const renderOptions = () =>
-    groups.map((g) => (
-      <optgroup key={g.label} label={g.label}>
-        {g.options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </optgroup>
-    ));
+  // 모달 요약의 장소 이름 — 시·도 묶음에 있으면 그 라벨, 아니면(시·군·구 · 대표 도시) 표시 라벨("경기 수원시").
+  const labelOf = (code: string) =>
+    groups.flatMap((g) => g.options).find((o) => o.value === code)?.label ?? (isLocationCode(code) ? locationLabel(code, locale) : code);
+  const locationLabels = { sigungu: tRoot("home.hero.widget.sigungu"), all: tRoot("home.hero.widget.sigunguAll") };
 
   // 시각 선택지 — 빈 선택지 + 00:00~23:00(1시간 단위 · KST 벽시계). 표시는 언어와 무관한 24시간 표기라 카탈로그 문구가 없다.
   const renderHourOptions = (emptyLabel: string) => (
@@ -151,9 +158,9 @@ export function QuoteWidget({
     </>
   );
 
-  const fieldBox = (field: WidgetField, label: string, control: ReactNode, wide = false, time = false) => {
+  const fieldBox = (field: WidgetField, label: string, control: ReactNode, wide = false, time = false, date = false) => {
     const err = errorFor(field);
-    const cls = [s.field, wide ? s.fieldWide : "", time ? s.fieldTime : ""].filter(Boolean).join(" ");
+    const cls = [s.field, wide ? s.fieldWide : "", time ? s.fieldTime : "", date ? s.fieldDate : ""].filter(Boolean).join(" ");
     return (
       <div className={cls} data-invalid={err ? "true" : undefined}>
         <label className={s.fieldLabel} htmlFor={`${id}-${field}`}>
@@ -182,51 +189,58 @@ export function QuoteWidget({
         {fieldBox(
           "originCode",
           labels.origin,
-          <div className={`${s.ctrl} ${s.ctrlSelect}`}>
-            <select
-              ref={originRef}
-              id={`${id}-originCode`}
-              value={fields.originCode}
-              onChange={(e) => set("originCode", e.target.value)}
-              aria-invalid={invalid("originCode")}
-              aria-describedby={describedBy("originCode")}
-              data-testid="quote-origin"
-            >
-              {renderOptions()}
-            </select>
-          </div>,
+          <LocationSelect
+            id={`${id}-originCode`}
+            selectRef={originRef}
+            fieldLabel={labels.origin}
+            value={fields.originCode}
+            onChange={(code) => set("originCode", code)}
+            groups={groups}
+            locale={locale}
+            labels={locationLabels}
+            invalid={invalid("originCode")}
+            describedBy={describedBy("originCode")}
+            testId="quote-origin"
+          />,
         )}
         {fieldBox(
           "destinationCode",
           labels.dest,
-          <div className={`${s.ctrl} ${s.ctrlSelect}`}>
-            <select
-              id={`${id}-destinationCode`}
-              value={fields.destinationCode}
-              onChange={(e) => set("destinationCode", e.target.value)}
-              aria-invalid={invalid("destinationCode")}
-              aria-describedby={describedBy("destinationCode")}
-              data-testid="quote-dest"
-            >
-              {renderOptions()}
-            </select>
-          </div>,
+          <LocationSelect
+            id={`${id}-destinationCode`}
+            fieldLabel={labels.dest}
+            value={fields.destinationCode}
+            onChange={(code) => set("destinationCode", code)}
+            groups={groups}
+            locale={locale}
+            labels={locationLabels}
+            invalid={invalid("destinationCode")}
+            describedBy={describedBy("destinationCode")}
+            testId="quote-dest"
+          />,
         )}
         {fieldBox(
           "departDate",
           labels.date,
           <div className={s.ctrl}>
-            <input
+            <DatePicker
               id={`${id}-departDate`}
-              type="date"
-              min={today || undefined}
               value={fields.departDate}
-              onChange={(e) => set("departDate", e.target.value)}
-              aria-invalid={invalid("departDate")}
-              aria-describedby={describedBy("departDate")}
-              data-testid="quote-date"
+              onChange={(v) => set("departDate", v)}
+              min={today || undefined}
+              today={today}
+              placeholder={tRoot("home.hero.widget.calendar.placeholder")}
+              fieldLabel={labels.date}
+              labels={calendarLabels}
+              dateLabels={dateLabels}
+              invalid={invalid("departDate")}
+              describedBy={describedBy("departDate")}
+              testId="quote-date"
             />
           </div>,
+          false,
+          false,
+          true,
         )}
         {fieldBox(
           "departHour",
@@ -250,17 +264,24 @@ export function QuoteWidget({
           "returnDate",
           labels.returnDate,
           <div className={s.ctrl}>
-            <input
+            <DatePicker
               id={`${id}-returnDate`}
-              type="date"
-              min={fields.departDate || today || undefined}
               value={fields.returnDate}
-              onChange={(e) => set("returnDate", e.target.value)}
-              aria-invalid={invalid("returnDate")}
-              aria-describedby={describedBy("returnDate")}
-              data-testid="quote-return"
+              onChange={(v) => set("returnDate", v)}
+              min={fields.departDate || today || undefined}
+              today={today}
+              placeholder={tRoot("home.hero.widget.calendar.placeholder")}
+              fieldLabel={labels.returnDate}
+              labels={calendarLabels}
+              dateLabels={dateLabels}
+              invalid={invalid("returnDate")}
+              describedBy={describedBy("returnDate")}
+              testId="quote-return"
             />
           </div>,
+          false,
+          false,
+          true,
         )}
         {fieldBox(
           "returnHour",

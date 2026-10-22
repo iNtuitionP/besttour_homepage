@@ -975,7 +975,9 @@ describe("10-b. 홈 팝업 위치 — PC 만 왼쪽 위(머리글 아래) · 모
   const base = (cls: string) => blocks.filter((b) => b.media === null && b.selector === `.${cls}`);
   const desktop = (cls: string) => blocks.filter((b) => b.media !== null && DESKTOP.test(b.media) && b.selector === `.${cls}`);
 
-  test("기본 규칙(1024px 미만) — 어두운 배경 모달이 화면 가운데: overlay 는 고정·전체 덮기·가운데 정렬, modal 은 margin auto", () => {
+  // OF3-R2(여러 창): 구조가 .overlay > .stack > .modal 로 바뀌었다 — 휴대폰·태블릿은 세로로 쌓아 가운데(.stack 의 margin auto),
+  // PC 는 왼쪽 위부터 가로로 나란히(넘치면 다음 줄). 배치 상세·사진 규칙은 tests/of3-r2-popup.test.ts 가 함께 잠근다.
+  test("기본 규칙(1024px 미만) — 어두운 배경 모달: overlay 는 고정·전체 덮기·스크롤, stack 은 세로로 쌓아 가운데(margin auto), modal 은 max-width 432px", () => {
     const overlay = base("overlay");
     expect(overlay).toHaveLength(1);
     const o = overlay[0].body;
@@ -983,45 +985,67 @@ describe("10-b. 홈 팝업 위치 — PC 만 왼쪽 위(머리글 아래) · 모
     expect(decl(o, "inset")).toEqual(["0"]);
     expect(decl(o, "z-index")).toEqual(["120"]);
     expect(decl(o, "display")).toEqual(["flex"]);
-    expect(decl(o, "align-items")).toEqual(["center"]);
-    expect(decl(o, "justify-content")).toEqual(["center"]);
     expect(decl(o, "padding")).toEqual(["var(--space-inline-sm)"]);
     expect(decl(o, "background")).toEqual(["var(--overlay-medium)"]);
     expect(decl(o, "overflow-y")).toEqual(["auto"]);
+    const stack = base("stack");
+    expect(stack).toHaveLength(1);
+    expect(decl(stack[0].body, "flex-direction")).toEqual(["column"]);
+    expect(decl(stack[0].body, "align-items")).toEqual(["center"]);
+    expect(decl(stack[0].body, "margin")).toEqual(["auto"]);
     const modal = base("modal");
     expect(modal).toHaveLength(1);
-    expect(decl(modal[0].body, "margin")).toEqual(["auto"]);
     expect(decl(modal[0].body, "max-width")).toEqual(["432px"]);
   });
 
-  test("1024px 이상 — 왼쪽 위: 두 축 flex-start · 위 여백 = 머리글 높이 + 간격 토큰 · 왼쪽 = 페이지 좌우 여백 · modal margin 0", () => {
+  test("1024px 이상 — 왼쪽 위부터 가로로: stack row·wrap·flex-start · 위 여백 = 머리글 높이 + 간격 토큰 · 좌우 = 페이지 좌우 여백 · stack margin 0", () => {
     const overlay = desktop("overlay");
     expect(overlay, "1024px 미디어 쿼리 안의 .overlay").toHaveLength(1);
     const o = overlay[0].body;
-    expect(decl(o, "align-items")).toEqual(["flex-start"]);
-    expect(decl(o, "justify-content")).toEqual(["flex-start"]);
     // 머리글(z-index 80)은 어두운 배경(120) 아래에 그대로 보인다 — 창은 그 아래에서 시작한다. 높이는 폭에 따라 바뀌는 역할 토큰 하나(61px · 1280px 이상 77px).
     expect(decl(o, "padding-top")).toEqual(["calc(var(--layout-header-h) + var(--space-stack-sm))"]);
     // 왼쪽은 머리글 줄(.inner)의 좌우 여백과 같은 토큰 — 1280px 까지는 로고 왼쪽 끝과 같은 선이다.
     expect(decl(o, "padding-left")).toEqual(["var(--space-page-x)"]);
-    const modal = desktop("modal");
-    expect(modal, "1024px 미디어 쿼리 안의 .modal").toHaveLength(1);
-    expect(decl(modal[0].body, "margin")).toEqual(["0"]);
+    expect(decl(o, "padding-right")).toEqual(["var(--space-page-x)"]);
+    const stack = desktop("stack");
+    expect(stack, "1024px 미디어 쿼리 안의 .stack").toHaveLength(1);
+    const st = stack[0].body;
+    expect(decl(st, "flex-direction")).toEqual(["row"]);
+    expect(decl(st, "flex-wrap")).toEqual(["wrap"]);
+    expect(decl(st, "align-items")).toEqual(["flex-start"]);
+    expect(decl(st, "justify-content")).toEqual(["flex-start"]);
+    expect(decl(st, "margin")).toEqual(["0"]);
   });
 
-  test("PC 규칙은 위치만 바꾼다 — 어두운 배경·고정·덮기·z-index·스크롤·폭·모양 선언을 덮어쓰지 않는다", () => {
-    const POSITION_ONLY = new Set(["align-items", "justify-content", "padding-top", "padding-left", "margin"]);
-    const touched = [...desktop("overlay"), ...desktop("modal")].flatMap((b) => [...b.body.matchAll(/([-a-z]+)\s*:/g)].map((m) => m[1]));
+  test("PC 규칙은 위치·배치만 바꾼다 — 어두운 배경·고정·덮기·z-index·스크롤·모양 선언을 덮어쓰지 않는다", () => {
+    const LAYOUT_ONLY = new Set([
+      "padding-top",
+      "padding-left",
+      "padding-right",
+      "flex-direction",
+      "flex-wrap",
+      "align-items",
+      "align-content",
+      "justify-content",
+      "margin",
+      "gap",
+      "width",
+      "flex",
+      "max-height",
+    ]);
+    const touched = [...desktop("overlay"), ...desktop("stack"), ...desktop("modal"), ...desktop("modalImageOnly"), ...desktop("modalImageOnly .phImg")].flatMap((b) =>
+      [...b.body.matchAll(/([-a-z]+)\s*:/g)].map((m) => m[1]),
+    );
     expect(touched.length).toBeGreaterThan(0);
-    expect(touched.filter((p) => !POSITION_ONLY.has(p))).toEqual([]);
+    expect(touched.filter((p) => !LAYOUT_ONLY.has(p))).toEqual([]);
   });
 
   test("미디어 쿼리는 PC 하나뿐 — 휴대폰·태블릿 폭에서 위치를 바꾸는 규칙이 없다", () => {
     const media = [...new Set(blocks.filter((b) => b.media !== null).map((b) => b.media))];
     expect(media).toHaveLength(1);
     expect(media[0]).toMatch(DESKTOP);
-    // 그 미디어 쿼리 안에는 overlay·modal 두 규칙뿐 — 닫기 X·사진·본문·아래 띠는 모든 폭에서 같다
-    expect(blocks.filter((b) => b.media !== null).map((b) => b.selector).sort()).toEqual([".modal", ".overlay"]);
+    // 그 미디어 쿼리 안에는 창 배치 규칙뿐 — 닫기 X·본문·아래 띠는 모든 폭에서 같다
+    expect(blocks.filter((b) => b.media !== null).map((b) => b.selector).sort()).toEqual([".modal", ".modalImageOnly", ".modalImageOnly .phImg", ".overlay", ".stack"]);
   });
 
   test("모달 동작은 그대로 — dialog · aria-modal · ESC · 배경 클릭 · 문서 스크롤 잠금 · 포커스 트랩", () => {
