@@ -203,7 +203,7 @@ describe("1. 원장 소스 — 새 상수 4종", () => {
     expect((byKey.officer as { from: unknown }).from).toBe(COMPANY.privacyOfficer);
   });
 
-  test("GUIDE_SECTIONS 8절 — flow 는 4단계, contact 는 COMPANY 4개 필드 (P1-7: 첫 줄은 예약·상담 전화 · P7-5: 휴대전화 없음)", () => {
+  test("GUIDE_SECTIONS 8절 — flow 는 4단계, contact 는 COMPANY 5개 필드 (OF3-C: 대표번호 → 예약·상담 전화 · P7-5: 휴대전화 없음)", () => {
     expect(GUIDE_SECTIONS).toHaveLength(8);
     expect(GUIDE_SECTIONS.map((s) => s.key)).toEqual([
       "flow",
@@ -219,8 +219,8 @@ describe("1. 원장 소스 — 새 상수 4종", () => {
     expect(flow.steps).toHaveLength(4);
     for (const s of flow.steps) expect(s.trim().length).toBeGreaterThan(0);
     const contact = GUIDE_SECTIONS[7] as { fields: readonly string[] };
-    // 이용안내 연락처의 전화는 예약·상담 전화다(P1-7 브리프 1-C). P7-5 — 사이트의 전화번호는 이것 하나다(휴대전화 필드는 원장에서 지웠다).
-    expect(contact.fields).toEqual(["consultTel", "fax", "email", "address"]);
+    // 이용안내 연락처의 전화는 대표번호(국내 전용 — 화면이 ko 에서만 렌더, OF3-C) → 예약·상담 전화(P1-7 브리프 1-C) 순이다(휴대전화 필드는 P7-5 에서 지웠다).
+    expect(contact.fields).toEqual(["mainTel", "consultTel", "fax", "email", "address"]);
     for (const f of contact.fields) expect(typeof COMPANY[f as keyof typeof COMPANY], f).toBe("string");
     for (const f of contact.fields) expect(ledger.LEGAL_LABELS.contact, f).toHaveProperty(f);
   });
@@ -331,6 +331,8 @@ export const LEGAL_MAPPING: readonly MappingRow[] = [
   { law: "PIPA §30① — 처리방침 절 순서·제목 14절", ledgerKey: "PRIVACY_POLICY_SECTIONS", page: "/privacy" },
   { law: "PIPA §30①2호 — 처리하는 개인정보 항목(지금 받는 것 + 보관 중인 옛 접수분, P3-8)", ledgerKey: "PRIVACY_POLICY_ITEMS", page: "/privacy" },
   { law: "PIPA §30② — 처리방침 제목·시행일 공개", ledgerKey: "LEGAL_PAGES.privacy", page: "/privacy" },
+  // OF3-H(2026-10-22): 시행 7일 전 공지 — 개정 예정 안내(요약·시행일) + '자동 수집 장치' 개정 문단(네이버 프리미엄 로그 분석). 판정은 lib/privacy-revision.ts.
+  { law: "PIPA §30② · 시행령 §31②·§31①2호 — 처리방침 개정 예정 공지와 자동 수집 장치 개정 문단(OF3-H)", ledgerKey: "PRIVACY_POLICY_REVISION", page: "/privacy" },
   // ── 공통 셸 ──
   { law: "시행규칙 §7② — 법정 문서 링크 상시 노출", ledgerKey: "LEGAL_LINKS", page: "(legal)/layout" },
 ];
@@ -359,6 +361,18 @@ describe("2. 조문 ↔ 원장 키 ↔ 페이지 경로 매핑표", () => {
     ([, row]) => {
       const src = read(PATH_TO_FILE[row.page]);
       const top = row.ledgerKey.split(".")[0];
+      if (row.ledgerKey === "LEGAL_PAGES.privacy") {
+        // OF3-H: 표시 시행일은 개정 시행일 판정(lib/privacy-revision.ts privacyEffectiveDate)을 거친다 — 시행일에 어긋나지 않게. 사슬의 두 고리를 다 본다.
+        expect(src, `${PATH_TO_FILE[row.page]} 이 privacyEffectiveDate 를 import 하지 않는다`).toMatch(
+          /import\s*\{[^}]*\bprivacyEffectiveDate\b[^}]*\}\s*from\s*["']@\/lib\/privacy-revision["']/,
+        );
+        expect(
+          ledgerImports(read("lib/privacy-revision.ts").replace(/from\s*["']\.\/legal\/disclosures["']/g, 'from "@/lib/legal/disclosures"')),
+          "lib/privacy-revision.ts 에 LEGAL_PAGES import 없음",
+        ).toContain("LEGAL_PAGES");
+        expect(ledgerImports(src), `${PATH_TO_FILE[row.page]} 이 LEGAL_PAGES 를 직접 import 한다 — 판정을 거치지 않으면 시행일에 어긋난다`).not.toContain("LEGAL_PAGES");
+        return;
+      }
       if (REFUND_POLICY_SYMBOLS.has(top)) {
         expect(src, `${PATH_TO_FILE[row.page]} 이 판 고르기(lib/refund-policy)를 import 하지 않는다`).toMatch(
           /import\s*\{[^}]*\b(refundPolicyAt|upcomingRefundPolicy)\b[^}]*\}\s*from\s*["']@\/lib\/refund-policy["']/,
@@ -396,7 +410,8 @@ describe("3. 페이지·레이아웃·컴포넌트 소스에 한글 리터럴 0�
     expect(hits, `한글은 원장(lib/legal/disclosures.ts)에서만 온다`).toEqual([]);
   });
 
-  test("페이지 3개는 원장에서만 문구를 가져오고 messages/ 를 읽지 않는다 (ko 폴백 — en.json 무관)", () => {
+  // OF3-H: /privacy 만 예외 하나 — 개정 안내 상자·표지의 라벨(layout.privacyRevision)을 순수 카탈로그 조회(loadMessages)로 읽는다(번역 훅은 여전히 0).
+  test("페이지 3개는 원장에서만 문구를 가져오고 번역 훅(getTranslations·useTranslations)을 쓰지 않는다", () => {
     for (const rel of [PAGE_FILES.privacy, PAGE_FILES.terms, PAGE_FILES.guide]) {
       const src = read(rel);
       expect(src, rel).toMatch(/from ["']@\/lib\/legal\/disclosures["']/);

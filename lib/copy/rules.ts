@@ -228,8 +228,10 @@ export const PRICE_LITERALS: readonly CopyRule[] = [
 // 원장(lib/legal/disclosures.ts)이 단일 출처다. 카탈로그에는 `{tel}` 보간만 둔다.
 // 값을 원장에서 그대로 읽어 오므로 원장이 바뀌면 이 목록도 같이 바뀐다 — 손으로 베낀 리터럴이 아니다.
 // **사장님 글에도 걸지 않는다**(아래 (6)) — "전화로 연락 주세요"는 정당한 공지다.
-// P7-5 — 원장의 전화번호는 예약·상담 전화 하나다(옛 대표전화·휴대전화 필드는 지웠다 — 옛 번호 0건은 tests/contact-phone.test.ts §0).
+// P7-5 — 옛 대표전화·휴대전화 필드는 지웠다(옛 번호 0건은 tests/contact-phone.test.ts §0). OF3-C — 대표번호(mainTel)가 새로 생겼다(예약·상담 번호와 둘).
 export const CONTACT_LITERALS: ReadonlyArray<readonly [label: string, literal: string]> = [
+  // OF3-C — 대표번호(국내 전용). 카탈로그에 리터럴로 쓰지 않는다.
+  ["COMPANY.mainTel", COMPANY.mainTel],
   // P1-7 — 예약·상담 전화(국내·국제 표기). 카탈로그는 `{tel}` 보간만 쓴다.
   ["COMPANY.consultTel", COMPANY.consultTel],
   ["COMPANY.consultTelIntl", COMPANY.consultTelIntl],

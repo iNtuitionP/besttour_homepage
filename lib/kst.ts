@@ -117,3 +117,17 @@ export function toKstDateString(instant: Date): string {
   // toISOString 은 항상 UTC 기준 → 9시간 민 인스턴트의 UTC 날짜 = 원 인스턴트의 KST 날짜.
   return shifted.toISOString().slice(0, 10);
 }
+
+const KST_DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * KST 달력 날짜(`YYYY-MM-DD`)가 시행일 이후(시행일 당일 포함)인가 (OF3-H).
+ *
+ * 시행일 판정의 공용 비교 — 처리방침 개정(lib/privacy-revision.ts)과 네이버 스크립트 게이트(lib/analytics/naver-wcs.ts, 클라이언트)가 함께 쓴다.
+ * 같은 자릿수 형식이라 문자열 비교가 달력 순서와 같다. 시행일 전날 23:59:59.999 KST 는 false, 시행일 00:00:00.000 KST 는 true.
+ * 형식이 틀린 날짜는 throw 한다 — 문자열 비교가 조용히 틀린 쪽으로 넘어지지 않게.
+ */
+export function isKstDateOnOrAfter(effectiveDate: string, now: Date): boolean {
+  if (!KST_DATE_ONLY.test(effectiveDate)) throw new Error(`isKstDateOnOrAfter: YYYY-MM-DD 가 아니다 (${effectiveDate})`);
+  return toKstDateString(now) >= effectiveDate;
+}

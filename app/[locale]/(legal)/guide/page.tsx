@@ -7,8 +7,8 @@
  * 청약철회 제한 고지(원장 WITHDRAWAL.notice — 계약 전 고지의 두 번째 층, P1-7 브리프 1-B · 영문 화면은 번역본 noticeEn 도 — R2).
  * 대금 지급 절에는 입금 계좌(PAYMENT.accountLine)와 관계사 고지(RELATED_COMPANY.note)를 함께 싣는다(R2 — 법정 페이지에는 푸터가 없다).
  * 연락처는 레코드 표 — 빈 필드는 숨긴다.
- * 연락처 첫 줄은 예약·상담 전화(P1-7) — 번호 표기만 로케일을 따른다(en +82). 라벨·나머지 값은 원장 한국어 그대로다.
- * 사이트의 전화번호는 예약·상담 전화 하나다(P7-5 — 휴대전화 줄은 지웠다).
+ * 연락처는 대표번호(OF3-C — ko 만, 영문 화면에서는 행을 뺀다) → 예약·상담 전화(P1-7) 순 — 번호 표기만 로케일을 따른다(en +82). 라벨·나머지 값은 원장 한국어 그대로다.
+ * (휴대전화 줄은 P7-5 에서 지웠다.)
  *
  * 영문(/en/guide · P2-6): 페이지 제목만 영문(ledgerUi)이고 **본문은 원장 한국어 그대로**다(절 제목·표 머리·verbatim 포함 —
  * 법정 문서 한 벌을 섞지 않는다). 본문 위에 컨트롤러 확정 안내, 본문에 lang="ko". ko 화면은 안내도 lang 도 내지 않는다.
@@ -28,7 +28,7 @@ import { LegalRecordList, LegalTable } from "@/components/legal/LegalTable";
 import { OfficialKoreanNotice } from "@/components/legal/OfficialKoreanNotice";
 import { RefundPolicyChangeNotice } from "@/components/legal/RefundPolicyChangeNotice";
 import { WithdrawalRestrictionText } from "@/components/legal/WithdrawalRestrictionText";
-import { consultPhone, localPhone } from "@/lib/contact-phone";
+import { consultPhone, hasSeparateMainLine, localPhone, mainPhone } from "@/lib/contact-phone";
 import { koLang, ledgerUi } from "@/lib/i18n/ledger-ui";
 import { refundChangeTexts } from "@/lib/i18n/refund-change";
 import {
@@ -151,6 +151,8 @@ function SectionBody({ section, locale, now }: { section: Section; locale: strin
       // (모든 fields 가 COMPANY 의 문자열 필드인지는 tests/legal-pages.test.ts 가 따로 잠근다 — 조용한 누락이 되지 않게).
       const rec = Object.fromEntries(
         section.fields.flatMap((f: string) => {
+          // 대표번호(1566-…)는 국내 전용 — 한국어 화면에서만 행을 낸다. 영문 화면에는 행(라벨·값) 자체가 없다(OF3-C · 리뷰 F7).
+          if (f === "mainTel") return hasSeparateMainLine(locale) ? [[f, mainPhone(locale).display]] : [];
           if (f === "consultTel") return [[f, consultPhone(locale).display]];
           const v = f in COMPANY ? COMPANY[f as keyof typeof COMPANY] : undefined;
           if (typeof v !== "string") return [];

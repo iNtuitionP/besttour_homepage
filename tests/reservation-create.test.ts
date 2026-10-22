@@ -26,7 +26,7 @@ import { nightsBetween, parseKst } from "@/lib/kst";
 import { enqueue as outboxEnqueue, planNotifications } from "@/lib/notify/outbox";
 import { runAfter } from "@/lib/ports/after";
 import { revalidate } from "@/lib/ports/revalidate";
-import { PRIVACY_POLICY_VERSION, retentionUntil } from "@/lib/reservations/consent";
+import { privacyPolicyVersion, retentionUntil } from "@/lib/reservations/consent";
 import {
   PUBLIC_CODE_MAX_ATTEMPTS,
   ReservationDbError,
@@ -363,7 +363,7 @@ describe("insert 페이로드 — 간편 행(intake='quick'), ReservationInsert 
       passengers: 40,
       locale: "ko",
       privacy_consent_at: NOW.toISOString(),
-      privacy_policy_version: PRIVACY_POLICY_VERSION,
+      privacy_policy_version: privacyPolicyVersion(NOW),
       marketing_consent_at: null,
       retention_until: retentionUntil(NOW).toISOString(),
       withdrawal_consent_at: NOW.toISOString(),
@@ -747,7 +747,7 @@ describe("supabaseReservationDb — 어댑터", () => {
     passengers: 40,
     locale: "ko",
     privacy_consent_at: NOW.toISOString(),
-    privacy_policy_version: PRIVACY_POLICY_VERSION,
+    privacy_policy_version: privacyPolicyVersion(NOW),
     marketing_consent_at: null,
     retention_until: retentionUntil(NOW).toISOString(),
     withdrawal_consent_at: NOW.toISOString(),

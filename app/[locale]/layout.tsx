@@ -2,9 +2,12 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { hasLocale, NextIntlClientProvider } from "next-intl";
 import { setRequestLocale } from "next-intl/server";
+import { NaverWcs } from "@/components/analytics/NaverWcs";
 import { SiteAnalytics } from "@/components/analytics/SiteAnalytics";
 import { loadMessages } from "@/i18n/messages";
 import { routing } from "@/i18n/routing";
+import { naverWaFromEnv } from "@/lib/analytics/naver-wcs";
+import { PRIVACY_POLICY_REVISION } from "@/lib/legal/disclosures";
 import { shareMetadata } from "@/lib/share-meta";
 import { siteOrigin, siteVerification } from "@/lib/site-url";
 
@@ -58,6 +61,10 @@ export async function generateMetadata({ params }: { params: Promise<{ locale: s
  *
  * 방문 통계(P1-7): <SiteAnalytics /> 는 **여기에만** 둔다 — 공개 화면(로케일 트리) 전부가 대상이고, 관리자(app/admin/**)는 이 트리 밖이다.
  * 전송 직전 필터가 쿼리·해시를 지우고 /admin 을 막는다(lib/analytics/before-send.ts · tests/analytics.test.ts).
+ *
+ * 네이버 프리미엄 로그 분석(OF3-H): <NaverWcs /> 도 여기에만 둔다(공개 ko·en 전체, 관리자 제외). 환경변수 NEXT_PUBLIC_NAVER_WA(naverWaFromEnv — 레이아웃이 env 를 직접 읽지 않는다)가 비면 아무것도 렌더하지 않고,
+ * 시행일(처리방침 개정 시행일 — 원장 PRIVACY_POLICY_REVISION.effectiveDate, 서버가 prop 으로 내려 클라이언트 번들에 원장이 들어가지 않게 한다) 전 ·
+ * 거부 신호(방문 통계 거부·DNT·GPC)가 있으면 스크립트를 불러오지 않는다(lib/analytics/naver-wcs.ts · tests/naver-wcs.test.ts).
  */
 export default async function LocaleLayout({
   children,
@@ -79,6 +86,7 @@ export default async function LocaleLayout({
       <body>
         <NextIntlClientProvider>{children}</NextIntlClientProvider>
         <SiteAnalytics />
+        <NaverWcs wa={naverWaFromEnv()} effectiveFrom={PRIVACY_POLICY_REVISION.effectiveDate} />
       </body>
     </html>
   );

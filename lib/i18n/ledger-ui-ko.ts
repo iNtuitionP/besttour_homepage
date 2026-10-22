@@ -58,10 +58,12 @@ export interface LedgerUi {
     home: string;
     legalNav: string;
     /**
-     * tel = 푸터 사업자 정보의 전화 줄 라벨 · consultTel = 예약·상담 전화(손님에게 안내하는 번호 — P1-7).
-     * 두 자리의 번호는 같은 COMPANY.consultTel 이다(P7-5 — 번호 통일). 휴대전화 라벨은 쓰는 화면이 없어 지웠다.
+     * tel = 푸터 사업자 정보의 전화 줄 라벨 · mainTel = 대표번호(헤더·푸터 큰 번호의 라벨 — ko 만 1566, OF3-C) ·
+     * consultTel = 예약·상담 전화(손님에게 안내하는 번호 — P1-7). 번호는 둘이다: 대표번호 COMPANY.mainTel(국내 전용, ko 화면) · 예약·상담 COMPANY.consultTel
+     * (OF3-C — P7-5 의 "번호 통일" 을 대체). 영문 화면의 대표번호 자리는 예약·상담 번호라 라벨도 consultTel 이다(lib/contact-phone.ts hasSeparateMainLine).
+     * 휴대전화 라벨은 쓰는 화면이 없어 지웠다.
      */
-    contact: { tel: string; consultTel: string; fax: string; email: string };
+    contact: { tel: string; mainTel: string; consultTel: string; fax: string; email: string };
     officer: { phone: string };
     /** /privacy 방문 통계 거부 버튼 — LEGAL_LABELS.analyticsOptOut (P1-7 R2) */
     analyticsOptOut: { optOut: string; optIn: string; storageFailed: string; browserRefused: string };
@@ -104,6 +106,7 @@ export const LEDGER_UI_KO: LedgerUi = {
     legalNav: LEGAL_LABELS.legalNav,
     contact: {
       tel: LEGAL_LABELS.contact.tel,
+      mainTel: LEGAL_LABELS.contact.mainTel,
       consultTel: LEGAL_LABELS.contact.consultTel,
       fax: LEGAL_LABELS.contact.fax,
       email: LEGAL_LABELS.contact.email,

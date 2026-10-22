@@ -202,6 +202,15 @@
 .policyNext > .notice {
   margin-bottom: 0;
 }
+/* /privacy 자동 수집 장치 절 — 시행 전 개정 문단 미리보기(OF3-H). 본문과 구분되도록 왼쪽 선만 둔다 */
+.addendumPending {
+  margin-top: var(--space-stack-xs);
+  padding-left: var(--space-inline-sm);
+  border-left: 3px solid var(--border-strong);
+}
+.addendumPending > .policyTitle {
+  margin-top: 0;
+}
 /* 약관 제7조 아래 — 적용 범위 문장 바로 뒤의 예고 상자 */
 .body + .notice {
   margin-top: var(--space-stack-xs);

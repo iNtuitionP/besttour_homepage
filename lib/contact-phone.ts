@@ -1,16 +1,17 @@
 /**
  * 예약·상담 전화 — 표시 문자열과 tel: 링크 (P1-7 브리프 1-C).
  *
- * 사용자 결정(2026-09-21): 010-6362-6188 이 이 홈페이지의 전화번호다(예약 문의·상담). 손님에게 "여기로 전화하라" 고 안내하는
- * 모든 자리(헤더·플로팅 버튼·모바일 메뉴·고객센터 카드·예약확인·접수 완료·오류 화면·회사소개·이용안내 연락처 — /fares CTA 는 P7-6 에서 페이지째 지웠다)는
- * 여기를 거친다. 사용자 결정(2026-10-09, P7-5): 사이트의 전화번호는 이것 하나다 — 푸터 사업자 정보의 전화 줄도 이 번호이고,
- * 옛 대표전화·휴대전화는 원장에서 지웠다(tests/contact-phone.test.ts §0).
+ * 번호는 **둘**이다 (사용자 2026-10-18 · OF3-C — 새 대표번호는 끝자리 9, 사용자 확인 2026-10-20):
+ *   - 대표번호 `COMPANY.mainTel`(1566-…) — 헤더(줄 + 모바일 패널)·푸터 큰 번호·푸터 사업자 정보의 전화 줄(전자상거래법 §10①). 국내 전용이라 **한국어 화면에서만** 쓴다.
+ *   - 예약·상담 `COMPANY.consultTel`(010-…) — 손님에게 "여기로 전화하라" 고 안내하는 나머지 자리: 플로팅 전화 버튼·고객센터 카드·예약확인·접수 완료·오류 화면·
+ *     회사소개·이용안내 연락처·문자 발신·개인정보 보호책임자. (사용자 결정 2026-09-21 · 2026-10-09 P7-5 로 010 하나로 통일했던 것을, 대표번호를 새로 얻으며 둘로 나눴다.)
+ *   옛 대표전화(끝자리 8)와 사장님 옛 휴대전화는 원장에서 지웠고 다시 쓰지 않는다(번호는 tests/helpers/retired-phones.ts — tests/contact-phone.test.ts §0 이 막는다).
  *
- *   - 표시: 한국어 화면은 COMPANY.consultTel(010-…), 그 밖의 로케일은 COMPANY.consultTelIntl(+82 …) —
- *           010 을 국내 표기로만 보여 주면 해외 방문자는 국가번호를 알 수 없다.
- *   - 링크: 언제나 E.164(`tel:+82…`). 원장의 국제 표기에서 숫자와 `+` 만 남겨 만든다 — 번호를 여기 다시 적지 않는다.
+ *   - 표시: mainPhone — 한국어 화면은 COMPANY.mainTel, 그 밖의 로케일은 consultPhone 과 같은 값(1566 은 해외에서 걸리지 않는다).
+ *           consultPhone — 한국어 화면은 COMPANY.consultTel(010-…), 그 밖의 로케일은 COMPANY.consultTelIntl(+82 …) — 010 을 국내 표기로만 보여 주면 해외 방문자는 국가번호를 알 수 없다.
+ *   - 링크: 예약·상담은 언제나 E.164(`tel:+82…`) — 원장의 국제 표기에서 숫자와 `+` 만 남겨 만든다. 대표번호(ko)는 국내 전용이라 `tel:15…`(localPhone). 번호를 여기 다시 적지 않는다.
  *
- * 원장(상수)만 읽는 작은 모듈이라 클라이언트 컴포넌트((site)/error.tsx)도 import 할 수 있다. 라벨은 ledgerUi(locale).labels.contact.consultTel.
+ * 원장(상수)만 읽는 작은 모듈이라 클라이언트 컴포넌트((site)/error.tsx)도 import 할 수 있다. 라벨은 ledgerUi(locale).labels.contact.mainTel / consultTel.
  */
 import { routing } from "@/i18n/routing";
 import { COMPANY } from "@/lib/legal/disclosures";
@@ -32,6 +33,20 @@ export function consultPhone(locale: string): ContactPhone {
     display: locale === routing.defaultLocale ? COMPANY.consultTel : COMPANY.consultTelIntl,
     href: CONSULT_TEL_HREF,
   };
+}
+
+/**
+ * 로케일별 대표번호 (OF3-C). 한국어 화면 = 원장 대표번호(국내 전용 `tel:15…`), 그 밖의 로케일 = consultPhone — 영문 화면에 1566 을 쓰지 않는다.
+ * 표시·링크는 localPhone 과 같은 규칙이라 번호 리터럴이 이 파일에 없다.
+ */
+export function mainPhone(locale: string): ContactPhone {
+  if (locale === routing.defaultLocale) return localPhone(COMPANY.mainTel, locale);
+  return consultPhone(locale);
+}
+
+/** 이 로케일에서 대표번호가 예약·상담 번호와 **다른 번호**인가 — 참이면 라벨은 '대표번호'(mainTel), 푸터에 '예약 문의' 줄이 따로 붙는다. 한국어 화면만 참. */
+export function hasSeparateMainLine(locale: string): boolean {
+  return mainPhone(locale).display !== consultPhone(locale).display;
 }
 
 /**
