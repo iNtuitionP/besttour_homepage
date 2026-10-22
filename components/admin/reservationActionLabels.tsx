@@ -36,6 +36,8 @@ export async function getReservationActionLabels(): Promise<ReservationActionLab
       body: t("sms.body"),
       textLabel: t("sms.textLabel"),
       blockLabel: t("sms.blockLabel"),
+      contractChanged: t("sms.contractChanged"),
+      contractReset: t("sms.contractReset"),
       bytes: t.raw("sms.bytes") as string,
       long: t("sms.long"),
       submit: t("sms.submit"),

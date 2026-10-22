@@ -570,7 +570,7 @@ describe("5-b. 관리자 상담완료 · 상담완료 문자 — actions/admin/r
   test("상담완료 문자 큐 적재 성공 + NOTIFY_INLINE=1 → 응답 뒤 워커 1회 · 스위치 꺼짐 → 0", async () => {
     process.env.NOTIFY_INLINE = "1";
     vi.mocked(createSsrClient).mockReturnValue(smsClient("queued") as never);
-    expect(await sendConsultSms(RES_ID, "안녕하세요")).toEqual({ ok: true, code: "queued" });
+    expect(await sendConsultSms(RES_ID, "안녕하세요", "■ 대금")).toEqual({ ok: true, code: "queued" });
     expect(runNotificationWorker).not.toHaveBeenCalled();
     await flushAfter();
     expect(runNotificationWorker).toHaveBeenCalledTimes(1);
@@ -578,7 +578,7 @@ describe("5-b. 관리자 상담완료 · 상담완료 문자 — actions/admin/r
     vi.mocked(runNotificationWorker).mockClear();
     process.env.NOTIFY_INLINE = "";
     vi.mocked(createSsrClient).mockReturnValue(smsClient("queued") as never);
-    expect(await sendConsultSms(RES_ID, "안녕하세요")).toEqual({ ok: true, code: "queued" });
+    expect(await sendConsultSms(RES_ID, "안녕하세요", "■ 대금")).toEqual({ ok: true, code: "queued" });
     await flushAfter();
     expect(runNotificationWorker).not.toHaveBeenCalled();
   });
@@ -586,7 +586,7 @@ describe("5-b. 관리자 상담완료 · 상담완료 문자 — actions/admin/r
   test("상담완료 문자 — DB 가 상담완료 아님을 돌려주면 워커 0", async () => {
     process.env.NOTIFY_INLINE = "1";
     vi.mocked(createSsrClient).mockReturnValue(smsClient("not_consulted") as never);
-    expect(await sendConsultSms(RES_ID, "안녕하세요")).toEqual({ ok: false, code: "notConsulted" });
+    expect(await sendConsultSms(RES_ID, "안녕하세요", "■ 대금")).toEqual({ ok: false, code: "notConsulted" });
     await flushAfter();
     expect(runNotificationWorker).not.toHaveBeenCalled();
   });
@@ -620,7 +620,7 @@ describe("5-b. 관리자 상담완료 · 상담완료 문자 — actions/admin/r
     process.env.NOTIFY_INLINE = "1";
     vi.mocked(createSsrClient).mockReturnValue(smsClient("queued") as never);
     vi.mocked(runNotificationWorker).mockRejectedValueOnce(new Error("outbox.reapStale: boom"));
-    expect(await sendConsultSms(RES_ID, "안녕하세요")).toEqual({ ok: true, code: "queued" });
+    expect(await sendConsultSms(RES_ID, "안녕하세요", "■ 대금")).toEqual({ ok: true, code: "queued" });
     await expect(flushAfter()).resolves.toBeUndefined();
     expect(inlineLogs()).toEqual([expect.objectContaining({ level: "error", event: "notify.inline_failed", trigger: "consult_sms" })]);
   });

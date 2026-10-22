@@ -161,7 +161,12 @@ export interface ConsultSmsLabels {
   /** 시트의 설명 문장(aria-describedby). */
   body: string;
   textLabel: string;
+  /** 계약 정보 칸의 라벨 — 고칠 수 있다는 것과 되도록 그대로 두는 이유(약관)를 말한다(OF3-R4b). */
   blockLabel: string;
+  /** 계약 정보를 기본값과 다르게 고쳤을 때 작은 안내 — "계약 정보를 고쳤어요". */
+  contractChanged: string;
+  /** [기본 내용으로 되돌리기]. */
+  contractReset: string;
   /** "{bytes} / {max}바이트" */
   bytes: string;
   /** 90바이트를 넘으면 — "장문 문자로 보내져요" */

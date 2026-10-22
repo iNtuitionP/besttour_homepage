@@ -1352,7 +1352,10 @@ Vercel 은 GitHub 앱으로 연결돼 있다. GitHub 배포 기록(`GET /repos/�
   상담완료(`confirmed_at` 있음 · 상태 confirmed/done)일 때만 · **받는 번호 = reservations.phone**(인자 없음) · pending 1건. outcome `queued` | `not_consulted` | `noop`.
   🔴 권한: 같은 파일에서 `revoke all … from public, anon, authenticated, service_role` → `grant execute … to authenticated`. 표: 공개 롤(PUBLIC·anon·authenticated)의 쓰기·TRUNCATE·REFERENCES·TRIGGER 재회수 +
   MAINTAIN 은 `server_version_num >= 170000` 조건부 동적 SQL(멱등 — 0012·0017·0019 가 이미 같은 상태). service_role 의 표 권한은 건드리지 않는다(접수 통지 적재가 그 insert 로 돈다).
-- 계약 정보 블록(■ 대금 · ■ 취소·환불 · 계약 주체)은 **앱이** 원장에서 만들어 붙인다(lib/notify/templates.ts `consultContractBlock` — 접수일 판). DB 는 본문에 블록이 있는지 보지 않는다(관리자 세션이 PostgREST 로 직접 부르면 블록 없이 보낼 수 있다 — 보고서 위험).
+- 계약 정보(■ 대금 · ■ 취소·환불 · 계약 주체)는 **앱 시트의 편집 칸 기본값**이다 — 시트를 열 때마다 서버가 원장으로 만든 블록(lib/notify/templates.ts `consultContractBlock` — 접수일 판)으로 채워지고,
+  **관리자가 고칠 수 있다**(OF3-R4b · 2026-10-22 — 화면은 "되도록 그대로 두세요"만 권한다). 서버액션 `sendConsultSms(id, freeText, contract)` 는 화면이 보낸 계약 정보를 **그대로** 문구 뒤에 잇는다
+  (`문구.trim() + 빈 줄 + 계약 정보.trim()` · 계약 정보를 지우면 문구만). 서버는 블록을 다시 만들어 덮지 않는다. DB 는 본문에 블록이 있는지 보지 않는다(**이 마이그레이션은 R4b 에서 바뀌지 않았다** — RPC 는 빈 본문·2000바이트만 본다).
+  따라서 대금·취소 규정이 본문에 들어간다는 보장은 DB 에도 앱에도 없다(관리자 판단 · 화면의 안내와 "보내지 않음/지우고 보냄" 안내로 보완).
 - 로컬 실측(2026-10-22 · PostgreSQL 17.6): `npx supabase migration up --local` 자기검증 통과 · `tests/consult-sms-db.test.ts` 9건(상담완료 큐 0 · anon/service_role EXECUTE 거부 · 비관리자 가드 거부 ·
   상담완료 아님 거부 · 받는 번호 = 예약 번호 · `p_to` 인자 → PGRST202 · 2001바이트·빈 본문 22023 · 두 통 모두 sent · CHECK 23514 · claim 이 body 를 싣는다 · 카탈로그 권한) ·
   롤백(직접 쓴 문자 행 있음 → 멈춤 · 승인 플래그 → 통과) → 재적용 → 재적용(재실행 안전) — 실측 기록은 SDD 보고서 OF3-R4-report.md 의 롤백 절.

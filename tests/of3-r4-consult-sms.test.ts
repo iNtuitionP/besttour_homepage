@@ -50,6 +50,7 @@ import { confirmReservation } from "@/actions/admin/reservation";
 import { ConsultSmsSheet } from "@/components/admin/ConsultSmsSheet";
 import { ReservationProcess } from "@/components/admin/ReservationProcess";
 import {
+  blockBeforeSend,
   checkConsultSms,
   consultSmsReducer,
   initialConsultSmsState,
@@ -60,7 +61,13 @@ import { toastHasLink, type ReservationActionLabels } from "@/components/admin/r
 import { requireAdmin } from "@/lib/auth/requireAdmin";
 import { COMPANY, PAYMENT, VERBATIM } from "@/lib/legal/disclosures";
 import { notifyAfterResponse } from "@/lib/notify/deps";
-import { CONSULT_FREE_TEXT_MAX_CHARS, CONSULT_SMS_MAX_BYTES, SMS_SHORT_MAX_BYTES, joinConsultSms } from "@/lib/notify/consult-text";
+import {
+  CONSULT_CONTRACT_MAX_CHARS,
+  CONSULT_FREE_TEXT_MAX_CHARS,
+  CONSULT_SMS_MAX_BYTES,
+  SMS_SHORT_MAX_BYTES,
+  joinConsultSms,
+} from "@/lib/notify/consult-text";
 import { resendSender } from "@/lib/notify/mail";
 import {
   ALL_TEMPLATE_KEYS,
@@ -74,7 +81,6 @@ import {
   CONTRACT_PARTY_LINE,
   LMS_BYTE_LIMIT,
   SMS_BYTE_LIMIT,
-  composeConsultSms,
   consultContractBlock,
   consultSmsDefaultText,
   renderTemplate,
@@ -286,17 +292,26 @@ describe("2. 문안 (lib/notify/templates.ts · lib/notify/consult-text.ts)", ()
     expect(legacy).toContain(sections);
   });
 
-  test("최종 본문 = 문구.trim() + 빈 줄 + 블록 — 문구가 비었거나 블록을 흉내 내도 블록은 언제나 붙는다", () => {
+  test("최종 본문 = 문구.trim() + 빈 줄 + 계약 정보.trim() (OF3-R4b) — 계약 정보를 전부 지우면 빈 줄 없이 문구만 · 문구가 비면 계약 정보만 · 둘 다 비면 빈 글자", () => {
     const block = consultContractBlock(onEffective);
-    expect(composeConsultSms("  안녕하세요\n", onEffective)).toBe(`안녕하세요\n\n${block}`);
     expect(joinConsultSms("  안녕하세요\n", block)).toBe(`안녕하세요\n\n${block}`);
-    const fake = "■ 대금\n- 계약금: 0원";
-    expect(composeConsultSms(fake, onEffective).endsWith(block)).toBe(true);
+    expect(joinConsultSms("  안녕하세요\n", `\n  ${block}  \n`)).toBe(`안녕하세요\n\n${block}`);
+    expect(joinConsultSms("안녕하세요", "")).toBe("안녕하세요");
+    expect(joinConsultSms("안녕하세요", " \n ")).toBe("안녕하세요");
+    expect(joinConsultSms("  ", block)).toBe(block);
+    expect(joinConsultSms(" ", "\n")).toBe("");
+    // 줄바꿈은 LF 하나로 — 브라우저 textarea 의 CRLF 가 바이트 수를 갈리게 하지 않는다
+    expect(joinConsultSms("가\r\n나", "다\r\n라")).toBe("가\n나\n\n다\n라");
     expect(SMS_SHORT_MAX_BYTES).toBe(SMS_BYTE_LIMIT);
   });
 
-  test("기본 문구 + 블록은 2000바이트 안에 들어간다 — 손대지 않고 보내도 상한을 넘지 않는다", () => {
-    const body = composeConsultSms(consultSmsDefaultText("https://bestour.co.kr"), onEffective);
+  test("서버는 계약 정보를 다시 만들지 않는다 — composeConsultSms 는 없다(기본 블록 함수 consultContractBlock 은 시트 기본값용으로 남는다)", () => {
+    expect(codeOf("lib/notify/templates.ts")).not.toMatch(/export function composeConsultSms/);
+    expect(codeOf("lib/notify/templates.ts")).toMatch(/export function consultContractBlock/);
+  });
+
+  test("기본 문구 + 기본 블록은 2000바이트 안에 들어간다 — 손대지 않고 보내도 상한을 넘지 않는다", () => {
+    const body = joinConsultSms(consultSmsDefaultText("https://bestour.co.kr"), consultContractBlock(onEffective));
     expect(Buffer.byteLength(body, "utf8")).toBeLessThanOrEqual(CONSULT_SMS_MAX_BYTES);
     expect(smsByteLength(body)).toBe(Buffer.byteLength(body, "utf8"));
   });
@@ -426,7 +441,7 @@ describe("4. 어댑터 — 직접 쓴 문자는 SMS/LMS 로 body 그대로 · �
       return accepted();
     });
     const sender = solapiSender(solapiDeps(fetch));
-    const long = composeConsultSms("안녕하세요. 상담 내용입니다.", onEffective);
+    const long = joinConsultSms("안녕하세요. 상담 내용입니다.", consultContractBlock(onEffective));
     expect(await sender.send({ id: 1, channel: "sms", to: "+821055556666", template: CONSULT_SMS_TEMPLATE, reservationId: RID, body: long })).toEqual({
       ok: true,
       providerMessageId: "M1",
@@ -490,7 +505,9 @@ function ssrClient(opts: { row?: Record<string, unknown> | null; readError?: unk
   };
   return { client, calls };
 }
-const consultedRow = { status: "confirmed", confirmed_at: "2026-10-20T01:00:00Z", created_at: onEffective };
+const consultedRow = { status: "confirmed", confirmed_at: "2026-10-20T01:00:00Z" };
+/** 시트가 열 때 채우는 기본 계약 정보(서버가 원장으로 만들어 내린 글자) — 클라이언트가 그대로 또는 고쳐서 돌려보낸다(OF3-R4b). */
+const DEFAULT_CONTRACT = consultContractBlock(onEffective);
 
 describe("5. 서버액션 sendConsultSms (actions/admin/consultSms.ts)", () => {
   beforeEach(() => {
@@ -499,30 +516,61 @@ describe("5. 서버액션 sendConsultSms (actions/admin/consultSms.ts)", () => {
     vi.mocked(requireAdmin).mockClear();
   });
 
-  test("성공 — 예약을 읽고(상태·상담완료 시각·접수 시각만) 최종 본문 = 문구.trim() + 블록(접수일 판)으로 RPC 1회 · 인자는 p_id · p_body 뿐 · 즉시 발송 'consult_sms'", async () => {
+  test("성공 — 예약을 읽고(상태·상담완료 시각만) 최종 본문 = 문구.trim() + 빈 줄 + 클라이언트가 보낸 기본 계약 정보로 RPC 1회 · 인자는 p_id · p_body 뿐 · 즉시 발송 'consult_sms'", async () => {
     const { client, calls } = ssrClient({ row: consultedRow, rpcData: [{ outcome: "queued", notification_id: 41 }] });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
-    const result = await sendConsultSms(RID, "  안녕하세요, 상담 내용입니다.  ");
+    const result = await sendConsultSms(RID, "  안녕하세요, 상담 내용입니다.  ", DEFAULT_CONTRACT);
     expect(result).toEqual({ ok: true, code: "queued" });
     expect(requireAdmin).toHaveBeenCalledTimes(1);
-    expect(calls.selects).toEqual(["status,confirmed_at,created_at"]);
+    expect(calls.selects).toEqual(["status,confirmed_at"]);
     expect(calls.rpc).toEqual([
-      { fn: "admin_send_reservation_sms", args: { p_id: RID, p_body: composeConsultSms("안녕하세요, 상담 내용입니다.", onEffective) } },
+      { fn: "admin_send_reservation_sms", args: { p_id: RID, p_body: `안녕하세요, 상담 내용입니다.\n\n${DEFAULT_CONTRACT}` } },
     ]);
     expect(Object.keys(calls.rpc[0].args).sort()).toEqual(["p_body", "p_id"]);
     expect(notifyAfterResponse).toHaveBeenCalledTimes(1);
     expect(vi.mocked(notifyAfterResponse).mock.calls[0][0]).toBe("consult_sms");
   });
 
-  test("입력 검증 — uuid 아님 · 빈 문구 · 상한 초과 문구 · 문자열 아님 → invalid · DB 0", async () => {
-    for (const [id, text] of [
-      ["not-a-uuid", "안녕"],
-      [RID, "   \n "],
-      [RID, "가".repeat(CONSULT_FREE_TEXT_MAX_CHARS + 1)],
-      [RID, "안내\u0007벨"],
-      [RID, 42 as unknown as string],
+  test("고친 계약 정보는 그대로 본문에 들어간다 — 서버가 원장 블록으로 되돌리지 않는다(OF3-R4b)", async () => {
+    const { client, calls } = ssrClient({ row: consultedRow, rpcData: [{ outcome: "queued", notification_id: 41 }] });
+    vi.mocked(createSsrClient).mockReturnValue(client as never);
+    const edited = DEFAULT_CONTRACT.replace(PAYMENT.smsDeposit, "계약금은 통화로 정한 금액으로 받습니다");
+    expect(edited).not.toBe(DEFAULT_CONTRACT);
+    expect(await sendConsultSms(RID, "안녕하세요", edited)).toEqual({ ok: true, code: "queued" });
+    const body = String(calls.rpc[0].args.p_body);
+    expect(body).toBe(`안녕하세요\n\n${edited}`);
+    expect(body).toContain("계약금은 통화로 정한 금액으로 받습니다");
+    expect(body).not.toContain(PAYMENT.smsDeposit);
+  });
+
+  test("계약 정보를 전부 지우면 문구만 간다(빈 줄 없음) · 문구가 비어도 계약 정보가 있으면 계약 정보만 간다 · 줄바꿈은 LF", async () => {
+    for (const [text, contract, expected] of [
+      ["안녕하세요", "  \n ", "안녕하세요"],
+      ["  ", DEFAULT_CONTRACT, DEFAULT_CONTRACT],
+      ["가\r\n나", "다\r\n라", "가\n나\n\n다\n라"],
     ] as const) {
-      expect(await sendConsultSms(id, text), `${id}/${String(text).slice(0, 10)}`).toEqual({ ok: false, code: "invalid" });
+      const { client, calls } = ssrClient({ row: consultedRow, rpcData: [{ outcome: "queued", notification_id: 41 }] });
+      vi.mocked(createSsrClient).mockReturnValue(client as never);
+      expect(await sendConsultSms(RID, text, contract), expected.slice(0, 12)).toEqual({ ok: true, code: "queued" });
+      expect(calls.rpc[0].args.p_body).toBe(expected);
+    }
+  });
+
+  test("입력 검증 — uuid 아님 · 문구와 계약 정보가 둘 다 비면 · 상한 초과 · 제어문자 · 문자열 아님 · 계약 정보 인자 없음 → invalid · DB 0", async () => {
+    for (const [id, text, contract] of [
+      ["not-a-uuid", "안녕", DEFAULT_CONTRACT],
+      [RID, "   \n ", "  \n "],
+      [RID, "", ""],
+      [RID, "가".repeat(CONSULT_FREE_TEXT_MAX_CHARS + 1), DEFAULT_CONTRACT],
+      [RID, "안녕", "가".repeat(CONSULT_CONTRACT_MAX_CHARS + 1)],
+      [RID, "안내\u0007벨", DEFAULT_CONTRACT],
+      [RID, "안녕", "계약\u0007정보"],
+      [RID, 42 as unknown as string, DEFAULT_CONTRACT],
+      [RID, "안녕", 42 as unknown as string],
+      [RID, "안녕", undefined as unknown as string],
+      [RID, "안녕", null as unknown as string],
+    ] as const) {
+      expect(await sendConsultSms(id, text, contract), `${id}/${String(text).slice(0, 10)}/${String(contract).slice(0, 10)}`).toEqual({ ok: false, code: "invalid" });
     }
     expect(createSsrClient).not.toHaveBeenCalled();
     expect(notifyAfterResponse).not.toHaveBeenCalled();
@@ -537,16 +585,25 @@ describe("5. 서버액션 sendConsultSms (actions/admin/consultSms.ts)", () => {
     ]) {
       const { client, calls } = ssrClient({ row });
       vi.mocked(createSsrClient).mockReturnValue(client as never);
-      expect(await sendConsultSms(RID, "안녕하세요"), JSON.stringify(row)).toEqual({ ok: false, code: "notConsulted" });
+      expect(await sendConsultSms(RID, "안녕하세요", DEFAULT_CONTRACT), JSON.stringify(row)).toEqual({ ok: false, code: "notConsulted" });
       expect(calls.rpc).toEqual([]);
     }
     expect(notifyAfterResponse).not.toHaveBeenCalled();
   });
 
-  test("최종 본문이 2000바이트를 넘으면 tooLong · RPC 0", async () => {
+  test("최종 본문이 2000바이트를 넘으면(두 칸의 합) tooLong · RPC 0", async () => {
     const { client, calls } = ssrClient({ row: consultedRow });
     vi.mocked(createSsrClient).mockReturnValue(client as never);
-    expect(await sendConsultSms(RID, "가".repeat(CONSULT_FREE_TEXT_MAX_CHARS))).toEqual({ ok: false, code: "tooLong" });
+    expect(await sendConsultSms(RID, "가".repeat(CONSULT_FREE_TEXT_MAX_CHARS), "")).toEqual({ ok: false, code: "tooLong" });
+    // 칸 하나씩은 상한 안이어도 합이 넘으면 막는다
+    expect(await sendConsultSms(RID, "가".repeat(400), "나".repeat(400))).toEqual({ ok: false, code: "tooLong" });
+    // 경계 — 정확히 2000바이트는 통과
+    const exact = joinConsultSms("a".repeat(900), "b".repeat(2000 - 900 - 2));
+    expect(Buffer.byteLength(exact, "utf8")).toBe(CONSULT_SMS_MAX_BYTES);
+    const ok = ssrClient({ row: consultedRow, rpcData: [{ outcome: "queued", notification_id: 41 }] });
+    vi.mocked(createSsrClient).mockReturnValue(ok.client as never);
+    expect(await sendConsultSms(RID, "a".repeat(900), "b".repeat(2000 - 900 - 2))).toEqual({ ok: true, code: "queued" });
+    expect(ok.calls.rpc[0].args.p_body).toBe(exact);
     expect(calls.rpc).toEqual([]);
   });
 
@@ -560,7 +617,7 @@ describe("5. 서버액션 sendConsultSms (actions/admin/consultSms.ts)", () => {
     ] as const) {
       const { client } = ssrClient(opts);
       vi.mocked(createSsrClient).mockReturnValue(client as never);
-      expect(await sendConsultSms(RID, "안녕하세요"), JSON.stringify(opts)).toEqual({ ok: false, code });
+      expect(await sendConsultSms(RID, "안녕하세요", DEFAULT_CONTRACT), JSON.stringify(opts)).toEqual({ ok: false, code });
     }
     expect(notifyAfterResponse).not.toHaveBeenCalled();
   });
@@ -569,11 +626,14 @@ describe("5. 서버액션 sendConsultSms (actions/admin/consultSms.ts)", () => {
     const src = codeOf("actions/admin/consultSms.ts");
     expect(src).toMatch(/^"use server";/);
     expect(src.match(/export async function/g)).toHaveLength(1);
-    expect(src).toMatch(/export async function sendConsultSms\([^)]*\)[^{]*\{\s*await requireAdmin\(\);/);
+    expect(src).toMatch(/export async function sendConsultSms\(id: string, freeText: string, contract: string\)[^{]*\{\s*await requireAdmin\(\);/);
+    // 계약 정보는 클라이언트가 보낸 글자를 쓴다 — 서버가 원장에서 다시 만들어 덮지 않는다(OF3-R4b)
+    expect(src).not.toMatch(/composeConsultSms|consultContractBlock|refundPolicyAt|created_at/);
+    expect(src).toMatch(/joinConsultSms\(/);
     expect(src).not.toMatch(/createServiceClient|SUPABASE_SERVICE_ROLE_KEY|supabase\/server|process\.env/);
     expect(src.match(/notifyAfterResponse\(/g)).toHaveLength(1);
     expect(src).toMatch(/notifyAfterResponse\("consult_sms", runAfter\)/);
-    expect(src).not.toMatch(/structuredLog\([^)]*(body|text|freeText)/);
+    expect(src).not.toMatch(/structuredLog\([^)]*(body|text|freeText|contract)/);
   });
 });
 
@@ -660,53 +720,108 @@ describe("7. 관리자 화면", () => {
     expect(codeOf("components/admin/reservation-sheet.ts")).toMatch(/export const SHEET_KINDS = \["confirm", "complete"\] as const;/);
   });
 
-  test("문자 시트 — 문구 칸(기본값) · 바이트 · 90바이트 넘으면 장문 안내 · 계약 블록 읽기 전용 미리보기 · [보내기][보내지 않음]", async () => {
+  const sheetHtml = async (over: Record<string, unknown> = {}) => {
     const l = await labels();
     const block = consultContractBlock(onEffective);
     const draft = consultSmsDefaultText(ORIGIN);
-    const html = renderToStaticMarkup(
-      createElement(ConsultSmsSheet, {
-        labels: l.sms,
-        processing: l.processing,
-        slowNote: l.sheet.slow,
-        customerName: "",
-        text: draft,
-        block,
-        banner: null,
-        bannerAttempt: 0,
-        pending: false,
-        slow: false,
-        onText: () => {},
-        onClose: () => {},
-        onSubmit: () => {},
-      }),
-    );
+    return {
+      l,
+      block,
+      draft,
+      html: renderToStaticMarkup(
+        createElement(ConsultSmsSheet, {
+          labels: l.sms,
+          processing: l.processing,
+          slowNote: l.sheet.slow,
+          customerName: "",
+          text: draft,
+          block,
+          contract: block,
+          banner: null,
+          bannerAttempt: 0,
+          pending: false,
+          slow: false,
+          onText: () => {},
+          onContract: () => {},
+          onResetContract: () => {},
+          onClose: () => {},
+          onSubmit: () => {},
+          ...over,
+        }),
+      ),
+    };
+  };
+
+  test("문자 시트 — 문구 칸(기본값) · 계약 정보 편집 칸(기본값 = 원장 블록) · 바이트 · 90바이트 넘으면 장문 안내 · [보내기][보내지 않음] (OF3-R4b)", async () => {
+    const { l, block, draft, html } = await sheetHtml();
     expect(html).toContain('data-testid="admin-sheet-sms"');
     expect(html).toMatch(/<textarea[^>]*data-testid="admin-sms-text"/);
     expect(text(html)).toContain(draft.split("\n")[0]);
+    // 계약 정보 = 읽기 전용 <pre> 가 아니라 편집 칸(textarea) — 기본값은 서버가 내린 원장 블록 그대로
+    expect(html).toMatch(/<textarea[^>]*data-testid="admin-sms-contract"/);
+    expect(html).not.toMatch(/<pre[^>]*data-testid="admin-sms-block"/);
+    expect(html).not.toContain("<pre");
+    const contractTag = /<textarea[^>]*data-testid="admin-sms-contract"[^>]*>([\s\S]*?)<\/textarea>/.exec(html);
+    expect(contractTag, "계약 정보 textarea").not.toBeNull();
+    expect(text(contractTag![1])).toContain("■ 대금");
+    expect(text(contractTag![1])).toContain(text(block.split("\n")[0]));
+    expect(html).not.toMatch(/<textarea[^>]*data-testid="admin-sms-contract"[^>]*readonly/i);
     const bytes = smsByteLength(joinConsultSms(draft, block));
     expect(text(html)).toContain(bytes.toLocaleString("ko-KR"));
     expect(text(html)).toContain(l.sms.long);
-    expect(html).toMatch(/data-testid="admin-sms-block"/);
-    expect(html).not.toMatch(/<textarea[^>]*data-testid="admin-sms-block"/);
-    expect(text(html)).toContain("■ 대금");
     expect(text(html)).toContain(l.sms.submit);
     expect(text(html)).toContain(l.sms.skip);
     expect(text(html)).not.toContain(VERBATIM.bookingNotice);
+    // 고치지 않았으면 안내·되돌리기 버튼이 없다
+    expect(html).not.toContain('data-testid="admin-sms-contract-changed"');
+    expect(html).not.toContain('data-testid="admin-sms-contract-reset"');
   });
 
-  test("판정 — 빈 문구 · 2000바이트 초과 · 90바이트 초과(장문) · 기본", () => {
+  test("문자 시트 — 계약 정보를 기본값과 다르게 고치면 작은 안내 + [기본 내용으로 되돌리기] · 지워도 같다 · 줄바꿈만 CRLF 로 다른 것은 고친 것이 아니다", async () => {
+    const edited = await sheetHtml({ contract: "내가 고친 계약 정보" });
+    expect(edited.html).toContain('data-testid="admin-sms-contract-changed"');
+    expect(text(edited.html)).toContain(edited.l.sms.contractChanged);
+    expect(edited.html).toMatch(/<button[^>]*type="button"[^>]*data-testid="admin-sms-contract-reset"|<button[^>]*data-testid="admin-sms-contract-reset"[^>]*type="button"/);
+    expect(text(edited.html)).toContain(edited.l.sms.contractReset);
+    const cleared = await sheetHtml({ contract: "" });
+    expect(cleared.html).toContain('data-testid="admin-sms-contract-reset"');
+    const crlf = await sheetHtml({ contract: consultContractBlock(onEffective).replace(/\n/g, "\r\n") });
+    expect(crlf.html).not.toContain('data-testid="admin-sms-contract-reset"');
+    // 처리 중에는 되돌리기도 막는다
+    const pending = await sheetHtml({ contract: "고침", pending: true });
+    expect(pending.html).toMatch(/<button[^>]*data-testid="admin-sms-contract-reset"[^>]*disabled|<button[^>]*disabled[^>]*data-testid="admin-sms-contract-reset"/);
+    expect(pending.html).toMatch(/<textarea[^>]*disabled[^>]*data-testid="admin-sms-contract"|<textarea[^>]*data-testid="admin-sms-contract"[^>]*disabled/);
+  });
+
+  test("문자 시트 — 바이트 수는 두 칸의 합(최종 본문 기준) · 합이 2000바이트를 넘으면 빨강 표시", async () => {
+    const both = await sheetHtml({ text: "안녕하세요", contract: "계약" });
+    expect(text(both.html)).toContain(smsByteLength(joinConsultSms("안녕하세요", "계약")).toLocaleString("ko-KR"));
+    const textOnly = await sheetHtml({ text: "안녕하세요", contract: "" });
+    expect(text(textOnly.html)).toContain(smsByteLength("안녕하세요").toLocaleString("ko-KR"));
+    const over = await sheetHtml({ text: "가".repeat(400), contract: "나".repeat(400) });
+    expect(over.html).toMatch(/data-over="true"[^>]*data-testid="admin-sms-bytes"|data-testid="admin-sms-bytes"[^>]*data-over="true"/);
+  });
+
+  test("판정 — 둘 다 비면 empty · 문구만 비어도 계약 정보가 있으면 ok · 2000바이트 초과 · 90바이트 초과(장문) · 기본", () => {
     const block = consultContractBlock(onEffective);
-    expect(checkConsultSms("   ", block)).toMatchObject({ kind: "empty" });
+    expect(checkConsultSms("   ", "  \n")).toMatchObject({ kind: "empty" });
+    expect(checkConsultSms("   ", block)).toMatchObject({ kind: "ok" });
+    expect(checkConsultSms("안녕", "")).toMatchObject({ kind: "ok", long: false });
     expect(checkConsultSms("가".repeat(700), block)).toMatchObject({ kind: "tooLong", max: CONSULT_SMS_MAX_BYTES });
+    expect(checkConsultSms("가".repeat(400), "나".repeat(400))).toMatchObject({ kind: "tooLong" });
     expect(checkConsultSms("안녕", block)).toMatchObject({ kind: "ok", long: true });
     expect(checkConsultSms("hi", "x")).toMatchObject({ kind: "ok", long: false });
+    expect(blockBeforeSend("  ", "")).toEqual({ kind: "empty" });
+    expect(blockBeforeSend("", block)).toBeNull();
+    expect(blockBeforeSend("안녕", "")).toBeNull();
+    expect(blockBeforeSend("가".repeat(400), "나".repeat(400))).toMatchObject({ kind: "tooLong", max: CONSULT_SMS_MAX_BYTES });
   });
 
-  test("상태 — 보내지 않음은 시트를 닫고 안내를 남긴다 · 보낸 뒤에는 기본 문구로 돌아간다 · 실패·상담완료 아님은 시트 안 배너", () => {
-    let s = initialConsultSmsState("기본");
+  test("상태 — 보내지 않음은 시트를 닫고 안내를 남긴다 · 보낸 뒤에는 기본 문구·기본 계약 정보로 돌아간다 · 실패·상담완료 아님은 시트 안 배너", () => {
+    let s = initialConsultSmsState("기본", "블록");
+    expect(s).toMatchObject({ text: "기본", block: "블록", contract: "블록" });
     s = consultSmsReducer(s, { type: "open", customerName: "홍" });
-    expect(s).toMatchObject({ open: true, skipped: false, customerName: "홍", text: "기본" });
+    expect(s).toMatchObject({ open: true, skipped: false, customerName: "홍", text: "기본", contract: "블록" });
     s = consultSmsReducer(s, { type: "edit", text: "고친 문구" });
     s = consultSmsReducer(s, { type: "skip" });
     expect(s).toMatchObject({ open: false, skipped: true, text: "고친 문구" });
@@ -717,18 +832,68 @@ describe("7. 관리자 화면", () => {
     s = consultSmsReducer(s, { type: "settled", result: { ok: false, code: "notConsulted" } });
     expect(s.banner).toEqual({ kind: "notConsulted" });
     s = consultSmsReducer(s, { type: "settled", result: { ok: true, code: "queued" } });
-    expect(s).toMatchObject({ open: false, skipped: false, banner: null, text: "기본" });
+    expect(s).toMatchObject({ open: false, skipped: false, banner: null, text: "기본", contract: "블록" });
   });
 
-  test("상태 — 상담완료로 바뀐 뒤 새로고침이 두 조각을 처음 내려 주면 고치지 않은 문구는 새 기본값 · 고치던 문구는 지킨다", () => {
+  test("상태 — 계약 정보 고치기 · 되돌리기 · 열 때마다 기본값으로 · 지우고 보내면 '보내지 않음' 과 같은 안내를 남긴다(막지는 않는다)", () => {
+    let s = initialConsultSmsState("기본", "블록");
+    s = consultSmsReducer(s, { type: "open", customerName: "" });
+    s = consultSmsReducer(s, { type: "contract", text: "고친 블록" });
+    expect(s).toMatchObject({ contract: "고친 블록", banner: null });
+    s = consultSmsReducer(s, { type: "resetContract" });
+    expect(s).toMatchObject({ contract: "블록", text: "기본" });
+    // 문구는 지켜진 채 계약 정보만 되돌아간다
+    s = consultSmsReducer(s, { type: "edit", text: "고친 문구" });
+    s = consultSmsReducer(s, { type: "contract", text: "또 고침" });
+    s = consultSmsReducer(s, { type: "resetContract" });
+    expect(s).toMatchObject({ contract: "블록", text: "고친 문구" });
+    // 고친 채 보내지 않고 닫았다가 다시 열면 계약 정보는 기본값부터(열 때마다 기본값) — 문구는 그대로
+    s = consultSmsReducer(s, { type: "contract", text: "고친 블록" });
+    s = consultSmsReducer(s, { type: "skip" });
+    s = consultSmsReducer(s, { type: "open", customerName: "" });
+    expect(s).toMatchObject({ contract: "블록", text: "고친 문구" });
+    // 고친 계약 정보로 보냈다 → 안내 없음 · 기본값으로 복귀
+    s = consultSmsReducer(s, { type: "contract", text: "고친 블록" });
+    s = consultSmsReducer(s, { type: "settled", result: { ok: true, code: "queued" } });
+    expect(s).toMatchObject({ open: false, skipped: false, contract: "블록", text: "기본" });
+    // 계약 정보를 지우고 보냈다 → 같은 안내("대금·취소 규정은 …")를 한 번 남긴다 · 기본값으로 복귀
+    s = consultSmsReducer(s, { type: "open", customerName: "" });
+    s = consultSmsReducer(s, { type: "contract", text: " \n " });
+    s = consultSmsReducer(s, { type: "settled", result: { ok: true, code: "queued" } });
+    expect(s).toMatchObject({ open: false, skipped: true, contract: "블록", text: "기본" });
+    // 지웠지만 보내지 못했다(실패) → 시트 안 배너만, 안내는 아직 아니다
+    s = consultSmsReducer(initialConsultSmsState("기본", "블록"), { type: "open", customerName: "" });
+    s = consultSmsReducer(s, { type: "contract", text: "" });
+    s = consultSmsReducer(s, { type: "settled", result: { ok: false, code: "failed" } });
+    expect(s).toMatchObject({ open: true, skipped: false, banner: { kind: "failed" }, contract: "" });
+    // 2000바이트 초과 배너의 바이트 수는 두 칸의 합
+    s = consultSmsReducer(s, { type: "edit", text: "가".repeat(400) });
+    s = consultSmsReducer(s, { type: "contract", text: "나".repeat(400) });
+    s = consultSmsReducer(s, { type: "settled", result: { ok: false, code: "tooLong" } });
+    expect(s.banner).toEqual({ kind: "tooLong", bytes: smsByteLength(joinConsultSms("가".repeat(400), "나".repeat(400))), max: CONSULT_SMS_MAX_BYTES });
+  });
+
+  test("상태 — 상담완료로 바뀐 뒤 새로고침이 두 조각을 처음 내려 주면 고치지 않은 문구·계약 정보는 새 기본값 · 고치던 것은 지킨다", () => {
     let s = initialConsultSmsState("", "");
     s = consultSmsReducer(s, { type: "draft", defaultText: "기본", block: "블록" });
-    expect(s).toMatchObject({ text: "기본", defaultText: "기본", block: "블록" });
+    expect(s).toMatchObject({ text: "기본", defaultText: "기본", block: "블록", contract: "블록" });
     s = consultSmsReducer(s, { type: "edit", text: "고침" });
+    s = consultSmsReducer(s, { type: "contract", text: "고친 블록" });
     s = consultSmsReducer(s, { type: "draft", defaultText: "새 기본", block: "새 블록" });
-    expect(s).toMatchObject({ text: "고침", defaultText: "새 기본", block: "새 블록" });
+    expect(s).toMatchObject({ text: "고침", defaultText: "새 기본", block: "새 블록", contract: "고친 블록" });
     expect(consultSmsReducer(s, { type: "draft", defaultText: "새 기본", block: "새 블록" })).toBe(s);
+    // 고치지 않은 계약 정보는 새 기본값을 따른다
+    const fresh = consultSmsReducer(initialConsultSmsState("기본", "블록"), { type: "draft", defaultText: "기본", block: "새 블록" });
+    expect(fresh.contract).toBe("새 블록");
     expect(codeOf("components/admin/ReservationActions.tsx")).toMatch(/smsDispatch\(\{ type: "draft", defaultText: sms\.defaultText, block: sms\.block \}\)/);
+  });
+
+  test("처리 영역 — 보내기는 문구와 계약 정보를 함께 서버액션에 넘긴다(블록을 서버가 만들지 않는다)", () => {
+    const actions = codeOf("components/admin/ReservationActions.tsx");
+    expect(actions).toMatch(/sendConsultSms\(id, text, contract\)/);
+    expect(actions).toMatch(/blockBeforeSend\(smsState\.text, smsState\.contract\)/);
+    expect(actions).toMatch(/onContract=\{\(contract\) => smsDispatch\(\{ type: "contract", text: contract \}\)\}/);
+    expect(actions).toMatch(/onResetContract=\{\(\) => smsDispatch\(\{ type: "resetContract" \}\)\}/);
   });
 
   test("토스트 — 발송 기록 링크는 문자 발송 토스트에만(상담완료는 문자를 보내지 않는다)", () => {
@@ -769,6 +934,26 @@ describe("8. 관리자 카피 (messages/ko.json)", () => {
     expect(get("admin.detail.messages.title")).toBeTruthy();
     expect(get("admin.notifications.template.consult.customer.sms")).toBeTruthy();
     expect(admin.some(([, v]) => v.includes(VERBATIM.bookingNotice))).toBe(false);
+  });
+
+  test("계약 정보는 고칠 수 있다(OF3-R4b) — '고칠 수 없어요' 문구가 없고, 라벨이 되도록 그대로 두는 이유(약관 · 예약 확정 안내에 대금·취소 규정)를 말한다", () => {
+    const get = (k: string) => admin.find(([key]) => key === k)?.[1] ?? "";
+    const sms = admin.filter(([k]) => k.startsWith("admin.detail.sms."));
+    expect(sms.filter(([, v]) => /고칠 수 없|수정할 수 없|편집 불가/.test(v))).toEqual([]);
+    const label = get("admin.detail.sms.blockLabel");
+    expect(label).toContain("계약 정보");
+    expect(label).toMatch(/고칠 수 있/);
+    expect(label).toMatch(/그대로 두/);
+    expect(label).toContain("약관");
+    expect(label).toContain("예약 확정");
+    expect(label).toMatch(/대금/);
+    expect(label).toMatch(/취소/);
+    expect(get("admin.detail.sms.body")).toMatch(/고칠 수 있/);
+    expect(get("admin.detail.sms.contractChanged")).toBe("계약 정보를 고쳤어요");
+    expect(get("admin.detail.sms.contractReset")).toBe("기본 내용으로 되돌리기");
+    // 두 칸이 모두 비면 막는다 — 문구만 비는 것은 막지 않는다
+    expect(get("admin.detail.sms.empty")).toMatch(/문구|계약 정보/);
+    expect(get("admin.detail.sms.hint")).not.toMatch(/늘 함께 붙/);
   });
 
   test("보낸 문자 기록 — 예약 상세가 읽고(세션 + RLS · 받는 번호 칸을 읽지 않는다) 시각·상태·본문 앞부분을 그린다", () => {

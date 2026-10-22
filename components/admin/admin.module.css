@@ -4021,7 +4021,7 @@ a.hubItem:hover {
   }
 }
 
-/* OF3-R4 — 상담완료 문자 시트(위 = 고칠 수 있는 문구 · 바이트 · 아래 = 고칠 수 없는 계약 정보 블록) · 보내지 않음 안내 · 보낸 문자 기록 */
+/* OF3-R4 — 상담완료 문자 시트(위 = 문구 · 바이트 · 아래 = 계약 정보 편집 칸 — OF3-R4b) · 보내지 않음 안내 · 보낸 문자 기록 */
 .smsField {
   margin: var(--space-stack-sm) 0 0;
 }
@@ -4046,19 +4046,17 @@ a.hubItem:hover {
 .smsBlock {
   margin: var(--space-stack-sm) 0 0;
 }
-/* 미리보기 — 줄바꿈을 그대로 보이고 긴 주소는 꺾는다(375px 가로 스크롤 0) */
-.smsBlockText {
+/* 계약 정보를 고쳤을 때 — 작은 안내 + [기본 내용으로 되돌리기] (OF3-R4b) */
+.smsContractFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-stack-xs) var(--space-inline-sm);
+  margin: var(--space-stack-xs) 0 0;
+}
+.smsContractFoot .smsBytes {
   margin: 0;
-  padding: var(--space-stack-xs) var(--space-inline-sm);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-control);
-  background: var(--bg-subtle);
-  color: var(--text-primary);
-  font: inherit;
-  font-size: 14px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
 .smsSkipped {
   margin: 0;

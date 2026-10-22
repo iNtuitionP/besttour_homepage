@@ -19,9 +19,11 @@
  *
  * OF3-R4(2026-10-22 · 0028):
  *   - [접수 취소] 진입과 취소 시트를 걷었다 — 상태는 접수 → 상담완료 두 단계다. 취소 서버액션·DB 함수는 남는다(이 파일이 부르지 않을 뿐).
- *   - 상담완료는 문자를 보내지 않는다. 상담완료·운행 완료 접수에 **[문자 보내기]** 시트(ConsultSmsSheet)를 연다 — 위 = 고칠 수 있는 문구,
- *     아래 = 서버가 원장에서 만든 계약 정보 블록(읽기 전용). [보내기]는 처리 중 표시 안에서 actions/admin/consultSms.ts 를 부르고(서버가 블록을
- *     다시 만든다), [보내지 않음](ESC · 바깥 누르기 포함)은 닫고 "대금·취소 규정은 다른 방법으로 꼭 안내해 주세요" 를 남긴다. 여러 번 보낼 수 있다.
+ *   - 상담완료는 문자를 보내지 않는다. 상담완료·운행 완료 접수에 **[문자 보내기]** 시트(ConsultSmsSheet)를 연다 — 위 = 문구,
+ *     아래 = 계약 정보(열 때마다 서버가 원장으로 만든 기본 블록으로 채워지고 관리자가 고칠 수 있다 — OF3-R4b · [기본 내용으로 되돌리기]).
+ *     [보내기]는 처리 중 표시 안에서 두 칸의 글자를 그대로 actions/admin/consultSms.ts 에 넘기고(서버는 블록을 다시 만들지 않는다),
+ *     [보내지 않음](ESC · 바깥 누르기 포함)은 닫고 "대금·취소 규정은 다른 방법으로 꼭 안내해 주세요" 를 남긴다(계약 정보를 지우고 보냈을 때도 같은 안내).
+ *     여러 번 보낼 수 있다.
  *
  * P5-19 에서 이어지는 것(바꾸지 않았다):
  *   - 되돌릴 수 없는 전이(상담완료·완료)는 **확인 시트를 거친다**. 서버액션을 부르는 길은 시트의 실행 버튼 하나다
@@ -207,14 +209,15 @@ export function ReservationActions({ id, status, initialMemo, summary, labels, s
   };
   const sendSms = () => {
     if (sms === null) return;
-    const blocked = blockBeforeSend(smsState.text, sms.block);
+    const blocked = blockBeforeSend(smsState.text, smsState.contract);
     if (blocked !== null) {
       smsDispatch({ type: "blocked", banner: blocked });
       return;
     }
     const text = smsState.text;
+    const contract = smsState.contract;
     startTransition(async () => {
-      const result = await callSms(() => sendConsultSms(id, text));
+      const result = await callSms(() => sendConsultSms(id, text, contract));
       smsDispatch({ type: "settled", result });
       if (result.ok) dispatch({ type: "smsQueued" });
       // 보냈으면 보낸 문자 기록을, 상담완료가 아니면 최신 상태를 다시 그린다
@@ -299,7 +302,7 @@ export function ReservationActions({ id, status, initialMemo, summary, labels, s
 
   return (
     <>
-      {/* [보내지 않음]으로 닫은 뒤 남는 안내(요구 R4) — 다시 열거나 보내면 사라진다. 자리는 처음부터 있다(role=status · 비어 있으면 그리지 않는다). */}
+      {/* [보내지 않음]으로 닫은 뒤(또는 계약 정보를 지우고 보낸 뒤) 남는 안내(요구 R4) — 다시 열면 사라진다. 자리는 처음부터 있다(role=status · 비어 있으면 그리지 않는다). */}
       <div role="status" data-testid="admin-sms-skipped-region">
         {smsState.skipped ? (
           <p className={s.smsSkipped} data-testid="admin-sms-skipped">
@@ -359,11 +362,14 @@ export function ReservationActions({ id, status, initialMemo, summary, labels, s
           customerName={smsState.customerName}
           text={smsState.text}
           block={sms.block}
+          contract={smsState.contract}
           banner={smsBannerText(smsState.banner, labels.sms)}
           bannerAttempt={smsState.bannerSeq}
           pending={pending}
           slow={slow}
           onText={(text) => smsDispatch({ type: "edit", text })}
+          onContract={(contract) => smsDispatch({ type: "contract", text: contract })}
+          onResetContract={() => smsDispatch({ type: "resetContract" })}
           onClose={skipSms}
           onSubmit={sendSms}
         />
