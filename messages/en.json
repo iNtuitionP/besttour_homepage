@@ -107,7 +107,15 @@
         "pax": "Passengers",
         "groupAirport": "Airport",
         "groupRegions": "Provinces & metropolitan cities",
-        "groupCities": "Featured route cities",
+        "sigungu": "City / county / district",
+        "sigunguAll": "All",
+        "calendar": {
+          "placeholder": "Select date",
+          "prevMonth": "Previous month",
+          "nextMonth": "Next month",
+          "monthYear": "{month} {year}",
+          "dialog": "Choose {field}"
+        },
         "cta": "Request a quote",
         "errors": {
           "origin": "Please choose where you are leaving from.",
@@ -167,7 +175,7 @@
       "eyebrow": "About us",
       "lead": "Thank you sincerely for visiting the Bestmobility website.",
       "body": [
-        "Through thorough vehicle care and safe driving as an everyday habit, Bestmobility makes \"a safe and happy trip for our customers\" its top management priority.",
+        "Through thorough vehicle care and safe driving as an everyday habit, Bestmobility makes \"our customers' safety and a happy trip\" its top management priority.",
         "Travel gives life a pause. As your companion on that journey, Bestmobility will keep working hard, today as always."
       ],
       "signaturePrefix": "CEO"

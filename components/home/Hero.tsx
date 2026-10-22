@@ -4,7 +4,7 @@
  * 카피는 messages/ko.json home.hero.* — 목업 슬라이드 문구를 옮기되 실증 불가 수치("13년"·"4,800+"·"운행 경력")가
  * 든 문장·팩트 블록·스탯 블록은 뺐다(P2-4 보고서 §제거 목록). verbatim(bookingNotice)은 원장에서 가져와 모달 법정 묶음(legal)으로만 내린다 —
  * 위젯 하단의 결제 안내·verbatim 두 줄은 사장님 요청 7(2026-10-10 · T2-2)로 걷었다(모달 제출 위·완료 화면에만 남는다).
- * 위젯 선택지는 LOCATION_CODES(28) 전부 — 공항 / 16개 시도 / 대표 노선 도시 세 그룹(공항 그룹명은 사장님 요청 10 으로 '공항' 한 단어), 라벨은 locationLabel(code, locale)
+ * 위젯 선택지는 두 단(OF3-G) — 첫 칸은 공항 / 시·도(세종 포함) 두 그룹(공항 그룹명은 사장님 요청 10 으로 '공항' 한 단어), 둘째 칸 시·군·구는 위젯이 채운다. 라벨은 locationLabel(code, locale)
  * (ko 는 locationLabelKo 그대로, en 은 PLACES.nameEn · REGION_LABELS_EN — P2-6). 값은 언제나 canonical code 다.
  * verbatim 은 localizeVerbatim — ko 는 원장 문자열 그 자체, en 은 컨트롤러 확정 영문.
  *
@@ -17,7 +17,7 @@
 import { getLocale, getTranslations } from "next-intl/server";
 
 import { WithdrawalNotice } from "@/components/quote/WithdrawalNotice";
-import { LOCATION_CODES, REGIONS, locationLabel, type LocationCode } from "@/lib/codes";
+import { LOCATION_TOP_LEVEL, locationLabel, type LocationCode } from "@/lib/codes";
 import { consultPhone } from "@/lib/contact-phone";
 import { TURNSTILE_ACTION } from "@/lib/guard/turnstile";
 import { koLang, ledgerUi, localizeVerbatim } from "@/lib/i18n/ledger-ui";
@@ -73,12 +73,12 @@ export async function Hero() {
     };
   });
 
-  const regionSet = new Set<string>(REGIONS);
+  // 출발지·도착지는 두 단 선택(OF3-G) — 여기서 만드는 것은 첫 칸(공항 · 시·도 17곳 · 세종 포함)뿐이고,
+  // 시·군·구 칸은 위젯이 lib/codes.ts sigunguOptions 로 채운다(영문 화면은 시·도까지만).
   const option = (code: LocationCode) => ({ value: code, label: locationLabel(code, locale) });
   const groups: QuoteGroup[] = [
     { label: t("widget.groupAirport"), options: [option(AIRPORT_CODE)] },
-    { label: t("widget.groupRegions"), options: REGIONS.filter((r) => r !== AIRPORT_CODE).map(option) },
-    { label: t("widget.groupCities"), options: LOCATION_CODES.filter((c) => !regionSet.has(c)).map(option) },
+    { label: t("widget.groupRegions"), options: LOCATION_TOP_LEVEL.filter((c) => c !== AIRPORT_CODE).map(option) },
   ];
 
   const bookingNotice = localizeVerbatim(locale, VERBATIM.bookingNotice);

@@ -26,7 +26,7 @@ import {
   PLACES,
   REGIONS,
   SHOWCASE_ROUTE_SEED,
-  type LocationCode,
+  type AnyLocationCode,
 } from "@/lib/codes";
 import { contactPhone } from "@/lib/reservations/phone";
 import { quickReservationSchema } from "@/lib/types";
@@ -168,9 +168,9 @@ describe("M5 — ReservationInput 이 도시·시도 코드를 모두 받는다"
     if (r.success) expect("waypointCodes" in r.data).toBe(false);
   });
 
-  test("파싱 결과의 코드 타입이 LocationCode 로 좁혀진다(컴파일 계약)", () => {
+  test("파싱 결과의 코드 타입이 AnyLocationCode(옛 28개 ∪ 시·군·구 — OF3-G)로 좁혀진다(컴파일 계약)", () => {
     const parsed = ReservationInput.parse({ ...validInput, destinationCode: "TYG" });
-    const dest: LocationCode = parsed.destinationCode;
+    const dest: AnyLocationCode = parsed.destinationCode;
     expect(locationRegion(dest)).toBe("GN");
   });
 });
