@@ -984,13 +984,18 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
       const id = await seedReservation(`C${RUN.slice(0, 4).toUpperCase()}`);
       madeReservations.push(id);
 
-      // 확정: reservations update + notifications_log insert — 둘 다 authenticated 에게서 회수한 동작이다.
+      // 상담완료: reservations update — authenticated 에게서 회수한 동작이다. (0028 부터 통지는 넣지 않는다 — enqueued 0)
       const confirm = await asUser(adminToken, "POST", "/rpc/admin_confirm_reservation", { p_id: id, p_memo: "P59" });
-      await pushOutOfClaimWindow(id); // 방금 큐에 쌓인 pending 행을 claim 창 밖으로 (위 주석)
       expect(confirm.status, `definer 확정이 막혔다: ${JSON.stringify(confirm.body).slice(0, 300)}`).toBe(200);
       const cRow = (confirm.body as { outcome: string; enqueued: number }[])[0];
       expect(cRow.outcome).toBe("confirmed");
-      expect(cRow.enqueued, "definer 함수가 notifications_log 에 넣지 못했다").toBe(1);
+      expect(cRow.enqueued, "0028 뒤로 상담완료는 통지를 넣지 않는다").toBe(0);
+
+      // 상담완료 문자(0028): notifications_log insert — authenticated 에게서 회수한 동작을 definer 함수가 소유자 권한으로 한다.
+      const sms = await asUser(adminToken, "POST", "/rpc/admin_send_reservation_sms", { p_id: id, p_body: "P59 상담완료 문자" });
+      await pushOutOfClaimWindow(id); // 방금 큐에 쌓인 pending 행을 claim 창 밖으로 (위 주석)
+      expect(sms.status, `definer 문자 적재가 막혔다: ${JSON.stringify(sms.body).slice(0, 300)}`).toBe(200);
+      expect((sms.body as { outcome: string }[])[0].outcome, "definer 함수가 notifications_log 에 넣지 못했다").toBe("queued");
 
       // 메모: reservations update 만
       const memo = await asUser(adminToken, "POST", "/rpc/admin_update_memo", { p_id: id, p_memo: "P59 memo" });

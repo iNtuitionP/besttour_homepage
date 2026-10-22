@@ -41,9 +41,17 @@
  */
 import { createHmac } from "node:crypto";
 
-import type { TemplateKey } from "./outbox";
+import { CONSULT_SMS_TEMPLATE, type TemplateKey } from "./outbox";
 import { parseRetryAfterMs, type NotificationSender, type SendOutcome, type SendRequest } from "./sender";
-import { renderTemplate, type CustomerVars, type OwnerVars, type RenderedMessage } from "./templates";
+import {
+  LMS_BYTE_LIMIT,
+  chooseFormat,
+  renderTemplate,
+  utf8ByteLength,
+  type CustomerVars,
+  type OwnerVars,
+  type RenderedMessage,
+} from "./templates";
 
 // =============================================================================
 // 상수
@@ -313,8 +321,15 @@ export function solapiSender(deps: SolapiDeps): SolapiSender {
       if (to === null) return fail("unsupported_recipient", false);
 
       // ── 문안 ────────────────────────────────────────────────────────────
-      let rendered: RenderedMessage;
-      if (isOwnerTemplate(req.template)) {
+      // 관리자가 직접 쓴 상담완료 문자(OF3-R4 · 0028)는 렌더하지 않는다 — 큐에 들어간 본문(서버액션이 문구 + 원장 계약 정보 블록으로 만든 것)을
+      // 그대로 보낸다. 문안 변수 조회도 없다. 길이 판정(SMS/LMS)은 같은 규칙(chooseFormat)이고, 상한을 넘거나 본문이 없으면 보내지 않는다
+      // (0028 CHECK 가 막지만 방어 — 자르지 않는다). 알림톡이 아니다: 위 채널 분기가 문자만 여기로 보낸다.
+      let rendered: RenderedMessage | { format: "sms" | "lms"; text: string };
+      if (req.template === CONSULT_SMS_TEMPLATE) {
+        const text = req.body;
+        if (typeof text !== "string" || text.trim() === "" || utf8ByteLength(text) > LMS_BYTE_LIMIT) return fail("template_render_failed", false);
+        rendered = { format: chooseFormat(text), text };
+      } else if (isOwnerTemplate(req.template)) {
         let vars: OwnerVars | null;
         try {
           vars = await (deps.vars as TemplateVarsPort).ownerVars(req.reservationId);

@@ -27,7 +27,14 @@ vi.mock("next/headers", () => ({
 }));
 vi.mock("@/lib/supabase/ssr", () => ({ createSsrClient: vi.fn() }));
 
-import { ALL_TEMPLATE_KEYS, FAILURE_TEMPLATE_KEYS, MAX_ATTEMPTS, TEMPLATE_KEYS } from "@/lib/notify/outbox";
+import {
+  ALL_TEMPLATE_KEYS,
+  FAILURE_TEMPLATE_KEYS,
+  MANUAL_TEMPLATE_KEYS,
+  MAX_ATTEMPTS,
+  OUTBOX_TEMPLATE_KEYS,
+  TEMPLATE_KEYS,
+} from "@/lib/notify/outbox";
 import {
   ADMIN_NOTIFICATIONS_PATH,
   CHANNEL_FILTERS,
@@ -612,20 +619,23 @@ describe("7. 정적 규약", () => {
         typeof v === "object" && v !== null ? flatten(v as Record<string, unknown>, `${prefix}${k}.`) : [`${prefix}${k}`],
       );
     const labels = flatten(ko.admin.notifications.template);
-    expect(labels.sort()).toEqual([...ALL_TEMPLATE_KEYS].sort());
-    // 합집합이 한쪽만으로 접히지 않았다 — 예약 통지 4종·실패 알림 2종이 **둘 다** 덮여 있다.
+    // OF3-R4(0028): 아웃박스 행이 가질 수 있는 키 전부 = 렌더 키(ALL_TEMPLATE_KEYS) + 관리자가 직접 쓴 상담완료 문자 키(MANUAL_TEMPLATE_KEYS).
+    expect(labels.sort()).toEqual([...OUTBOX_TEMPLATE_KEYS].sort());
+    // 합집합이 한쪽만으로 접히지 않았다 — 예약 통지 4종·실패 알림 2종·직접 쓴 문자 1종이 **모두** 덮여 있다.
     for (const key of TEMPLATE_KEYS) expect(labels, key).toContain(key);
     for (const key of FAILURE_TEMPLATE_KEYS) expect(labels, key).toContain(key);
-    expect(labels).toHaveLength(TEMPLATE_KEYS.length + FAILURE_TEMPLATE_KEYS.length);
+    for (const key of MANUAL_TEMPLATE_KEYS) expect(labels, key).toContain(key);
+    expect(labels).toHaveLength(TEMPLATE_KEYS.length + FAILURE_TEMPLATE_KEYS.length + MANUAL_TEMPLATE_KEYS.length);
+    expect([...OUTBOX_TEMPLATE_KEYS]).toEqual([...ALL_TEMPLATE_KEYS, ...MANUAL_TEMPLATE_KEYS]);
   });
 
   /**
    * 게이트와 화면이 **같은 집합**을 봐야 1:1 이 의미가 있다. 카탈로그를 여섯으로 늘려도 화면이 넷만 보면
    * 실패 알림은 그대로 키 원문으로 나온다(고치기 전의 상태가 정확히 그것이었다).
    */
-  test("화면의 라벨 판정이 ALL_TEMPLATE_KEYS 다 — 좁은 목록으로 되돌아가지 않았다", () => {
+  test("화면의 라벨 판정이 OUTBOX_TEMPLATE_KEYS 다 — 좁은 목록으로 되돌아가지 않았다", () => {
     const src = codeOf(PAGE);
-    expect(src).toMatch(/ALL_TEMPLATE_KEYS as readonly string\[\]/);
+    expect(src).toMatch(/OUTBOX_TEMPLATE_KEYS as readonly string\[\]/);
     // `\b` 는 밑줄을 단어 문자로 보므로 `ALL_TEMPLATE_KEYS` 안의 `TEMPLATE_KEYS` 에는 걸리지 않는다 — 좁은 목록만 잡힌다.
     expect(src, "좁은 목록(TEMPLATE_KEYS)을 다시 쓰고 있다").not.toMatch(/\bTEMPLATE_KEYS\b/);
   });
@@ -647,7 +657,7 @@ describe("7. 정적 규약", () => {
       namespace: string;
     }) => (key: string) => string;
     const t = createT({ locale: "ko", messages: loadMessages("ko"), namespace: "admin.notifications" });
-    for (const key of ALL_TEMPLATE_KEYS) {
+    for (const key of OUTBOX_TEMPLATE_KEYS) {
       const label = t(`template.${key}`);
       expect(typeof label, key).toBe("string");
       expect(label, `${key} 가 라벨로 풀리지 않았다`).not.toContain(key);

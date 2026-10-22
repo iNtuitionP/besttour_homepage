@@ -53,6 +53,7 @@ import {
 } from "../refund-policy";
 import { FALLBACK_SITE_ORIGIN } from "../site-url";
 import type { NotifyEvent } from "../types";
+import { joinConsultSms } from "./consult-text";
 import { ALL_TEMPLATE_KEYS, MAX_ATTEMPTS, type TemplateKey } from "./outbox";
 
 // =============================================================================
@@ -428,6 +429,44 @@ function confirmedCustomerVariants(v: CustomerVars): MessageVariants {
       CONTRACT_PARTY_LINE,
     ),
   );
+}
+
+// ── 상담완료 문자 — 관리자가 직접 쓴다 (OF3-R4 · 0028) ─────────────────────────────────────────────
+//
+// 0028 부터 [상담완료로 바꾸기]는 문자를 보내지 않는다. 관리자가 [문자 보내기] 시트에서 위 칸(자유 문구)을 고치고, 아래 계약 정보 블록은
+// 원장에서 만들어져 **언제나** 끝에 붙는다(편집 불가). 아래 셋이 그 두 조각과 잇는 규칙이다 — 옛 확정 문자(confirmed.customer.sms)와
+// **같은 조각 함수**를 쓴다(블록 = confirmedNoticeBlocks · 기본 문구 = 제목 + ■ 예약 확인·변경). 옛 키의 렌더러는 0028 전에 큐에 들어간
+// pending 행을 위해 그대로 남는다.
+
+/**
+ * [문자 보내기] 시트의 기본 문구 — 옛 확정 문자의 인사·안내 부분(제목 · ■ 예약 확인·변경). 관리자가 고칠 수 있다.
+ * verbatim("확인 후 연락드리겠습니다.")은 넣지 않는다 — 상담이 끝난 뒤의 문자에 붙으면 아직 확정 전인 것처럼 읽힌다(T2-2 · 결정 3-2 · OF3 R4).
+ * 대금·취소·환불 줄과 계약 주체 줄은 여기 없다 — 고칠 수 없는 블록(consultContractBlock)이 맡는다.
+ */
+export function consultSmsDefaultText(origin: string): string {
+  const v: CustomerVars = { publicCode: "", origin, createdAt: "" };
+  return lines(
+    `${BRAND} ${CONFIRMED_HEADLINE}`,
+    "",
+    section("예약 확인·변경"),
+    labeled("확인", checkLink(v)),
+    labeled("변경·취소", COMPANY.consultTel),
+    labeled("이용안내", guideLink(v)),
+  );
+}
+
+/**
+ * 계약 정보 블록 — ■ 대금 · ■ 취소·환불(그 예약의 **접수일 판** — refundPolicyAt(createdAt), 옛 확정 문자와 같은 규칙) · 맨 끝 계약 주체 줄.
+ * 계약 주체 줄(CONTRACT_PARTY_LINE — T2-1)을 블록에 넣는 이유: 관리자가 고칠 수 있는 칸에 두면 지워질 수 있다. 확정 통지의 "맨 아래" 자리도 그대로다.
+ * 읽을 수 없는 접수 시각이면 throw(refundPolicyAt) — 판을 짐작하지 않는다.
+ */
+export function consultContractBlock(createdAt: Date | string): string {
+  return lines(...confirmedNoticeBlocks(refundPolicyAt(createdAt)), "", CONTRACT_PARTY_LINE);
+}
+
+/** 큐에 넣을 최종 본문 — 문구.trim() + 빈 줄 + 계약 정보 블록(lib/notify/consult-text.ts joinConsultSms — 화면 미리보기와 같은 규칙). */
+export function composeConsultSms(freeText: string, createdAt: Date | string): string {
+  return joinConsultSms(freeText, consultContractBlock(createdAt));
 }
 
 /**

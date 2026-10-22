@@ -48,6 +48,7 @@ import type { NewOutboxRow, NotifyChannel, OutboxRow } from "../types";
 import { planFailureNotice, type FailureNoticeSkipReason } from "./fallback";
 import {
   ALL_TEMPLATE_KEYS,
+  CONSULT_SMS_TEMPLATE,
   MAX_ATTEMPTS,
   SENT_UNMARKED_PREFIX,
   claimPending,
@@ -61,7 +62,7 @@ import {
   type MarkFailedOptions,
   type TemplateKey,
 } from "./outbox";
-import type { NotificationSender, SendOutcome } from "./sender";
+import type { NotificationSender, SendOutcome, SendRequest } from "./sender";
 
 // =============================================================================
 // 상수
@@ -620,14 +621,27 @@ export async function runNotificationWorker(opts: WorkerOptions, deps: WorkerDep
       await recordFailure(row, "claim_invariant_violated", { retryable: false });
       return;
     }
-    if (!isTemplateKey(row.template)) {
-      await recordFailure(row, "unknown_template", { retryable: false });
-      return;
+    // 관리자가 직접 쓴 상담완료 문자(OF3-R4 · 0028)는 body 를 그대로 보낸다. 키와 body 의 짝이 어긋난 행(직접 쓴 문자 키인데 body 없음 ·
+    // 자동 통지 키인데 body 있음)은 0028 CHECK 가 만들 수 없지만, 만나면 보내지 않고 닫는다 — 자동 통지 행에 끼워 넣은 본문이 나가는 길을 두지 않는다.
+    const body = typeof row.body === "string" ? row.body : null;
+    let request: SendRequest;
+    if (body !== null) {
+      if (row.template !== CONSULT_SMS_TEMPLATE) {
+        await recordFailure(row, "unknown_template", { retryable: false });
+        return;
+      }
+      request = { id: row.id, channel: row.channel, to: row.to, template: CONSULT_SMS_TEMPLATE, reservationId: row.reservation_id, body };
+    } else {
+      if (!isTemplateKey(row.template)) {
+        await recordFailure(row, "unknown_template", { retryable: false });
+        return;
+      }
+      request = { id: row.id, channel: row.channel, to: row.to, template: row.template, reservationId: row.reservation_id };
     }
 
     let outcome: SendOutcome;
     try {
-      outcome = await sender.send({ id: row.id, channel: row.channel, to: row.to, template: row.template, reservationId: row.reservation_id });
+      outcome = await sender.send(request);
     } catch (err) {
       // 예외 문구는 버린다 — 제공자 예외에는 요청 본문(수신처)이 섞이곤 한다. 이름만 남긴다.
       await recordFailure(row, `sender_threw:${sender.name}`, { retryable: true, errorName: err instanceof Error ? err.name : typeof err });

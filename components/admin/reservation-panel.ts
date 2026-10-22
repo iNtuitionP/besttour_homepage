@@ -21,10 +21,10 @@
  *
  * React·Next·DOM·env·한글 없음 — tests/admin-detail-panel.test.ts 가 그대로 부른다.
  */
-import type { SheetKind } from "./reservation-sheet";
+import type { TriggerKind } from "./reservation-sheet";
 
-/** 처리 영역이 받는 요청 — 시트 종류와 누른 버튼(닫힌 뒤 포커스를 돌려줄 자리). */
-export type SheetOpener = (kind: SheetKind, opener: HTMLElement | null) => void;
+/** 처리 영역이 받는 요청 — 시트 종류(전이 시트 둘 + 상담완료 문자 시트 · OF3-R4)와 누른 버튼(닫힌 뒤 포커스를 돌려줄 자리). */
+export type SheetOpener = (kind: TriggerKind, opener: HTMLElement | null) => void;
 
 export interface PanelSnapshot {
   /** 처리 중(서버액션 · 뒤이은 새로고침) — 진입 버튼이 aria-disabled 로 막힌다. */
@@ -49,7 +49,7 @@ export interface PanelChannels {
   /** 처리 중 알림 — 처리 영역만 부른다. */
   setPending(id: string, pending: boolean): void;
   /** 진입 버튼 — 시트를 열어 달라고 한다. 붙은 처리 영역이 없거나 처리 중이면 false(아무 일도 없다). */
-  requestSheet(id: string, kind: SheetKind, opener: HTMLElement | null): boolean;
+  requestSheet(id: string, kind: TriggerKind, opener: HTMLElement | null): boolean;
   /** 살아 있는 채널 수(시험용 — 비면 지워졌는지 본다). */
   size(): number;
 }

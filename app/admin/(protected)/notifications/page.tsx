@@ -20,7 +20,7 @@ import {
   type NotificationListRow,
 } from "@/lib/admin/notifications";
 import { requireAdmin } from "@/lib/auth/requireAdmin";
-import { ALL_TEMPLATE_KEYS } from "@/lib/notify/outbox";
+import { OUTBOX_TEMPLATE_KEYS } from "@/lib/notify/outbox";
 
 import a from "@/components/admin/admin.module.css";
 import q from "@/components/quote/quote.module.css";
@@ -64,8 +64,9 @@ type SearchParams = Promise<Record<string, string | string[] | undefined>>;
  * 이제 아웃박스가 받아들이는 키 전부에 라벨이 있고(messages/ko.json admin.notifications.template),
  * tests/admin-notifications.test.ts 의 1:1 게이트가 **그 합집합**을 잠근다.
  * 그 밖의 값(옛 행·손으로 넣은 행)은 여전히 원문 그대로 보여 준다 — 없는 번역 키를 조회하면 화면이 죽는다.
+ * OF3-R4(0028): 판정 집합은 `OUTBOX_TEMPLATE_KEYS`(렌더 키 + 관리자가 직접 쓴 상담완료 문자 키)다 — 직접 쓴 문자 행도 라벨로 보인다.
  */
-const isTemplateKey = (t: string): boolean => (ALL_TEMPLATE_KEYS as readonly string[]).includes(t);
+const isTemplateKey = (t: string): boolean => (OUTBOX_TEMPLATE_KEYS as readonly string[]).includes(t);
 
 /** 갱신 시각을 둘째 줄로 보일 만큼 기록 시각과 다른가(1분 이상 — 곧바로 보낸 행은 한 줄로 둔다). */
 const UPDATED_LINE_MIN_MS = 60_000;

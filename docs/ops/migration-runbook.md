@@ -26,16 +26,16 @@ select version, name from supabase_migrations.schema_migrations order by version
 
 ### 🔴 적용 경로 — `supabase db push` 하나 (P5-15 R6 · 컨트롤러 결정 2026-09-17)
 - 🔴 **2026-09-21 부터: 시험 프로젝트(`gjnieoojgmhulkohdcnl`)에 먼저, 운영에 나중.** 시험 프로젝트가 생겼다(`docs/ops/environments.md`). 새 마이그레이션은 CI green 뒤 **시험 프로젝트에 `db push --db-url` 로 먼저** 적용하고, 자기검증 통과·프리뷰 정상을 본 뒤 운영에 아래 절차대로 적용한다. 저장소의 `supabase link` 는 운영을 가리키므로 **시험 프로젝트로 다시 link 하지 않는다.**
-- **0012~0027 의 원격 적용 경로는 `supabase db push` 하나다.** CLI 는 마이그레이션 파일 하나를 한 트랜잭션으로 돌리고, 성공한 버전을 `supabase_migrations.schema_migrations` 에 기록한다.
+- **0012~0028 의 원격 적용 경로는 `supabase db push` 하나다.** CLI 는 마이그레이션 파일 하나를 한 트랜잭션으로 돌리고, 성공한 버전을 `supabase_migrations.schema_migrations` 에 기록한다.
 - **SQL Editor 는 읽기 확인 전용이다** — 적용 전·후 행렬, 이력 조회처럼 카탈로그를 읽는 질의만 붙인다. **마이그레이션 본문을 SQL Editor 에 붙여 적용하지 않는다**: 그러면 이력이 남지 않아, 다음 `supabase db push` 가 **같은 마이그레이션을 다시 돌린다**(두 번 도는 것을 전제로 검토한 파일이 아니다).
 - **`psql -f` 도 쓰지 않는다**(리뷰 K1 — 파일이 원자적이지 않다. 이력도 남지 않는다).
 - 🔴 **적용 직후 필수 — 이력 확인**(읽기 질의):
   ```sql
   select version, name from supabase_migrations.schema_migrations order by version;
   ```
-  기대: 적용 전 목록 뒤에 이번에 적용한 버전이 한 줄씩 붙고, 저장소의 마지막 마이그레이션과 같은 번호로 끝난다 — 지금은 **마지막이 `0027`**(T4-1 `0024` · T4-2 `0025` · OF2-B `0026` · OF2-C `0027` 이 `0023` 뒤에 더했다). 한 줄이라도 빠졌거나 마지막이 `0027` 이 아니면 **멈추고 컨트롤러에게 보고한다**(`db push` 는 실패한 파일에서 멈추고 그 뒤 버전을 돌리지 않는다 — 어디서 멈췄는지가 이 목록에 보인다). (2026-09-21 의 첫 적용에서는 `0011` 뒤에 `0012`~`0019` 여덟 줄이, 두 번째 적용에서는 `0020` 한 줄이 붙는 것이 기대였고 그대로 됐다 — 맨 아래 「원격 적용 기록」.)
+  기대: 적용 전 목록 뒤에 이번에 적용한 버전이 한 줄씩 붙고, 저장소의 마지막 마이그레이션과 같은 번호로 끝난다 — 지금은 **마지막이 `0028`**(T4-1 `0024` · T4-2 `0025` · OF2-B `0026` · OF2-C `0027` · OF3-R4 `0028` 이 `0023` 뒤에 더했다). 한 줄이라도 빠졌거나 마지막이 `0028` 이 아니면 **멈추고 컨트롤러에게 보고한다**(`db push` 는 실패한 파일에서 멈추고 그 뒤 버전을 돌리지 않는다 — 어디서 멈췄는지가 이 목록에 보인다). (2026-09-21 의 첫 적용에서는 `0011` 뒤에 `0012`~`0019` 여덟 줄이, 두 번째 적용에서는 `0020` 한 줄이 붙는 것이 기대였고 그대로 됐다 — 맨 아래 「원격 적용 기록」.)
 - **예외 — 이미 수동 적용(SQL Editor·psql)을 해 버렸다면**: 본문이 실제로 전부 적용됐는지 해당 절의 행렬로 먼저 확인한 뒤, `supabase migration repair --status applied <번호>` 로 이력을 맞춘다 — **이 경로는 컨트롤러 승인이 있을 때만 쓴다.** `repair` 는 이력만 고치고 본문을 돌리지 않으므로, 적용되지 않은 버전을 `applied` 로 적으면 그 마이그레이션은 **영영 건너뛰어진다**.
-- **잠금 대기 상한 — 파일 안의 `set local lock_timeout = '5s';`** (P5-15 R7 · 컨트롤러 결정): 0012 이후 파일(0012~0027, 열여섯 개) 모두 **첫 실행문**이 이것이고, 둘째 실행문이 **그 시점에 `lock_timeout` 이 실제로 `5s` 인지**만 확인한다 — 아니면 아무것도 바꾸기 전에 멈춘다. ⚠️ 이 확인은 **원자성을 증명하지 않는다**(astra R7 P2-b): 자동 커밋 세션이라도 서버·롤·DB 기본값이 이미 5초면 통과한다. 잡아 주는 것은 "`set local` 이 그 문장에서 끝나 설정이 남지 않은 경우"(예: 기본값이 5초가 아닌 서버에서 `psql -f`)뿐이다. **파일 하나가 한 트랜잭션이라는 보장은 적용 경로(`supabase db push`)에서 오고**, 아래 실측이 그것을 확인한 것이다. CLI 는 파일 하나를 한 트랜잭션으로 보내므로 이 설정은 **그 파일에만** 걸리고 다음 파일로 새지 않는다. 어떤 문장이 잠금을 5초 넘게 기다리면 `ERROR: canceling statement due to lock timeout (SQLSTATE 55P03)` 로 그 파일이 실패한다 — 접수 트랜잭션을 줄 세우지 않는다.
+- **잠금 대기 상한 — 파일 안의 `set local lock_timeout = '5s';`** (P5-15 R7 · 컨트롤러 결정): 0012 이후 파일(0012~0028, 열일곱 개) 모두 **첫 실행문**이 이것이고, 둘째 실행문이 **그 시점에 `lock_timeout` 이 실제로 `5s` 인지**만 확인한다 — 아니면 아무것도 바꾸기 전에 멈춘다. ⚠️ 이 확인은 **원자성을 증명하지 않는다**(astra R7 P2-b): 자동 커밋 세션이라도 서버·롤·DB 기본값이 이미 5초면 통과한다. 잡아 주는 것은 "`set local` 이 그 문장에서 끝나 설정이 남지 않은 경우"(예: 기본값이 5초가 아닌 서버에서 `psql -f`)뿐이다. **파일 하나가 한 트랜잭션이라는 보장은 적용 경로(`supabase db push`)에서 오고**, 아래 실측이 그것을 확인한 것이다. CLI 는 파일 하나를 한 트랜잭션으로 보내므로 이 설정은 **그 파일에만** 걸리고 다음 파일로 새지 않는다. 어떤 문장이 잠금을 5초 넘게 기다리면 `ERROR: canceling statement due to lock timeout (SQLSTATE 55P03)` 로 그 파일이 실패한다 — 접수 트랜잭션을 줄 세우지 않는다.
 - **부분 적용 — push 전체는 원자적이지 않다**: 한 파일이 시간 초과(또는 다른 오류)로 실패하면 **앞 파일들은 커밋·기록된 채 남고**, **그 파일은 롤백되며**(이력에도 없다), 뒤 파일은 돌지 않는다. 막던 세션이 끝난 뒤 **다음 `supabase db push` 가 그 파일부터** 이어서 적용한다. 시간 초과는 **멈추고 보고할 일**이다 — 수동 적용이나 `repair` 로 건너뛰지 않는다. 어디서 멈췄는지는 적용 직후 이력 확인이 보여 준다.
 - **실측** (2026-09-17 · supabase CLI 2.117.0 · 로컬 전용 `--db-url postgresql://…@127.0.0.1:…`):
   - 합성 마이그레이션(PG 15.17 일회용 컨테이너 · PG 17.6 로컬 스택의 일회용 DB 둘 다): 한 파일의 행들이 **같은 xid**, `set local` 뒤 `lock_timeout=5s`, 다음 파일에서는 `0`(새지 않음). 다른 세션이 표를 쥔 채 push → 약 5초 뒤 `55P03` · 그 파일의 표·행·이력 없음 · 앞 파일 이력 유지 → 풀린 뒤 push 가 그 파일부터 재개. 대조군(`set local` 없음)은 잠금이 풀릴 때까지 **기다렸다**(20초 잡음 → 20초 걸림).
@@ -1340,6 +1340,34 @@ Vercel 은 GitHub 앱으로 연결돼 있다. GitHub 배포 기록(`GET /repos/�
 - **순서: DB → 코드.** 코드가 먼저 나가면 비콘 라우트는 조용히 204(세지 못할 뿐), 관리자 통계의 방문자 칸은 "불러오지 못했어요", 매일 크론 로그에 `site_visitors_purge_error` 가 찍힌다(접수 파기 응답은 영향 없음).
   롤백은 **코드 먼저** → `supabase/rollbacks/0027_site_stats.down.sql`(함수 셋 drop + 표 둘 drop · **집계 숫자가 있으면 멈춘다** — 정말 지우려면 같은 세션에서 `set besttour.allow_drop_site_stats = 'yes';`) → `supabase migration repair --status reverted 0027`.
 - 로컬 적용은 `npx supabase migration up --local`. 한도: 방문 통계 비콘은 접수와 **다른 한도**(Upstash `guard:stats:*` — known 10분 60·1시간 300 · unknown 20·100)를 쓴다.
+
+## 0028 — 상담완료는 상태만 · 상담완료 문자는 관리자가 직접 (독립 리뷰 대기 · 원격 미적용 · OF3-R4 · 사장님 요청 2026-10-22)
+
+- **`admin_confirm_reservation(uuid, text)`** — 같은 서명으로 `create or replace`(drop 하지 않는다 → ACL 유지 · 자기검증이 EXECUTE 보유자 = authenticated 하나를 실측).
+  확정 통지 insert 를 걷었다 — 상담완료는 **상태만** 바꾼다(enqueued 언제나 0). 가드·경합 방어(`and status = 'new'`)·반환 모양은 0010 그대로.
+- **`notifications_log.body text`**(null 허용) + CHECK 둘: ① `body is null or (octet_length(body) <= 2000 and body ~ '\S')` ② 짝 — `template = 'consult.customer.sms'` 이면 body 있음 + `channel = 'sms'`, 그 밖은 body 없음.
+  **event CHECK 는 바꾸지 않았다** — 직접 쓴 문자도 `event = 'confirmed'`라, 끝내 실패하면 기존 실패 알림(`confirmed.owner.failure.email`)이 그대로 간다.
+- **부분 유니크 `notifications_log_sent_once`** — 같은 이름으로 다시 만들고 술어에 `and body is null` 을 더했다(자동 통지의 "sent 는 한 번만" 유지 · 여러 번 보내는 직접 문자는 밖).
+- **`admin_send_reservation_sms(p_id uuid, p_body text) → (outcome, notification_id)`** — definer · search_path `public, pg_temp` · 첫 문장 `is_admin()`(42501) · 본문 검사(22023) ·
+  상담완료(`confirmed_at` 있음 · 상태 confirmed/done)일 때만 · **받는 번호 = reservations.phone**(인자 없음) · pending 1건. outcome `queued` | `not_consulted` | `noop`.
+  🔴 권한: 같은 파일에서 `revoke all … from public, anon, authenticated, service_role` → `grant execute … to authenticated`. 표: 공개 롤(PUBLIC·anon·authenticated)의 쓰기·TRUNCATE·REFERENCES·TRIGGER 재회수 +
+  MAINTAIN 은 `server_version_num >= 170000` 조건부 동적 SQL(멱등 — 0012·0017·0019 가 이미 같은 상태). service_role 의 표 권한은 건드리지 않는다(접수 통지 적재가 그 insert 로 돈다).
+- 계약 정보 블록(■ 대금 · ■ 취소·환불 · 계약 주체)은 **앱이** 원장에서 만들어 붙인다(lib/notify/templates.ts `consultContractBlock` — 접수일 판). DB 는 본문에 블록이 있는지 보지 않는다(관리자 세션이 PostgREST 로 직접 부르면 블록 없이 보낼 수 있다 — 보고서 위험).
+- 로컬 실측(2026-10-22 · PostgreSQL 17.6): `npx supabase migration up --local` 자기검증 통과 · `tests/consult-sms-db.test.ts` 9건(상담완료 큐 0 · anon/service_role EXECUTE 거부 · 비관리자 가드 거부 ·
+  상담완료 아님 거부 · 받는 번호 = 예약 번호 · `p_to` 인자 → PGRST202 · 2001바이트·빈 본문 22023 · 두 통 모두 sent · CHECK 23514 · claim 이 body 를 싣는다 · 카탈로그 권한) ·
+  롤백(직접 쓴 문자 행 있음 → 멈춤 · 승인 플래그 → 통과) → 재적용 → 재적용(재실행 안전) — 실측 기록은 SDD 보고서 OF3-R4-report.md 의 롤백 절.
+- **DB 적용 ~ 코드 배포 사이 확인 질의(운영)** — 그 사이 옛 화면에서 상담완료로 바꾼 접수는 "문자가 간다"는 안내를 봤지만 실제로는 아무것도 안 나간다(0028 이 큐 넣기를 뺐다).
+  코드 배포 직후 아래로 찾아 사장님께 알리고, 새 화면의 '문자 보내기'로 보내게 한다(`<적용 시각>` = DB 적용 시각, KST):
+  `select public_code, name, confirmed_at from reservations where confirmed_at >= '<적용 시각>+09' order by confirmed_at;`
+- 🔴 **적용 전 확인 질의(운영)** — 0028 전에 상담완료해 큐에 남은 확정 문자가 있는지 본다. 남아 있으면 **문자 키가 들어오는 날 예전 고정 문안으로 나간다**(0028 은 데이터를 바꾸지 않는다):
+  `select id, reservation_id, status, attempts, created_at from notifications_log where template = 'confirmed.customer.sms' and status = 'pending';`
+  행이 있으면 사장님 판단(그대로 보낼지 · 지울지 — 지우는 것은 별도 승인)을 먼저 받는다.
+- 알림톡: 확정 알림톡 초안(판 두 건)은 더 이상 자동으로 쓰이지 않는다 — 카카오 심사에 낼 때 사장님과 다시 정한다(직접 쓴 문자는 문자(SMS/LMS)로만 나간다).
+- **순서: DB → 코드.** 새 코드는 `admin_send_reservation_sms` 를 부르고 `body` 를 읽는다. 코드가 먼저 나가면 [문자 보내기]가 실패하고 보낸 문자 기록이 "불러오지 못했어요" 다(자동 접수 문자는 영향 없음).
+  DB 를 먼저 올리면 옛 코드의 [상담완료로 바꾸기]는 문자를 큐에 넣지 않는다(옛 화면 문구 "문자가 가요" 와 어긋나는 배포 사이 몇 분).
+  롤백은 **코드 먼저** → `supabase/rollbacks/0028_consult_sms.down.sql`(0010 의 상담완료 함수 복원 + revoke/grant 재기술 · 새 함수 drop · CHECK 둘 drop · 인덱스 0005 술어로 · body 칸 drop ·
+  **직접 쓴 문자 행이 있으면 멈춘다** — 본문이 손님에게 보낸 계약 정보 고지 기록이다. 내보낸 뒤 정말 되돌리려면 같은 세션에서 `set besttour.rollback_0028_drop_sms = 'yes';` → 그 행을 지운다) →
+  `supabase migration repair --status reverted 0028`.
 
 # 원격 적용 기록 — 0023 (2026-09-27 · 컨트롤러) — 시험 먼저, **운영 22:39 KST(사용자 승인 "DB 적용해")**
 

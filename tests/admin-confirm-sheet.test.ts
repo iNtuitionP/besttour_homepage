@@ -15,6 +15,10 @@
  * 실제 클릭·포커스 이동·inert·ESC·바깥 누르기는 브라우저 실측(보고서 ②·⑥)이 본다.
  *
  * tests/ 아래라 게이트 3종의 검사 대상이다 — 금지어·임시값 마커 리터럴을 그대로 쓰지 않는다.
+ *
+ * OF3-R4(2026-10-22 · 0028): 취소 시트(사유 고르기 · 메모에 사유 덧붙이기)와 취소 진입 버튼을 화면에서 걷었다 — 상태는 접수 → 상담완료 두 단계다.
+ * 그래서 이 파일의 취소 시트 단언은 "취소 진입이 없다" 로 바뀌었고, 상담완료는 문자를 보내지 않는다(상담완료 문자 시트는
+ * tests/of3-r4-consult-sms.test.ts 가 잠근다). 나머지 P5-19 규약(시트를 거쳐야 전이 · 고친 메모만 · 잠금 · 늦은 결과)은 그대로다.
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -35,6 +39,7 @@ vi.mock("@/actions/admin/reservation", () => ({
   completeReservation: vi.fn(),
   saveReservationMemo: vi.fn(),
 }));
+vi.mock("@/actions/admin/consultSms", () => ({ sendConsultSms: vi.fn() }));
 // 라벨은 **진짜 카탈로그**에서 — 서버 도우미(getReservationActionLabels)를 그대로 부른다(tests/quick-display.test.ts 와 같은 mock).
 vi.mock("next-intl/server", async () => {
   const { createTranslator: ct } = await import("next-intl");
@@ -55,13 +60,12 @@ import { ReservationProcess } from "@/components/admin/ReservationProcess";
 import s from "@/components/admin/admin.module.css";
 import { getReservationActionLabels } from "@/components/admin/reservationActionLabels";
 import {
-  CANCEL_REASONS,
   CUSTOMER_NAME_ELEMENT_ID,
+  SHEET_KINDS,
   SHEET_STUCK_MS,
   TOAST_MS,
   bannerMessage,
   cleanCustomerName,
-  composeCancelMemo,
   fillTemplate,
   focusReturn,
   initialPanelState,
@@ -104,9 +108,9 @@ const ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
 const NAME = "예시고객가";
 const done = (code: AdminActionResult["code"]): AdminActionResult => ({ ok: true, changed: true, code });
 
-/** 가짜 액션 4종 + 리듀서를 그대로 도는 상태 — 컴포넌트가 하는 일을 DOM 없이 재현한다. */
+/** 가짜 액션 3종 + 리듀서를 그대로 도는 상태 — 컴포넌트가 하는 일을 DOM 없이 재현한다. */
 function harness(opts: { initialMemo?: string; results?: Partial<Record<keyof PanelActions, AdminActionResult | Error>> } = {}) {
-  // 확정·취소·완료는 메모를 보내지 않을 수 있다(null = 서버가 저장된 메모를 지킨다 — 0010 coalesce · P2-3)
+  // 상담완료·완료는 메모를 보내지 않을 수 있다(null = 서버가 저장된 메모를 지킨다 — 0010 coalesce · P2-3)
   type ActionFn = (id: string, memo: string | null) => Promise<AdminActionResult>;
   const outcome =
     (key: keyof PanelActions, fallback: AdminActionResult): ActionFn =>
@@ -117,7 +121,6 @@ function harness(opts: { initialMemo?: string; results?: Partial<Record<keyof Pa
     };
   const actions = {
     confirm: vi.fn<ActionFn>(outcome("confirm", done("confirmed"))),
-    cancel: vi.fn<ActionFn>(outcome("cancel", done("cancelled"))),
     complete: vi.fn<ActionFn>(outcome("complete", done("completed"))),
     memo: vi.fn<ActionFn>(outcome("memo", done("memoUpdated"))),
   } satisfies PanelActions;
@@ -132,7 +135,6 @@ function harness(opts: { initialMemo?: string; results?: Partial<Record<keyof Pa
     },
     refresh,
     readCustomerName,
-    reasonLine: (reason) => `REASON:${reason}`,
   });
   const calls = () => Object.values(actions).reduce((n, fn) => n + fn.mock.calls.length, 0);
   return {
@@ -158,7 +160,7 @@ const SUMMARY: ReservationSummary = { parts: ["인천공항 → 서울", "10월 
 
 async function renderPanel(status: "new" | "confirmed" | "done" | "cancelled", initialMemo = ""): Promise<string> {
   return renderToStaticMarkup(
-    createElement(ReservationActions, { id: ID, status, initialMemo, summary: SUMMARY, labels: await labels() }),
+    createElement(ReservationActions, { id: ID, status, initialMemo, summary: SUMMARY, labels: await labels(), sms: null }),
   );
 }
 
@@ -178,17 +180,16 @@ async function renderSheet(
       slow: extra.slow ?? false,
       onClose: () => {},
       onSubmit: () => {},
-      onPickReason: () => {},
     }),
   );
 }
 
-/** planCommit 의 입력을 짧게 — 서버 메모(마지막으로 아는 값)와 사유를 고를 수 있다. */
-const plan = (action: SheetKind | "memo", memoText: string, opts: { server?: string; reason?: string | null; max?: number } = {}) =>
-  planCommit({ action, memoText, serverMemo: opts.server ?? "", reasonLine: opts.reason ?? null }, opts.max);
+/** planCommit 의 입력을 짧게 — 서버 메모(마지막으로 아는 값)를 고를 수 있다. */
+const plan = (action: SheetKind | "memo", memoText: string, opts: { server?: string; max?: number } = {}) =>
+  planCommit({ action, memoText, serverMemo: opts.server ?? "" }, opts.max);
 
 /** 태그를 지운 본문. */
-const text = (h: string) => h.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+const text = (h: string) => h.replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&#x27;/g, "'").replace(/\s+/g, " ").trim();
 /** data-testid 로 여는 태그 하나. */
 function openTag(html: string, testid: string): string {
   const at = html.indexOf(`data-testid="${testid}"`);
@@ -208,24 +209,16 @@ function zone(html: string, name: string): string {
 // =============================================================================
 // 1. 순수 — 메모 조립 · 실행 계획(상한) · 서버와 같은 정규화
 // =============================================================================
-describe("1. 메모 — 취소 사유 덧붙이기 · 상한은 서버를 따른다", () => {
-  test("composeCancelMemo — 기존 메모를 지우지 않고 한 줄을 덧붙인다", () => {
-    expect(composeCancelMemo("", null)).toBe("");
-    expect(composeCancelMemo("통화함", null)).toBe("통화함");
-    expect(composeCancelMemo("통화함", "취소 사유: 고객 일정 변경")).toBe("통화함\n취소 사유: 고객 일정 변경");
-    // 끝 공백·빈 줄은 한 줄로 접고 붙인다(서버도 양끝을 자른다)
-    expect(composeCancelMemo("첫 줄\n둘째 줄\n\n  ", "취소 사유: 기타")).toBe("첫 줄\n둘째 줄\n취소 사유: 기타");
-    // 메모가 비었으면 사유 한 줄만
-    expect(composeCancelMemo("   ", "취소 사유: 연락이 안 됨")).toBe("취소 사유: 연락이 안 됨");
-    // 기존 메모는 언제나 앞에 그대로 남는다
-    const before = "7시 강남역 · 45인승 1대";
-    expect(composeCancelMemo(before, "취소 사유: 차량을 못 구함").startsWith(before)).toBe(true);
+describe("1. 메모 — 상한은 서버를 따른다 (취소 사유 덧붙이기는 OF3-R4 에서 취소 시트와 함께 걷었다)", () => {
+  test("전이 시트는 상담완료 · 운행 완료 둘뿐이다 — 취소 시트 · 사유 어휘가 모듈에서 사라졌다", () => {
+    expect([...SHEET_KINDS]).toEqual(["confirm", "complete"]);
+    const logic = codeOf(SHEET_LOGIC);
+    expect(logic).not.toMatch(/CANCEL_REASONS|composeCancelMemo|pickReason|reasonLine/);
   });
 
-  test("planCommit — 고친 메모는 확정·완료·메모 저장에 그대로, 취소는 사유를 덧붙여 넘긴다", () => {
+  test("planCommit — 고친 메모는 상담완료·완료·메모 저장에 그대로 넘긴다", () => {
     expect(plan("confirm", "통화: 7시 출발")).toEqual({ kind: "call", action: "confirm", memo: "통화: 7시 출발", stored: "통화: 7시 출발" });
     expect(plan("complete", "운행 끝")).toEqual({ kind: "call", action: "complete", memo: "운행 끝", stored: "운행 끝" });
-    expect(plan("cancel", "기존", { reason: "취소 사유: 기타" })).toEqual({ kind: "call", action: "cancel", memo: "기존\n취소 사유: 기타", stored: "기존\n취소 사유: 기타" });
     // 칸을 비우고 확정 — 보낸 빈 값은 서버에서 null(= 메모를 바꾸지 않는다). 메모 저장의 빈 값은 "지운다"
     expect(plan("confirm", "   ", { server: "X" })).toEqual({ kind: "call", action: "confirm", memo: "   ", stored: null });
     expect(plan("memo", "", { server: "X" })).toEqual({ kind: "call", action: "memo", memo: "", stored: null });
@@ -237,10 +230,8 @@ describe("1. 메모 — 취소 사유 덧붙이기 · 상한은 서버를 따른
   test("planCommit — 상한을 넘으면 액션을 부르지 않고 막는다(길이는 서버처럼 자른 뒤에 잰다)", () => {
     expect(plan("memo", "a".repeat(10), { max: 10 })).toMatchObject({ kind: "call" });
     expect(plan("memo", `  ${"a".repeat(10)}  `, { max: 10 })).toMatchObject({ kind: "call" });
-    expect(plan("memo", "a".repeat(11), { max: 10 })).toEqual({ kind: "blocked", count: 11, max: 10, withReason: false });
-    // 취소 — 메모는 상한 안이어도 사유를 붙이면 넘을 수 있다
-    expect(plan("cancel", "a".repeat(5), { reason: "b".repeat(10), max: 10 })).toEqual({ kind: "blocked", count: 16, max: 10, withReason: true });
-    expect(plan("cancel", "a".repeat(5), { max: 10 })).toMatchObject({ kind: "call" });
+    expect(plan("memo", "a".repeat(11), { max: 10 })).toEqual({ kind: "blocked", count: 11, max: 10 });
+    expect(plan("complete", "a".repeat(11), { max: 10 })).toEqual({ kind: "blocked", count: 11, max: 10 });
     // 보내지 않는 메모는 재지 않는다(고치지 않은 확정 — 서버에 있는 값을 건드리지 않는다)
     expect(plan("confirm", "a".repeat(11), { server: "a".repeat(11), max: 10 })).toEqual({ kind: "call", action: "confirm", memo: null, stored: null });
   });
@@ -268,26 +259,17 @@ describe("1. 메모 — 취소 사유 덧붙이기 · 상한은 서버를 따른
 /**
  * 리뷰 P2-3 — 확정·취소·완료가 **고치지 않은** 메모 칸 값을 보내면, 다른 화면(PC)이 그 사이 저장한 메모를
  * 이 화면(휴대폰)이 열릴 때의 옛 값으로 되돌린다(0010 은 `admin_memo = coalesce(p_memo, admin_memo)` — 값을 보내면 덮는다).
- * 그래서 칸을 고쳤거나(서버에서 받은 값과 다르다) 취소 사유를 골랐을 때만 보낸다. 아니면 null — 서버가 저장된 메모를 지킨다.
+ * 그래서 칸을 고쳤을 때만(서버에서 받은 값과 다르다) 보낸다. 아니면 null — 서버가 저장된 메모를 지킨다.
  */
 describe("1-b. 고치지 않은 메모는 보내지 않는다 (리뷰 P2-3)", () => {
-  test.each(["confirm", "cancel", "complete"] as const)("%s — 칸이 서버 값 그대로면 메모 없이(null)", (kind) => {
+  test.each(["confirm", "complete"] as const)("%s — 칸이 서버 값 그대로면 메모 없이(null)", (kind) => {
     expect(plan(kind, "저장된 메모", { server: "저장된 메모" })).toEqual({ kind: "call", action: kind, memo: null, stored: null });
     // 비어 있는 채로 열린 칸도 같다
     expect(plan(kind, "", { server: "" })).toEqual({ kind: "call", action: kind, memo: null, stored: null });
   });
 
-  test.each(["confirm", "cancel", "complete"] as const)("%s — 고쳤으면 칸 값을 보낸다", (kind) => {
+  test.each(["confirm", "complete"] as const)("%s — 고쳤으면 칸 값을 보낸다", (kind) => {
     expect(plan(kind, "고친 메모", { server: "저장된 메모" })).toEqual({ kind: "call", action: kind, memo: "고친 메모", stored: "고친 메모" });
-  });
-
-  test("취소 — 사유를 골랐으면 고치지 않았어도 보낸다(지금 보이는 메모 + 사유 한 줄)", () => {
-    expect(plan("cancel", "저장된 메모", { server: "저장된 메모", reason: "취소 사유: 기타" })).toEqual({
-      kind: "call",
-      action: "cancel",
-      memo: "저장된 메모\n취소 사유: 기타",
-      stored: "저장된 메모\n취소 사유: 기타",
-    });
   });
 
   test("고쳤다가 되돌리면 고치지 않은 것이다 — memoEdited 는 서버 값과의 차이다", () => {
@@ -317,19 +299,17 @@ describe("2. 상태 전이 — 시트 · 배너 · 토스트 · 메모 동기화
     expect(memoEdited(st)).toBe(false);
   });
 
-  test("열기 → 닫기 — 사유·배너를 비우고 '그냥 닫힘' 으로 기록한다 · 열 때마다 연 순서가 는다", () => {
-    let st = openOn(initialPanelState(""), "cancel");
-    expect(st).toMatchObject({ sheet: "cancel", sheetSeq: 1, customerName: NAME, reason: null, sheetBanner: null });
-    st = panelReducer(st, { type: "pickReason", reason: "vehicle" });
-    expect(st.reason).toBe("vehicle");
+  test("열기 → 닫기 — 배너를 비우고 '그냥 닫힘' 으로 기록한다 · 열 때마다 연 순서가 는다", () => {
+    let st = openOn(initialPanelState(""), "complete");
+    expect(st).toMatchObject({ sheet: "complete", sheetSeq: 1, customerName: NAME, sheetBanner: null });
     st = panelReducer(st, { type: "close" });
-    expect(st).toMatchObject({ sheet: null, reason: null, sheetBanner: null, lastClose: "dismissed" });
+    expect(st).toMatchObject({ sheet: null, sheetBanner: null, lastClose: "dismissed" });
     expect(openOn(st, "confirm").sheetSeq).toBe(2);
   });
 
-  test("사유는 취소 시트에서만 고른다", () => {
-    const st = panelReducer(openOn(initialPanelState(""), "confirm"), { type: "pickReason", reason: "other" });
-    expect(st.reason).toBeNull();
+  test("상담완료 문자를 큐에 넣으면(OF3-R4) 토스트만 — 시트·메모는 그대로", () => {
+    const st = panelReducer(initialPanelState("메모"), { type: "smsQueued" });
+    expect(st).toMatchObject({ toast: { id: 1, code: "smsQueued" }, sheet: null, memoText: "메모" });
   });
 
   test("성공 — 시트를 닫고 토스트 · 메모 칸은 서버에 저장된 값", () => {
@@ -356,25 +336,21 @@ describe("2. 상태 전이 — 시트 · 배너 · 토스트 · 메모 동기화
   });
 
   test("이미 처리됨 — 시트 안 배너 + 시트 잠금(새로고침은 컨트롤러 몫)", () => {
-    const st = settleSheet(openOn(initialPanelState(""), "cancel"), "cancel", ALREADY_HANDLED_RESULT);
-    expect(st).toMatchObject({ sheet: "cancel", sheetBanner: { kind: "alreadyHandled" }, sheetLocked: true, toast: null });
+    const st = settleSheet(openOn(initialPanelState(""), "complete"), "complete", ALREADY_HANDLED_RESULT);
+    expect(st).toMatchObject({ sheet: "complete", sheetBanner: { kind: "alreadyHandled" }, sheetLocked: true, toast: null });
   });
 
-  /** 리뷰 P1-1 — 사유 칩이 배너를 지우면 실행 버튼 비활성과 컨트롤러 가드가 함께 풀렸다. 잠금은 배너와 따로 든다. */
-  test("🔴 이미 처리됨 뒤에는 사유 고르기·상한 안내가 잠금·배너를 풀지 못한다 · 새로 열 때만 풀린다", () => {
-    let st = settleSheet(openOn(initialPanelState("기존 메모"), "cancel"), "cancel", ALREADY_HANDLED_RESULT);
-    for (const reason of CANCEL_REASONS) {
-      st = panelReducer(st, { type: "pickReason", reason });
-      expect(st, reason).toMatchObject({ sheetBanner: { kind: "alreadyHandled" }, sheetLocked: true, reason: null });
-    }
-    st = panelReducer(st, { type: "blocked", source: "sheet", count: 9, max: 5, withReason: true });
+  /** 리뷰 P1-1 — 잠금은 배너와 따로 든다. 상한 안내·메모 고치기가 잠금·배너를 풀지 못한다. */
+  test("🔴 이미 처리됨 뒤에는 상한 안내·메모 고치기가 잠금·배너를 풀지 못한다 · 새로 열 때만 풀린다", () => {
+    let st = settleSheet(openOn(initialPanelState("기존 메모"), "complete"), "complete", ALREADY_HANDLED_RESULT);
+    st = panelReducer(st, { type: "blocked", source: "sheet", count: 9, max: 5 });
     expect(st).toMatchObject({ sheetBanner: { kind: "alreadyHandled" }, sheetLocked: true });
     st = panelReducer(st, { type: "editMemo", text: "고침" });
     expect(st).toMatchObject({ sheetBanner: { kind: "alreadyHandled" }, sheetLocked: true });
     // 닫으면 풀리고(그 시트는 끝났다), 새로 연 시트는 잠겨 있지 않다
     st = panelReducer(st, { type: "close" });
     expect(st).toMatchObject({ sheet: null, sheetLocked: false, sheetBanner: null });
-    expect(openOn(st, "cancel")).toMatchObject({ sheetLocked: false, sheetBanner: null });
+    expect(openOn(st, "complete")).toMatchObject({ sheetLocked: false, sheetBanner: null });
   });
 
   test("메모 저장 실패 — 메모 칸 옆 배너", () => {
@@ -383,27 +359,22 @@ describe("2. 상태 전이 — 시트 · 배너 · 토스트 · 메모 동기화
   });
 
   test("상한 초과 — 시트 안(또는 메모 칸 옆) 배너에 글자 수", () => {
-    const opened = openOn(initialPanelState(""), "cancel");
-    expect(panelReducer(opened, { type: "blocked", source: "sheet", count: 2021, max: 2000, withReason: true }).sheetBanner).toEqual({
+    const opened = openOn(initialPanelState(""), "complete");
+    expect(panelReducer(opened, { type: "blocked", source: "sheet", count: 2021, max: 2000 }).sheetBanner).toEqual({
       kind: "memoTooLong",
       count: 2021,
       max: 2000,
-      withReason: true,
     });
-    expect(panelReducer(initialPanelState(""), { type: "blocked", source: "memo", count: 2001, max: 2000, withReason: false }).memoBanner).toMatchObject({
+    expect(panelReducer(initialPanelState(""), { type: "blocked", source: "memo", count: 2001, max: 2000 }).memoBanner).toMatchObject({
       kind: "memoTooLong",
     });
   });
 
-  test("메모를 고치면 메모 배너가 걷힌다 · 잠기지 않은 시트에서 사유를 바꾸면 상한 배너가 걷힌다", () => {
+  test("메모를 고치면 메모 배너가 걷힌다", () => {
     let st = panelReducer(initialPanelState(""), { type: "settled", source: "memo", action: "memo", stored: "x", result: FAILED_RESULT });
     st = panelReducer(st, { type: "editMemo", text: "고침" });
     expect(st).toMatchObject({ memoBanner: null, memoText: "고침" });
     expect(memoEdited(st)).toBe(true);
-    let c = openOn(initialPanelState(""), "cancel");
-    c = panelReducer(c, { type: "blocked", source: "sheet", count: 9, max: 5, withReason: true });
-    c = panelReducer(c, { type: "pickReason", reason: "other" });
-    expect(c.sheetBanner).toBeNull();
   });
 
   test("서버가 새 메모를 내려 주면(새로고침) — 고치는 중이 아니면 따르고, 고치는 중이면 지키지 않는다", () => {
@@ -439,10 +410,10 @@ describe("2-b. 늦게 온 결과 — 닫힌 시트 · 다른 시트를 건드리
   });
 
   test("닫은 뒤 온 실패·이미 처리됨 — 메모 칸 옆 배너 · 잠금 없음", () => {
-    const opened = openOn(initialPanelState(""), "cancel");
+    const opened = openOn(initialPanelState(""), "complete");
     const closed = panelReducer(opened, { type: "close" });
-    expect(late(closed, opened.sheetSeq, "cancel", FAILED_RESULT)).toMatchObject({ sheet: null, sheetBanner: null, memoBanner: { kind: "failed" }, sheetLocked: false });
-    expect(late(closed, opened.sheetSeq, "cancel", ALREADY_HANDLED_RESULT)).toMatchObject({
+    expect(late(closed, opened.sheetSeq, "complete", FAILED_RESULT)).toMatchObject({ sheet: null, sheetBanner: null, memoBanner: { kind: "failed" }, sheetLocked: false });
+    expect(late(closed, opened.sheetSeq, "complete", ALREADY_HANDLED_RESULT)).toMatchObject({
       sheet: null,
       memoBanner: { kind: "alreadyHandled" },
       sheetLocked: false,
@@ -451,14 +422,14 @@ describe("2-b. 늦게 온 결과 — 닫힌 시트 · 다른 시트를 건드리
 
   test("다른 시트가 열린 뒤 온 옛 결과 — 새 시트를 닫거나 잠그거나 배너를 달지 않는다", () => {
     const first = openOn(initialPanelState(""), "confirm");
-    const second = openOn(panelReducer(first, { type: "close" }), "cancel");
+    const second = openOn(panelReducer(first, { type: "close" }), "complete");
     expect(second.sheetSeq).toBe(first.sheetSeq + 1);
     const failed = late(second, first.sheetSeq, "confirm", FAILED_RESULT);
-    expect(failed).toMatchObject({ sheet: "cancel", sheetBanner: null, sheetLocked: false, memoBanner: { kind: "failed" } });
+    expect(failed).toMatchObject({ sheet: "complete", sheetBanner: null, sheetLocked: false, memoBanner: { kind: "failed" } });
     const handled = late(second, first.sheetSeq, "confirm", ALREADY_HANDLED_RESULT);
-    expect(handled).toMatchObject({ sheet: "cancel", sheetBanner: null, sheetLocked: false });
+    expect(handled).toMatchObject({ sheet: "complete", sheetBanner: null, sheetLocked: false });
     const ok = late(second, first.sheetSeq, "confirm", done("confirmed"));
-    expect(ok).toMatchObject({ sheet: "cancel", toast: { code: "confirmed" } });
+    expect(ok).toMatchObject({ sheet: "complete", toast: { code: "confirmed" } });
   });
 });
 
@@ -466,9 +437,9 @@ describe("2-b. 늦게 온 결과 — 닫힌 시트 · 다른 시트를 건드리
 // 3. 컨트롤러 — 버튼 → 서버액션 경로를 가짜 액션으로 실제로 부른다
 // =============================================================================
 describe("3. 시트를 거치지 않고는 액션이 불리지 않는다 (브리프 §테스트)", () => {
-  test("확정·취소·완료 진입(열기)만으로는 액션 0회", () => {
+  test("상담완료·완료 진입(열기)만으로는 액션 0회", () => {
     const h = harness();
-    for (const kind of ["confirm", "cancel", "complete"] as const) {
+    for (const kind of ["confirm", "complete"] as const) {
       h.controller.open(kind);
       expect(h.state.sheet).toBe(kind);
       h.controller.close();
@@ -521,8 +492,8 @@ describe("3-b. 실행 — 메모 전달 · 사유 · 상한 · 결과", () => {
     expect(h.state.toast).toMatchObject({ code: "completed" });
   });
 
-  /** 리뷰 P2-3 — 세 전이 모두: 칸을 고치지 않았으면 메모를 보내지 않는다(다른 화면이 저장한 메모를 옛 값으로 덮지 않게). */
-  test.each(["confirm", "cancel", "complete"] as const)("%s — 칸을 고치지 않았으면 메모 없이(null) 부른다", async (kind) => {
+  /** 리뷰 P2-3 — 두 전이 모두: 칸을 고치지 않았으면 메모를 보내지 않는다(다른 화면이 저장한 메모를 옛 값으로 덮지 않게). */
+  test.each(["confirm", "complete"] as const)("%s — 칸을 고치지 않았으면 메모 없이(null) 부른다", async (kind) => {
     const h = harness({ initialMemo: "휴대폰이 열릴 때의 메모" });
     h.controller.open(kind);
     await h.controller.commit(h.state);
@@ -532,7 +503,7 @@ describe("3-b. 실행 — 메모 전달 · 사유 · 상한 · 결과", () => {
     expect(h.state.memoText).toBe("휴대폰이 열릴 때의 메모");
   });
 
-  test.each(["confirm", "cancel", "complete"] as const)("%s — 고쳤다가 되돌렸으면 고치지 않은 것(null)", async (kind) => {
+  test.each(["confirm", "complete"] as const)("%s — 고쳤다가 되돌렸으면 고치지 않은 것(null)", async (kind) => {
     const h = harness({ initialMemo: "그대로" });
     h.controller.editMemo("그대로!");
     h.controller.editMemo("그대로");
@@ -541,7 +512,7 @@ describe("3-b. 실행 — 메모 전달 · 사유 · 상한 · 결과", () => {
     expect(h.actions[kind]).toHaveBeenCalledWith(ID, null);
   });
 
-  test.each(["confirm", "cancel", "complete"] as const)("%s — 고쳤으면 칸 값을 보낸다", async (kind) => {
+  test.each(["confirm", "complete"] as const)("%s — 고쳤으면 칸 값을 보낸다", async (kind) => {
     const h = harness({ initialMemo: "옛 메모" });
     h.controller.editMemo("고친 메모");
     h.controller.open(kind);
@@ -558,36 +529,17 @@ describe("3-b. 실행 — 메모 전달 · 사유 · 상한 · 결과", () => {
     expect(h.state.memoText).toBe("저장된 메모");
   });
 
-  test("취소 — 고른 사유를 한 줄 덧붙이되 기존 메모를 지우지 않는다", async () => {
-    const h = harness({ initialMemo: "기존 메모" });
-    h.controller.open("cancel");
-    h.controller.pickReason("schedule");
-    await h.controller.commit(h.state);
-    expect(h.actions.cancel).toHaveBeenCalledWith(ID, "기존 메모\nREASON:schedule");
-    // 칸도 서버에 남은 값으로 — 뒤이은 '메모 저장' 이 사유 줄을 지우지 않게
-    expect(h.state.memoText).toBe("기존 메모\nREASON:schedule");
-    expect(h.state.toast).toMatchObject({ code: "cancelled" });
-  });
-
-  test("취소 — 사유도 없고 칸도 고치지 않았으면 메모 없이(null) — 기존 메모는 서버가 지킨다", async () => {
-    const h = harness({ initialMemo: "기존 메모" });
-    h.controller.open("cancel");
-    await h.controller.commit(h.state);
-    expect(h.actions.cancel).toHaveBeenCalledWith(ID, null);
-  });
-
   test("상한 초과 — 막고 안내한다(액션 0회 · 시트 유지)", async () => {
-    const h = harness({ initialMemo: "x".repeat(ADMIN_MEMO_MAX_CHARS) });
-    h.controller.open("cancel");
-    h.controller.pickReason("vehicle");
+    const h = harness({ initialMemo: "" });
+    h.controller.editMemo("x".repeat(ADMIN_MEMO_MAX_CHARS + 1));
+    h.controller.open("complete");
     await h.controller.commit(h.state);
     expect(h.calls()).toBe(0);
-    expect(h.state.sheet).toBe("cancel");
+    expect(h.state.sheet).toBe("complete");
     expect(h.state.sheetBanner).toEqual({
       kind: "memoTooLong",
-      count: ADMIN_MEMO_MAX_CHARS + 1 + "REASON:vehicle".length,
+      count: ADMIN_MEMO_MAX_CHARS + 1,
       max: ADMIN_MEMO_MAX_CHARS,
-      withReason: true,
     });
   });
 
@@ -600,10 +552,10 @@ describe("3-b. 실행 — 메모 전달 · 사유 · 상한 · 결과", () => {
   });
 
   test("액션이 throw 해도(네트워크 끊김) 실패 배너 — 전이가 오류 경계로 번지지 않는다", async () => {
-    const h = harness({ results: { cancel: new Error("fetch failed") } });
-    h.controller.open("cancel");
+    const h = harness({ results: { complete: new Error("fetch failed") } });
+    h.controller.open("complete");
     await expect(h.controller.commit(h.state)).resolves.toBeUndefined();
-    expect(h.state).toMatchObject({ sheet: "cancel", sheetBanner: { kind: "failed" } });
+    expect(h.state).toMatchObject({ sheet: "complete", sheetBanner: { kind: "failed" } });
   });
 
   test("이미 처리된 건 → 배너 + 새로고침(지금 동작 유지) · 그 뒤 실행은 0회", async () => {
@@ -617,30 +569,27 @@ describe("3-b. 실행 — 메모 전달 · 사유 · 상한 · 결과", () => {
   });
 
   /**
-   * 🔴 리뷰 P1-1 — 취소 시트에서 "이미 처리됨" 이 뜬 뒤 사유 칩을 누르면 배너가 지워지고 가드가 풀려 같은 취소가 한 번 더 나갔다
-   * (리뷰 실측: cancel("기존 메모") → cancel("기존 메모\n취소 사유: vehicle")). 이제 무엇을 눌러도 호출은 1회뿐이다.
+   * 🔴 리뷰 P1-1 — "이미 처리됨" 이 뜬 시트는 잠긴다. 그 뒤 무엇을 눌러도(메모 · 메모 저장 · 실행 여러 번) 호출은 1회뿐이다.
+   * (예전에는 취소 시트의 사유 칩이 배너를 지워 가드가 풀렸다 — 취소 시트는 OF3-R4 에서 걷었고, 잠금 규약은 남은 시트에 그대로다.)
    */
-  test("🔴 취소 → 이미 처리됨 → 사유 고르기 → 배너 유지 · 실행 버튼 비활성 · 사유 라디오 비활성 · 호출 1회", async () => {
-    const h = harness({ initialMemo: "기존 메모", results: { cancel: ALREADY_HANDLED_RESULT } });
-    h.controller.open("cancel");
+  test("🔴 운행 완료 → 이미 처리됨 → 배너 유지 · 실행 버튼 비활성 · 호출 1회", async () => {
+    const h = harness({ initialMemo: "기존 메모", results: { complete: ALREADY_HANDLED_RESULT } });
+    h.controller.open("complete");
     await h.controller.commit(h.state);
-    expect(h.actions.cancel).toHaveBeenCalledTimes(1);
-    h.controller.pickReason("vehicle");
-    expect(h.state).toMatchObject({ sheet: "cancel", sheetBanner: { kind: "alreadyHandled" }, sheetLocked: true, reason: null });
+    expect(h.actions.complete).toHaveBeenCalledTimes(1);
+    expect(h.state).toMatchObject({ sheet: "complete", sheetBanner: { kind: "alreadyHandled" }, sheetLocked: true });
 
-    // 화면도 같은 판정을 그린다 — 실행 버튼 · 사유 라디오 모두 disabled
-    const html = await renderSheet("cancel", h.state);
+    // 화면도 같은 판정을 그린다 — 실행 버튼 disabled
+    const html = await renderSheet("complete", h.state);
     expect(attr(openTag(html, "admin-sheet-submit"), "disabled")).toBe("");
-    for (const reason of CANCEL_REASONS) expect(attr(openTag(html, `admin-cancel-reason-${reason}`), "disabled"), reason).toBe("");
     expect(text(elementOf(html, "admin-sheet-banner"))).toBe(detail.result.alreadyHandled);
 
-    // 무엇을 눌러도 — 사유 전부 · 메모 · 메모 저장 · 실행 여러 번 — 다시 나가지 않는다
-    for (const reason of CANCEL_REASONS) h.controller.pickReason(reason);
+    // 무엇을 눌러도 — 메모 · 메모 저장 · 실행 여러 번 — 다시 나가지 않는다
     h.controller.editMemo("다른 메모");
     await h.controller.saveMemo(h.state);
     await h.controller.commit(h.state);
     await h.controller.commit(h.state);
-    expect(h.actions.cancel).toHaveBeenCalledTimes(1);
+    expect(h.actions.complete).toHaveBeenCalledTimes(1);
     expect(h.calls()).toBe(1);
     expect(h.state.sheetBanner).toEqual({ kind: "alreadyHandled" });
   });
@@ -732,12 +681,12 @@ describe("4. 포커스 · 토스트 · 문구 조립", () => {
     expect(SHEET_STUCK_MS).toBeLessThan(maxDuration * 1000);
   });
 
-  test("토스트 — 3초, 링크가 있으면 5초 · 링크는 확정 토스트에만(발송 내역)", () => {
+  test("토스트 — 3초, 링크가 있으면 5초 · 링크는 문자 발송 토스트에만(발송 기록 · OF3-R4 — 상담완료는 문자를 보내지 않는다)", () => {
     expect(TOAST_MS).toEqual({ plain: 3000, withLink: 5000 });
     expect(toastDurationMs(false)).toBe(3000);
     expect(toastDurationMs(true)).toBe(5000);
-    expect(toastHasLink("confirmed")).toBe(true);
-    for (const code of ["cancelled", "completed", "memoUpdated"] as const) expect(toastHasLink(code), code).toBe(false);
+    expect(toastHasLink("smsQueued")).toBe(true);
+    for (const code of ["confirmed", "cancelled", "completed", "memoUpdated"] as const) expect(toastHasLink(code), code).toBe(false);
   });
 
   test("이름 — 서버가 그린 글자를 정리한다 · 없으면 이름 없는 제목", () => {
@@ -754,15 +703,12 @@ describe("4. 포커스 · 토스트 · 문구 조립", () => {
     expect(fillTemplate("{name} · {other}", { name: "가" })).toBe("가 · {other}");
   });
 
-  test("배너 문구 — 실패·이미 처리됨·상한(사유 포함 여부 · 천 단위 쉼표)", async () => {
+  test("배너 문구 — 실패·이미 처리됨·상한(천 단위 쉼표)", async () => {
     const l = await labels();
     expect(bannerMessage({ kind: "failed" }, l)).toBe(l.results.failed);
     expect(bannerMessage({ kind: "alreadyHandled" }, l)).toBe(l.results.alreadyHandled);
-    expect(bannerMessage({ kind: "memoTooLong", count: 2021, max: 2000, withReason: true }, l)).toContain("2,021");
-    expect(bannerMessage({ kind: "memoTooLong", count: 2021, max: 2000, withReason: true }, l)).toContain("2,000");
-    expect(bannerMessage({ kind: "memoTooLong", count: 2021, max: 2000, withReason: true }, l)).not.toBe(
-      bannerMessage({ kind: "memoTooLong", count: 2021, max: 2000, withReason: false }, l),
-    );
+    expect(bannerMessage({ kind: "memoTooLong", count: 2021, max: 2000 }, l)).toContain("2,021");
+    expect(bannerMessage({ kind: "memoTooLong", count: 2021, max: 2000 }, l)).toContain("2,000");
   });
 });
 
@@ -770,34 +716,30 @@ describe("4. 포커스 · 토스트 · 문구 조립", () => {
 // 5. 카탈로그 — 시안·브리프 문구 그대로(해요체)
 // =============================================================================
 describe("5. messages/ko.json admin.detail — 브리프 문구", () => {
-  const sheet = detail.sheet as Record<string, unknown> & { reason: Record<string, string> };
+  const sheet = detail.sheet as Record<string, unknown>;
 
-  test("확정 시트", () => {
-    // OF2-B: 표시 이름 확정 → 상담완료. 문자는 그대로 "예약 확정 안내"(계약 성립 통지)라 본문이 그 이름을 말한다.
+  test("상담완료 시트 — 문자는 자동으로 가지 않는다(OF3-R4 · 0028)", () => {
     expect(sheet.confirmTitle).toBe("{name} 님 접수를 상담완료로 바꿀까요?");
     expect(sheet.confirmTitleNoName).toBe("이 접수를 상담완료로 바꿀까요?");
-    expect(sheet.confirmBody).toBe("상담완료로 바꾸면 고객에게 예약 확정 안내 문자가 가요. 보낸 문자는 되돌릴 수 없어요.");
-    expect(sheet.confirmSubmit).toBe("상담완료로 바꾸고 문자 보내기");
+    expect(sheet.confirmBody).toBe("상담완료로 바꾸면 되돌릴 수 없어요. 고객에게 문자는 자동으로 가지 않아요 — 바꾼 뒤 '문자 보내기'로 보내 주세요.");
+    expect(sheet.confirmSubmit).toBe("상담완료로 바꾸기");
     expect(sheet.close).toBe("닫기");
     expect(sheet.quickNote).toBe("간편 접수 — 차량·시각은 통화로 정한 대로");
   });
 
-  test("취소 시트 — 문자가 가지 않는다는 안내 · 사유 4개 · 덧붙는 줄", () => {
-    expect(sheet.cancelTitle).toBe("{name} 님 접수를 취소할까요?");
-    expect(sheet.cancelTitleNoName).toBe("이 접수를 취소할까요?");
-    expect(sheet.cancelBody).toBe("취소하면 되돌릴 수 없어요. <b>고객에게 문자가 가지 않으니</b> 전화로 알려 주세요.");
-    expect(sheet.cancelSubmit).toBe("접수 취소하기");
-    expect(sheet.reason).toEqual({ schedule: "고객 일정 변경", vehicle: "차량을 못 구함", unreachable: "연락이 안 됨", other: "기타" });
-    expect(Object.keys(sheet.reason)).toEqual([...CANCEL_REASONS]);
-    expect(sheet.reasonHint).toBe("고른 사유는 메모에 함께 남아요");
-    expect(sheet.reasonLine).toBe("취소 사유: {reason}");
+  test("취소 시트 문구는 없다 — 화면에서 걷었다(OF3-R4) · 옛 취소 기록의 한 줄과 결과 문구는 남는다", () => {
+    for (const k of ["cancelTitle", "cancelTitleNoName", "cancelBody", "cancelSubmit", "reason", "reasonHint", "reasonLegend", "reasonLine", "memoTooLongWithReason"]) {
+      expect(sheet[k], k).toBeUndefined();
+    }
+    expect(detail.cancel).toBeUndefined();
+    expect(detail.cancelHint).toBeUndefined();
+    expect((detail.process as Record<string, string>).cancelled).toBe("취소한 접수예요. 더 처리할 일이 없어요.");
+    expect(detail.result.cancelled).toBe("취소했어요. 고객에게 전화로 알려 주세요.");
   });
 
-  test("처리 영역 — 취소는 글자 버튼 + 안내 한 줄 · 확정 안내", () => {
-    expect(detail.cancel).toBe("이 접수 취소하기");
-    expect(detail.cancelHint).toBe("취소하면 고객에게 문자가 가지 않아요. 전화로 알려 주세요.");
+  test("처리 영역 — 상담완료 안내(자동 발송 없음)", () => {
     expect(detail.confirm).toBe("상담완료로 바꾸기"); // OF2-B
-    expect(detail.confirmHint).toBe("상담완료로 바꾸면 고객에게 예약 확정 안내 문자가 가요.");
+    expect(detail.confirmHint).toBe("상담완료로 바꿔도 고객에게 문자는 자동으로 가지 않아요. 바꾼 뒤 '문자 보내기'로 안내해 주세요.");
   });
 
   /**
@@ -805,7 +747,7 @@ describe("5. messages/ko.json admin.detail — 브리프 문구", () => {
    * 칸을 비우고 확정해도 서버는 메모를 지우지 않는다(0010 coalesce). 안내는 동작 그대로 — 고친 메모만 함께 저장되고, 다 지울 때는 '메모 저장'.
    */
   test("메모 안내 — 고친 메모만 함께 저장된다 · 다 지울 때는 '메모 저장'(동작과 같은 말)", () => {
-    expect(detail.memoHint).toBe("고객에게는 보이지 않아요. 고친 메모는 상담완료·취소·운행 완료를 누를 때 함께 저장돼요. 다 지울 때는 '메모 저장'을 눌러 주세요.");
+    expect(detail.memoHint).toBe("고객에게는 보이지 않아요. 고친 메모는 상담완료·운행 완료를 누를 때 함께 저장돼요. 다 지울 때는 '메모 저장'을 눌러 주세요.");
     expect(detail.memoSave).toBe("메모 저장");
   });
 
@@ -813,20 +755,19 @@ describe("5. messages/ko.json admin.detail — 브리프 문구", () => {
     expect(sheet.slow).toBe("응답이 늦어지고 있어요. 닫아도 괜찮아요 — 결과가 오면 이 화면에 알려 드려요.");
   });
 
-  test("결과 — 성공 토스트 3종 + 실패 배너(해요체)", () => {
-    expect(detail.result.confirmed).toBe("상담완료로 바꿨어요. 예약 확정 안내 문자를 보내고 있어요.");
-    expect(detail.result.cancelled).toBe("취소했어요. 고객에게 전화로 알려 주세요.");
+  test("결과 — 성공 토스트 + 실패 배너(해요체)", () => {
+    expect(detail.result.confirmed).toBe("상담완료로 바꿨어요. 이제 '문자 보내기'로 안내 문자를 보낼 수 있어요.");
     expect(detail.result.memoUpdated).toBe("메모를 저장했어요.");
     expect(detail.result.failed.startsWith("처리하지 못했어요. 잠시 뒤 다시 눌러 주세요")).toBe(true);
     // 합쇼체가 남아 있지 않다 — 이 태스크가 바꾼 문구 묶음 전체
-    const touched = [detail.result, sheet, detail.cancel, detail.cancelHint, detail.confirmHint, detail.complete, detail.completeHint, detail.memoHint, sheet.slow];
+    const touched = [detail.result, sheet, detail.sms, detail.confirmHint, detail.complete, detail.completeHint, detail.memoHint, sheet.slow];
     expect(JSON.stringify(touched)).not.toMatch(/습니다|십시오|하십시오/);
   });
 
-  test("라벨 도우미 — 사유 줄은 카탈로그 문장으로 조립한다 · 링크는 발송 내역 탭", async () => {
+  test("라벨 도우미 — 링크는 발송 기록 탭 · 문자 시트 문구가 내려간다", async () => {
     const l = await labels();
-    expect(l.sheet.cancel.reasons.map((r) => r.key)).toEqual([...CANCEL_REASONS]);
-    expect(l.sheet.cancel.reasons[0]).toEqual({ key: "schedule", label: "고객 일정 변경", line: "취소 사유: 고객 일정 변경" });
+    expect(l.sms.open).toBe("문자 보내기");
+    expect(l.sms.title).toContain("{name}");
     expect(l.toastLink).toEqual({ label: detail.toastLink, href: "/admin/notifications" });
     // `{name}` 자리는 화면이 채운다(보간을 거치지 않은 원문)
     expect(l.sheet.confirm.title).toBe("{name} 님 접수를 상담완료로 바꿀까요?");
@@ -841,42 +782,27 @@ describe("5. messages/ko.json admin.detail — 브리프 문구", () => {
  * P5-22 — 상세 재배치(시안 #detail 처리 카드)로 진입 버튼이 **처리 카드(components/admin/ReservationProcess.tsx)** 로 옮겨 갔다.
  * 확정·완료·취소 진입 버튼은 이제 처리 카드(데스크톱 오른쪽 열 · 휴대폰은 아래 행동 바와 맨 아래 칸)의 진입 버튼(SheetTrigger)이고,
  * 누르면 채널로 처리 영역(ReservationActions — 시트·메모·토스트의 주인)에 시트를 열어 달라고 한다. 메모는 시안대로 본문의 메모 카드다.
- * 이 절의 뜻은 그대로다: 취소 진입은 확정 버튼과 같은 줄·같은 크기가 아니다(구분선 아래 글자 버튼) · 안내 한 줄씩 · 끝난 접수에는 전이 버튼이 없다.
- * 옛 단언 "메모가 확정과 취소 사이" 는 시안의 새 배치(메모는 따로 카드)로 바뀌었다 — 둘 사이는 구분선이 가른다.
+ * OF3-R4(0028): 취소 진입을 걷었다. 이 절은 이제 "새 접수 = 상담완료(주 버튼) + 자동 발송 없음 안내 · 상담완료 = [문자 보내기](주) + 구분선 + 운행 완료(보조)
+ * · 끝난 접수에는 전이 버튼이 없다" 를 잠근다. 메모는 시안대로 본문의 메모 카드다.
  */
-describe("6. 처리 영역 — 취소 진입 버튼은 확정 버튼과 같은 줄·같은 크기가 아니다 (구조)", () => {
+describe("6. 처리 영역 — 접수 → 상담완료 두 단계 · 취소 진입 없음 (구조)", () => {
   const processCard = async (status: "new" | "confirmed" | "done" | "cancelled") =>
     renderToStaticMarkup(createElement(ReservationProcess, { id: ID, status, labels: await labels(), layout: "card" }));
 
-  test("신규 — 확정(주 버튼 영역) · 구분선 · 취소(글자 버튼 영역) 순서 (P5-22: 메모는 본문의 메모 카드로 — 시안)", async () => {
+  test("신규 — 상담완료(주 버튼) + 안내 한 줄 · 취소 진입 없음 (P5-22: 메모는 본문의 메모 카드로 — 시안)", async () => {
     const html = await processCard("new");
     const primary = zone(html, "primary");
-    const cancel = zone(html, "cancel");
     expect(primary).toContain('data-testid="admin-confirm"');
-    expect(primary).not.toContain('data-testid="admin-cancel"');
-    expect(cancel).toContain('data-testid="admin-cancel"');
-    expect(cancel).not.toContain('data-testid="admin-confirm"');
-
-    const iConfirm = html.indexOf('data-testid="admin-confirm"');
-    const iRule = html.indexOf("<hr");
-    const iCancel = html.indexOf('data-testid="admin-cancel"');
-    expect(iConfirm).toBeGreaterThanOrEqual(0);
-    expect(iRule, "구분선이 확정 뒤·취소 앞에 있다").toBeGreaterThan(iConfirm);
-    expect(iCancel).toBeGreaterThan(iRule);
+    expect(html).not.toContain('data-testid="admin-cancel"');
+    expect(html).not.toContain('data-sheet="cancel"');
     // 메모는 처리 카드에 없다 — 처리 영역(ReservationActions)의 메모 카드
     expect(html).not.toContain('id="admin-memo"');
     expect(await renderPanel("new")).toContain('id="admin-memo"');
 
-    // 모양 — 확정은 주 버튼, 취소는 글자 버튼(같은 클래스가 아니다)
     const confirmTag = openTag(html, "admin-confirm");
-    const cancelTag = openTag(html, "admin-cancel");
     expect(attr(confirmTag, "data-variant")).toBe("primary");
-    expect(attr(cancelTag, "data-variant")).toBe("text");
     expect(attr(confirmTag, "class")).toBe(s.btnPrimary);
-    expect(attr(cancelTag, "class")).toBe(s.btnText);
-    // 안내 한 줄
     const l = await labels();
-    expect(text(cancel)).toContain(l.cancelHint);
     expect(text(primary)).toContain(l.confirmHint);
   });
 
@@ -899,12 +825,16 @@ describe("6. 처리 영역 — 취소 진입 버튼은 확정 버튼과 같은 �
     expect(text(new RegExp(`<h2[^>]*id="${titleId}"[^>]*>([\\s\\S]*?)</h2>`).exec(card)![1])).toBe((await labels()).panel);
   });
 
-  test("확정 — 운행 완료(주 버튼) + 취소(글자 버튼) · 확정 버튼 없음", async () => {
+  test("상담완료 — [문자 보내기](주 버튼) · 구분선 · 운행 완료(보조 버튼) · 상담완료 버튼·취소 없음", async () => {
     const html = await processCard("confirmed");
-    expect(zone(html, "primary")).toContain('data-testid="admin-complete"');
-    expect(zone(html, "cancel")).toContain('data-testid="admin-cancel"');
+    expect(zone(html, "sms")).toContain('data-testid="admin-sms-open"');
+    expect(zone(html, "complete")).toContain('data-testid="admin-complete"');
+    expect(html.indexOf("<hr")).toBeGreaterThan(html.indexOf('data-testid="admin-sms-open"'));
+    expect(html.indexOf('data-testid="admin-complete"')).toBeGreaterThan(html.indexOf("<hr"));
     expect(html).not.toContain('data-testid="admin-confirm"');
-    expect(attr(openTag(html, "admin-complete"), "class")).toBe(s.btnPrimary);
+    expect(html).not.toContain('data-testid="admin-cancel"');
+    expect(attr(openTag(html, "admin-sms-open"), "class")).toBe(s.btnPrimary);
+    expect(attr(openTag(html, "admin-complete"), "class")).toBe(s.btnSecondary);
   });
 
   test("완료·취소 — 전이 버튼 없음(메모만)", async () => {
@@ -922,7 +852,7 @@ describe("6. 처리 영역 — 취소 진입 버튼은 확정 버튼과 같은 �
 });
 
 describe("6-b. 확인 시트 마크업", () => {
-  test("확정 — alertdialog · aria-modal · 제목(이름) · 요약(간편 접수 한 줄) · 본문 · [닫기][확정하고 문자 보내기]", async () => {
+  test("상담완료 — alertdialog · aria-modal · 제목(이름) · 요약(간편 접수 한 줄) · 본문 · [닫기][상담완료로 바꾸기]", async () => {
     const html = await renderSheet("confirm");
     const dialog = openTag(html, "admin-sheet-confirm");
     expect(attr(dialog, "role")).toBe("alertdialog");
@@ -945,7 +875,7 @@ describe("6-b. 확인 시트 마크업", () => {
     expect(iClose).toBeGreaterThan(0);
     expect(iSubmit).toBeGreaterThan(iClose);
     expect(text(elementOf(html, "admin-sheet-close"))).toBe("닫기");
-    expect(text(elementOf(html, "admin-sheet-submit"))).toBe("상담완료로 바꾸고 문자 보내기");
+    expect(text(elementOf(html, "admin-sheet-submit"))).toBe("상담완료로 바꾸기");
     expect(attr(openTag(html, "admin-sheet-submit"), "data-variant")).toBe("primary");
     expect(attr(openTag(html, "admin-sheet-submit"), "class")).toBe(s.btnPrimary);
     expect(html).not.toContain('role="alert"');
@@ -958,30 +888,13 @@ describe("6-b. 확인 시트 마크업", () => {
     expect(text(zoneOf(html, "admin-sheet-summary"))).toBe("서울 → 부산 · 10월 1일 (목) 08:30");
   });
 
-  test("취소 — 짙은 면 [접수 취소하기] · 문자가 가지 않는다(굵게) · 사유 라디오 4개(기본 해제) · 요약 없음", async () => {
-    const html = await renderSheet("cancel");
-    expect(text(html)).toContain(`${NAME} 님 접수를 취소할까요?`);
-    expect(html).toContain("<b>고객에게 문자가 가지 않으니</b>");
-    const submit = openTag(html, "admin-sheet-submit");
-    expect(attr(submit, "data-variant")).toBe("destructive");
-    expect(attr(submit, "class")).toBe(s.btnDestructive);
-    expect(text(elementOf(html, "admin-sheet-submit"))).toBe("접수 취소하기");
-
-    const radios = [...html.matchAll(/<input[^>]*type="radio"[^>]*>/g)].map((m) => m[0]);
-    expect(radios).toHaveLength(4);
-    expect(new Set(radios.map((r) => attr(r, "name"))).size, "한 묶음(같은 name)").toBe(1);
-    expect(radios.map((r) => attr(r, "value"))).toEqual([...CANCEL_REASONS]);
-    expect(radios.some((r) => / checked=""/.test(r)), "사유는 기본으로 고르지 않는다").toBe(false);
-    for (const label of ["고객 일정 변경", "차량을 못 구함", "연락이 안 됨", "기타"]) expect(text(html)).toContain(label);
-    expect(html).toMatch(/<fieldset[\s\S]*<legend[\s\S]*<\/fieldset>/);
-    expect(text(html)).toContain("고른 사유는 메모에 함께 남아요");
-    expect(html).not.toContain('data-testid="admin-sheet-summary"');
-  });
-
-  test("취소 — 고른 사유는 checked 로 그려진다", async () => {
-    const html = await renderSheet("cancel", { reason: "vehicle" });
-    const checked = [...html.matchAll(/<input[^>]*type="radio"[^>]*>/g)].map((m) => m[0]).filter((r) => / checked=""/.test(r));
-    expect(checked.map((r) => attr(r, "value"))).toEqual(["vehicle"]);
+  test("두 시트 모두 라디오(사유 고르기)가 없다 — 취소 시트는 걷었다(OF3-R4)", async () => {
+    for (const kind of SHEET_KINDS) {
+      const html = await renderSheet(kind);
+      expect(html, kind).not.toMatch(/type="radio"/);
+      expect(html, kind).not.toContain("<fieldset");
+      expect(attr(openTag(html, "admin-sheet-submit"), "data-variant"), kind).toBe("primary");
+    }
   });
 
   test("운행 완료 — 요약 · [완료로 바꾸기](주 버튼) · 간편 한 줄은 없다", async () => {
@@ -1007,19 +920,8 @@ describe("6-b. 확인 시트 마크업", () => {
     expect(attr(openTag(html, "admin-sheet-submit"), "disabled")).toBe("");
   });
 
-  test("🔴 이미 처리됨(잠김) · 취소 시트 — 사유 라디오 4개도 비활성(리뷰 P1-1)", async () => {
-    const html = await renderSheet("cancel", { sheetBanner: { kind: "alreadyHandled" }, sheetLocked: true });
-    const radios = [...html.matchAll(/<input[^>]*type="radio"[^>]*>/g)].map((m) => m[0]);
-    expect(radios).toHaveLength(4);
-    for (const r of radios) expect(attr(r, "disabled"), attr(r, "value") ?? "").toBe("");
-    expect(attr(openTag(html, "admin-sheet-submit"), "disabled")).toBe("");
-    // 잠기지 않은 취소 시트의 라디오는 누를 수 있다
-    const open = await renderSheet("cancel");
-    for (const r of [...open.matchAll(/<input[^>]*type="radio"[^>]*>/g)].map((m) => m[0])) expect(attr(r, "disabled")).toBeNull();
-  });
-
   test("상한 초과 배너 — 글자 수를 채워 보인다", async () => {
-    const html = await renderSheet("cancel", { sheetBanner: { kind: "memoTooLong", count: 2021, max: 2000, withReason: true } });
+    const html = await renderSheet("complete", { sheetBanner: { kind: "memoTooLong", count: 2021, max: 2000 } });
     const msg = text(elementOf(html, "admin-sheet-banner"));
     expect(msg).toContain("2,000");
     expect(msg).toContain("2,021");
@@ -1093,12 +995,13 @@ const zoneOf = elementOf;
 describe("7. 정적 — 진입 버튼은 시트를 열 뿐이다 · 서버액션은 시트의 실행에서만", () => {
   const ui = codeOf(ACTIONS_UI);
 
-  test("'use client' · 서버액션을 직접 부르지 않는다 — 네 이름은 import 와 액션 표에만 있다", () => {
+  test("'use client' · 서버액션을 직접 부르지 않는다 — 세 이름은 import 와 액션 표에만 있다 · 취소 액션은 화면에 없다(OF3-R4)", () => {
     expect(read(ACTIONS_UI).split("\n")[0].trim()).toMatch(/^["']use client["'];?$/);
-    for (const name of ["confirmReservation", "cancelReservation", "completeReservation", "saveReservationMemo"]) {
+    for (const name of ["confirmReservation", "completeReservation", "saveReservationMemo"]) {
       expect(ui, `${name}( 를 컴포넌트가 직접 부른다`).not.toMatch(new RegExp(`\\b${name}\\s*\\(`));
       expect(ui.match(new RegExp(`\\b${name}\\b`, "g"))?.length, `${name} — import 1 + 액션 표 1`).toBe(2);
     }
+    expect(ui).not.toMatch(/\bcancelReservation\b/);
     expect(ui).toMatch(/panelController\(\{/);
   });
 
@@ -1106,8 +1009,8 @@ describe("7. 정적 — 진입 버튼은 시트를 열 뿐이다 · 서버액션
    * P5-22 — 진입 버튼은 처리 카드(ReservationProcess)·행동 바·위 제목줄의 SheetTrigger 로 옮겼다. 뜻은 그대로다: 누르면 **시트를 열기만** 한다.
    * 길: SheetTrigger 의 onClick → 채널(requestSheet) → 처리 영역의 채널 처리기 → openSheet(연 버튼 기억 + controller.open). 실행(commit)은 시트의 실행 버튼뿐.
    */
-  test("진입 버튼(확정·완료·취소)은 시트를 열기만 한다", () => {
-    const expected: Record<string, string> = { "admin-confirm": "confirm", "admin-complete": "complete", "admin-cancel": "cancel" };
+  test("진입 버튼(상담완료·완료·문자 보내기)은 시트를 열기만 한다", () => {
+    const expected: Record<string, string> = { "admin-confirm": "confirm", "admin-complete": "complete", "admin-sms-open": "sms" };
     const process = codeOf("components/admin/ReservationProcess.tsx");
     for (const [testid, kind] of Object.entries(expected)) {
       const el = new RegExp(`<SheetTrigger\\b[^>]*testId="${testid}"[^>]*/>`).exec(process)?.[0] ?? "";
@@ -1118,8 +1021,9 @@ describe("7. 정적 — 진입 버튼은 시트를 열 뿐이다 · 서버액션
     const onClick = /onClick=\{([^}]*)\}/.exec(trigger)?.[1] ?? "";
     expect(onClick).toMatch(/panelChannels\.requestSheet\(/);
     expect(onClick, "진입 버튼이 실행까지 한다").not.toMatch(/commit|saveMemo|Reservation|startTransition/);
-    const handler = /channelOpen\.current = \(kind: SheetKind, opener: HTMLElement \| null\) => \{([\s\S]*?)\n {4}\};/.exec(ui)?.[1] ?? "";
+    const handler = /channelOpen\.current = \(kind: TriggerKind, opener: HTMLElement \| null\) => \{([\s\S]*?)\n {4}\};/.exec(ui)?.[1] ?? "";
     expect(handler).toMatch(/openSheet\(kind, opener\);/);
+    expect(handler).toMatch(/if \(kind === "sms"\) openSms\(opener\);/);
     expect(handler, "채널 처리기가 실행까지 한다").not.toMatch(/commit|saveMemo|Reservation\(|startTransition/);
     expect(ui).toMatch(/const openSheet = \(sheet: SheetKind, opener: HTMLElement\) => \{\s*openerRef\.current = opener;\s*controller\.open\(sheet\);\s*\};/);
     // 처리 영역 자신에는 진입 버튼이 없다(연결은 채널 하나)
@@ -1175,9 +1079,8 @@ describe("7. 정적 — 진입 버튼은 시트를 열 뿐이다 · 서버액션
     expect(ui).toMatch(/slow=\{slow\}/);
   });
 
-  test("잠긴 시트(이미 처리됨) — 실행 버튼과 사유 라디오를 막는 판정은 배너가 아니라 잠금이다 (리뷰 P1-1)", () => {
+  test("잠긴 시트(이미 처리됨) — 실행 버튼을 막는 판정은 배너가 아니라 잠금이다 (리뷰 P1-1)", () => {
     expect(ui).toMatch(/submitDisabled=\{state\.sheetLocked\}/);
-    expect(ui).toMatch(/disabled=\{pending \|\| state\.sheetLocked\}/);
     expect(ui, "배너 모양으로 버튼을 막으면 배너가 지워질 때 함께 풀린다").not.toMatch(/sheetBanner\?\.kind === "alreadyHandled"/);
     expect(codeOf(SHEET_LOGIC)).toMatch(/if \(state\.sheetLocked\) return;/);
   });
@@ -1191,14 +1094,15 @@ describe("7. 정적 — 진입 버튼은 시트를 열 뿐이다 · 서버액션
   test("이름은 props 가 아니라 서버가 그린 요소에서 읽는다", () => {
     expect(ui).toMatch(/document\.getElementById\(CUSTOMER_NAME_ELEMENT_ID\)/);
     const props = /export function ReservationActions\(\{([^}]*)\}/.exec(ui)?.[1] ?? "";
-    expect(props.split(",").map((p) => p.trim()).filter(Boolean).sort()).toEqual(["id", "initialMemo", "labels", "status", "summary"]);
+    // sms = 상담완료 문자 시트의 두 조각(원장 글자 — 기본 문구 · 계약 정보 블록 · OF3-R4). 개인정보가 없다.
+    expect(props.split(",").map((p) => p.trim()).filter(Boolean).sort()).toEqual(["id", "initialMemo", "labels", "sms", "status", "summary"]);
     for (const pii of ["name", "phone", "email", "message", "customerName"]) {
       expect(new RegExp(`\\b${pii}\\??:`).test(/export interface ReservationActionsProps \{([\s\S]*?)\n\}/.exec(ui)?.[1] ?? ""), pii).toBe(false);
     }
   });
 
   test("한글 리터럴 0 · env 0 — 새 클라이언트 파일과 순수 모듈 (문구는 admin.* 카탈로그에서만)", () => {
-    for (const rel of [ACTIONS_UI, SHEET_UI, SHEET_LOGIC, MEMO_LIB]) {
+    for (const rel of [ACTIONS_UI, SHEET_UI, SHEET_LOGIC, MEMO_LIB, "components/admin/ConsultSmsSheet.tsx", "components/admin/consult-sms.ts"]) {
       const offenders = codeOf(rel)
         .split("\n")
         .map((l, i) => [i + 1, l] as const)

@@ -15,7 +15,7 @@
  * 순수 모듈 — env 없음, 네트워크 없음, 서버 지시어 없음. tests/outbox-worker.test.ts 가 정적으로 잠근다.
  */
 import type { NotifyChannel } from "../types";
-import { RETRY_AFTER_CAP_MS, type TemplateKey } from "./outbox";
+import { RETRY_AFTER_CAP_MS, type ManualTemplateKey, type TemplateKey } from "./outbox";
 
 export { RETRY_AFTER_CAP_MS };
 
@@ -57,9 +57,17 @@ export interface SendRequest {
   channel: NotifyChannel;
   /** 수신처(전화 또는 메일 주소). 제공자 호출에만 쓴다 — 로그·보고서·오류 문구에 넣지 않는다. */
   to: string;
-  /** 문안 키 — 문안이 아니다. 제공자 어댑터가 P4-3 렌더러에 이 키와 reservationId 를 넘겨 문안을 얻는다. */
-  template: TemplateKey;
+  /**
+   * 문안 키 — 문안이 아니다. 제공자 어댑터가 P4-3 렌더러에 이 키와 reservationId 를 넘겨 문안을 얻는다.
+   * 예외 하나(OF3-R4 · 0028): `consult.customer.sms`(관리자가 직접 쓴 상담완료 문자)는 렌더하지 않고 아래 `body` 를 그대로 보낸다.
+   */
+  template: TemplateKey | ManualTemplateKey;
   reservationId: string;
+  /**
+   * 직접 쓴 문자의 최종 본문(0028 notifications_log.body) — template 이 직접 쓴 문자 키일 때만 실린다. 자동 통지에는 키 자체가 없다.
+   * 수신처와 마찬가지로 제공자 요청 본문에만 쓴다 — 로그·보고서·오류 문구에 넣지 않는다.
+   */
+  body?: string;
 }
 
 /**

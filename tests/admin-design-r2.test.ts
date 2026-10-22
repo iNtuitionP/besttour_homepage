@@ -174,11 +174,12 @@ describe("C-14 · C-15 — 메타 줄 조각 · 문장 조각", () => {
   });
 
   test("🔴 문장 조각 — 두 문장 안내는 문장마다 한 덩어리('…알려 / 주세요.' 방지) · 글자는 그대로 · 구분점 없음(.unit)", () => {
-    const hint = (ko.admin.detail as Record<string, string>).cancelHint;
+    // OF3-R4: 옛 취소 안내 대신 운행 완료 안내(두 문장)로 같은 규칙을 본다
+    const hint = (ko.admin.detail as Record<string, string>).completeHint;
     const out = html(sentences(hint));
     expect(text(out)).toBe(hint);
     expect([...out.matchAll(/<span class="_unit_[0-9a-f]+">/g)]).toHaveLength(2);
-    expect(out).toMatch(/<span class="_unit_[0-9a-f]+">전화로 알려 주세요\.<\/span>/);
+    expect(out).toMatch(/<span class="_unit_[0-9a-f]+">고객에게 문자는 가지 않아요\.<\/span>/);
     expect(out, "문장 조각은 구분점을 받지 않는다(.seg 가 아니다)").not.toMatch(/class="_seg_/);
     expect(decl(bodyOf(".unit"), "display")).toBe("inline-block");
   });
@@ -232,9 +233,13 @@ describe("C-14 · C-15 — 메타 줄 조각 · 문장 조각", () => {
     expect(meta).not.toContain('{" · "}');
   });
 
-  test("취소 안내는 문장 조각으로(처리 카드 · 휴대폰 맨 아래 두 곳)", () => {
+  // OF3-R4: 취소 진입을 걷었다 — 두 문장 안내(상담완료 · 문자 보내기 · 운행 완료)를 같은 규칙으로 문장 조각으로 그린다
+  test("처리 카드·휴대폰 맨 아래의 두 문장 안내는 문장 조각으로(상담완료 1 · 문자 1 · 운행 완료 2)", () => {
     const src = codeOf("components/admin/ReservationProcess.tsx");
-    expect([...src.matchAll(/sentences\(labels\.cancelHint\)/g)]).toHaveLength(2);
+    expect([...src.matchAll(/sentences\(labels\.confirmHint\)/g)]).toHaveLength(1);
+    expect([...src.matchAll(/sentences\(labels\.sms\.hint\)/g)]).toHaveLength(1);
+    expect([...src.matchAll(/sentences\(labels\.completeHint\)/g)]).toHaveLength(2);
+    expect(src).not.toMatch(/cancelHint/);
   });
 
   test("🔴 C-15 — 관리자 셸은 낱말 안에서 꺾지 않고(keep-all) 문단 끝 외톨이를 줄인다(text-wrap: pretty — 상속)", () => {

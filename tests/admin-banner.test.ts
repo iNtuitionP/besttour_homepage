@@ -214,7 +214,9 @@ describe("3. 배너를 그리는 곳 — 전부 AdminBanner (목록은 import �
       const src = codeOf(f).replace(/\b(AdminBanner|revealBanner)\b/g, "");
       return /\bfeedbackKind\(/.test(src) || /\b\w*[bB]anner\b/.test(src);
     });
-    const missing = needs.filter((f) => !/<AdminBanner\b/.test(codeOf(f)));
+    // 시트 배너를 AdminSheet 에 넘기기만 하는 파일(OF3-R4 상담완료 문자 시트)은 AdminSheet 가 AdminBanner 를 그린다 — 그 위임도 "그린다" 로 본다.
+    expect(codeOf("components/admin/AdminSheet.tsx")).toMatch(/<AdminBanner\b/);
+    const missing = needs.filter((f) => !/<AdminBanner\b|<AdminSheet\b/.test(codeOf(f)));
     expect(missing).toEqual([]);
     // 리뷰가 짚은 10곳(공지·팝업·노선 폼과 전환 · 갤러리 앨범 · 사진 카드 · 예약 메모)이 모두 들어와야 유도가 맞다
     expect(needs.length).toBeGreaterThanOrEqual(10);
@@ -279,7 +281,7 @@ describe("4. 같은 실패가 두 번이면 두 번 보인다 (재리뷰 P2-R1)"
   });
 
   test("🔴 예약 메모 — 상한 초과(누르자마자 막힘)도 두 번이면 두 번 · 배너와 무관한 다시 그리기(토스트 걷힘)는 스크롤하지 않는다", () => {
-    const block = (st: PanelState) => panelReducer(st, { type: "blocked", source: "memo", count: 2100, max: 2000, withReason: false });
+    const block = (st: PanelState) => panelReducer(st, { type: "blocked", source: "memo", count: 2100, max: 2000 });
     const s1 = block(initialPanelState(""));
     const s2 = block(s1);
     expect(revealsOver([memoFrame(s1), memoFrame(s2)])).toBe(2);

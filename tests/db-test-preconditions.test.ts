@@ -88,7 +88,9 @@ const DB_BLOCK_RE = /describe\.skipIf\(\s*!gate\.allowed/;
 const OUTBOX_MARKERS: [label: string, re: RegExp][] = [
   // 인자가 줄바꿈으로 흩어진 호출(`rest(\n "POST",\n "/notifications_log",`)도 잡아야 한다 — \s 는 개행을 포함한다.
   ["notifications_log 직접 insert", /"POST",\s*["'`]?\/notifications_log/],
-  ["admin_confirm_reservation — 확정이 통지를 큐에 넣는다(0010)", /admin_confirm_reservation/],
+  // 0028 뒤로 상담완료는 큐에 넣지 않지만, 그 파일들은 같은 예약에 통지 행을 심어 대조한다 — 마커는 남긴다(잠금은 싸다).
+  ["admin_confirm_reservation — 상담완료 전이(0010 → 0028)", /admin_confirm_reservation/],
+  ["admin_send_reservation_sms — 직접 쓴 문자를 큐에 넣는다(0028)", /admin_send_reservation_sms/],
   ["submitReservation — 접수가 통지를 큐에 넣는다(P3-3)", /submitReservation\(/],
   ["claim/reap 호출", /claim_pending_notifications|reap_stale_notifications|\breapStale\(|\bclaimPending\(/],
 ];

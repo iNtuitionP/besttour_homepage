@@ -64,8 +64,9 @@ describe("1. 표시 이름 — 관리자 · 공개 예약 확인 · 홈 칩 전�
     expect(sheet.confirmTitle).toContain("상담완료");
     expect(sheet.confirmSubmit).toContain("상담완료");
     expect((at(ko, "admin.detail.result") as { confirmed: string }).confirmed).toContain("상담완료");
-    // 문자는 여전히 '예약 확정 안내' — 시트 본문이 그 사실을 숨기지 않는다
-    expect(sheet.confirmBody).toContain("예약 확정 안내");
+    // OF3-R4(0028): 상담완료는 문자를 자동으로 보내지 않는다 — 시트 본문이 그 사실을 말한다(예전: "예약 확정 안내 문자가 가요")
+    expect(sheet.confirmBody).toContain("자동으로 가지 않아요");
+    expect(sheet.confirmBody).not.toContain("문자가 가요");
   });
 });
 

@@ -135,6 +135,22 @@ export const ALL_TEMPLATE_KEYS = [...TEMPLATE_KEYS, ...FAILURE_TEMPLATE_KEYS] as
 export type TemplateKey = (typeof ALL_TEMPLATE_KEYS)[number];
 export type FailureTemplateKey = (typeof FAILURE_TEMPLATE_KEYS)[number];
 
+/**
+ * **관리자가 직접 쓴 상담완료 문자** 키 (OF3-R4 · 0028). 본문은 행의 `body` 칸에 있다 — 렌더러가 없으므로 위 렌더 키(ALL_TEMPLATE_KEYS)에
+ * 넣지 않는다(넣으면 templates.ts BUILDERS·어댑터 표·"모든 키를 렌더해 보는" 테스트가 만들 수 없는 문안을 요구한다).
+ * 0028 의 CHECK 가 짝을 잠근다: 이 키 ⇔ body 있음 · 문자 채널. 행은 0028 `admin_send_reservation_sms` 만 만든다(event = 'confirmed').
+ * 발송기(worker.ts)는 body 가 있는 행만 이 키로 보낸다 — 짝이 어긋나면 unknown_template 으로 닫는다.
+ */
+export const CONSULT_SMS_TEMPLATE = "consult.customer.sms" as const;
+export const MANUAL_TEMPLATE_KEYS = [CONSULT_SMS_TEMPLATE] as const;
+export type ManualTemplateKey = (typeof MANUAL_TEMPLATE_KEYS)[number];
+
+/**
+ * 아웃박스 행이 가질 수 있는 키 **전부** — 렌더 키 + 직접 쓴 문자 키. 화면(발송 기록 라벨 · 관리 홈 경보 집계)은 이것을 본다:
+ * 직접 쓴 문자도 고객에게 가는 문자이고, 실패하면 "고객에게 보내지 못한 문자" 로 세야 한다.
+ */
+export const OUTBOX_TEMPLATE_KEYS = [...ALL_TEMPLATE_KEYS, ...MANUAL_TEMPLATE_KEYS] as const;
+
 // =============================================================================
 // 순수 — 무엇을 보낼지
 // =============================================================================
@@ -166,11 +182,14 @@ function newRow(reservationId: string, event: NotifyEvent, channel: NotifyChanne
 }
 
 /**
- * event=created  → 사장님 건(SMS, 번호 없으면 email, 둘 다 없으면 생략 + warning) + 고객 SMS.
- * event=confirmed → 고객 1건.
+ * event=created → 사장님 건(SMS, 번호 없으면 email, 둘 다 없으면 생략 + warning) + 고객 SMS.
  * 순서: 사장님 건이 먼저 — 접수 알림은 사장님이 먼저 알아야 한다(FIFO claim).
+ *
+ * **접수만 계획한다** (OF3-R4 · 0028). 옛 event=confirmed 분기(고객 확정 문자 1건)는 걷었다 — 상담완료는 통지를 만들지 않고,
+ * 상담완료 문자는 관리자가 직접 쓴 본문으로 0028 `admin_send_reservation_sms` 가 넣는다. 그래서 인자 타입이 "created" 하나다 —
+ * 확정 통지를 계획하는 호출은 컴파일되지 않는다.
  */
-export function planNotifications(reservation: ReservationForNotify, event: NotifyEvent, opts: PlanOptions): NotificationPlan {
+export function planNotifications(reservation: ReservationForNotify, event: "created", opts: PlanOptions): NotificationPlan {
   if (!present(opts.customerPhone)) {
     throw new Error("planNotifications: customerPhone 이 비었다 — 고객 통지 없는 접수는 없다");
   }
@@ -178,19 +197,14 @@ export function planNotifications(reservation: ReservationForNotify, event: Noti
   const warnings: string[] = [];
   const customer = opts.customerPhone;
 
-  if (event === "created") {
-    if (present(opts.ownerPhone)) {
-      rows.push(newRow(reservation.id, event, "sms", opts.ownerPhone, "created.owner.sms"));
-    } else if (present(opts.ownerEmail)) {
-      rows.push(newRow(reservation.id, event, "email", opts.ownerEmail, "created.owner.email"));
-    } else {
-      warnings.push("owner notification skipped: ownerPhone and ownerEmail are both empty");
-    }
-    rows.push(newRow(reservation.id, event, "sms", customer, "created.customer.sms"));
-    return { rows, warnings };
+  if (present(opts.ownerPhone)) {
+    rows.push(newRow(reservation.id, event, "sms", opts.ownerPhone, "created.owner.sms"));
+  } else if (present(opts.ownerEmail)) {
+    rows.push(newRow(reservation.id, event, "email", opts.ownerEmail, "created.owner.email"));
+  } else {
+    warnings.push("owner notification skipped: ownerPhone and ownerEmail are both empty");
   }
-
-  rows.push(newRow(reservation.id, event, "sms", customer, "confirmed.customer.sms"));
+  rows.push(newRow(reservation.id, event, "sms", customer, "created.customer.sms"));
   return { rows, warnings };
 }
 
@@ -248,6 +262,8 @@ interface DbRow {
   last_error: string | null;
   next_attempt_at: string;
   updated_at: string;
+  /** 0028 — claim 이 `returns setof notifications_log` 라 새 칸도 실려 온다. 0028 전 DB 에서는 키가 없다(undefined → null). */
+  body?: string | null;
 }
 
 function toOutboxRow(r: DbRow): OutboxRow {
@@ -263,6 +279,8 @@ function toOutboxRow(r: DbRow): OutboxRow {
     last_error: r.last_error,
     next_attempt_at: r.next_attempt_at,
     updated_at: r.updated_at,
+    // 0028 전 DB(또는 그 칸을 싣지 않는 응답)에는 키가 없다 — 있을 때만 옮긴다(발송기는 문자열일 때만 body 로 본다).
+    ...(r.body === undefined ? {} : { body: r.body }),
   };
 }
 

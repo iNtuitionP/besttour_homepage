@@ -4020,3 +4020,83 @@ a.hubItem:hover {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* OF3-R4 — 상담완료 문자 시트(위 = 고칠 수 있는 문구 · 바이트 · 아래 = 고칠 수 없는 계약 정보 블록) · 보내지 않음 안내 · 보낸 문자 기록 */
+.smsField {
+  margin: var(--space-stack-sm) 0 0;
+}
+.smsLabel {
+  display: block;
+  margin: 0 0 var(--space-stack-xs);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+.smsBytes {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.smsBytes[data-over="true"] {
+  color: var(--status-urgent-fg);
+  font-weight: 700;
+}
+.smsBlock {
+  margin: var(--space-stack-sm) 0 0;
+}
+/* 미리보기 — 줄바꿈을 그대로 보이고 긴 주소는 꺾는다(375px 가로 스크롤 0) */
+.smsBlockText {
+  margin: 0;
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.smsSkipped {
+  margin: 0;
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  border: 1px solid var(--status-attention-border);
+  border-radius: var(--radius-control);
+  background: var(--status-attention-bg);
+  color: var(--status-attention-fg);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+.messageList {
+  display: grid;
+  gap: var(--space-stack-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.messageItem {
+  padding: var(--space-stack-xs) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+.messageItem:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.messageMeta {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.messageHead {
+  margin: var(--space-stack-xs) 0 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

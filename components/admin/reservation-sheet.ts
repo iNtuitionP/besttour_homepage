@@ -5,16 +5,18 @@
  * (vitest 는 node 환경이고 DOM 패키지를 들이지 않는다 — P2-9 KrMap explorer-state · P3-8 quick-quote 와 같은 나눔).
  * 컴포넌트(ReservationActions · AdminSheet)는 이 모듈의 상태를 그리고 버튼을 컨트롤러에 잇기만 한다.
  *
+ * OF3-R4(2026-10-22): 상태는 접수 → 상담완료 두 단계로 쓴다. 취소 시트(사유 고르기 · 메모에 사유 덧붙이기)는 화면과 함께 걷었다 —
+ * 전이 시트는 상담완료 · 운행 완료 둘이다. 상담완료 문자 시트는 전이가 아니라 consult-sms.ts 가 따로 든다.
+ *
  * 지키는 것(브리프 P5-19)
- *   - **시트를 거치지 않고는 전이 액션이 불리지 않는다.** 확정·취소·완료 버튼은 `open` 만 부른다. 서버액션을 부르는 길은
+ *   - **시트를 거치지 않고는 전이 액션이 불리지 않는다.** 상담완료·완료 버튼은 `open` 만 부른다. 서버액션을 부르는 길은
  *     `commit` 하나이고, 그것은 시트가 열려 있을 때만 움직인다(열려 있지 않으면 아무것도 하지 않는다).
- *   - **고친 메모를 함께 넘긴다.** 확정·취소·완료는 메모 칸을 **고쳤을 때만**(서버에서 받은 값과 다를 때) 그 값을 넘긴다 —
+ *   - **고친 메모를 함께 넘긴다.** 상담완료·완료는 메모 칸을 **고쳤을 때만**(서버에서 받은 값과 다를 때) 그 값을 넘긴다 —
  *     예전에는 넘기지 않아 확정 전에 쓴 메모가 사라졌다. 고치지 않았으면 null 을 넘겨 0010 의 coalesce 가 저장된 메모를 지키게 한다
  *     (리뷰 P2-3: 늘 칸 값을 넘기면 다른 화면이 그 사이 저장한 메모를 이 화면이 열릴 때의 옛 값으로 되돌린다).
- *     취소는 고른 사유를 한 줄 덧붙이되 기존 메모를 지우지 않는다. 길이는 서버와 같은 상한(lib/admin/memo.ts)으로 **먼저 막는다** —
- *     서버는 넘친 메모를 몰래 자르고, 잘리는 쪽이 바로 덧붙인 사유 줄이다.
+ *     길이는 서버와 같은 상한(lib/admin/memo.ts)으로 **먼저 막는다** — 서버는 넘친 메모를 몰래 자른다.
  *   - **성공은 토스트, 실패는 시트 안 배너.** 실패하면 시트를 닫지 않는다. 이미 처리된 건은 배너 + 화면 새로고침(예전 동작 유지)이고,
- *     그 시트는 **잠긴다**(`sheetLocked`) — 사유 칩을 포함해 무엇을 눌러도 같은 판정을 다시 보내지 않는다(리뷰 P1-1). 잠금은 배너와
+ *     그 시트는 **잠긴다**(`sheetLocked`) — 무엇을 눌러도 같은 판정을 다시 보내지 않는다(리뷰 P1-1). 잠금은 배너와
  *     따로 들어서 배너가 바뀌어도 풀리지 않고, 시트를 닫거나 새로 열 때만 풀린다.
  *     서버액션이 throw 해도(네트워크 끊김) 실패로 읽는다 — 전이가 오류 경계로 번지지 않게.
  *   - **응답이 오지 않아도 갇히지 않는다.** 처리 중 `SHEET_STUCK_MS` 가 지나면 [닫기]가 되살아난다(리뷰 P2-1). 닫은 뒤에 도착한 결과는
@@ -32,13 +34,19 @@ import { FAILED_RESULT, type AdminActionCode, type AdminActionResult } from "@/l
 // 상수 · 타입
 // =============================================================================
 
-/** 확인 시트를 거치는 전이 — 셋 다 되돌릴 수 없다(0010 에 역전이가 없다). 메모 저장은 되돌릴 수 있어 시트가 없다. */
-export const SHEET_KINDS = ["confirm", "cancel", "complete"] as const;
+/**
+ * 확인 시트를 거치는 전이 — 둘 다 되돌릴 수 없다(0010 에 역전이가 없다). 메모 저장은 되돌릴 수 있어 시트가 없다.
+ * OF3-R4(사장님 요청 2026-10-22): 상태는 접수 → 상담완료 두 단계로 쓴다 — [접수 취소] 진입과 취소 시트(사유 고르기)는 화면에서 걷었다.
+ * 취소 서버액션(actions/admin/reservation.ts cancelReservation)과 DB 함수(0010 admin_cancel_reservation)는 남는다. 옛 취소 기록은 상태 배지로 보인다.
+ */
+export const SHEET_KINDS = ["confirm", "complete"] as const;
 export type SheetKind = (typeof SHEET_KINDS)[number];
 
-/** 취소 사유(선택) — 순서가 곧 화면 순서다. 문구는 messages/ko.json `admin.detail.sheet.reason.*`. */
-export const CANCEL_REASONS = ["schedule", "vehicle", "unreachable", "other"] as const;
-export type CancelReason = (typeof CANCEL_REASONS)[number];
+/**
+ * 진입 버튼이 열어 달라고 할 수 있는 시트 — 전이 시트 둘 + 상담완료 문자 시트(OF3-R4 · components/admin/ConsultSmsSheet.tsx).
+ * 문자 시트는 전이가 아니라 이 모듈의 상태 기계(panelReducer)를 타지 않는다 — 처리 영역(ReservationActions)이 따로 든다(consult-sms.ts).
+ */
+export type TriggerKind = SheetKind | "sms";
 
 /** 서버가 그린 고객 이름 요소의 id — 상세 페이지가 이 id 를 이름 칸에 달고, 시트가 열릴 때 그 글자를 읽는다. */
 export const CUSTOMER_NAME_ELEMENT_ID = "admin-customer-name";
@@ -115,17 +123,20 @@ export function armingGuard(openedAt: number): ArmingGuard {
   };
 }
 
-/** 성공 토스트가 되는 결과 코드. */
+/** 성공 토스트가 되는 결과 코드. (취소는 화면에서 부르지 않지만 결과 코드 어휘는 lib/admin/result.ts 와 같게 둔다.) */
 export type SuccessCode = Extract<AdminActionCode, "confirmed" | "cancelled" | "completed" | "memoUpdated">;
+
+/** 토스트 코드 — 전이·메모 성공 + 상담완료 문자를 큐에 넣음(smsQueued · OF3-R4). */
+export type ToastCode = SuccessCode | "smsQueued";
 
 export type Banner =
   | { kind: "failed" }
   | { kind: "alreadyHandled" }
-  | { kind: "memoTooLong"; count: number; max: number; withReason: boolean };
+  | { kind: "memoTooLong"; count: number; max: number };
 
 /**
- * 컴포넌트가 컨트롤러에 넘기는 서버액션 표. 네 이름은 actions/admin/reservation.ts 의 export 와 1:1 이다.
- * 확정·취소·완료의 메모 null = "메모를 바꾸지 않는다"(0010 coalesce). 메모 저장은 늘 문자열이다(빈 값 = 지운다).
+ * 컴포넌트가 컨트롤러에 넘기는 서버액션 표 — actions/admin/reservation.ts 의 export 중 화면이 부르는 셋(상담완료 · 운행 완료 · 메모).
+ * 상담완료·완료의 메모 null = "메모를 바꾸지 않는다"(0010 coalesce). 메모 저장은 늘 문자열이다(빈 값 = 지운다).
  */
 export type PanelActions = {
   [K in SheetKind]: (id: string, memo: string | null) => Promise<AdminActionResult>;
@@ -139,11 +150,31 @@ export interface SheetCopy {
   submit: string;
 }
 
-export interface CancelReasonCopy {
-  key: CancelReason;
-  label: string;
-  /** 메모에 덧붙는 한 줄("취소 사유: …") — 서버가 카탈로그로 조립해 내린다. */
-  line: string;
+/** 상담완료 문자 시트 문구(OF3-R4) — `{name}`·`{bytes}`·`{max}` 는 화면이 채운다(원문 틀). */
+export interface ConsultSmsLabels {
+  /** 진입 버튼 [문자 보내기]. */
+  open: string;
+  /** 처리 카드의 안내 한 줄. */
+  hint: string;
+  title: string;
+  titleNoName: string;
+  /** 시트의 설명 문장(aria-describedby). */
+  body: string;
+  textLabel: string;
+  blockLabel: string;
+  /** "{bytes} / {max}바이트" */
+  bytes: string;
+  /** 90바이트를 넘으면 — "장문 문자로 보내져요" */
+  long: string;
+  submit: string;
+  /** [보내지 않음] — 시트를 닫는 버튼(ESC · 바깥 누르기도 같다). */
+  skip: string;
+  /** 보내지 않고 닫은 뒤 남는 안내 — "대금·취소 규정은 다른 방법으로 꼭 안내해 주세요". */
+  skipped: string;
+  empty: string;
+  /** "{bytes}"·"{max}" 를 채운다. */
+  tooLong: string;
+  results: { queued: string; notConsulted: string; invalid: string; failed: string };
 }
 
 /** 처리 영역 문구 — 서버(components/admin/reservationActionLabels.tsx)가 messages/ko.json `admin.detail.*` 에서 만들어 내린다. */
@@ -154,13 +185,10 @@ export interface ReservationActionLabels {
   confirmHint: string;
   complete: string;
   completeHint: string;
-  cancel: string;
-  cancelHint: string;
-  /** 처리 카드 — 더 누를 것이 없는 접수(운행 완료 · 취소)의 한 줄(P5-22). */
+  /** 처리 카드 — 운행 완료 접수의 한 줄 · 옛 취소 기록의 한 줄(P5-22). */
   processDone: string;
   processCancelled: string;
-  /** 휴대폰 위 제목줄 ⋯ 의 이름(누르면 취소 시트 — 시안 aria-label). */
-  moreCancel: string;
+  sms: ConsultSmsLabels;
   memoLabel: string;
   memoHint: string;
   memoSave: string;
@@ -174,15 +202,13 @@ export interface ReservationActionLabels {
     /** 처리 중 SHEET_STUCK_MS 가 지났을 때 시트 안 안내(닫아도 된다 · 결과가 오면 알린다). */
     slow: string;
     confirm: SheetCopy;
-    cancel: SheetCopy & { reasonLegend: string; reasonHint: string; reasons: readonly CancelReasonCopy[] };
     complete: SheetCopy;
   };
   /** 성공 코드는 토스트, 실패·이미 처리됨은 배너 문구. */
   results: Record<AdminActionCode, string>;
   /** `{max}`·`{count}` 는 화면이 채운다. */
   memoTooLong: string;
-  memoTooLongWithReason: string;
-  /** 확정 토스트의 링크(발송 내역). 탭이 없으면 null. */
+  /** 문자 발송 토스트의 링크(발송 기록). 탭이 없으면 null. */
   toastLink: { label: string; href: string } | null;
 }
 
@@ -197,20 +223,13 @@ export interface ReservationSummary {
 }
 
 // =============================================================================
-// 메모 — 취소 사유 덧붙이기 · 실행 계획(상한)
+// 메모 — 실행 계획(상한)
 // =============================================================================
 
-/** 기존 메모 끝에 사유 한 줄을 덧붙인다. 기존 메모는 지우지 않는다(끝 공백·빈 줄만 접는다 — 서버도 양끝을 자른다). */
-export function composeCancelMemo(memo: string, reasonLine: string | null): string {
-  if (reasonLine === null || reasonLine === "") return memo;
-  const base = memo.replace(/\s+$/u, "");
-  return base.trim() === "" ? reasonLine : `${base}\n${reasonLine}`;
-}
-
 export type CommitPlan =
-  /** memo null = 메모를 보내지 않는다(확정·취소·완료 — 서버가 저장된 메모를 지킨다). stored = 성공하면 서버에 남을 값(null = 그대로 · 메모 저장은 지움). */
+  /** memo null = 메모를 보내지 않는다(상담완료·완료 — 서버가 저장된 메모를 지킨다). stored = 성공하면 서버에 남을 값(null = 그대로 · 메모 저장은 지움). */
   | { kind: "call"; action: SheetKind | "memo"; memo: string | null; stored: string | null }
-  | { kind: "blocked"; count: number; max: number; withReason: boolean };
+  | { kind: "blocked"; count: number; max: number };
 
 export interface CommitInput {
   action: SheetKind | "memo";
@@ -218,27 +237,23 @@ export interface CommitInput {
   memoText: string;
   /** 서버에 있는 메모(마지막으로 아는 값) — 칸이 이것과 다르면 사장님이 고친 것이다. */
   serverMemo: string;
-  /** 취소 사유 한 줄(취소 시트에서 골랐을 때만). */
-  reasonLine: string | null;
 }
 
 /**
  * 무엇을 서버액션에 넘길지 정한다.
  *   - 메모 저장: 칸 값을 늘 넘긴다(사장님이 누른 저장이다).
- *   - 확정·취소·완료: 칸을 **고쳤거나**(서버 값과 다르다) 취소 사유를 골랐을 때만 넘긴다. 아니면 memo = null —
+ *   - 상담완료·완료: 칸을 **고쳤을 때만**(서버 값과 다르다) 넘긴다. 아니면 memo = null —
  *     0010 은 `admin_memo = coalesce(p_memo, admin_memo)` 라, 넘기면 덮고 null 이면 지킨다(리뷰 P2-3).
- *     사유를 골랐으면 고치지 않았어도 넘긴다(지금 보이는 메모 + 사유 한 줄 — 서버에서 붙일 길이 없다).
  * 넘기는 메모는 서버처럼 양끝을 자른 길이로 재고, 상한을 넘으면 부르지 않고 막는다. 넘기지 않는 메모는 재지 않는다.
+ * (OF3-R4: 취소 시트의 사유 한 줄 덧붙이기는 취소 시트와 함께 걷었다.)
  */
 export function planCommit(input: CommitInput, max: number = ADMIN_MEMO_MAX_CHARS): CommitPlan {
-  const { action, memoText, serverMemo, reasonLine } = input;
-  const withReason = action === "cancel" && reasonLine !== null && reasonLine !== "";
+  const { action, memoText, serverMemo } = input;
   const edited = memoText !== serverMemo;
-  if (action !== "memo" && !edited && !withReason) return { kind: "call", action, memo: null, stored: null };
-  const memo = withReason ? composeCancelMemo(memoText, reasonLine) : memoText;
-  const trimmed = memo.trim();
-  if (trimmed.length > max) return { kind: "blocked", count: trimmed.length, max, withReason };
-  return { kind: "call", action, memo, stored: trimmed.length === 0 ? null : trimmed };
+  if (action !== "memo" && !edited) return { kind: "call", action, memo: null, stored: null };
+  const trimmed = memoText.trim();
+  if (trimmed.length > max) return { kind: "blocked", count: trimmed.length, max };
+  return { kind: "call", action, memo: memoText, stored: trimmed.length === 0 ? null : trimmed };
 }
 
 /** 메모 칸이 서버에 있는 값과 다르다 = 사장님이 고쳤고 아직 저장되지 않았다(고쳤다가 되돌리면 고치지 않은 것). */
@@ -255,17 +270,16 @@ export interface PanelState {
   /** 시트를 연 순서(열 때마다 1 씩 는다). 늦게 온 결과가 **자기를 연 시트**에만 닿게 가린다(리뷰 P2-1). */
   sheetSeq: number;
   /**
-   * 지금 시트가 "이미 처리된 접수" 를 받아 잠겼다(리뷰 P1-1). 잠긴 시트는 실행 버튼·사유 라디오가 막히고 컨트롤러도 다시 보내지 않는다.
+   * 지금 시트가 "이미 처리된 접수" 를 받아 잠겼다(리뷰 P1-1). 잠긴 시트는 실행 버튼이 막히고 컨트롤러도 다시 보내지 않는다.
    * 배너와 따로 든다 — 배너가 바뀌어도 풀리지 않고, 시트를 닫거나 새로 열 때만 풀린다.
    */
   sheetLocked: boolean;
   /** 시트가 열릴 때 서버가 그린 요소에서 읽은 이름. 시트 제목에만 쓴다. */
   customerName: string;
-  reason: CancelReason | null;
   sheetBanner: Banner | null;
   /** 메모 칸의 값. serverMemo 와 다르면 사장님이 고친 것이다(memoEdited). */
   memoText: string;
-  /** 서버에 있는 메모(마지막으로 알고 있는 값). 확정·취소·완료는 칸이 이 값과 같으면 메모를 보내지 않는다. */
+  /** 서버에 있는 메모(마지막으로 알고 있는 값). 상담완료·완료는 칸이 이 값과 같으면 메모를 보내지 않는다. */
   serverMemo: string;
   /** 마지막으로 본 props(initialMemo) — props 가 바뀐 순간만 가려내려고 둔다. */
   propMemo: string;
@@ -276,7 +290,7 @@ export interface PanelState {
    */
   memoBannerSeq: number;
   sheetBannerSeq: number;
-  toast: { id: number; code: SuccessCode } | null;
+  toast: { id: number; code: ToastCode } | null;
   toastSeq: number;
   /** 시트가 어떻게 닫혔나 — 포커스를 연 버튼(그냥 닫힘)으로 돌릴지 처리 영역(바뀜)으로 돌릴지. */
   lastClose: "dismissed" | "changed" | null;
@@ -285,12 +299,13 @@ export interface PanelState {
 export type PanelEvent =
   | { type: "open"; sheet: SheetKind; customerName: string }
   | { type: "close" }
-  | { type: "pickReason"; reason: CancelReason }
   | { type: "editMemo"; text: string }
   | { type: "propMemo"; memo: string }
-  | { type: "blocked"; source: "sheet" | "memo"; count: number; max: number; withReason: boolean }
+  | { type: "blocked"; source: "sheet" | "memo"; count: number; max: number }
   /** seq — 시트의 결과면 그 시트를 연 순서(PanelState.sheetSeq). 지금 열린 시트의 것이 아니면 시트를 건드리지 않는다. */
   | { type: "settled"; source: "sheet" | "memo"; seq?: number; action: SheetKind | "memo"; stored: string | null; result: AdminActionResult }
+  /** 상담완료 문자를 큐에 넣었다(OF3-R4) — 토스트만 띄운다. 문자 시트의 상태는 consult-sms.ts 가 든다. */
+  | { type: "smsQueued" }
   | { type: "toastDone"; id: number };
 
 export function initialPanelState(memo: string): PanelState {
@@ -299,7 +314,6 @@ export function initialPanelState(memo: string): PanelState {
     sheetSeq: 0,
     sheetLocked: false,
     customerName: "",
-    reason: null,
     sheetBanner: null,
     memoText: memo,
     serverMemo: memo,
@@ -325,17 +339,12 @@ export function panelReducer(state: PanelState, event: PanelEvent): PanelState {
         sheetSeq: state.sheetSeq + 1,
         sheetLocked: false,
         customerName: event.customerName,
-        reason: null,
         sheetBanner: null,
         lastClose: null,
       };
     case "close":
       if (state.sheet === null) return state;
-      return { ...state, sheet: null, sheetLocked: false, reason: null, sheetBanner: null, lastClose: "dismissed" };
-    case "pickReason":
-      // 잠긴 시트(이미 처리됨)에서는 사유를 바꾸지 않는다 — 배너도 그대로(리뷰 P1-1: 여기서 배너를 지우면 가드가 함께 풀렸다).
-      if (state.sheet !== "cancel" || state.sheetLocked) return state;
-      return { ...state, reason: event.reason, sheetBanner: null };
+      return { ...state, sheet: null, sheetLocked: false, sheetBanner: null, lastClose: "dismissed" };
     case "editMemo":
       return { ...state, memoText: event.text, memoBanner: null };
     case "propMemo":
@@ -343,7 +352,7 @@ export function panelReducer(state: PanelState, event: PanelEvent): PanelState {
       // 고치는 중이면(칸 ≠ 서버 값) 칸을 지키고, 아니면 새 서버 값을 따른다.
       return { ...state, propMemo: event.memo, serverMemo: event.memo, memoText: memoEdited(state) ? state.memoText : event.memo };
     case "blocked": {
-      const banner: Banner = { kind: "memoTooLong", count: event.count, max: event.max, withReason: event.withReason };
+      const banner: Banner = { kind: "memoTooLong", count: event.count, max: event.max };
       if (event.source === "sheet" && state.sheet !== null) {
         return state.sheetLocked ? state : { ...state, sheetBanner: banner, sheetBannerSeq: state.sheetBannerSeq + 1 };
       }
@@ -354,7 +363,7 @@ export function panelReducer(state: PanelState, event: PanelEvent): PanelState {
       // 지금 열린 시트의 결과인가 — 닫은 뒤(또는 그 뒤 새로 연 시트 앞에) 늦게 온 결과는 시트를 건드리지 않는다(리뷰 P2-1).
       const current = event.source === "sheet" && state.sheet !== null && event.seq === state.sheetSeq;
       if (result.ok && result.changed && isSuccessCode(result.code)) {
-        // 서버에 남은 값 — 빈 메모·보내지 않은 메모는 확정·취소·완료에서 "바꾸지 않음", 메모 저장의 빈 값은 "지움"이다(0010).
+        // 서버에 남은 값 — 빈 메모·보내지 않은 메모는 상담완료·완료에서 "바꾸지 않음", 메모 저장의 빈 값은 "지움"이다(0010).
         const saved = event.stored ?? (event.action === "memo" ? "" : state.serverMemo);
         const toastSeq = state.toastSeq + 1;
         const next: PanelState = {
@@ -365,11 +374,15 @@ export function panelReducer(state: PanelState, event: PanelEvent): PanelState {
           toast: { id: toastSeq, code: result.code },
           toastSeq,
         };
-        return current ? { ...next, sheet: null, sheetLocked: false, reason: null, sheetBanner: null, lastClose: "changed" } : next;
+        return current ? { ...next, sheet: null, sheetLocked: false, sheetBanner: null, lastClose: "changed" } : next;
       }
       const banner: Banner = result.code === "alreadyHandled" ? { kind: "alreadyHandled" } : { kind: "failed" };
       if (!current) return { ...state, memoBanner: banner, memoBannerSeq: state.memoBannerSeq + 1 };
       return { ...state, sheetBanner: banner, sheetLocked: result.code === "alreadyHandled", sheetBannerSeq: state.sheetBannerSeq + 1 };
+    }
+    case "smsQueued": {
+      const toastSeq = state.toastSeq + 1;
+      return { ...state, toast: { id: toastSeq, code: "smsQueued" }, toastSeq };
     }
     case "toastDone":
       return state.toast !== null && state.toast.id === event.id ? { ...state, toast: null } : state;
@@ -388,14 +401,11 @@ export interface PanelDeps {
   refresh: () => void;
   /** 서버가 그린 이름 요소의 글자. 컴포넌트는 DOM 에서, 테스트는 가짜로. */
   readCustomerName: () => string;
-  /** 사유 → 메모에 덧붙일 한 줄. */
-  reasonLine: (reason: CancelReason) => string;
 }
 
 export interface PanelController {
   open(sheet: SheetKind): void;
   close(): void;
-  pickReason(reason: CancelReason): void;
   editMemo(text: string): void;
   /** 시트의 실행 버튼. 시트가 열려 있지 않으면 아무것도 하지 않는다. */
   commit(state: PanelState): Promise<void>;
@@ -425,17 +435,15 @@ export function panelController(deps: PanelDeps): PanelController {
   return {
     open: (sheet) => deps.dispatch({ type: "open", sheet, customerName: deps.readCustomerName() }),
     close: () => deps.dispatch({ type: "close" }),
-    pickReason: (reason) => deps.dispatch({ type: "pickReason", reason }),
     editMemo: (text) => deps.dispatch({ type: "editMemo", text }),
     commit: async (state) => {
       const sheet = state.sheet;
       if (sheet === null) return;
-      // 잠긴 시트(이미 처리된 건)에는 같은 판정을 다시 보내지 않는다 — 사유 칩·배너와 무관하게(리뷰 P1-1). 실행 버튼도 비활성이다.
+      // 잠긴 시트(이미 처리된 건)에는 같은 판정을 다시 보내지 않는다 — 배너와 무관하게(리뷰 P1-1). 실행 버튼도 비활성이다.
       if (state.sheetLocked) return;
-      const line = sheet === "cancel" && state.reason !== null ? deps.reasonLine(state.reason) : null;
-      const plan = planCommit({ action: sheet, memoText: state.memoText, serverMemo: state.serverMemo, reasonLine: line });
+      const plan = planCommit({ action: sheet, memoText: state.memoText, serverMemo: state.serverMemo });
       if (plan.kind === "blocked") {
-        deps.dispatch({ type: "blocked", source: "sheet", count: plan.count, max: plan.max, withReason: plan.withReason });
+        deps.dispatch({ type: "blocked", source: "sheet", count: plan.count, max: plan.max });
         return;
       }
       const seq = state.sheetSeq;
@@ -445,9 +453,9 @@ export function panelController(deps: PanelDeps): PanelController {
     },
     saveMemo: async (state) => {
       if (state.sheet !== null) return;
-      const plan = planCommit({ action: "memo", memoText: state.memoText, serverMemo: state.serverMemo, reasonLine: null });
+      const plan = planCommit({ action: "memo", memoText: state.memoText, serverMemo: state.serverMemo });
       if (plan.kind === "blocked") {
-        deps.dispatch({ type: "blocked", source: "memo", count: plan.count, max: plan.max, withReason: plan.withReason });
+        deps.dispatch({ type: "blocked", source: "memo", count: plan.count, max: plan.max });
         return;
       }
       // 메모 저장은 늘 문자열을 보낸다(planCommit 이 memo 동작에 null 을 내지 않는다).
@@ -519,9 +527,12 @@ export function toastDurationMs(hasLink: boolean): number {
   return hasLink ? TOAST_MS.withLink : TOAST_MS.plain;
 }
 
-/** 링크(발송 내역)는 확정 토스트에만 — 확정 안내 문자가 나갔는지 볼 곳이다. */
-export function toastHasLink(code: SuccessCode): boolean {
-  return code === "confirmed";
+/**
+ * 링크(발송 기록)는 문자 발송 토스트에만 — 그 문자가 나갔는지 볼 곳이다. OF3-R4(0028)부터 상담완료는 문자를 보내지 않으므로
+ * 상담완료 토스트에는 링크가 없다(예전에는 확정 토스트에 붙었다).
+ */
+export function toastHasLink(code: ToastCode): boolean {
+  return code === "smsQueued";
 }
 
 /** 서버가 그린 이름 글자 정리 — 줄바꿈·겹친 공백을 한 칸으로. */
@@ -542,14 +553,14 @@ export function sheetTitle(template: string, fallback: string, name: string): st
 const formatCount = (n: number): string => n.toLocaleString("ko-KR");
 
 /** 배너 문구 — 실패·이미 처리됨은 결과 문구 그대로, 상한 초과는 글자 수를 채운다. */
-export function bannerMessage(banner: Banner, labels: Pick<ReservationActionLabels, "results" | "memoTooLong" | "memoTooLongWithReason">): string {
+export function bannerMessage(banner: Banner, labels: Pick<ReservationActionLabels, "results" | "memoTooLong">): string {
   switch (banner.kind) {
     case "failed":
       return labels.results.failed;
     case "alreadyHandled":
       return labels.results.alreadyHandled;
     case "memoTooLong":
-      return fillTemplate(banner.withReason ? labels.memoTooLongWithReason : labels.memoTooLong, {
+      return fillTemplate(labels.memoTooLong, {
         max: formatCount(banner.max),
         count: formatCount(banner.count),
       });

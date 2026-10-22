@@ -233,10 +233,12 @@ describe("4. 배치 — 휴대폰 시트는 [닫기]가 맨 아래(두 번째 �
     expect(decl(body(".sheetActions > [data-variant]", DESKTOP), "order")).toBe("0");
   });
 
-  test("매뉴얼 — 상담완료·취소·완료 절이 휴대폰의 [닫기] 자리(맨 아래)와 무장 지연(0.6초)을 사장님 말로 적는다", () => {
+  test("매뉴얼 — 상담완료·문자 보내기·운행 완료 절이 휴대폰의 [닫기] 자리(맨 아래)와 무장 지연(0.6초)을 사장님 말로 적는다", () => {
     const manual = read("docs/ops/admin-manual.md");
-    // OF2-B: 절 이름이 "확정 · 취소 · 완료" → "상담완료 · 취소 · 완료"(표시 이름만 바뀌었다 — 절의 내용 단언은 그대로)
-    const section = manual.slice(manual.indexOf("### 상담완료 · 취소 · 완료"), manual.indexOf("### 상태는 앞으로만 갑니다"));
+    // OF2-B: "확정 · 취소 · 완료" → "상담완료 · 취소 · 완료" · OF3-R4: 취소 진입을 걷어 "상담완료 · 문자 보내기 · 운행 완료"(절의 내용 단언은 그대로)
+    const at = manual.indexOf("### 상담완료 · 문자 보내기 · 운행 완료");
+    expect(at, "매뉴얼에 그 절이 없다").toBeGreaterThan(0);
+    const section = manual.slice(at, manual.indexOf("### 상태는 앞으로만 갑니다"));
     expect(section).toContain("맨 아래");
     expect(section).toContain(`${SHEET_ARM_MS / 1000}초`);
   });

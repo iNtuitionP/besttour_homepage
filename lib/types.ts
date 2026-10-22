@@ -343,6 +343,11 @@ export interface OutboxRow extends NewOutboxRow {
   /** 이 시각 이후에만 claim 대상. 실패 시 백오프, claim 시 lease. */
   next_attempt_at: string;
   updated_at: string;
+  /**
+   * 관리자가 직접 쓴 상담완료 문자의 최종 본문(0028 notifications_log.body). 자동 통지는 null — template 키로 문안을 만든다.
+   * 0028 CHECK 가 짝을 잠근다: body 있음 ⇔ template = 'consult.customer.sms' · 문자 채널. (선택 필드 — 옛 행·테스트 모형은 없어도 된다.)
+   */
+  body?: string | null;
 }
 
 // =============================================================================

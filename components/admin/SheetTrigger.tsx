@@ -2,7 +2,8 @@
 /**
  * 확인 시트 진입 버튼 — 접수 상세의 떨어진 자리들에서 쓴다 (P5-22 · 시안 #detail).
  *
- * 자리: 데스크톱 오른쪽 처리 카드(확정 · 운행 완료 · 취소) · 휴대폰 아래 고정 행동 바(확정) · 휴대폰 위 제목줄 ⋯(취소) · 휴대폰 맨 아래(취소 · 운행 완료).
+ * 자리: 데스크톱 오른쪽 처리 카드(상담완료 · 문자 보내기 · 운행 완료) · 휴대폰 아래 고정 행동 바(상담완료 · 문자 보내기) · 휴대폰 맨 아래(운행 완료).
+ * (OF3-R4: 취소 진입 — 처리 카드의 글자 버튼 · 위 제목줄 ⋯ · 휴대폰 맨 아래 — 은 걷었다.)
  * 누르면 **시트를 열어 달라고만** 한다 — 채널(components/admin/reservation-panel.ts)로 처리 영역(ReservationActions)에 종류와 누른 버튼을 넘긴다.
  * 서버액션을 부르지 않는다 — 되돌릴 수 없는 동작은 여전히 시트의 실행 버튼 하나로만 간다(P5-19).
  *
@@ -15,15 +16,19 @@ import { useCallback, useSyncExternalStore } from "react";
 
 import { PendingButton } from "./PendingButton";
 import { IDLE_SNAPSHOT, panelChannels } from "./reservation-panel";
-import type { SheetKind } from "./reservation-sheet";
+import type { TriggerKind } from "./reservation-sheet";
 
 import s from "./admin.module.css";
 
-/** primary = 주 버튼(확정 · 운행 완료) · text = 글자 버튼(× 이 접수 취소하기) · icon = 위 제목줄 ⋯(이름은 스크린리더에만). */
-export type SheetTriggerVariant = "primary" | "text" | "icon";
+/**
+ * primary = 주 버튼(상담완료 · 문자 보내기 · 휴대폰의 운행 완료) · secondary = 보조 버튼(상담완료 뒤 처리 카드의 운행 완료 — OF3-R4) ·
+ * text = 글자 버튼 · icon = 위 제목줄 아이콘(이름은 스크린리더에만). text·icon 은 OF3-R4 에서 취소 진입을 걷은 뒤 지금 쓰는 자리가 없다(모양은 남긴다).
+ */
+export type SheetTriggerVariant = "primary" | "secondary" | "text" | "icon";
 
 const CLASS: Readonly<Record<SheetTriggerVariant, string>> = {
   primary: s.btnPrimary,
+  secondary: s.btnSecondary,
   text: s.btnText,
   icon: s.detailIconBtn,
 };
@@ -36,7 +41,7 @@ export function SheetTrigger({
   testId,
 }: {
   id: string;
-  kind: SheetKind;
+  kind: TriggerKind;
   label: string;
   variant: SheetTriggerVariant;
   testId: string;
