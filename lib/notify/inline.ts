@@ -1,5 +1,6 @@
 /**
  * 즉시 발송 — 접수·확정 **응답 뒤**에 기존 발송기를 한 번 부른다 (플랜 v4 P4-7 · ADR-7).
+ * (OF3-R4 · 0028 부터 "확정" 자리는 관리자의 [문자 보내기]다 — 상담완료 전이는 통지를 만들지 않는다. 트리거 어휘 InlineTrigger 참조.)
  *
  * ## 왜 생겼나
  * Vercel 무료(Hobby) 요금제는 하루 1회보다 잦은 크론이 든 vercel.json 을 **빌드 전에 거부**한다. 통지 크론이 5분마다였기 때문에
@@ -55,7 +56,6 @@
  *
  * 순수 모듈 — env 없음, server-only 없음, next import 없음. runAfter·워커·시계·sleep·로그는 전부 deps 로 받는다.
  */
-import type { NotifyEvent } from "../types";
 import { BACKOFF_MS } from "./outbox";
 import type { WorkerDeps, WorkerOptions, WorkerReport } from "./worker";
 
@@ -97,8 +97,11 @@ const MESSAGE_MAX_CHARS = 200;
 // 포트
 // =============================================================================
 
-/** 즉시 발송을 부른 사건 — 통지 event 와 같은 어휘다(접수 = created, 확정 = confirmed). */
-export type InlineTrigger = NotifyEvent;
+/**
+ * 즉시 발송을 부른 사건 — 접수(created) · 관리자가 직접 쓴 상담완료 문자(consult_sms). 로그의 `trigger` 칸에 그대로 남는다.
+ * OF3-R4(0028): 옛 "confirmed"(상담완료 전이 직후)는 없다 — 상담완료는 통지를 만들지 않는다. 문자는 [문자 보내기]가 큐에 넣은 뒤 이 트리거로 보낸다.
+ */
+export type InlineTrigger = "created" | "consult_sms";
 
 /** 이 모듈이 남기는 로그의 전부. 수신처·이름·문안은 없다 — 워커 자신의 실행 로그(notify.worker_run)는 워커가 남긴다. */
 export type InlineLogEntry =

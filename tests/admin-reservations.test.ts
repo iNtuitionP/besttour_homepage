@@ -924,7 +924,8 @@ describe("6. 정적 규약", () => {
       expect((list.status as Record<string, string>)[s], `status.${s}`).toBeTruthy();
     }
     const detail = ko.admin.detail as Record<string, unknown>;
-    for (const k of ["title", "back", "confirm", "cancel", "complete", "memoLabel", "memoSave", "processing", "result", "notFound"]) {
+    // OF3-R4: 취소 진입 문구(admin.detail.cancel)는 화면과 함께 걷었다 — 상담완료 문자 시트 문구(sms)가 생겼다
+    for (const k of ["title", "back", "confirm", "sms", "complete", "memoLabel", "memoSave", "processing", "result", "notFound"]) {
       expect(detail[k], `admin.detail.${k}`).toBeTruthy();
     }
     const result = detail.result as Record<string, string>;
@@ -1135,13 +1136,14 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
       expect((row.body as { status: string }[])[0].status, "대조군 호출이 예약을 바꿨다").toBe("new");
     });
 
-    test("관리자 확정 — status·confirmed_at·메모가 바뀌고 통지 1건이 큐에 쌓인다", async () => {
+    // OF3-R4(0028): 상담완료는 **상태만** 바꾼다 — 확정 통지 자동 적재는 걷혔다(문자는 관리자가 [문자 보내기]로 직접 보낸다).
+    test("관리자 상담완료 — status·confirmed_at·메모가 바뀌고 통지는 큐에 쌓이지 않는다 (0028)", async () => {
       const id = await seed("new", `B${RUN.slice(0, 4).toUpperCase()}`);
       const r = await confirmed(adminToken, id, "P53 memo");
       expect(r.status, JSON.stringify(r.body).slice(0, 300)).toBe(200);
       const rows = r.body as { outcome: string; public_code: string | null; enqueued: number }[];
       expect(rows[0].outcome).toBe("confirmed");
-      expect(rows[0].enqueued).toBe(1);
+      expect(rows[0].enqueued).toBe(0);
 
       const row = await rest("GET", `/reservations?select=status,confirmed_at,admin_memo&id=eq.${id}`);
       const got = (row.body as { status: string; confirmed_at: string | null; admin_memo: string | null }[])[0];
@@ -1150,19 +1152,17 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
       expect(got.admin_memo).toBe("P53 memo");
 
       const log = await rest("GET", `/notifications_log?select=event,channel,template,status,to_phone&reservation_id=eq.${id}`);
-      const logs = log.body as { event: string; channel: string; template: string; status: string }[];
-      expect(logs.length).toBe(1);
-      expect(logs[0]).toMatchObject({ event: "confirmed", channel: "sms", template: "confirmed.customer.sms", status: "pending" });
+      expect(log.body, "상담완료가 통지를 큐에 넣었다 — 0028 뒤로 자동 발송은 없다").toEqual([]);
     });
 
-    test("두 번 클릭해도 통지는 한 건이다 — 두 번째는 noop (경합 방어선)", async () => {
+    test("두 번 클릭해도 한 번만 바뀐다 — 두 번째는 noop (경합 방어선) · 통지 0건", async () => {
       const id = await seed("new", `C${RUN.slice(0, 4).toUpperCase()}`);
       const [first, second] = await Promise.all([confirmed(adminToken, id), confirmed(adminToken, id)]);
       const outcomes = [first, second].map((r) => (r.body as { outcome: string }[])[0].outcome).sort();
       expect(outcomes).toEqual(["confirmed", "noop"]);
       const enqueuedTotal = [first, second].reduce((n, r) => n + (r.body as { enqueued: number }[])[0].enqueued, 0);
-      expect(enqueuedTotal, "두 호출이 합쳐 두 건을 큐에 넣었다").toBe(1);
-      expect(await notifyCount(id)).toBe(1);
+      expect(enqueuedTotal, "상담완료가 통지를 큐에 넣었다").toBe(0);
+      expect(await notifyCount(id)).toBe(0);
     });
 
     test("done·cancelled 행에 확정하면 noop — 역방향 전이는 존재하지 않는다", async () => {
@@ -1196,8 +1196,8 @@ describe.skipIf(!gate.allowed || !dbEnv.hasServiceRole)(
       expect(row[0].enqueued, "완료가 통지를 큐에 넣었다").toBe(0);
       const after = await rest("GET", `/reservations?select=status,admin_memo&id=eq.${fresh}`);
       expect((after.body as { status: string; admin_memo: string }[])[0]).toMatchObject({ status: "done", admin_memo: "운행 종료" });
-      // 확정 통지 1건(확정 단계에서 쌓인 것)뿐 — 완료가 더하지 않았다
-      expect(await notifyCount(fresh)).toBe(1);
+      // 상담완료도 완료도 통지를 넣지 않는다(0028 · 0010)
+      expect(await notifyCount(fresh)).toBe(0);
 
       // 두 번째 완료는 noop
       const again = await asUser(adminToken, "POST", "/rpc/admin_complete_reservation", { p_id: fresh, p_memo: null });

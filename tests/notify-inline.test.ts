@@ -74,6 +74,7 @@ vi.mock("@/lib/notify/worker", async (importOriginal) => {
   return { ...mod, runNotificationWorker: vi.fn(mod.runNotificationWorker) };
 });
 
+import { sendConsultSms } from "@/actions/admin/consultSms";
 import { cancelReservation, completeReservation, confirmReservation, saveReservationMemo } from "@/actions/admin/reservation";
 import { submitReservation } from "@/actions/reservation";
 import { runGuards } from "@/lib/guard";
@@ -298,10 +299,10 @@ describe("2. scheduleInlineNotify · runInlineNotify (순수)", () => {
 
   test("워커가 던져도 작업은 reject 하지 않는다 — error 로그 1줄(trigger·오류 이름) · 개인정보 없음", async () => {
     const hs = harness({ reports: [new Error("outbox.claimPending: [42501] permission denied")] });
-    scheduleInlineNotify("confirmed", hs.deps);
+    scheduleInlineNotify("consult_sms", hs.deps);
     await expect(hs.tasks[0]()).resolves.toBeUndefined();
     expect(hs.logs).toHaveLength(1);
-    expect(hs.logs[0]).toMatchObject({ level: "error", event: "notify.inline_failed", trigger: "confirmed", errorName: "Error" });
+    expect(hs.logs[0]).toMatchObject({ level: "error", event: "notify.inline_failed", trigger: "consult_sms", errorName: "Error" });
     expect(JSON.stringify(hs.logs[0])).toMatch(/claimPending/);
   });
 
@@ -474,7 +475,7 @@ describe("4. notifyAfterResponse — env 스위치", () => {
 
   test('NOTIFY_INLINE="1" → runAfter 1 · 응답 뒤에만 워커 1', async () => {
     process.env.NOTIFY_INLINE = "1";
-    expect(notifyAfterResponse("confirmed", runAfter)).toBe(true);
+    expect(notifyAfterResponse("consult_sms", runAfter)).toBe(true);
     expect(runAfter).toHaveBeenCalledTimes(1);
     expect(runNotificationWorker).not.toHaveBeenCalled();
     await flushAfter();
@@ -543,24 +544,49 @@ describe("5-a. 공개 접수 — actions/reservation.ts", () => {
   });
 });
 
-describe("5-b. 관리자 확정 — actions/admin/reservation.ts", () => {
+describe("5-b. 관리자 상담완료 · 상담완료 문자 — actions/admin/reservation.ts · actions/admin/consultSms.ts", () => {
   function rpcClient(outcome: string | null, error: unknown = null) {
-    return { rpc: vi.fn(async () => ({ data: outcome === null ? null : [{ outcome, public_code: "BT123456", enqueued: 1 }], error })) };
+    return { rpc: vi.fn(async () => ({ data: outcome === null ? null : [{ outcome, public_code: "BT123456", enqueued: 0 }], error })) };
+  }
+  /** 상담완료 문자 액션용 — 예약 읽기(from…maybeSingle) + RPC. */
+  function smsClient(outcome: string) {
+    const b: Record<string, unknown> = {};
+    b.select = () => b;
+    b.eq = () => b;
+    b.maybeSingle = async () => ({ data: { status: "confirmed", confirmed_at: "2026-10-20T01:00:00Z", created_at: "2026-10-20T00:00:00Z" }, error: null });
+    return { from: () => b, rpc: vi.fn(async () => ({ data: [{ outcome, notification_id: 41 }], error: null })) };
   }
 
-  test("확정 성공 + NOTIFY_INLINE=1 → 응답 뒤 워커 1회", async () => {
+  // OF3-R4(0028): 상담완료는 통지를 넣지 않는다 — 즉시 발송도 부르지 않는다.
+  test("상담완료 성공 + NOTIFY_INLINE=1 → 워커 0 (자동 발송 없음 — 0028)", async () => {
     process.env.NOTIFY_INLINE = "1";
     vi.mocked(createSsrClient).mockReturnValue(rpcClient("confirmed") as never);
     const result = await confirmReservation(RES_ID);
     expect(result).toEqual({ ok: true, changed: true, code: "confirmed" });
+    await flushAfter();
+    expect(runNotificationWorker).not.toHaveBeenCalled();
+  });
+
+  test("상담완료 문자 큐 적재 성공 + NOTIFY_INLINE=1 → 응답 뒤 워커 1회 · 스위치 꺼짐 → 0", async () => {
+    process.env.NOTIFY_INLINE = "1";
+    vi.mocked(createSsrClient).mockReturnValue(smsClient("queued") as never);
+    expect(await sendConsultSms(RES_ID, "안녕하세요", "■ 대금")).toEqual({ ok: true, code: "queued" });
     expect(runNotificationWorker).not.toHaveBeenCalled();
     await flushAfter();
     expect(runNotificationWorker).toHaveBeenCalledTimes(1);
+
+    vi.mocked(runNotificationWorker).mockClear();
+    process.env.NOTIFY_INLINE = "";
+    vi.mocked(createSsrClient).mockReturnValue(smsClient("queued") as never);
+    expect(await sendConsultSms(RES_ID, "안녕하세요", "■ 대금")).toEqual({ ok: true, code: "queued" });
+    await flushAfter();
+    expect(runNotificationWorker).not.toHaveBeenCalled();
   });
 
-  test("확정 성공 + 스위치 꺼짐 → 워커 0", async () => {
-    vi.mocked(createSsrClient).mockReturnValue(rpcClient("confirmed") as never);
-    await confirmReservation(RES_ID);
+  test("상담완료 문자 — DB 가 상담완료 아님을 돌려주면 워커 0", async () => {
+    process.env.NOTIFY_INLINE = "1";
+    vi.mocked(createSsrClient).mockReturnValue(smsClient("not_consulted") as never);
+    expect(await sendConsultSms(RES_ID, "안녕하세요", "■ 대금")).toEqual({ ok: false, code: "notConsulted" });
     await flushAfter();
     expect(runNotificationWorker).not.toHaveBeenCalled();
   });
@@ -590,13 +616,13 @@ describe("5-b. 관리자 확정 — actions/admin/reservation.ts", () => {
     expect(runNotificationWorker).not.toHaveBeenCalled();
   });
 
-  test("워커가 던져도 확정 응답은 성공 — 구조화 로그 notify.inline_failed 1줄", async () => {
+  test("워커가 던져도 상담완료 문자 응답은 성공 — 구조화 로그 notify.inline_failed 1줄", async () => {
     process.env.NOTIFY_INLINE = "1";
-    vi.mocked(createSsrClient).mockReturnValue(rpcClient("confirmed") as never);
+    vi.mocked(createSsrClient).mockReturnValue(smsClient("queued") as never);
     vi.mocked(runNotificationWorker).mockRejectedValueOnce(new Error("outbox.reapStale: boom"));
-    expect(await confirmReservation(RES_ID)).toEqual({ ok: true, changed: true, code: "confirmed" });
+    expect(await sendConsultSms(RES_ID, "안녕하세요", "■ 대금")).toEqual({ ok: true, code: "queued" });
     await expect(flushAfter()).resolves.toBeUndefined();
-    expect(inlineLogs()).toEqual([expect.objectContaining({ level: "error", event: "notify.inline_failed", trigger: "confirmed" })]);
+    expect(inlineLogs()).toEqual([expect.objectContaining({ level: "error", event: "notify.inline_failed", trigger: "consult_sms" })]);
   });
 });
 
@@ -662,12 +688,16 @@ describe("7. 정적", () => {
     expect(route).toMatch(/notifyWorkerDeps\(\)/);
   });
 
-  test("관리자 액션 — 확정 경로에서만 notifyAfterResponse('confirmed') · process.env 0 · 서비스 롤 심볼 0", () => {
+  test("관리자 액션 — 상담완료 전이는 즉시 발송을 부르지 않고, 상담완료 문자 액션에서만 notifyAfterResponse('consult_sms') · process.env 0 · 서비스 롤 심볼 0", () => {
     const src = read("actions/admin/reservation.ts");
     expect(src).not.toMatch(/process\.env/);
     expect(src).not.toMatch(/createServiceClient|SUPABASE_SERVICE_ROLE_KEY|supabase\/server/);
-    expect(src.match(/notifyAfterResponse\(/g)).toHaveLength(1);
-    expect(src).toMatch(/notifyAfterResponse\("confirmed", runAfter\)/);
+    expect(src.match(/notifyAfterResponse\(/g)).toBeNull();
+    const sms = read("actions/admin/consultSms.ts");
+    expect(sms).not.toMatch(/process\.env/);
+    expect(sms).not.toMatch(/createServiceClient|SUPABASE_SERVICE_ROLE_KEY|supabase\/server/);
+    expect(sms.match(/notifyAfterResponse\(/g)).toHaveLength(1);
+    expect(sms).toMatch(/notifyAfterResponse\("consult_sms", runAfter\)/);
   });
 
   /**
@@ -754,7 +784,8 @@ describe("7. 정적", () => {
       }
       expect(/import\(\s*["'][^"']*notify\/deps["']\s*\)/.test(src), `${f} — deps.ts 를 동적 import 한다`).toBe(false);
     }
-    expect(importers).toEqual([{ file: "actions/admin/reservation.ts", names: ["notifyAfterResponse"] }]);
+    // OF3-R4(0028): 상담완료 전이는 즉시 발송을 부르지 않는다 — 부르는 곳은 상담완료 문자 액션 하나다.
+    expect(importers).toEqual([{ file: "actions/admin/consultSms.ts", names: ["notifyAfterResponse"] }]);
   });
 
   /**

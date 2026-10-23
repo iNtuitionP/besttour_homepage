@@ -126,8 +126,8 @@ describe("2. 개발 용어 · 문구 사전", () => {
     expect(detail.value.intakeQuick).toBe("간편 접수 · 전화 확인 필요");
     expect(detail.result.cancelled).toBe("취소했어요. 고객에게 전화로 알려 주세요.");
     expect(detail.result.memoUpdated).toBe("메모를 저장했어요.");
-    // OF2-B: 확정 → 상담완료로 이름이 바뀌었다. 문자 이름 "예약 확정 안내"(계약 성립 통지)는 그대로 남는다.
-    expect(res.sub).toContain("들어온 접수를 확인하고 상담완료로 바꿔요. 바꾸면 고객에게 예약 확정 안내 문자가 가요.");
+    // OF2-B: 확정 → 상담완료로 이름이 바뀌었다. OF3-R4(0028): 상담완료는 문자를 자동으로 보내지 않는다 — 접수 상세의 [문자 보내기]로 직접.
+    expect(res.sub).toBe("들어온 접수를 확인하고 상담완료로 바꿔요. 문자는 자동으로 가지 않아요 — 접수 상세의 '문자 보내기'로 직접 보내요.");
     // T4-2(0025) — 주소(slug) 입력란은 없어졌다(새 글은 DB 가 짓는다). 그 문구 키도 없다.
     expect((a.gallery as Record<string, string>).albumSlug).toBeUndefined();
     expect((a.gallery as Record<string, string>).albumNew).toBe("새 글 쓰기");

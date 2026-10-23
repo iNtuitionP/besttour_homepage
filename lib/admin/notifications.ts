@@ -36,8 +36,8 @@ import { cookies } from "next/headers";
 
 import { maskEmailAddress, maskStoredPhone } from "../mask";
 import {
-  ALL_TEMPLATE_KEYS,
   DUPLICATE_SENT_ERROR,
+  OUTBOX_TEMPLATE_KEYS,
   MAX_ATTEMPTS,
   SENT_UNMARKED_PREFIX,
   notificationRecordState,
@@ -461,15 +461,67 @@ function templateChannel(key: string): string {
 }
 
 /**
- * 고객에게 가는 **문자**(SMS · 알림톡) 문안 키 — 아웃박스가 받아들이는 키 전부(ALL_TEMPLATE_KEYS)에서 가른다. 목록을 손으로 적지 않는다:
- * 아웃박스에 고객 문안이 늘면 여기에 저절로 들어온다. 홈 배너는 이 수로만 뜬다 — "고객에게 전화로 알려 주세요" 가 참인 경우다.
+ * 고객에게 가는 **문자**(SMS · 알림톡) 문안 키 — 아웃박스 행이 가질 수 있는 키 전부(OUTBOX_TEMPLATE_KEYS — 렌더 키 + 관리자가 직접 쓴 상담완료
+ * 문자 키 · OF3-R4)에서 가른다. 목록을 손으로 적지 않는다: 아웃박스에 고객 문안이 늘면 여기에 저절로 들어온다.
+ * 홈 배너는 이 수로만 뜬다 — "고객에게 전화로 알려 주세요" 가 참인 경우다(직접 쓴 문자가 못 나가도 그렇다).
  */
-export const CUSTOMER_MESSAGE_TEMPLATE_KEYS: readonly string[] = ALL_TEMPLATE_KEYS.filter(
+export const CUSTOMER_MESSAGE_TEMPLATE_KEYS: readonly string[] = OUTBOX_TEMPLATE_KEYS.filter(
   (k) => templateAudience(k) === "customer" && (templateChannel(k) === "sms" || templateChannel(k) === "alimtalk"),
 );
 
 /** 사장님께 가는 알림 문안 키(접수 알림 문자·메일 · 발송 실패 알림 메일) — 홈 카드의 작은 줄로만 보인다(배너가 아니다). */
-export const OWNER_TEMPLATE_KEYS: readonly string[] = ALL_TEMPLATE_KEYS.filter((k) => templateAudience(k) === "owner");
+export const OWNER_TEMPLATE_KEYS: readonly string[] = OUTBOX_TEMPLATE_KEYS.filter((k) => templateAudience(k) === "owner");
+
+// =============================================================================
+// 예약 상세의 "보낸 문자" 기록 (OF3-R4 · 0028)
+// =============================================================================
+
+/**
+ * 한 예약으로 고객에게 간 문자 기록이 읽는 칸 — 시각 · 상태 · 종류 · 본문(직접 쓴 문자만 · 자동 통지는 null).
+ * **받는 번호(to_phone)는 읽지 않는다** — 그 예약의 번호라는 것을 0028 함수가 보장하고, 상세 화면은 이미 번호를 따로 그린다.
+ */
+export const RESERVATION_MESSAGE_COLUMNS = ["id", "template", "status", "created_at", "updated_at", "body"] as const;
+
+/** 상세 화면에 쌓아 보일 상한 — 최신순. 여러 번 보낼 수 있지만 수십 통이 될 일은 없다. */
+export const RESERVATION_MESSAGE_LIMIT = 30;
+
+export interface ReservationMessageRow {
+  id: number;
+  /** 고객 문자 키(CUSTOMER_MESSAGE_TEMPLATE_KEYS) — 화면이 종류 라벨로 바꾼다. */
+  template: string;
+  status: OutboxStatus;
+  /** 큐에 들어간 시각(ISO UTC). */
+  createdAt: string;
+  updatedAt: string;
+  /** 직접 쓴 문자의 본문. 자동 통지는 null. */
+  body: string | null;
+}
+
+/**
+ * 이 예약으로 **고객에게** 간 문자들 — 직접 쓴 상담완료 문자 · 접수 확인(자동) · 0028 전의 상담완료 안내(자동). 사장님 알림·실패 알림 메일은 뺀다.
+ * 세션 클라이언트 + 0009 정책(is_admin)으로 읽는다(서비스 롤 아님). 오류는 throw — 화면이 그 카드만 "불러오지 못했어요" 로 바꾼다.
+ */
+export async function listReservationMessages(reservationId: string, client?: AdminNotificationsClient): Promise<ReservationMessageRow[]> {
+  const db = client ?? (await sessionClient());
+  const { data, error } = await db
+    .from(NOTIFICATIONS_TABLE)
+    .select(RESERVATION_MESSAGE_COLUMNS.join(","))
+    .eq("reservation_id", reservationId)
+    .in("template", [...CUSTOMER_MESSAGE_TEMPLATE_KEYS])
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(RESERVATION_MESSAGE_LIMIT)
+    .overrideTypes<{ id: number; template: string; status: OutboxStatus; created_at: string; updated_at: string; body: string | null }[], { merge: false }>();
+  if (error) fail("listReservationMessages", error);
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    template: r.template,
+    status: r.status,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    body: r.body ?? null,
+  }));
+}
 
 /**
  * '대기 중' 의 기준 시간(P5-22 · P5-21 재검토 신규 P2-1) — 고객 문자가 **만든 지 이만큼 지나도록 한 번도 시도되지 않았으면** 오래 대기 중이다.

@@ -96,7 +96,7 @@ import {
   listReservations,
   type ReservationListRow,
 } from "@/lib/admin/reservations";
-import { ALL_TEMPLATE_KEYS } from "@/lib/notify/outbox";
+import { OUTBOX_TEMPLATE_KEYS } from "@/lib/notify/outbox";
 import { listAdminRoutes } from "@/lib/admin/routes";
 import { statsRange } from "@/lib/admin/stats";
 import { toKstDateString } from "@/lib/kst";
@@ -448,9 +448,10 @@ describe("2. 조회 함수 — head 집계 · 개인정보 0 · 0 으로 갈음�
   test("🔴 최근 7일 발송 경보(컨트롤러 결정 P1-2) — 실패(중복 억제 제외) · created_at ≥ 지금 − 7일 · 받는 사람은 **아웃박스 문안 키에서** 가른다(고객 문자 / 사장님 알림) · head 집계 둘", async () => {
     const lib = await vi.importActual<typeof import("@/lib/admin/notifications")>("@/lib/admin/notifications");
     // 받는 사람은 문안 키(`${event}.${audience}.${channel}` · 실패 알림 `${event}.owner.failure.email`)의 둘째 칸 — 목록을 새로 적지 않는다
-    expect([...lib.CUSTOMER_MESSAGE_TEMPLATE_KEYS].sort()).toEqual(["confirmed.customer.sms", "created.customer.sms"]);
+    // OF3-R4(0028): 관리자가 직접 쓴 상담완료 문자(consult.customer.sms)도 고객 문자다 — 못 나가면 배너에 센다.
+    expect([...lib.CUSTOMER_MESSAGE_TEMPLATE_KEYS].sort()).toEqual(["confirmed.customer.sms", "consult.customer.sms", "created.customer.sms"]);
     expect([...lib.OWNER_TEMPLATE_KEYS].sort()).toEqual(["confirmed.owner.failure.email", "created.owner.email", "created.owner.failure.email", "created.owner.sms"]);
-    for (const k of ALL_TEMPLATE_KEYS) {
+    for (const k of OUTBOX_TEMPLATE_KEYS) {
       const inCustomer = (lib.CUSTOMER_MESSAGE_TEMPLATE_KEYS as readonly string[]).includes(k);
       const inOwner = (lib.OWNER_TEMPLATE_KEYS as readonly string[]).includes(k);
       expect(inCustomer !== inOwner, k).toBe(true);

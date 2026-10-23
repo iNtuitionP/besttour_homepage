@@ -246,12 +246,9 @@ describe("planNotifications", () => {
     expect(rows[0].channel).toBe("email");
   });
 
-  test("confirmed → 고객 1건 (사장님 건 없음)", () => {
-    const { rows, warnings } = planNotifications(reservation, "confirmed", { ownerPhone: owner, customerPhone: customer });
-    expect(warnings).toEqual([]);
-    expect(rows).toEqual<NewOutboxRow[]>([
-      { reservation_id: RID, event: "confirmed", channel: "sms", to: customer, template: "confirmed.customer.sms" },
-    ]);
+  // OF3-R4(0028): 상담완료는 통지를 만들지 않는다 — 계획 함수는 접수만 받는다(인자 타입 "created"). 옛 confirmed 분기는 걷혔다.
+  test("확정 통지는 계획하지 않는다 — event 인자가 'created' 하나뿐이다 (0028)", () => {
+    expect(readFileSync(LIB_PATH, "utf-8")).toMatch(/export function planNotifications\(reservation: ReservationForNotify, event: "created", opts: PlanOptions\)/);
   });
 
   test("customerPhone 이 비면 throw — 고객 통지 없는 접수는 프로그래밍 오류다", () => {
@@ -262,7 +259,6 @@ describe("planNotifications", () => {
     const all = [
       ...planNotifications(reservation, "created", { ownerPhone: owner, customerPhone: customer }).rows,
       ...planNotifications(reservation, "created", { ownerEmail: "o@x.kr", customerPhone: customer }).rows,
-      ...planNotifications(reservation, "confirmed", { customerPhone: customer }).rows,
     ];
     for (const r of all) {
       expect(TEMPLATE_KEYS).toContain(r.template);

@@ -33,7 +33,7 @@
  *     **2xx 를 실패로 되돌리지 않는다**(이미 접수된 메일을 다시 보내는 것이 더 나쁘다).
  */
 import type { NotifyChannel } from "../types";
-import type { TemplateKey } from "./outbox";
+import { CONSULT_SMS_TEMPLATE, type TemplateKey } from "./outbox";
 import { isFailureTemplate } from "./fallback";
 import { parseRetryAfterMs, type NotificationSender, type SendOutcome, type SendRequest } from "./sender";
 import { TEMPLATE_AUDIENCE, classifyHttpStatus, type TemplateVarsPort } from "./solapi";
@@ -262,6 +262,8 @@ export function resendSender(deps: ResendDeps): ResendSender {
       if (!isEmailAddress(to)) return fail("unsupported_recipient", false);
 
       // ── 문안 ────────────────────────────────────────────────────────────
+      // 관리자가 직접 쓴 상담완료 문자(OF3-R4 · 0028)는 문자 전용이다(0028 CHECK — 그 키는 channel = 'sms'). 메일로 오면 보내지 않는다.
+      if (req.template === CONSULT_SMS_TEMPLATE) return fail("unknown_template", false);
       let rendered: RenderedMessage;
       if (isOwnerTemplate(req.template)) {
         let vars: OwnerVars | null;

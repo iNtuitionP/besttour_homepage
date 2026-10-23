@@ -4,7 +4,7 @@
  *
  * P5-22 — 시안 #detail 로 화면을 다시 놓으면서 이 부품이 **그리는 것**이 바뀌었다(하는 일은 그대로다):
  *   - 그리는 것: 메모 카드 · 확인 시트 · 결과 토스트 자리.
- *   - 진입 버튼(확정·운행 완료·취소)은 **여기 없다**. 데스크톱 오른쪽 처리 카드 · 휴대폰 아래 행동 바 · 위 제목줄 ⋯ · 맨 아래 칸에 떨어져 있고
+ *   - 진입 버튼(상담완료·문자 보내기·운행 완료)은 **여기 없다**. 데스크톱 오른쪽 처리 카드 · 휴대폰 아래 행동 바 · 맨 아래 칸에 떨어져 있고
  *     (components/admin/ReservationProcess.tsx · SheetTrigger.tsx), 그 사이에 서버가 그린 개인정보(번호·`tel:`·요청 사항)가 끼어 있어
  *     이 부품으로 감쌀 수 없다(감싸면 개인정보가 props 로 넘어온다). 그래서 진입 버튼은 채널(components/admin/reservation-panel.ts)로
  *     "이 시트를 열어 달라" 고만 하고, 이 부품이 채널에 붙어 받는다(`panelChannels.attach`). 받은 요청은 **존재하는 전이 · 처리 중 아님 ·
@@ -17,10 +17,18 @@
  *     확정 시트의 확인 경고를 지웠다. 통화로 정한 내용은 메모 카드에 적는다. 운행 카드의 미정 칸 "전화로 확인" 은 페이지가 그대로 그린다(결정 13).
  *   - [메모 저장]은 P5-21 PendingButton(disabled 대신 aria-disabled) — 키보드로 저장해도 포커스가 body 로 떨어지지 않는다(P5-19 리뷰 P2-6).
  *
+ * OF3-R4(2026-10-22 · 0028):
+ *   - [접수 취소] 진입과 취소 시트를 걷었다 — 상태는 접수 → 상담완료 두 단계다. 취소 서버액션·DB 함수는 남는다(이 파일이 부르지 않을 뿐).
+ *   - 상담완료는 문자를 보내지 않는다. 상담완료·운행 완료 접수에 **[문자 보내기]** 시트(ConsultSmsSheet)를 연다 — 위 = 문구,
+ *     아래 = 계약 정보(열 때마다 서버가 원장으로 만든 기본 블록으로 채워지고 관리자가 고칠 수 있다 — OF3-R4b · [기본 내용으로 되돌리기]).
+ *     [보내기]는 처리 중 표시 안에서 두 칸의 글자를 그대로 actions/admin/consultSms.ts 에 넘기고(서버는 블록을 다시 만들지 않는다),
+ *     [보내지 않음](ESC · 바깥 누르기 포함)은 닫고 "대금·취소 규정은 다른 방법으로 꼭 안내해 주세요" 를 남긴다(계약 정보를 지우고 보냈을 때도 같은 안내).
+ *     여러 번 보낼 수 있다.
+ *
  * P5-19 에서 이어지는 것(바꾸지 않았다):
- *   - 되돌릴 수 없는 전이(확정·완료·취소)는 **확인 시트를 거친다**. 서버액션을 부르는 길은 시트의 실행 버튼 하나다
+ *   - 되돌릴 수 없는 전이(상담완료·완료)는 **확인 시트를 거친다**. 서버액션을 부르는 길은 시트의 실행 버튼 하나다
  *     (reservation-sheet.ts panelController.commit — 시트가 열려 있지 않으면 아무것도 하지 않는다). 메모 저장은 되돌릴 수 있어 시트가 없다.
- *   - 확정·완료·취소는 **고친 메모만** 함께 넘긴다(리뷰 P2-3). 취소는 고른 사유를 한 줄 덧붙인다.
+ *   - 상담완료·완료는 **고친 메모만** 함께 넘긴다(리뷰 P2-3).
  *   - "이미 처리된 접수" 를 받은 시트는 잠긴다(리뷰 P1-1). 응답이 SHEET_STUCK_MS 동안 오지 않으면 [닫기]가 되살아난다(리뷰 P2-1).
  *   - 성공은 토스트(role=status · 3초 · 링크가 있으면 5초), 실패는 시트를 닫지 않고 시트 안 배너(role=alert).
  *   - 마지막 판정은 언제나 DB 다(0010 의 `and status = 'new'` 등) — 이 화면의 버튼이 낡았으면 액션은 alreadyHandled(noop)를 돌려준다.
@@ -34,20 +42,19 @@
  * 버튼은 언제나 진짜 서버액션을 부른다 — 그 액션도 자기 자리에서 requireAdmin() 을 다시 통과해야 한다.
  */
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useTransition } from "react";
 
-import {
-  cancelReservation,
-  completeReservation,
-  confirmReservation,
-  saveReservationMemo,
-} from "@/actions/admin/reservation";
+import { sendConsultSms } from "@/actions/admin/consultSms";
+import { completeReservation, confirmReservation, saveReservationMemo } from "@/actions/admin/reservation";
+import type { ConsultSmsResult } from "@/lib/admin/consultSms";
 import { ADMIN_MEMO_MAX_CHARS } from "@/lib/admin/memo";
 import type { ReservationStatus } from "@/lib/admin/reservations";
 
 import { AdminBanner } from "./AdminBanner";
 import { AdminSheet } from "./AdminSheet";
 import { AdminToastRegion, type ShownToast } from "./AdminToast";
+import { ConsultSmsSheet } from "./ConsultSmsSheet";
+import { blockBeforeSend, consultSmsReducer, initialConsultSmsState, type ConsultSmsBanner } from "./consult-sms";
 import { PendingButton } from "./PendingButton";
 import { PROCESS_REGION_ATTR, firstVisible, panelChannels } from "./reservation-panel";
 import {
@@ -55,6 +62,7 @@ import {
   SHEET_STUCK_MS,
   bannerMessage,
   cleanCustomerName,
+  fillTemplate,
   focusRescue,
   focusReturn,
   initialPanelState,
@@ -62,25 +70,56 @@ import {
   panelReducer,
   sheetTitle,
   toastHasLink,
-  type CancelReason,
+  type ConsultSmsLabels,
   type PanelActions,
   type PanelState,
   type ReservationActionLabels,
   type ReservationSummary,
   type SheetKind,
+  type TriggerKind,
 } from "./reservation-sheet";
 
 import s from "./admin.module.css";
 
 export type { ReservationActionLabels, ReservationSummary } from "./reservation-sheet";
 
-/** 서버액션 표 — 컨트롤러만 부른다(시트의 실행 버튼 · 메모 저장). 이 파일은 네 함수를 직접 부르지 않는다. */
+/**
+ * 서버액션 표 — 컨트롤러만 부른다(시트의 실행 버튼 · 메모 저장). 이 파일은 세 함수를 직접 부르지 않는다.
+ * 취소(cancelReservation)는 OF3-R4 에서 화면 진입을 걷었다 — 이 표에도 없다(서버액션·DB 함수는 남는다).
+ */
 const ACTIONS: PanelActions = {
   confirm: confirmReservation,
-  cancel: cancelReservation,
   complete: completeReservation,
   memo: saveReservationMemo,
 };
+
+/** 상담완료 문자 결과를 믿지 않는다 — throw(네트워크)·모양이 다른 값은 실패로 읽는다(reservation-sheet.ts call 과 같은 규약). */
+async function callSms(send: () => Promise<ConsultSmsResult>): Promise<ConsultSmsResult> {
+  try {
+    const result: unknown = await send();
+    if (typeof result === "object" && result !== null && typeof (result as ConsultSmsResult).code === "string") return result as ConsultSmsResult;
+  } catch {
+    // 아래로
+  }
+  return { ok: false, code: "failed" };
+}
+
+/** 문자 시트 배너 문구. */
+function smsBannerText(banner: ConsultSmsBanner | null, l: ConsultSmsLabels): string | null {
+  if (banner === null) return null;
+  switch (banner.kind) {
+    case "empty":
+      return l.empty;
+    case "tooLong":
+      return fillTemplate(l.tooLong, { bytes: banner.bytes.toLocaleString("ko-KR"), max: banner.max.toLocaleString("ko-KR") });
+    case "notConsulted":
+      return l.results.notConsulted;
+    case "invalid":
+      return l.results.invalid;
+    case "failed":
+      return l.results.failed;
+  }
+}
 
 /** 서버가 그린 고객 이름 칸의 글자(시트 제목용). 없으면 "" — 이름 없는 제목으로 떨어진다. */
 function readCustomerName(): string {
@@ -92,18 +131,32 @@ function visibleProcessRegion(): HTMLElement | null {
   return firstVisible([...document.querySelectorAll<HTMLElement>(`[${PROCESS_REGION_ATTR}]`)], (el) => el.getClientRects().length > 0);
 }
 
+/**
+ * 상담완료 문자 시트에 내려 주는 두 조각(OF3-R4) — 서버(상세 페이지)가 원장으로 만든다. 상담완료가 아닌 접수(새 접수 · 옛 취소)는 null(시트를 열지 않는다).
+ * 개인정보가 없다: 기본 문구는 사이트 주소·상담 전화(원장), 블록은 대금·환불 규정 문장(원장)뿐이다.
+ */
+export interface ConsultSmsDraft {
+  defaultText: string;
+  block: string;
+}
+
 export interface ReservationActionsProps {
   id: string;
   status: ReservationStatus;
   initialMemo: string;
   summary: ReservationSummary;
   labels: ReservationActionLabels;
+  sms: ConsultSmsDraft | null;
 }
 
-export function ReservationActions({ id, status, initialMemo, summary, labels }: ReservationActionsProps) {
+export function ReservationActions({ id, status, initialMemo, summary, labels, sms }: ReservationActionsProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [state, dispatch] = useReducer(panelReducer, initialMemo, initialPanelState);
+  const [smsState, smsDispatch] = useReducer(consultSmsReducer, undefined, () => initialConsultSmsState(sms?.defaultText ?? "", sms?.block ?? ""));
+  /** 문자 시트를 연 버튼 — 닫힌 뒤 포커스를 돌려준다(확인 시트의 openerRef 와 같은 일). */
+  const smsOpenerRef = useRef<HTMLElement | null>(null);
+  const smsWasOpenRef = useRef(false);
   const panelRef = useRef<HTMLElement | null>(null);
   const openerRef = useRef<HTMLElement | null>(null);
   const wasOpenRef = useRef(false);
@@ -111,8 +164,9 @@ export function ReservationActions({ id, status, initialMemo, summary, labels }:
   const pendingRef = useRef(pending);
   /** 처리 중에 닫아(15초 탈출) 포커스를 돌려놓은 연 버튼 — 늦은 결과의 새로고침이 그 버튼을 없애면 포커스를 구한다(수정 라운드 · 리뷰 P2-3). */
   const heldOpenerRef = useRef<HTMLElement | null>(null);
-  const memoHintId = useId();
-  const memoTitleId = useId();
+  // 접수 id 로 만든 고정 id — useId 는 서버·브라우저 트리 위치가 어긋나 aria-labelledby 하이드레이션 불일치를 냈다(OF3-R4 컨트롤러 실측).
+  const memoHintId = `admin-memo-hint-${id}`;
+  const memoTitleId = `admin-memo-title-${id}`;
   /** 처리 중 SHEET_STUCK_MS 가 지났다(응답이 오지 않는다) — 시트의 [닫기]·ESC·바깥 누르기를 되살린다(리뷰 P2-1). */
   const [slow, setSlow] = useState(false);
 
@@ -127,6 +181,10 @@ export function ReservationActions({ id, status, initialMemo, summary, labels }:
 
   // 새로고침이 새 메모를 내려 주면 — 사장님이 고치는 중이 아니면 그 값을 따른다(다른 탭의 저장을 덮어쓰지 않게).
   if (initialMemo !== state.propMemo) dispatch({ type: "propMemo", memo: initialMemo });
+  // 문자 시트의 두 조각도 같다(OF3-R4) — 상담완료로 바뀐 뒤의 새로고침이 처음 내려 준다. 고치지 않은 문구는 새 기본값을 따른다.
+  if (sms !== null && (sms.defaultText !== smsState.defaultText || sms.block !== smsState.block)) {
+    smsDispatch({ type: "draft", defaultText: sms.defaultText, block: sms.block });
+  }
 
   const controller = panelController({
     id,
@@ -134,7 +192,6 @@ export function ReservationActions({ id, status, initialMemo, summary, labels }:
     dispatch,
     refresh: () => router.refresh(),
     readCustomerName,
-    reasonLine: (reason: CancelReason) => labels.sheet.cancel.reasons.find((r) => r.key === reason)?.line ?? "",
   });
 
   const openSheet = (sheet: SheetKind, opener: HTMLElement) => {
@@ -145,18 +202,44 @@ export function ReservationActions({ id, status, initialMemo, summary, labels }:
   const saveMemo = () => startTransition(() => controller.saveMemo(state));
   const onToastDone = useCallback((toastId: number) => dispatch({ type: "toastDone", id: toastId }), []);
 
-  const canConfirm = status === "new";
-  const canCancel = status === "new" || status === "confirmed";
-  const canComplete = status === "confirmed";
-  /** 존재하는 전이만 연다 — 새로고침 전의 낡은 진입 버튼이 보낸 요청도 여기서 걸린다(마지막 판정은 여전히 DB). */
-  const canOpen = (kind: SheetKind): boolean => (kind === "confirm" ? canConfirm : kind === "complete" ? canComplete : canCancel);
+  // ── 상담완료 문자(OF3-R4) — 보내기는 처리 중 표시 안에서(두 번 누름 방지) · 보내지 않음은 닫고 안내를 남긴다
+  const openSms = (opener: HTMLElement) => {
+    smsOpenerRef.current = opener;
+    smsDispatch({ type: "open", customerName: readCustomerName() });
+  };
+  const sendSms = () => {
+    if (sms === null) return;
+    const blocked = blockBeforeSend(smsState.text, smsState.contract);
+    if (blocked !== null) {
+      smsDispatch({ type: "blocked", banner: blocked });
+      return;
+    }
+    const text = smsState.text;
+    const contract = smsState.contract;
+    startTransition(async () => {
+      const result = await callSms(() => sendConsultSms(id, text, contract));
+      smsDispatch({ type: "settled", result });
+      if (result.ok) dispatch({ type: "smsQueued" });
+      // 보냈으면 보낸 문자 기록을, 상담완료가 아니면 최신 상태를 다시 그린다
+      if (result.ok || result.code === "notConsulted") router.refresh();
+    });
+  };
+  const skipSms = useCallback(() => smsDispatch({ type: "skip" }), []);
 
-  // 진입 버튼(처리 카드 · 행동 바 · ⋯ · 맨 아래)의 요청은 채널로 온다 — 처리 중 · 시트가 열려 있음 · 없는 전이면 무시하고, 여는 것 말고는 하지 않는다.
-  const channelOpen = useRef<(kind: SheetKind, opener: HTMLElement | null) => void>(() => {});
+  const canConfirm = status === "new";
+  const canComplete = status === "confirmed";
+  /** 상담완료 문자 — 상담완료(confirmed) · 운행 완료(done) 접수에 서버가 두 조각을 내렸을 때만(0028 함수와 같은 규칙 · 마지막 판정은 DB). */
+  const canSms = sms !== null && (status === "confirmed" || status === "done");
+  /** 존재하는 전이만 연다 — 새로고침 전의 낡은 진입 버튼이 보낸 요청도 여기서 걸린다(마지막 판정은 여전히 DB). 취소는 화면에서 열 수 없다(OF3-R4). */
+  const canOpen = (kind: TriggerKind): boolean => (kind === "confirm" ? canConfirm : kind === "complete" ? canComplete : kind === "sms" ? canSms : false);
+
+  // 진입 버튼(처리 카드 · 행동 바 · 맨 아래)의 요청은 채널로 온다 — 처리 중 · 시트가 열려 있음 · 없는 전이면 무시하고, 여는 것 말고는 하지 않는다.
+  const channelOpen = useRef<(kind: TriggerKind, opener: HTMLElement | null) => void>(() => {});
   useLayoutEffect(() => {
-    channelOpen.current = (kind: SheetKind, opener: HTMLElement | null) => {
-      if (pending || state.sheet !== null || opener === null || !canOpen(kind)) return;
-      openSheet(kind, opener);
+    channelOpen.current = (kind: TriggerKind, opener: HTMLElement | null) => {
+      if (pending || state.sheet !== null || smsState.open || opener === null || !canOpen(kind)) return;
+      if (kind === "sms") openSms(opener);
+      else openSheet(kind, opener);
     };
   });
   useEffect(() => panelChannels.attach(id, (kind, opener) => channelOpen.current(kind, opener)), [id]);
@@ -191,6 +274,20 @@ export function ReservationActions({ id, status, initialMemo, summary, labels }:
     }
   }, [state.sheet, state.lastClose]);
 
+  // 문자 시트가 닫히면 — 연 버튼이 아직 있으면 그리로, 아니면 보이는 처리 영역(없으면 메모 카드)으로.
+  useEffect(() => {
+    if (smsState.open) {
+      smsWasOpenRef.current = true;
+      return;
+    }
+    if (!smsWasOpenRef.current) return;
+    smsWasOpenRef.current = false;
+    const opener = smsOpenerRef.current;
+    smsOpenerRef.current = null;
+    if (opener !== null && opener.isConnected) opener.focus();
+    else (visibleProcessRegion() ?? panelRef.current)?.focus();
+  }, [smsState.open]);
+
   // 늦은 결과 뒤 포커스 구하기(수정 라운드 · 리뷰 P2-3) — 새로고침으로 다시 그려질 때마다(의존성 없음) 본다. 기억한 연 버튼이 사라지고
   // 포커스가 body 로 빠졌으면 보이는 처리 영역(데스크톱 처리 카드 · 휴대폰 행동 바 — 새로고침에도 그대로인 자리)으로, 없으면 메모 카드로.
   useEffect(() => {
@@ -205,6 +302,14 @@ export function ReservationActions({ id, status, initialMemo, summary, labels }:
 
   return (
     <>
+      {/* [보내지 않음]으로 닫은 뒤(또는 계약 정보를 지우고 보낸 뒤) 남는 안내(요구 R4) — 다시 열면 사라진다. 자리는 처음부터 있다(role=status · 비어 있으면 그리지 않는다). */}
+      <div role="status" data-testid="admin-sms-skipped-region">
+        {smsState.skipped ? (
+          <p className={s.smsSkipped} data-testid="admin-sms-skipped">
+            {labels.sms.skipped}
+          </p>
+        ) : null}
+      </div>
       <section ref={panelRef} className={s.detailCard} aria-labelledby={memoTitleId} tabIndex={-1} data-testid="admin-memo-card">
         <h2 id={memoTitleId} className={s.detailCardTitle}>
           <label htmlFor="admin-memo">{labels.memoLabel}</label>
@@ -246,9 +351,29 @@ export function ReservationActions({ id, status, initialMemo, summary, labels }:
           slow={slow}
           onClose={controller.close}
           onSubmit={submit}
-          onPickReason={controller.pickReason}
         />
       )}
+
+      {smsState.open && sms !== null ? (
+        <ConsultSmsSheet
+          labels={labels.sms}
+          processing={labels.processing}
+          slowNote={labels.sheet.slow}
+          customerName={smsState.customerName}
+          text={smsState.text}
+          block={sms.block}
+          contract={smsState.contract}
+          banner={smsBannerText(smsState.banner, labels.sms)}
+          bannerAttempt={smsState.bannerSeq}
+          pending={pending}
+          slow={slow}
+          onText={(text) => smsDispatch({ type: "edit", text })}
+          onContract={(contract) => smsDispatch({ type: "contract", text: contract })}
+          onResetContract={() => smsDispatch({ type: "resetContract" })}
+          onClose={skipSms}
+          onSubmit={sendSms}
+        />
+      ) : null}
 
       <ActionToast toast={state.toast} labels={labels} onDone={onToastDone} />
     </>
@@ -270,7 +395,6 @@ export function ReservationSheet({
   slow,
   onClose,
   onSubmit,
-  onPickReason,
 }: {
   sheet: SheetKind;
   state: PanelState;
@@ -281,49 +405,17 @@ export function ReservationSheet({
   slow: boolean;
   onClose: () => void;
   onSubmit: () => void;
-  onPickReason: (reason: CancelReason) => void;
 }) {
-  const reasonIdPrefix = useId();
   const copy = labels.sheet[sheet];
   const title = sheetTitle(copy.title, copy.titleNoName, state.customerName);
   const banner = state.sheetBanner === null ? null : bannerMessage(state.sheetBanner, labels);
 
-  const before =
-    sheet === "cancel" ? null : (
-      <p className={s.sheetSummary} data-testid="admin-sheet-summary">
-        {summary.parts.join(" · ")}
-        {sheet === "confirm" && summary.quick ? <span className={s.sheetSummaryNote}>{labels.sheet.quickNote}</span> : null}
-      </p>
-    );
-
-  const cancel = labels.sheet.cancel;
-  const after =
-    sheet === "cancel" ? (
-      <fieldset className={s.reasonSet}>
-        <legend className={s.reasonLegend}>{cancel.reasonLegend}</legend>
-        <div className={s.reasons}>
-          {cancel.reasons.map((reason) => (
-            <span key={reason.key} className={s.reasonItem}>
-              <input
-                type="radio"
-                id={`${reasonIdPrefix}-${reason.key}`}
-                name="admin-cancel-reason"
-                value={reason.key}
-                className={s.reasonInput}
-                checked={state.reason === reason.key}
-                disabled={pending || state.sheetLocked}
-                onChange={() => onPickReason(reason.key)}
-                data-testid={`admin-cancel-reason-${reason.key}`}
-              />
-              <label htmlFor={`${reasonIdPrefix}-${reason.key}`} className={s.reasonChip}>
-                {reason.label}
-              </label>
-            </span>
-          ))}
-        </div>
-        <p className={s.hint}>{cancel.reasonHint}</p>
-      </fieldset>
-    ) : null;
+  const before = (
+    <p className={s.sheetSummary} data-testid="admin-sheet-summary">
+      {summary.parts.join(" · ")}
+      {sheet === "confirm" && summary.quick ? <span className={s.sheetSummaryNote}>{labels.sheet.quickNote}</span> : null}
+    </p>
+  );
 
   return (
     <AdminSheet
@@ -331,13 +423,12 @@ export function ReservationSheet({
       title={title}
       before={before}
       description={copy.body}
-      after={after}
       banner={banner}
       bannerAttempt={state.sheetBannerSeq}
       closeLabel={labels.sheet.close}
       submitLabel={copy.submit}
       processingLabel={labels.processing}
-      submitVariant={sheet === "cancel" ? "destructive" : "primary"}
+      submitVariant="primary"
       pending={pending}
       slow={slow}
       slowNote={labels.sheet.slow}
@@ -359,7 +450,12 @@ function ActionToast({ toast, labels, onDone }: { toast: PanelState["toast"]; la
     () =>
       toast === null
         ? null
-        : { id: toast.id, code: toast.code, text: labels.results[toast.code], link: toastHasLink(toast.code) ? labels.toastLink : null },
+        : {
+            id: toast.id,
+            code: toast.code,
+            text: toast.code === "smsQueued" ? labels.sms.results.queued : labels.results[toast.code],
+            link: toastHasLink(toast.code) ? labels.toastLink : null,
+          },
     [toast, labels],
   );
   return <AdminToastRegion toast={shown} onDone={onDone} />;

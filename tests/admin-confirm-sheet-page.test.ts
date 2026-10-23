@@ -115,11 +115,13 @@ beforeEach(() => {
 });
 
 describe("1. 처리 영역 props — 개인정보 원문 0 (이름·전화·메일·요청 사항)", () => {
-  test("받는 것은 uuid · 상태 · 메모 · 운행 요약 · 라벨뿐이다", async () => {
+  test("받는 것은 uuid · 상태 · 메모 · 운행 요약 · 라벨 · 문자 시트 두 조각(상담완료만)뿐이다", async () => {
     const { props } = await render(ROW);
-    expect(Object.keys(props).sort()).toEqual(["id", "initialMemo", "labels", "status", "summary"]);
+    expect(Object.keys(props).sort()).toEqual(["id", "initialMemo", "labels", "sms", "status", "summary"]);
     expect(props.id).toBe(ID);
     expect(props.status).toBe("new");
+    // 새 접수에는 문자 시트가 없다(OF3-R4 — 상담완료 뒤에만)
+    expect(props.sms).toBeNull();
     expect(props.initialMemo).toBe("통화함 — 7시 출발");
     const text = dump(props);
     for (const [key, value] of Object.entries(PII)) expect(text, `props 에 ${key} 원문`).not.toContain(value);
@@ -130,11 +132,25 @@ describe("1. 처리 영역 props — 개인정보 원문 0 (이름·전화·메�
     expect(text).not.toContain(ROW.public_code);
   });
 
+  test("상담완료 접수 — 문자 시트 두 조각(기본 문구 · 계약 정보 블록)은 원장 글자뿐 · 개인정보·접수번호 0 (OF3-R4)", async () => {
+    const { props } = await render({ ...ROW, status: "confirmed", confirmed_at: "2026-09-28T01:00:00.000Z" });
+    const sms = props.sms as { defaultText: string; block: string } | null;
+    expect(sms).not.toBeNull();
+    expect(Object.keys(sms!).sort()).toEqual(["block", "defaultText"]);
+    expect(sms!.block).toContain("■ 대금");
+    expect(sms!.block).toContain("■ 취소·환불");
+    expect(sms!.defaultText).not.toContain("■ 대금");
+    const text = dump(props);
+    for (const [key, value] of Object.entries(PII)) expect(text, `props 에 ${key} 원문`).not.toContain(value);
+    expect(text).not.toContain("55512345");
+    expect(text).not.toContain(ROW.public_code);
+  });
+
   test("제목 틀은 이름 자리({name})가 빈 **틀** 이다 — 값이 아니다", async () => {
     const { props } = await render(ROW);
     const labels = props.labels as ReservationActionLabels;
     expect(labels.sheet.confirm.title).toBe("{name} 님 접수를 상담완료로 바꿀까요?"); // OF2-B
-    expect(labels.sheet.cancel.title).toBe("{name} 님 접수를 취소할까요?");
+    expect(labels.sms.title).toBe("{name} 님께 문자 보내기"); // OF3-R4 — 취소 시트는 걷었다
     expect(labels.sheet.complete.title).toContain("{name}");
     // 메뉴 이름과 같은 말(P5-21 부터 '발송 기록' — 그 화면에 메일 행도 있다 · 컨트롤러 결정). 가는 곳은 그대로 발송 내역 화면.
     expect(labels.toastLink).toEqual({ label: "발송 기록 보기", href: "/admin/notifications" });

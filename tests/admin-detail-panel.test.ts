@@ -35,6 +35,7 @@ vi.mock("@/actions/admin/reservation", () => ({
   completeReservation: vi.fn(),
   saveReservationMemo: vi.fn(),
 }));
+vi.mock("@/actions/admin/consultSms", () => ({ sendConsultSms: vi.fn() }));
 vi.mock("next-intl/server", async () => {
   const { createTranslator: ct } = await import("next-intl");
   const { readFileSync: rf } = await import("node:fs");
@@ -223,10 +224,10 @@ describe("2. 채널 — 진입 버튼은 처리 영역에 시트를 '열어 달�
     expect(ch.requestSheet(ID, "confirm", el("bar"))).toBe(true);
     expect(open).toHaveBeenCalledWith("confirm", el("bar"));
     // 다른 접수의 채널에는 닿지 않는다
-    expect(ch.requestSheet("8c9e6679-7425-40de-944b-e07fc1f90ae8", "cancel", el("x"))).toBe(false);
+    expect(ch.requestSheet("8c9e6679-7425-40de-944b-e07fc1f90ae8", "complete", el("x"))).toBe(false);
     expect(open).toHaveBeenCalledTimes(1);
     detach();
-    expect(ch.requestSheet(ID, "cancel", el("more"))).toBe(false);
+    expect(ch.requestSheet(ID, "sms", el("more"))).toBe(false);
     expect(open).toHaveBeenCalledTimes(1);
   });
 
@@ -264,7 +265,7 @@ describe("2. 채널 — 진입 버튼은 처리 영역에 시트를 '열어 달�
     const second = vi.fn();
     const detachSecond = ch.attach(ID, second);
     detachFirst(); // 두 번 불려도(개발 모드 StrictMode 의 효과 두 번) 새것을 떼지 않는다
-    expect(ch.requestSheet(ID, "cancel", el("x"))).toBe(true);
+    expect(ch.requestSheet(ID, "sms", el("x"))).toBe(true);
     expect(second).toHaveBeenCalledTimes(1);
     detachSecond();
     off();
@@ -294,16 +295,21 @@ describe("3. 진입 버튼(SheetTrigger) — 시트를 열기만 · 처리 중 �
     expect(attr(tag, "aria-disabled")).toBeNull();
     expect(text(primary)).toBe("확정하기");
 
-    const cancel = renderToStaticMarkup(createElement(SheetTrigger, { id: ID, kind: "cancel", label: "이 접수 취소하기", variant: "text", testId: "t-cancel" }));
-    expect(attr(openTag(cancel, "t-cancel"), "class")).toBe(s.btnText);
-    expect(attr(openTag(cancel, "t-cancel"), "data-variant")).toBe("text");
-    expect(cancel).toMatch(/<svg[^>]*aria-hidden="true"/);
-    expect(text(cancel)).toBe("이 접수 취소하기");
+    // 보조 버튼(OF3-R4 — 상담완료 뒤 처리 카드의 운행 완료)
+    const secondary = renderToStaticMarkup(createElement(SheetTrigger, { id: ID, kind: "complete", label: "운행 완료로 바꾸기", variant: "secondary", testId: "t-complete" }));
+    expect(attr(openTag(secondary, "t-complete"), "class")).toBe(s.btnSecondary);
+    expect(attr(openTag(secondary, "t-complete"), "data-sheet")).toBe("complete");
+    // 글자·아이콘 모양은 남아 있다(OF3-R4 에서 취소 진입을 걷은 뒤 지금 쓰는 자리는 없다) — 모양 규약만 잠근다
+    const plain = renderToStaticMarkup(createElement(SheetTrigger, { id: ID, kind: "sms", label: "글자 버튼", variant: "text", testId: "t-text" }));
+    expect(attr(openTag(plain, "t-text"), "class")).toBe(s.btnText);
+    expect(attr(openTag(plain, "t-text"), "data-variant")).toBe("text");
+    expect(plain).toMatch(/<svg[^>]*aria-hidden="true"/);
+    expect(text(plain)).toBe("글자 버튼");
 
-    const more = renderToStaticMarkup(createElement(SheetTrigger, { id: ID, kind: "cancel", label: "더보기 — 접수 취소", variant: "icon", testId: "t-more" }));
+    const more = renderToStaticMarkup(createElement(SheetTrigger, { id: ID, kind: "sms", label: "더보기", variant: "icon", testId: "t-more" }));
     expect(attr(openTag(more, "t-more"), "class")).toBe(s.detailIconBtn);
     expect(more).toMatch(/<svg[^>]*aria-hidden="true"/);
-    expect(more).toContain(`<span class="${s.srOnly}">더보기 — 접수 취소</span>`);
+    expect(more).toContain(`<span class="${s.srOnly}">더보기</span>`);
   });
 
   test("🔴 정적 — 'use client' · 누르면 채널에 '열어 달라'만(서버액션·실행·전이 0) · 처리 중은 PendingButton(aria-disabled) · 서버 스냅숏은 한가함 · 한글 0", () => {
@@ -330,26 +336,21 @@ describe("4. 처리 카드(ReservationProcess) — 데스크톱 오른쪽 · 휴
   const mobile = async (status: "new" | "confirmed" | "done" | "cancelled") =>
     renderToStaticMarkup(createElement(ReservationProcess, { id: ID, status, labels: await labels(), layout: "mobile" }));
 
-  test("🔴 새 접수 — 확정(주 버튼) + '확정하면…' → 구분선 → 이 접수 취소하기(글자 버튼) + 안내 · 메모는 이 카드에 없다(시안: 메모는 본문 카드)", async () => {
+  // OF3-R4(0028): 취소 진입을 걷었다 — 새 접수는 [상담완료로 바꾸기] 하나(자동 발송 없음 안내).
+  test("🔴 새 접수 — 상담완료(주 버튼) + '바꿔도 문자는 자동으로 가지 않아요…' · 취소 진입 없음 · 메모는 이 카드에 없다(시안: 메모는 본문 카드)", async () => {
     const html = await card("new");
     const l = await labels();
     const primary = zone(html, "primary");
-    const cancel = zone(html, "cancel");
     expect(primary).toContain('data-testid="admin-confirm"');
     expect(text(primary)).toContain(l.confirmHint);
-    expect(cancel).toContain('data-testid="admin-cancel"');
-    expect(text(cancel)).toContain(l.cancelHint);
-    const iConfirm = html.indexOf('data-testid="admin-confirm"');
-    const iRule = html.indexOf("<hr");
-    const iCancel = html.indexOf('data-testid="admin-cancel"');
-    expect(iRule).toBeGreaterThan(iConfirm);
-    expect(iCancel).toBeGreaterThan(iRule);
     expect(attr(openTag(html, "admin-confirm"), "data-variant")).toBe("primary");
     expect(attr(openTag(html, "admin-confirm"), "data-sheet")).toBe("confirm");
-    expect(attr(openTag(html, "admin-cancel"), "data-variant")).toBe("text");
-    expect(attr(openTag(html, "admin-cancel"), "data-sheet")).toBe("cancel");
+    expect(html).not.toContain("admin-cancel");
+    expect(html).not.toContain('data-sheet="cancel"');
+    expect(html).not.toContain("<hr");
     expect(html).not.toContain('id="admin-memo"');
     expect(html).not.toContain("admin-complete");
+    expect(html).not.toContain('data-sheet="sms"');
   });
 
   test("🔴 처리 영역 — 이름 붙은 묶음(제목 '처리' 로) · 포커스를 받을 수 있다(성공 뒤 포커스 자리) · 처리 영역 표식", async () => {
@@ -364,17 +365,22 @@ describe("4. 처리 카드(ReservationProcess) — 데스크톱 오른쪽 · 휴
     expect(text(new RegExp(`<h2[^>]*id="${titleId}"[^>]*>([\\s\\S]*?)</h2>`).exec(html)![1])).toBe(l.panel);
   });
 
-  test("확정 — 운행 완료(주 버튼) + 안내 → 구분선 → 취소 · 확정 버튼 없음", async () => {
+  test("상담완료 — [문자 보내기](주 버튼 · 문자 시트) + 안내 → 구분선 → 운행 완료(보조 버튼) + 안내 · 상담완료 버튼·취소 없음", async () => {
     const html = await card("confirmed");
     const l = await labels();
-    expect(zone(html, "primary")).toContain('data-testid="admin-complete"');
-    expect(text(zone(html, "primary"))).toContain(l.completeHint);
+    expect(zone(html, "sms")).toContain('data-testid="admin-sms-open"');
+    expect(attr(openTag(html, "admin-sms-open"), "data-sheet")).toBe("sms");
+    expect(attr(openTag(html, "admin-sms-open"), "data-variant")).toBe("primary");
+    expect(text(zone(html, "sms"))).toContain(l.sms.hint);
+    expect(zone(html, "complete")).toContain('data-testid="admin-complete"');
+    expect(text(zone(html, "complete"))).toContain(l.completeHint);
     expect(attr(openTag(html, "admin-complete"), "data-sheet")).toBe("complete");
-    expect(zone(html, "cancel")).toContain('data-testid="admin-cancel"');
+    expect(attr(openTag(html, "admin-complete"), "data-variant")).toBe("secondary");
     expect(html).not.toContain('data-testid="admin-confirm"');
+    expect(html).not.toContain("admin-cancel");
   });
 
-  test("운행 완료·취소 — 누를 것이 없다 · 더 처리할 일이 없다는 한 줄(처리 영역은 그대로 — 포커스 자리)", async () => {
+  test("운행 완료 — [문자 보내기] + 한 줄 · 옛 취소 기록 — 누를 것이 없다 · 한 줄(처리 영역은 그대로 — 포커스 자리)", async () => {
     const l = await labels();
     for (const [status, line] of [
       ["done", l.processDone],
@@ -385,27 +391,20 @@ describe("4. 처리 카드(ReservationProcess) — 데스크톱 오른쪽 · 휴
       expect(html).not.toContain("<hr");
       expect(text(html)).toContain(line);
       expect(html).toContain('data-testid="admin-reservation-actions"');
+      if (status === "done") expect(html).toContain('data-sheet="sms"');
+      else expect(html).not.toContain("data-sheet=");
     }
   });
 
-  test("🔴 휴대폰 맨 아래 — 새 접수는 취소 글자 버튼만(확정은 아래 고정 행동 바) · 확정이면 운행 완료 + 취소 · 끝난 접수는 그리지 않는다", async () => {
-    const neu = await mobile("new");
-    expect(neu).toContain('data-testid="admin-cancel-mobile"');
-    expect(neu).not.toContain("admin-confirm");
-    expect(attr(openTag(neu, "admin-cancel-mobile"), "data-variant")).toBe("text");
-    expect(attr(openTag(neu, "admin-cancel-mobile"), "data-sheet")).toBe("cancel");
-    expect(neu).not.toContain(PROCESS_REGION_ATTR);
+  test("🔴 휴대폰 맨 아래 — 상담완료면 운행 완료(주 버튼 · 완료 시트)만 · 새 접수·끝난 접수·옛 취소는 그리지 않는다(상담완료·문자는 아래 고정 행동 바)", async () => {
     const conf = await mobile("confirmed");
-    const iComplete = conf.indexOf('data-testid="admin-complete-mobile"');
-    const iCancel = conf.indexOf('data-testid="admin-cancel-mobile"');
-    expect(iComplete).toBeGreaterThanOrEqual(0);
-    expect(iCancel).toBeGreaterThan(iComplete);
-    // 시트 종류까지(리뷰 P2-6) — 운행 완료 진입은 완료 시트, 취소 진입은 취소 시트를 연다
+    expect(conf).toContain('data-testid="admin-complete-mobile"');
+    // 시트 종류까지(리뷰 P2-6) — 운행 완료 진입은 완료 시트를 연다
     expect(attr(openTag(conf, "admin-complete-mobile"), "data-sheet")).toBe("complete");
     expect(attr(openTag(conf, "admin-complete-mobile"), "data-variant")).toBe("primary");
-    expect(attr(openTag(conf, "admin-cancel-mobile"), "data-sheet")).toBe("cancel");
-    expect(conf).toContain("<hr");
-    for (const status of ["done", "cancelled"] as const) expect(await mobile(status), status).toBe("");
+    expect(conf).not.toContain("admin-cancel");
+    expect(conf).not.toContain(PROCESS_REGION_ATTR);
+    for (const status of ["new", "done", "cancelled"] as const) expect(await mobile(status), status).toBe("");
   });
 
   test("정적 — 서버 부품(훅·'use client' 없음) · 받는 것은 uuid·상태·라벨·모양뿐(개인정보 0) · 한글 0", () => {
@@ -423,7 +422,7 @@ describe("4. 처리 카드(ReservationProcess) — 데스크톱 오른쪽 · 휴
 // =============================================================================
 describe("5. 처리 영역(ReservationActions) — 메모 카드 · 진입 버튼은 여기 없다 · '전화로 확인할 것' 점검표 카드도 없다(요청 11)", () => {
   const render = async (status: "new" | "confirmed" | "done" | "cancelled", summary: ReservationSummary = QUICK, memo = "") =>
-    renderToStaticMarkup(createElement(ReservationActions, { id: ID, status, initialMemo: memo, summary, labels: await labels() }));
+    renderToStaticMarkup(createElement(ReservationActions, { id: ID, status, initialMemo: memo, summary, labels: await labels(), sms: null }));
 
   /**
    * 사장님 요청 11(2026-10-10) — P5-22 의 점검표 카드는 간편 접수의 새 접수에서만 보였다. 그 경우를 포함해 **어느 상태·접수 방식에서도**
@@ -498,15 +497,16 @@ describe("5. 처리 영역(ReservationActions) — 메모 카드 · 진입 버�
     const ui = codeOf(ACTIONS_UI);
     expect(ui).toMatch(/panelChannels\.attach\(id, /);
     expect(ui).toMatch(/useLayoutEffect\(\(\) => \{\s*panelChannels\.setPending\(id, pending\);\s*\}, \[id, pending\]\);/);
-    const handler = /channelOpen\.current = \(kind: SheetKind, opener: HTMLElement \| null\) => \{([\s\S]*?)\n {4}\};/.exec(ui)?.[1] ?? "";
+    const handler = /channelOpen\.current = \(kind: TriggerKind, opener: HTMLElement \| null\) => \{([\s\S]*?)\n {4}\};/.exec(ui)?.[1] ?? "";
     expect(handler.length, "채널 요청 처리기가 없다").toBeGreaterThan(0);
-    expect(handler).toMatch(/if \(pending \|\| state\.sheet !== null \|\| opener === null \|\| !canOpen\(kind\)\) return;/);
+    expect(handler).toMatch(/if \(pending \|\| state\.sheet !== null \|\| smsState\.open \|\| opener === null \|\| !canOpen\(kind\)\) return;/);
     expect(handler).toMatch(/openSheet\(kind, opener\);/);
-    expect(handler).not.toMatch(/commit|saveMemo|Reservation\(|startTransition/);
-    // 허용된 전이 = 존재하는 전이뿐(P5-19 규약 그대로)
+    expect(handler).not.toMatch(/commit|saveMemo|Reservation\(|startTransition|sendConsultSms/);
+    // 허용된 전이 = 존재하는 전이뿐(P5-19 규약 그대로) · 취소는 화면에서 열 수 없다(OF3-R4)
     expect(ui).toMatch(/const canConfirm = status === "new";/);
-    expect(ui).toMatch(/const canCancel = status === "new" \|\| status === "confirmed";/);
+    expect(ui).not.toMatch(/canCancel/);
     expect(ui).toMatch(/const canComplete = status === "confirmed";/);
+    expect(ui).toMatch(/const canSms = sms !== null && \(status === "confirmed" \|\| status === "done"\);/);
     // 성공 뒤 포커스 — 보이는 처리 영역(데스크톱 카드 · 휴대폰 행동 바), 없으면 메모 카드
     expect(ui).toMatch(/firstVisible\(/);
     expect(ui).toMatch(/PROCESS_REGION_ATTR/);
@@ -563,7 +563,6 @@ describe("6. 확정 시트 — 점검표 확인 경고가 없다(요청 11) · �
         slow: false,
         onClose: () => {},
         onSubmit: () => {},
-        onPickReason: () => {},
       }),
     );
   }
@@ -597,17 +596,16 @@ describe("6. 확정 시트 — 점검표 확인 경고가 없다(요청 11) · �
     expect(attr(openTag(html, "admin-sheet-submit"), "disabled")).toBeNull();
   });
 
-  test("상세 접수 확정 · 취소 · 완료 시트 — 경고 없음 · 설명은 본문 하나(P5-19 그대로)", async () => {
+  test("상세 접수 상담완료 · 완료 시트 — 경고 없음 · 설명은 본문 하나(P5-19 그대로 · 취소 시트는 OF3-R4 에서 걷었다)", async () => {
     for (const [name, summary, body] of [
       ["confirm", WIZARD, sheetKo().confirmBody],
-      ["cancel", QUICK, null],
       ["complete", QUICK, sheetKo().completeBody],
     ] as const) {
       const html = await renderSheet(name, summary);
       expect(html, name).not.toContain("admin-sheet-check-warning");
       const { ids, texts } = descriptions(html, name);
       expect(ids, name).toHaveLength(1);
-      if (body !== null) expect(texts, name).toEqual([body]);
+      expect(texts, name).toEqual([body]);
     }
   });
 
@@ -617,7 +615,6 @@ describe("6. 확정 시트 — 점검표 확인 경고가 없다(요청 11) · �
     expect(props.split(",").map((p) => p.trim()).filter(Boolean).sort()).toEqual([
       "labels",
       "onClose",
-      "onPickReason",
       "onSubmit",
       "pending",
       "sheet",

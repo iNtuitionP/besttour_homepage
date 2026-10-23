@@ -200,7 +200,9 @@ const ANON_EXEC: Reasoned = {};
 
 /** `authenticated` 가 EXECUTE 할 수 있는 public 함수 — 시그니처까지 고정한다(drop+create 로 바뀌면 ACL 이 초기화되기 때문). */
 const AUTH_EXEC: Reasoned = {
-  "admin_confirm_reservation(uuid,text)": "관리자 예약 확정 전이 (0010, definer · 내부 is_admin 검사)",
+  "admin_confirm_reservation(uuid,text)": "관리자 예약 확정 전이 (0010, definer · 내부 is_admin 검사 · 0028 부터 통지를 넣지 않는다)",
+  // 0028(OF3-R4) — 상담완료 문자 직접 보내기. 받는 번호는 그 예약의 번호로 고정(인자 없음) · 상담완료 예약만 · 본문 2000바이트 상한.
+  "admin_send_reservation_sms(uuid,text)": "관리자 상담완료 문자 큐 적재 (0028, definer · 첫 문장 is_admin 가드 · 받는 번호 = 예약 번호)",
   "admin_cancel_reservation(uuid,text)": "관리자 예약 취소 전이 (0010)",
   "admin_complete_reservation(uuid,text)": "관리자 예약 완료 전이 (0010)",
   "admin_update_memo(uuid,text)": "관리자 메모 수정 (0010)",

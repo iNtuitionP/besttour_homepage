@@ -319,9 +319,20 @@ describe("1. 머리 — 배지 줄 · '{이름} 님' · 한 줄 메타", () => {
 // 2. 배치 — 연락·처리가 본문보다 앞 · 휴대폰 행동 바 · 위 제목줄
 // =============================================================================
 describe("2. 배치 — DOM 순서 · 연락 카드 · 처리 카드 · 행동 바 · 위 제목줄", () => {
-  test("🔴 연락·처리가 본문(운행 · 메모 · 접수 기록)보다 앞 — 휴대폰 한 열에서는 연락이 맨 위 · 넓은 화면에서는 오른쪽 열", async () => {
-    const html = await render(QUICK_ROW);
-    const order = ["admin-detail-meta", "admin-contact", "admin-reservation-actions", "admin-trip", "owner-island", "admin-records", "admin-mobile-process", "admin-actionbar"];
+  // OF3-R4: 휴대폰 맨 아래 칸은 상담완료 상태(운행 완료)에만 있다 — 그래서 상담완료 접수로 순서를 본다. 보낸 문자 카드가 메모 뒤 · 접수 기록 앞에 선다.
+  test("🔴 연락·처리가 본문(운행 · 메모 · 보낸 문자 · 접수 기록)보다 앞 — 휴대폰 한 열에서는 연락이 맨 위 · 넓은 화면에서는 오른쪽 열", async () => {
+    const html = await render({ ...QUICK_ROW, status: "confirmed", confirmed_at: "2026-09-28T00:50:00.000Z" });
+    const order = [
+      "admin-detail-meta",
+      "admin-contact",
+      "admin-reservation-actions",
+      "admin-trip",
+      "owner-island",
+      "admin-messages",
+      "admin-records",
+      "admin-mobile-process",
+      "admin-actionbar",
+    ];
     const idx = order.map((id) => at(html, id));
     for (const [i, id] of order.entries()) expect(idx[i], `${id} 가 없다`).toBeGreaterThanOrEqual(0);
     expect([...idx].sort((a, b) => a - b), order.join(" < ")).toEqual(idx);
@@ -330,7 +341,7 @@ describe("2. 배치 — DOM 순서 · 연락 카드 · 처리 카드 · 행동 �
     expect(side).toContain('data-testid="admin-contact"');
     expect(side).toContain('data-testid="admin-reservation-actions"');
     const main = elementOf(html, "admin-detail-main");
-    for (const id of ["admin-trip", "owner-island", "admin-records", "admin-mobile-process"]) expect(main, id).toContain(`data-testid="${id}"`);
+    for (const id of ["admin-trip", "owner-island", "admin-messages", "admin-records", "admin-mobile-process"]) expect(main, id).toContain(`data-testid="${id}"`);
   });
 
   test("🔴 연락 카드 — 큰 번호(국내 표기) · [전화 걸기] tel: · [문자 보내기] sms:(전체 번호 — 서버가 그린다) · 메일 주소", async () => {
@@ -348,12 +359,13 @@ describe("2. 배치 — DOM 순서 · 연락 카드 · 처리 카드 · 행동 �
     expect(text(card)).toContain(field.email);
   });
 
-  test("🔴 처리 카드(데스크톱) — 확정 진입 버튼 · 취소 글자 버튼 · 처리 영역 표식(성공 뒤 포커스 자리)", async () => {
+  test("🔴 처리 카드(데스크톱) — 상담완료 진입 버튼 · 취소 진입 없음(OF3-R4) · 처리 영역 표식(성공 뒤 포커스 자리)", async () => {
     const html = await render(QUICK_ROW);
     const region = openTag(html, "admin-reservation-actions");
     expect(attr(region, PROCESS_REGION_ATTR)).toBe("");
     expect(attr(openTag(html, "admin-confirm"), "data-sheet")).toBe("confirm");
-    expect(attr(openTag(html, "admin-cancel"), "data-sheet")).toBe("cancel");
+    expect(html).not.toContain('data-sheet="cancel"');
+    expect(captured.triggers.some((p) => p.kind === "cancel")).toBe(false);
   });
 
   test("🔴 휴대폰 아래 고정 행동 바 — 새 접수: [전화] + [확정하기](시트를 여는 진입 버튼 — 클라이언트 섬은 이것 하나) · 이름 붙은 묶음 · 처리 영역", async () => {
@@ -374,39 +386,44 @@ describe("2. 배치 — DOM 순서 · 연락 카드 · 처리 카드 · 행동 �
     expect(barTriggers[0].variant).toBe("primary");
   });
 
-  test("🔴 확정된 건의 행동 바 — [전화] [문자 보내기](확정 진입 버튼 없음)", async () => {
+  // OF3-R4(0028): 상담완료 뒤의 두 번째 버튼은 [문자 보내기] 시트(직접 쓴 문구 + 원장 계약 정보 블록)다 — 휴대폰 문자앱(sms:) 이 아니다.
+  test("🔴 상담완료 건의 행동 바 — [전화] [문자 보내기](시트 진입 버튼 · 상담완료 진입 버튼 없음) · 옛 취소 기록은 [전화] [문자앱 열기]", async () => {
     const html = await render({ ...QUICK_ROW, status: "confirmed", confirmed_at: "2026-09-28T00:50:00.000Z" });
     const inside = elementOf(html, "admin-actionbar");
-    expect([...inside.matchAll(/href="((?:tel|sms):[^"]+)"/g)].map((m) => m[1])).toEqual(["tel:+821055512345", "sms:+821055512345"]);
+    expect([...inside.matchAll(/href="((?:tel|sms):[^"]+)"/g)].map((m) => m[1])).toEqual(["tel:+821055512345"]);
     expect(inside).not.toContain("admin-bar-confirm");
-    expect(text(inside)).toContain(dobj("bar").sms);
+    expect(attr(openTag(inside, "admin-bar-sms"), "data-sheet")).toBe("sms");
+    const bar = captured.triggers.find((p) => p.testId === "admin-bar-sms")!;
+    expect(bar.variant).toBe("primary");
+    expect(bar.label).toBe(dobj("sms").open);
+
+    const cancelled = elementOf(await render({ ...QUICK_ROW, status: "cancelled", confirmed_at: "2026-09-28T00:50:00.000Z" }), "admin-actionbar");
+    expect([...cancelled.matchAll(/href="((?:tel|sms):[^"]+)"/g)].map((m) => m[1])).toEqual(["tel:+821055512345", "sms:+821055512345"]);
+    expect(cancelled).not.toContain("admin-bar-sms");
+    expect(text(cancelled)).toContain(dobj("bar").sms);
   });
 
-  test("🔴 휴대폰 위 제목줄 — ← (들어온 목록으로 · 이름 있음) · '접수 상세' · ⋯(취소 시트 — 취소할 수 있을 때만)", async () => {
-    const html = await render(QUICK_ROW);
-    const top = elementOf(html, "admin-detail-topbar");
-    const back = openTag(top, "admin-detail-back-mobile");
-    expect(attr(back, "href")).toBe("/admin/reservations");
-    expect(attr(back, "aria-label")).toBe(detail.backAria);
-    expect(text(top)).toContain(detail.title);
-    expect(attr(openTag(top, "admin-more-cancel"), "data-sheet")).toBe("cancel");
-    const more = captured.triggers.find((p) => p.testId === "admin-more-cancel")!;
-    expect(more.variant).toBe("icon");
-    expect(more.label).toBe(dobj("process").moreCancel);
-    for (const status of ["done", "cancelled"] as const) {
-      const done = await render({ ...QUICK_ROW, status });
-      expect(elementOf(done, "admin-detail-topbar"), status).not.toContain("admin-more-cancel");
+  test("🔴 휴대폰 위 제목줄 — ← (들어온 목록으로 · 이름 있음) · '접수 상세' · 취소 ⋯ 는 없다(OF3-R4)", async () => {
+    for (const status of ["new", "confirmed", "done", "cancelled"] as const) {
+      const html = await render({ ...QUICK_ROW, status });
+      const top = elementOf(html, "admin-detail-topbar");
+      const back = openTag(top, "admin-detail-back-mobile");
+      expect(attr(back, "href")).toBe("/admin/reservations");
+      expect(attr(back, "aria-label")).toBe(detail.backAria);
+      expect(text(top)).toContain(detail.title);
+      expect(top, status).not.toContain("admin-more-cancel");
+      expect(top, status).not.toContain("data-sheet=");
     }
   });
 
-  test("휴대폰 맨 아래 — 취소 글자 버튼(확정 버튼과 멀리 · 접수 기록 다음) · 확정이면 운행 완료가 완료 시트를 연다(리뷰 P2-6)", async () => {
+  test("휴대폰 맨 아래 — 상담완료면 운행 완료가 완료 시트를 연다(리뷰 P2-6 · 접수 기록 다음) · 새 접수에는 칸이 없다(취소 진입을 걷었다)", async () => {
     const html = await render(QUICK_ROW);
-    const zone = elementOf(html, "admin-mobile-process");
-    expect(attr(openTag(zone, "admin-cancel-mobile"), "data-sheet")).toBe("cancel");
-    expect(at(html, "admin-mobile-process")).toBeGreaterThan(at(html, "admin-records"));
-    const confirmed = elementOf(await render({ ...WIZARD_ROW, status: "confirmed" as const }), "admin-mobile-process");
+    expect(html).not.toContain('data-testid="admin-mobile-process"');
+    const confirmedHtml = await render({ ...WIZARD_ROW, status: "confirmed" as const, confirmed_at: "2026-09-26T00:00:00.000Z" });
+    const confirmed = elementOf(confirmedHtml, "admin-mobile-process");
     expect(attr(openTag(confirmed, "admin-complete-mobile"), "data-sheet")).toBe("complete");
-    expect(attr(openTag(confirmed, "admin-cancel-mobile"), "data-sheet")).toBe("cancel");
+    expect(confirmed).not.toContain("admin-cancel-mobile");
+    expect(at(confirmedHtml, "admin-mobile-process")).toBeGreaterThan(at(confirmedHtml, "admin-records"));
   });
 
   test("찾을 수 없는 접수 — 처리 영역·진입 버튼을 그리지 않고, 목록으로 돌아가는 링크만", async () => {
@@ -540,14 +557,16 @@ describe("4. 접수 기록 (동의 · 보관) — <details> 접힘 · 라벨은 
 // 5. 개인정보 경계 — 클라이언트 섬 props 0
 // =============================================================================
 describe("5. 개인정보 — 이름·번호·메일·요청 사항은 서버가 그린다 · 클라이언트 섬 props 에 0", () => {
-  test("🔴 처리 영역은 P5-19 그대로 uuid·상태·메모·운행 요약·라벨 · 진입 버튼은 uuid·종류·문구·모양·testid — 개인정보·접수번호 0", async () => {
-    for (const row of [QUICK_ROW, WIZARD_ROW, { ...WIZARD_ROW, status: "confirmed" as const }]) {
+  test("🔴 처리 영역은 uuid·상태·메모·운행 요약·라벨·문자 시트 두 조각(원장 글자) · 진입 버튼은 uuid·종류·문구·모양·testid — 개인정보·접수번호 0", async () => {
+    for (const row of [QUICK_ROW, WIZARD_ROW, { ...WIZARD_ROW, status: "confirmed" as const, confirmed_at: "2026-09-26T00:00:00.000Z" }]) {
       captured.actions.length = 0;
       captured.triggers.length = 0;
       await render(row);
       expect(captured.actions).toHaveLength(1);
-      expect(Object.keys(captured.actions[0]).sort()).toEqual(["id", "initialMemo", "labels", "status", "summary"]);
-      expect(captured.triggers.length).toBeGreaterThanOrEqual(3);
+      expect(Object.keys(captured.actions[0]).sort()).toEqual(["id", "initialMemo", "labels", "sms", "status", "summary"]);
+      // 상담완료 접수에만 문자 시트 두 조각이 내려간다(OF3-R4)
+      expect(captured.actions[0].sms === null, row.status).toBe(row.status !== "confirmed");
+      expect(captured.triggers.length).toBeGreaterThanOrEqual(2);
       for (const t of captured.triggers) expect(Object.keys(t).sort()).toEqual(["id", "kind", "label", "testId", "variant"]);
       const all = dump({ actions: captured.actions, triggers: captured.triggers });
       for (const [key, value] of Object.entries(PII)) expect(all, `props 에 ${key} 원문`).not.toContain(value);
@@ -741,7 +760,7 @@ describe("8. 게이트 · 규약", () => {
   test("매뉴얼 동조화 — 상세 화면 절이 새 배치의 화면 문구를 그대로 인용한다(카탈로그에서 읽는다 · 문서가 조용히 낡지 않게)", () => {
     const manual = read("docs/ops/admin-manual.md");
     const start = manual.indexOf("### 상세 화면");
-    const end = manual.indexOf("### 상담완료 · 취소 · 완료"); // OF2-B: 절 이름만 바뀌었다(확정 → 상담완료)
+    const end = manual.indexOf("### 상담완료 · 문자 보내기 · 운행 완료"); // OF2-B: 확정 → 상담완료 · OF3-R4: 취소 → 문자 보내기
     expect(start).toBeGreaterThan(0);
     expect(end).toBeGreaterThan(start);
     const section = manual.slice(start, end);

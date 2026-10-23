@@ -430,6 +430,41 @@ function confirmedCustomerVariants(v: CustomerVars): MessageVariants {
   );
 }
 
+// ── 상담완료 문자 — 관리자가 직접 쓴다 (OF3-R4 · 0028) ─────────────────────────────────────────────
+//
+// 0028 부터 [상담완료로 바꾸기]는 문자를 보내지 않는다. 관리자가 [문자 보내기] 시트에서 위 칸(자유 문구)과 아래 칸(계약 정보)을 쓴다.
+// 아래 둘이 **시트를 열 때 채우는 기본값**이다 — 옛 확정 문자(confirmed.customer.sms)와 **같은 조각 함수**를 쓴다
+// (계약 정보 = confirmedNoticeBlocks · 기본 문구 = 제목 + ■ 예약 확인·변경). OF3-R4b 부터 계약 정보 칸도 관리자가 고칠 수 있고, 서버액션은
+// 화면이 보낸 글자를 그대로 쓴다(잇는 규칙은 lib/notify/consult-text.ts joinConsultSms 하나). 옛 키의 렌더러는 0028 전에 큐에 들어간
+// pending 행을 위해 그대로 남는다.
+
+/**
+ * [문자 보내기] 시트의 기본 문구 — 옛 확정 문자의 인사·안내 부분(제목 · ■ 예약 확인·변경). 관리자가 고칠 수 있다.
+ * verbatim("확인 후 연락드리겠습니다.")은 넣지 않는다 — 상담이 끝난 뒤의 문자에 붙으면 아직 확정 전인 것처럼 읽힌다(T2-2 · 결정 3-2 · OF3 R4).
+ * 대금·취소·환불 줄과 계약 주체 줄은 여기 없다 — 계약 정보 칸의 기본값(consultContractBlock)이 맡는다.
+ */
+export function consultSmsDefaultText(origin: string): string {
+  const v: CustomerVars = { publicCode: "", origin, createdAt: "" };
+  return lines(
+    `${BRAND} ${CONFIRMED_HEADLINE}`,
+    "",
+    section("예약 확인·변경"),
+    labeled("확인", checkLink(v)),
+    labeled("변경·취소", COMPANY.consultTel),
+    labeled("이용안내", guideLink(v)),
+  );
+}
+
+/**
+ * 계약 정보 블록(시트 계약 정보 칸의 **기본값**) — ■ 대금 · ■ 취소·환불(그 예약의 **접수일 판** — refundPolicyAt(createdAt), 옛 확정 문자와 같은 규칙) · 맨 끝 계약 주체 줄.
+ * 계약 주체 줄(CONTRACT_PARTY_LINE — T2-1)은 확정 통지의 "맨 아래" 자리 그대로 블록 끝에 둔다. OF3-R4b 부터 관리자가 이 칸을 고칠 수 있다
+ * (화면이 "되도록 그대로 두라"고 권한다 — 약관이 예약 확정 안내에 대금·취소 규정을 알리기로 했다).
+ * 읽을 수 없는 접수 시각이면 throw(refundPolicyAt) — 판을 짐작하지 않는다.
+ */
+export function consultContractBlock(createdAt: Date | string): string {
+  return lines(...confirmedNoticeBlocks(refundPolicyAt(createdAt)), "", CONTRACT_PARTY_LINE);
+}
+
 /**
  * 실패 알림이 가리키는 통지의 종류. **키의 event 부분으로 정해진다** — 죽은 행을 다시 읽지 않는다.
  * 그럴 수도 없다: 알림은 부분 유니크 때문에 "예약 하나 · event 하나당 한 번" 으로 묶여서(outbox.ts

@@ -4,7 +4,7 @@ import { getTranslations } from "next-intl/server";
 import { formatAdminDate } from "@/components/admin/admin-date";
 import { getAdminDateLabels } from "@/components/admin/adminDateLabels";
 import { FeedHideToggle, type FeedHideLabels } from "@/components/admin/FeedHideToggle";
-import { ReservationActions } from "@/components/admin/ReservationActions";
+import { ReservationActions, type ConsultSmsDraft } from "@/components/admin/ReservationActions";
 import { ReservationProcess } from "@/components/admin/ReservationProcess";
 import { SheetTrigger } from "@/components/admin/SheetTrigger";
 import { StatusBadge } from "@/components/admin/StatusBadge";
@@ -19,13 +19,18 @@ import { reservationBadge } from "@/components/admin/status-badge";
 import { segments } from "@/components/admin/segments";
 import { getStatusBadgeLabels } from "@/components/admin/statusBadgeLabels";
 import { routing } from "@/i18n/routing";
+import { listReservationMessages } from "@/lib/admin/notifications";
 import { LEGACY_CONTACT_METHODS, LEGACY_PAYMENT_METHODS, getReservation, isUuid, type ReservationDetailRow } from "@/lib/admin/reservations";
 import { requireAdmin } from "@/lib/auth/requireAdmin";
 import { PURPOSES, isLocationCode, locationLabelKo } from "@/lib/codes";
 import { quickClock } from "@/lib/kst";
+import { CONSULT_SMS_SEPARATOR } from "@/lib/notify/consult-text";
+import { CONSULT_SMS_TEMPLATE } from "@/lib/notify/outbox";
+import { consultContractBlock, consultSmsDefaultText } from "@/lib/notify/templates";
 import { domesticPhoneText } from "@/lib/phone-format";
 import { getVehicles } from "@/lib/queries";
 import { TRIP_TYPES } from "@/lib/reservation-check/view";
+import { siteOrigin } from "@/lib/site-url";
 
 import a from "@/components/admin/admin.module.css";
 import q from "@/components/quote/quote.module.css";
@@ -43,14 +48,17 @@ import q from "@/components/quote/quote.module.css";
  *   오른쪽 열(연락 · 처리 카드)이 격자의 둘째 칸에 선다(admin.module.css `.detailCols`).
  *   본문: 운행 카드(큰 구간 · 가는 날 · 오는 날 · 기간 · 인원 · 출발 시각 · 차량 · 왕복·편도 · 여행 구분 — 간편 접수의 미정 칸은 "전화로 확인") ·
  *   (옛 상세 접수) 접수 조건 · 요청 사항(있으면 메모 위에 따로) · 처리 영역(ReservationActions — 메모 카드 · 시트 · 토스트. P5-22 의 점검표 카드는 사장님 요청 11 로 지웠다) ·
- *   접수 기록(동의 · 보관 — <details> 접힘, 라벨은 기존 admin.detail.field.* 그대로) · 휴대폰 맨 아래 취소(확정 버튼과 멀리).
- *   <1024px: 셸의 위 제목줄·아래 탭 바를 숨기고(`.shell:has(.detailPage)`) 이 화면의 위 제목줄(← · 접수 상세 · ⋯ 취소)과
- *   아래 고정 행동 바([전화] [확정하기] · 확정 뒤 [전화] [문자 보내기])를 둔다. 스크롤 여백은 행동 바 높이(포커스·배너가 바 뒤로 숨지 않게).
+ *   보낸 문자(OF3-R4) · 접수 기록(동의 · 보관 — <details> 접힘, 라벨은 기존 admin.detail.field.* 그대로) · 휴대폰 맨 아래 운행 완료(상담완료 상태만).
+ *   <1024px: 셸의 위 제목줄·아래 탭 바를 숨기고(`.shell:has(.detailPage)`) 이 화면의 위 제목줄(← · 접수 상세)과
+ *   아래 고정 행동 바([전화] [상담완료로 바꾸기] · 상담완료 뒤 [전화] [문자 보내기](시트) · 옛 취소 기록은 [전화] [문자앱 열기])를 둔다.
+ *   스크롤 여백은 행동 바 높이(포커스·배너가 바 뒤로 숨지 않게).
+ *   OF3-R4(2026-10-22 · 0028): 취소 진입(위 제목줄 ⋯ · 처리 카드 · 맨 아래)을 걷었다 — 상태는 접수 → 상담완료 두 단계다. 상담완료는 문자를 보내지 않고,
+ *   [문자 보내기] 시트(문구 + 계약 정보 — 기본으로 채워지고 관리자가 고칠 수 있다 · OF3-R4b)로 직접 보낸다. 시트의 두 조각(기본 문구 · 기본 블록)은 이 파일이 원장에서 만들어 내린다(개인정보 0).
  *
  * 개인정보(이름 · 번호 · 메일 · 요청 사항)는 **이 파일 안에서 그린다** — 어떤 부품의 props 에도 싣지 않는다(P3-5 리뷰 N-2: dev 는 서버 컴포넌트
  * props 를 HTML 에 싣는다). 그래서 이 파일에는 행을 받는 지역 부품이 없고(함수로 풀어 그린다), 클라이언트 섬은 셋뿐이다:
  *   - ReservationActions — uuid · 상태 · 사장님 메모 · 운행 요약(구간·날짜·인원) · 카탈로그 라벨(P5-19 그대로)
- *   - SheetTrigger(진입 버튼 — 처리 카드 · 행동 바의 [확정하기] · 위 제목줄 ⋯ · 맨 아래) — uuid · 시트 종류 · 문구 · 모양 · testid
+ *   - SheetTrigger(진입 버튼 — 처리 카드 · 행동 바의 [상담완료로 바꾸기]·[문자 보내기] · 맨 아래) — uuid · 시트 종류 · 문구 · 모양 · testid
  *   - ReservationProcess 는 서버 부품이다(uuid · 상태 · 라벨) — 안에 진입 버튼을 둔다.
  * 전화·문자 링크와 번호, 행동 바의 [전화]는 서버가 그린다(브리프 규칙 — 행동 바는 서버 렌더 + 확정 버튼만 클라이언트 섬).
  * 확인 시트 제목의 **고객 이름**(P5-19)은 props 로 내리지 않는다: 제목의 이름 부분에 `CUSTOMER_NAME_ELEMENT_ID` 를 달아 두면 시트가 열릴 때
@@ -100,6 +108,19 @@ function dayLabel(p: DayParts, tpl: { day: string; dayYear: string; weekdays: re
   return p.withYear
     ? fillTemplate(tpl.dayYear, { year: p.year, month: p.month, day: p.day, weekday })
     : fillTemplate(tpl.day, { month: p.month, day: p.day, weekday });
+}
+
+/** 보낸 문자의 종류(messages.kind.*) — 직접 쓴 상담완료 문자 · 자동 접수 확인 · 0028 전의 자동 상담완료 안내. */
+function messageKind(template: string): "consult" | "created" | "confirmed" {
+  if (template === CONSULT_SMS_TEMPLATE) return "consult";
+  return template.startsWith("created.") ? "created" : "confirmed";
+}
+
+/** 본문 앞부분 — 첫 문단(보통 직접 쓴 문구 · 계약 정보 앞)만, 길면 줄인다. 상세를 넘기지 않게 한 문단 분량. */
+const MESSAGE_HEAD_CHARS = 120;
+function messageHead(body: string): string {
+  const head = body.split(CONSULT_SMS_SEPARATOR)[0] ?? body;
+  return head.length > MESSAGE_HEAD_CHARS ? `${head.slice(0, MESSAGE_HEAD_CHARS)}…` : head;
 }
 
 /** 선 아이콘(24 격자) — 글자가 늘 함께 붙는 장식(aria-hidden). 시안의 아이콘과 같은 모양. */
@@ -162,13 +183,26 @@ export default async function AdminReservationDetailPage({ params, searchParams 
   const none = t("value.none");
   const quick = row.intake === "quick";
   const canConfirm = row.status === "new";
-  const canCancel = row.status === "new" || row.status === "confirmed";
-  const [actionLabels, badgeLabels, rowLabels, dateLabels] = await Promise.all([
+  // OF3-R4 — 상담완료 문자: 상담완료 시각이 있고 지금 상담완료·운행 완료인 접수(0028 함수와 같은 규칙 · 마지막 판정은 DB).
+  const canSms = row.confirmed_at !== null && (row.status === "confirmed" || row.status === "done");
+  const [actionLabels, badgeLabels, rowLabels, dateLabels, messages] = await Promise.all([
     getReservationActionLabels(),
     getStatusBadgeLabels(),
     getReservationRowLabels(),
     getAdminDateLabels(),
+    // 보낸 문자 기록 — 읽지 못하면 null(그 카드만 "불러오지 못했어요" · 상세는 그대로)
+    listReservationMessages(row.id).catch((): null => null),
   ]);
+  // 문자 시트의 두 조각 — 기본 문구(옛 확정 문자의 인사·안내 · verbatim 없음)와 계약 정보 블록(원장 · 이 접수의 접수일 판).
+  // 접수 시각을 읽지 못하면(판을 짐작하지 않는다) 시트를 열지 않는다 — 서버액션도 같은 값으로 다시 만든다.
+  const smsDraft: ConsultSmsDraft | null = (() => {
+    if (!canSms) return null;
+    try {
+      return { defaultText: consultSmsDefaultText(siteOrigin()), block: consultContractBlock(row.created_at) };
+    } catch {
+      return null;
+    }
+  })();
   // 홈 숨기기 토글의 문구 — 클라이언트는 useTranslations 를 쓸 수 없어(관리자는 로케일 밖) 서버가 풀어 내린다.
   const feedLabels: FeedHideLabels = {
     title: t("feed.title"),
@@ -251,7 +285,6 @@ export default async function AdminReservationDetailPage({ params, searchParams 
           {icon("left", a.detailIcon)}
         </Link>
         <p className={a.detailTopTitle}>{t("title")}</p>
-        {canCancel ? <SheetTrigger id={row.id} kind="cancel" label={actionLabels.moreCancel} variant="icon" testId="admin-more-cancel" /> : null}
       </header>
 
       <div className={a.pageWrap}>
@@ -425,7 +458,43 @@ export default async function AdminReservationDetailPage({ params, searchParams 
             ) : null}
 
             {/* key — 다른 접수로 옮겨 가면 처리 영역을 새로 만든다(메모 편집이 앞 접수에서 넘어오지 않게) */}
-            <ReservationActions key={row.id} id={row.id} status={row.status} initialMemo={row.admin_memo ?? ""} summary={summary} labels={actionLabels} />
+            <ReservationActions
+              key={row.id}
+              id={row.id}
+              status={row.status}
+              initialMemo={row.admin_memo ?? ""}
+              summary={summary}
+              labels={actionLabels}
+              sms={smsDraft}
+            />
+
+            {/* OF3-R4 — 이 접수로 고객에게 간 문자(직접 보낸 상담완료 문자 · 자동 접수 확인 · 0028 전의 자동 상담완료 안내). 최신순. */}
+            <section className={a.detailCard} aria-labelledby="admin-messages-title" data-testid="admin-messages">
+              <h2 id="admin-messages-title" className={a.detailCardTitle}>
+                {icon("msg", a.detailCardIcon)}
+                {t("messages.title")}
+              </h2>
+              {messages === null ? (
+                <p className={a.processNote}>{t("messages.error")}</p>
+              ) : messages.length === 0 ? (
+                <p className={a.processNote}>{t("messages.empty")}</p>
+              ) : (
+                <ul className={a.messageList}>
+                  {messages.map((m) => (
+                    <li key={m.id} className={a.messageItem} data-testid="admin-message" data-status={m.status}>
+                      <p className={a.messageMeta}>
+                        {t("messages.meta", {
+                          when: stamp(m.createdAt),
+                          kind: t(`messages.kind.${messageKind(m.template)}`),
+                          status: t(`messages.status.${m.status}`),
+                        })}
+                      </p>
+                      {m.body !== null ? <p className={a.messageHead}>{messageHead(m.body)}</p> : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
 
             <details className={`${a.detailCard} ${a.records}`} data-testid="admin-records">
               <summary className={a.recordsSummary}>
@@ -468,6 +537,8 @@ export default async function AdminReservationDetailPage({ params, searchParams 
         ) : null}
         {canConfirm ? (
           <SheetTrigger id={row.id} kind="confirm" label={actionLabels.confirm} variant="primary" testId="admin-bar-confirm" />
+        ) : smsDraft !== null ? (
+          <SheetTrigger id={row.id} kind="sms" label={actionLabels.sms.open} variant="primary" testId="admin-bar-sms" />
         ) : sms !== null ? (
           <a className={`${a.btnSecondary} ${a.btnLink}`} href={sms}>
             {icon("msg", a.btnIcon)}
