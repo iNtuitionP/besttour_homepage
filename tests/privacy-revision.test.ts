@@ -41,8 +41,8 @@ const DAY = 24 * 60 * 60 * 1000;
 const utcDay = (d: string) => Date.parse(`${d}T00:00:00Z`);
 
 /** 시행 전 · 시행 직전 · 시행 직후 · 시행 뒤 */
-const BEFORE = new Date("2026-10-25T12:00:00+09:00");
 const EFFECTIVE_START = new Date(`${REV.effectiveDate}T00:00:00+09:00`);
+const BEFORE = new Date(EFFECTIVE_START.getTime() - 2 * DAY + 12 * 60 * 60 * 1000); // 시행 이틀 전 정오(KST) — 시행일을 옮겨도 따라간다
 const EDGE_BEFORE = new Date(EFFECTIVE_START.getTime() - 1); // 시행일 전날 23:59:59.999 KST
 const EDGE_AT = EFFECTIVE_START; // 시행일 00:00:00.000 KST
 const AFTER = new Date(EFFECTIVE_START.getTime() + 3 * DAY);
@@ -59,9 +59,15 @@ describe("1. 원장 값 — 7일 전 공지 약속", () => {
     }
   });
 
-  test("시행일 − 공지일 ≥ 7일 — 배포가 늦어지면 두 값을 함께 민다(이 테스트가 막는다)", () => {
+  // 사용자가 7일 공지 없이 앞당기기로 명시적으로 정한 시행일만 예외로 둔다(새 개정은 다시 7일 규칙을 따른다).
+  const SHORT_NOTICE_APPROVED: Record<string, string> = {
+    "2026-10-23": "사용자 2026-10-23 \"네이버 통계 오늘부터 바로 해\" — 7일 전 공지 약속을 지키지 못함을 알고 결정",
+  };
+
+  test("시행일 − 공지일 ≥ 7일 — 배포가 늦어지면 두 값을 함께 민다(사용자가 앞당긴 날짜만 예외)", () => {
     const gap = (utcDay(REV.effectiveDate) - utcDay(REV.announcedOn)) / DAY;
-    expect(gap, `시행일 ${REV.effectiveDate} − 공지일 ${REV.announcedOn} = ${gap}일`).toBeGreaterThanOrEqual(7);
+    expect(gap, `시행일이 공지일보다 앞설 수는 없다`).toBeGreaterThanOrEqual(0);
+    if (gap < 7) expect(SHORT_NOTICE_APPROVED[REV.effectiveDate], `시행일 ${REV.effectiveDate} − 공지일 ${REV.announcedOn} = ${gap}일 (승인 기록 없음)`).toBeTruthy();
   });
 
   test("개정 시행일은 기존 시행일보다 뒤다", () => {
