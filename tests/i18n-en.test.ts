@@ -61,8 +61,9 @@ const FIXED = {
     "The Korean original under “View details” is the official, legally binding version. If you need help understanding it, please contact us before booking.",
   // T2-2(2026-10-10, 사장님 요청 7 · 결정 3 A안): ko verbatim 이 "확인 후 연락드리겠습니다." 가 되어 en 짝도 같은 뜻으로 바꿨다(계획 결정 3-1 의 영문).
   bookingNotice: "We will review your request and contact you.",
+  // 2026-10-28: ko 고지가 공항 노선(편도)과 그 외(당일왕복)로 기준을 나눠 en 짝도 함께 바꿨다.
   showcaseNotice:
-    "Sample quotes for popular routes · Based on a 45-seat coach, same-day round trip · Final quote confirmed after consultation",
+    "Sample quotes for popular routes · Based on a 45-seat coach · Airport pickup & drop-off one way, other routes same-day round trip · Final quote confirmed after consultation",
   airportMark: "Airport Pickup & Drop-off (Transfer Specialists)",
   registered: "registered charter bus booking agency",
   consentPrivacy: "I agree to the collection and use of my personal information (required)",
@@ -294,7 +295,10 @@ describe("4. 원장 UI 문구 — ko 는 원장 그대로, en 은 컨트롤러 �
     // P7-7(2026-10-09, 사용자 지시): '사장님 확정 후' → '담당자 확인 후'. en 짝(FIXED.bookingNotice)에는 "owner" 가 없어 그대로였다.
     // T2-2(2026-10-10, 사장님 요청 7 · 결정 3 A안 · CLAUDE.md §3 개정 사용자 승인): → '확인 후 연락드리겠습니다.' · en 짝도 함께 바꿨다.
     expect(VERBATIM.bookingNotice).toBe("확인 후 연락드리겠습니다.");
-    expect(VERBATIM.showcaseNotice).toBe("대표 노선 예시 견적 · 45인승 당일왕복 기준 · 실제 견적은 상담 후 확정");
+    // 2026-10-28(사장님 요청 · 사용자 승인 B안): 공항 노선 값이 편도 가격이라 기준을 나눴다.
+    expect(VERBATIM.showcaseNotice).toBe(
+      "대표 노선 예시 견적 · 45인승 기준 · 공항 픽업·샌딩은 편도, 그 외 노선은 당일왕복 · 실제 견적은 상담 후 확정",
+    );
   });
 
   test("확정 표기 — ko 에 '공항 픽업·샌딩 (송영 전문)' 이 있는 잎은 en 같은 자리에 확정 영문이 있다", () => {

@@ -119,7 +119,8 @@ export default async function Footer() {
   ];
 
   const officer: Fact[] = [
-    { label: labels.privacyOfficer, value: COMPANY.privacyOfficer.name, strong: true, ko: true },
+    // 이름은 평문 — 굵게 하지 않는다(사장님 요청 2026-10-28).
+    { label: labels.privacyOfficer, value: COMPANY.privacyOfficer.name, ko: true },
     { label: ui.labels.officer.phone, value: localPhone(COMPANY.privacyOfficer.phone, locale).display },
   ];
 

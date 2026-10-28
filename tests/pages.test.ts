@@ -345,7 +345,7 @@ describe("3. 카피 규칙 (pages.* + 페이지 소스)", () => {
       COMPANY.consultTel, // P7-5 — 원장의 전화번호는 이것 하나다(옛 COMPANY.tel 은 지웠다)
       COMPANY.address,
       COMPANY.representative,
-      "45인승 당일왕복",
+      "당일왕복",
       "상담 후 확정",
       "결제 진행됩니다",
       "10만원",
@@ -561,7 +561,7 @@ describe("6. 대표 노선은 홈 #routes 에 (P7-6 — /fares 삭제)", () => {
     expect(routesCode.includes("showcaseNotice")).toBe(false);
     // 원장 값 자체가 CLAUDE.md §3 의 문구와 바이트 동일한지 (게이트도 보지만 여기서 한 번 더)
     const expected = Buffer.from(
-      "대표 노선 예시 견적 · 45인승 당일왕복 기준 · 실제 견적은 상담 후 확정",
+      "대표 노선 예시 견적 · 45인승 기준 · 공항 픽업·샌딩은 편도, 그 외 노선은 당일왕복 · 실제 견적은 상담 후 확정",
       "utf8",
     );
     expect(Buffer.compare(Buffer.from(VERBATIM.showcaseNotice, "utf8"), expected)).toBe(0);

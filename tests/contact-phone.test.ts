@@ -225,7 +225,16 @@ describe("3. 소스 — 전화는 consultPhone, 옛 필드를 읽는 곳 0", () 
     expect(codeOf("components/layout/FloatingContact.tsx")).not.toMatch(/mainPhone/);
   });
 
-  test("접수 완료 · 예약 조회 · 오류 화면 · 회사소개 · 홈 고객센터는 대표번호를 쓰지 않는다 (010 그대로)", () => {
+  test("푸터 개인정보 보호책임자 이름은 평문 — 굵게 하지 않는다 (사장님 요청 2026-10-28)", () => {
+    const row = codeOf("components/layout/Footer.tsx")
+      .split("\n")
+      .find((l) => l.includes("COMPANY.privacyOfficer.name"));
+    expect(row, "보호책임자 이름 줄").toBeDefined();
+    expect(row).not.toMatch(/strong:\s*true/);
+  });
+
+  // 홈 고객센터 카드는 2026-10-28 사장님 요청으로 대표번호 줄을 더했다(위 렌더 테스트가 잠근다) — 이 목록에서 뺐다.
+  test("접수 완료 · 예약 조회 · 오류 화면 · 회사소개는 대표번호를 쓰지 않는다 (010 그대로)", () => {
     for (const f of [
       "components/quote/QuickQuoteModal.tsx",
       "components/reservation-check/CheckForm.tsx",
@@ -235,7 +244,6 @@ describe("3. 소스 — 전화는 consultPhone, 옛 필드를 읽는 곳 0", () 
       "app/[locale]/(site)/not-found.tsx",
       "app/not-found.tsx",
       "app/[locale]/(site)/about/page.tsx",
-      "components/home/NoticeSection.tsx",
       "components/home/Hero.tsx",
       "lib/notify/templates.ts",
     ]) {
@@ -482,14 +490,24 @@ describe.each([
     if (locale === "en") expect(JSON.stringify([call, row!.props["aria-label"]])).not.toContain("1566");
   });
 
-  test("홈 고객센터 카드 — 예약·상담 전화 한 번(링크) · 팩스 · 휴대전화 줄 없음", async () => {
+  test("홈 고객센터 카드 — ko 는 맨 위 대표번호(링크) · 예약·상담 전화 한 번(링크) · 팩스 · 휴대전화 줄 없음 (2026-10-28)", async () => {
     state.locale = locale;
     const html = block(await NoticeSection({ notices: NOTICES }), (el) => el.type === "aside", "고객센터 카드(aside)");
     common(html);
     expect(count(html, esc(display))).toBe(1);
     expect(html).toContain(`<dt>${esc(ui.labels.contact.consultTel)}</dt><dd><a href="${CONSULT_TEL_HREF}">${esc(display)}</a></dd>`);
     expect(html).toContain(`<dt>${esc(ui.labels.contact.fax)}</dt><dd>${esc(fax)}</dd>`);
-    expect(count(html, "<dt>")).toBe(3);
+    if (locale === "ko") {
+      const mainRow = `<dt>${esc(ui.labels.contact.mainTel)}</dt><dd><a href="${mainPhone("ko").href}">${esc(MAIN)}</a></dd>`;
+      expect(html).toContain(mainRow);
+      // 대표번호가 맨 위 — 예약·상담 줄보다 앞
+      expect(html.indexOf(mainRow)).toBeLessThan(html.indexOf(`<dt>${esc(ui.labels.contact.consultTel)}</dt>`));
+      expect(count(html, "<dt>")).toBe(4);
+    } else {
+      // en — 1566 은 해외에서 걸리지 않는다(OF3-C) · 줄 셋 그대로
+      expect(html).not.toContain("1566");
+      expect(count(html, "<dt>")).toBe(3);
+    }
   });
 
   test("회사소개 회사 정보 표 — 예약·상담 전화 한 번 · 팩스 · 휴대전화 줄 없음", async () => {

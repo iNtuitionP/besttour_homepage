@@ -63,7 +63,7 @@ import { isIntakeReady, submitBlock } from "@/components/quote/submit-gate";
 import { consultPhone } from "@/lib/contact-phone";
 import { verifyFormToken } from "@/lib/guard/timetrap";
 import { LEDGER_UI_KO } from "@/lib/i18n/ledger-ui";
-import { CANCELLATION, LEGAL_LINKS, PAYMENT, PRIVACY_NOTICE, QUOTE_BASIS, VERBATIM, WITHDRAWAL } from "@/lib/legal/disclosures";
+import { CANCELLATION, COMPANY, LEGAL_LINKS, PAYMENT, PRIVACY_NOTICE, QUOTE_BASIS, VERBATIM, WITHDRAWAL } from "@/lib/legal/disclosures";
 import { GUARD_FORM_FIELDS, RESERVATION_FORM_FIELDS } from "@/lib/reservations/formData";
 import {
   NAME_MAX_LENGTH as SERVER_NAME_MAX,
@@ -356,8 +356,8 @@ const LEGAL = {
 };
 const PLACE_LABELS = { origin: "인천공항", dest: "서울" };
 
-function withIntl(node: ReactNode): string {
-  const providerProps = { locale: "ko", messages: ko, timeZone: "Asia/Seoul" } as unknown as Parameters<typeof NextIntlClientProvider>[0];
+function withIntl(node: ReactNode, locale: "ko" | "en" = "ko"): string {
+  const providerProps = { locale, messages: locale === "en" ? en : ko, timeZone: "Asia/Seoul" } as unknown as Parameters<typeof NextIntlClientProvider>[0];
   return renderToStaticMarkup(createElement(NextIntlClientProvider, providerProps, node));
 }
 function renderForm(formToken: string | null | undefined, siteKey = "site-key"): string {
@@ -920,5 +920,53 @@ describe("8. 수정 라운드 — 토큰 재발급 · 배경 inert · 성공 뒤
     expect(widget).toMatch(/useState<WidgetFields>\(\(\) => initialWidgetFields\(defaults\)\)/);
     const modal = codeOf(MODAL);
     expect(modal).toMatch(/onSubmitted\(\)/);
+  });
+});
+
+// 2026-10-28 사장님 요청: 해외 손님은 문자가 국제 문자로 가서 주고받기 어렵다 → 영문 화면 위젯 맨 위에 이메일 안내 한 줄.
+// 그리고 기본 출발지를 서울로(시·군·구 칸이 처음부터 보이게) · 기본 도착지는 인천공항(서울 → 인천공항 = 샌딩, 사용자 승인).
+describe("8. 영문 이메일 안내 · 기본 출발지 (2026-10-28)", () => {
+  const widgetProps = (locale: "ko" | "en", intlEmail: string | null) => ({
+    labels: { widget: "W", title: "T", sub: "S", origin: "O", dest: "D", date: "DD", returnDate: "RD", departTime: "DT", returnTime: "RT", pax: "P", cta: "C" },
+    groups: [{ label: "G", options: [{ value: "ICN", label: "Incheon Airport" }, { value: "SEL", label: "Seoul" }] }],
+    defaults: { origin: "SEL", dest: "ICN" },
+    locale,
+    intlEmail,
+    legal: LEGAL,
+    turnstileSiteKey: "site-key",
+    turnstileAction: "reserve",
+  });
+
+  test("en 문안 — 짧은 버전 그대로(사용자 선택) · 이메일은 자리표시자로만", () => {
+    const w = (en as { home: { hero: { widget: Record<string, string> } } }).home.hero.widget;
+    expect(w.intlNotice).toBe("For international inquiries, please email us at <mail>{email}</mail>.");
+  });
+
+  test("intlEmail 을 받으면 제목 위에 안내 한 줄 · mailto 링크 하나", () => {
+    const html = withIntl(createElement(QuoteWidget, widgetProps("en", COMPANY.email)), "en");
+    const line = html.match(/<p[^>]*data-testid="quote-intl-notice"[^>]*>([\s\S]*?)<\/p>/);
+    expect(line, "안내 줄").not.toBeNull();
+    expect(line![1]).toContain("For international inquiries, please email us at ");
+    expect(line![1]).toContain(`<a href="mailto:${COMPANY.email}">${COMPANY.email}</a>`);
+    expect(html.indexOf('data-testid="quote-intl-notice"')).toBeLessThan(html.indexOf("<h2"));
+  });
+
+  test("intlEmail 이 null 이면 안내 줄이 없다 (한국어 화면)", () => {
+    const html = withIntl(createElement(QuoteWidget, widgetProps("ko", null)));
+    expect(html).not.toContain("quote-intl-notice");
+    expect(html).not.toContain("mailto:");
+  });
+
+  test("Hero — 영문에서만 회사 메일을 넘기고, 기본값은 출발 서울 · 도착 인천공항", () => {
+    const hero = codeOf("components/home/Hero.tsx");
+    expect(hero).toMatch(/intlEmail=\{locale === "en" \? COMPANY\.email : null\}/);
+    expect(hero).toMatch(/defaults=\{\{ origin: "SEL", dest: AIRPORT_CODE \}\}/);
+  });
+
+  test("기본 출발지 서울은 첫 화면부터 시·군·구 칸이 보인다 (ko)", () => {
+    const html = withIntl(createElement(QuoteWidget, widgetProps("ko", null)));
+    expect(html).toMatch(/<select[^>]*data-testid="quote-origin-sigungu"/);
+    // 도착 인천공항은 하위가 없다 — 두 번째 칸 없음
+    expect(html).not.toContain('data-testid="quote-dest-sigungu"');
   });
 });

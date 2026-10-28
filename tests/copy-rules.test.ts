@@ -310,7 +310,8 @@ describe("3-b. 영문 규칙 — 양성 픽스처(잡는다) · 음성 픽스처
     "One way + one way",
     "Separate trips there and back",
     "You can enter 1 to 20 buses.", // 입력 범위 안내 — 보유 대수 주장이 아니다
-    "Based on a 45-seat coach, same-day round trip",
+    "Based on a 45-seat coach",
+    "Airport pickup & drop-off one way, other routes same-day round trip",
     "Up to <b>{n} people</b>",
     "Include 10% VAT in the quote",
     "Choose the trip purpose that is closest to yours.",

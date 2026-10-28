@@ -21,7 +21,7 @@ import { LOCATION_TOP_LEVEL, locationLabel, type LocationCode } from "@/lib/code
 import { consultPhone } from "@/lib/contact-phone";
 import { TURNSTILE_ACTION } from "@/lib/guard/turnstile";
 import { koLang, ledgerUi, localizeVerbatim } from "@/lib/i18n/ledger-ui";
-import { LEGAL_LINKS, PRIVACY_NOTICE, VERBATIM } from "@/lib/legal/disclosures";
+import { COMPANY, LEGAL_LINKS, PRIVACY_NOTICE, VERBATIM } from "@/lib/legal/disclosures";
 
 import h from "./home.module.css";
 import s from "./Hero.module.css";
@@ -115,8 +115,11 @@ export async function Hero() {
             cta: t("widget.cta"),
           }}
           groups={groups}
-          defaults={{ origin: AIRPORT_CODE, dest: "SEL" }}
+          // 기본값(사장님 요청 2026-10-28): 출발 서울 — 시·군·구 칸이 처음부터 보인다 · 도착 인천공항(서울 → 인천공항 = 샌딩).
+          defaults={{ origin: "SEL", dest: AIRPORT_CODE }}
           locale={locale}
+          // 해외 손님은 문자가 국제 문자로 가서 주고받기 어렵다 — 영문 화면에서만 위젯 맨 위에 이메일 안내(사장님 요청 2026-10-28).
+          intlEmail={locale === "en" ? COMPANY.email : null}
           legal={{
             // 제목·체크박스 라벨은 ledgerUi(ko 는 PRIVACY_NOTICE 그대로, en 은 컨트롤러 확정 영문). 4대 고지 본문은 원장 한국어 그대로 —
             // en 에서는 본문에 lang="ko"(bodyLang). P2-6 브리프 §3.

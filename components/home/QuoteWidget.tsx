@@ -60,6 +60,7 @@ export function QuoteWidget({
   groups,
   defaults,
   locale,
+  intlEmail = null,
   legal,
   turnstileSiteKey,
   turnstileAction,
@@ -68,6 +69,8 @@ export function QuoteWidget({
   groups: QuoteGroup[];
   defaults: { origin: string; dest: string };
   locale: string;
+  /** 영문 화면에서만 서버(Hero)가 넘기는 회사 메일 — 있으면 제목 위에 해외 문의 이메일 안내 한 줄(사장님 요청 2026-10-28). */
+  intlEmail?: string | null;
   legal: QuickQuoteLegal;
   turnstileSiteKey: string;
   turnstileAction: string;
@@ -181,6 +184,14 @@ export function QuoteWidget({
   return (
     <aside className={s.quote} id="quote" aria-label={labels.widget} data-testid="quote-widget">
       <div className={s.quoteHd}>
+        {intlEmail ? (
+          <p className={s.quoteIntl} data-testid="quote-intl-notice">
+            {tRoot.rich("home.hero.widget.intlNotice", {
+              email: intlEmail,
+              mail: (chunks) => <a href={`mailto:${intlEmail}`}>{chunks}</a>,
+            })}
+          </p>
+        ) : null}
         <h2 className={s.quoteTitle}>{labels.title}</h2>
         <p className={s.quoteSub}>{labels.sub}</p>
       </div>
