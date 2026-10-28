@@ -102,6 +102,7 @@
         "label": "Quote request widget",
         "title": "Request a quote",
         "sub": "Leave your dates and group size, and we will review them and contact you",
+        "intlNotice": "For international inquiries, please email us at <mail>{email}</mail>.",
         "origin": "From",
         "dest": "To",
         "date": "Departure date",
@@ -447,7 +448,7 @@
     },
     "verbatim": {
       "bookingNotice": "We will review your request and contact you.",
-      "showcaseNotice": "Sample quotes for popular routes · Based on a 45-seat coach, same-day round trip · Final quote confirmed after consultation"
+      "showcaseNotice": "Sample quotes for popular routes · Based on a 45-seat coach · Airport pickup & drop-off one way, other routes same-day round trip · Final quote confirmed after consultation"
     },
     "pages": {
       "privacy": "Privacy Policy",

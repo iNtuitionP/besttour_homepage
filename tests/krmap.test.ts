@@ -382,7 +382,7 @@ describe("components/KrMap — 서버 컴포넌트 · 링크 · verbatim", () =>
   });
 
   test("verbatim 문자열 리터럴 0건 — 원장 밖에 문구를 다시 쓰지 않는다 (부분 문자열까지)", () => {
-    const fragments = [VERBATIM.showcaseNotice, "45인승 당일왕복", "상담 후 확정", VERBATIM.bookingNotice];
+    const fragments = [VERBATIM.showcaseNotice, "당일왕복", "상담 후 확정", VERBATIM.bookingNotice];
     for (const { file, text } of sources) {
       for (const f of fragments) {
         expect(text.includes(f), `${file} 에 verbatim 조각 "${f}"`).toBe(false);

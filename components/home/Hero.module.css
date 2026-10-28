@@ -328,6 +328,21 @@
   padding: var(--space-stack-md) var(--space-inline-md) var(--space-stack-sm);
   border-bottom: 1px solid var(--border-decorative);
 }
+/* 영문 화면 전용 해외 문의 이메일 안내 (사장님 요청 2026-10-28) */
+.quoteIntl {
+  margin: 0 0 var(--space-stack-sm);
+  padding: var(--space-stack-xs) var(--space-inline-sm);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-control);
+  overflow-wrap: anywhere;
+}
+.quoteIntl a {
+  font-weight: 700;
+  color: var(--text-link);
+}
 .quoteTitle {
   margin: 0;
   font-size: 19px;
