@@ -409,21 +409,19 @@ describe("4. /about", () => {
 
   // 사장님 요청 14 · 결정 1(2026-10-10 · T2-1): 옛 사이트 인사말의 회사 이름 '베스트투어' 는 간판 브랜드(원장 COMPANY.brandName)로 바꿨다.
   // 그 밖의 글자는 원문 그대로다 — 브랜드 자리만 옛 이름으로 되돌리면 인벤토리 원문과 같아야 한다(윤문 0 은 그대로 잠근다).
-  test("덧붙인 문장은 정확히 2개이고, 인벤토리 §2 H2 원문에 그대로 있다 (윤문 0 — 회사 이름만 간판 브랜드로)", () => {
-    const more = about.more as string[] | undefined;
-    expect(Array.isArray(more)).toBe(true);
-    expect(more).toHaveLength(2);
-    const LEGACY_NAME = "베스트투어";
-    const asLegacy = (s: string) => s.split(COMPANY.brandName).join(LEGACY_NAME);
-    for (const s of more ?? []) {
-      expect(s.includes(LEGACY_NAME), `옛 회사 이름이 남았다: ${s}`).toBe(false);
-      expect(inventory.includes(asLegacy(s)), `인벤토리에 없는 문장: ${s}`).toBe(true);
-    }
-    // 브랜드로 바꾼 자리는 첫 문장의 한 곳뿐이다(원문의 '베스트투어' 한 번)
-    expect((more ?? []).join("\n").split(COMPANY.brandName).length - 1).toBe(1);
-    expect(more?.[0]).toMatch(/^가족 같은 직원의 안전을 기반으로/);
-    expect(more?.[1]).toMatch(/^저희는 "고객이 행복한 미소를 지으며 버스에서 내릴 때/);
-    expect(code).toMatch(/t\.raw\(\s*["']more["']\s*\)|["']more["']/);
+  // 2026-11-14: 인사말을 사장님이 준 CEO 인사말 원문으로 바꿨다 — 새 인사말이 "감사합니다." 로 끝나 옛 덧붙임 2문장(pages.about.more)을 뺐다.
+  test("덧붙임 문장 없음 — pages.about.more 0 · /about 은 CompanyIntro 에 extra 를 넘기지 않는다", () => {
+    expect(about.more).toBeUndefined();
+    expect(code).not.toMatch(/extra=/);
+  });
+
+  test("인사말은 사장님 원문 그대로 — 제목 · 첫 줄 '안녕하십니까.' · 끝 줄 '감사합니다.' · 서명 회사 이름 줄", () => {
+    const company = (homeKo.company ?? {}) as { lead?: string; body?: string[]; signatureOrg?: string };
+    expect(company.lead).toBe("고객의 소중한 여정, 베스트투어·베스트모빌리티가 함께합니다.");
+    expect(company.body?.[0]).toBe("안녕하십니까.");
+    expect(company.body?.at(-1)).toBe("감사합니다.");
+    expect(company.body).toHaveLength(11);
+    expect(company.signatureOrg).toBe("베스트투어 · 베스트모빌리티");
   });
 
   test("제외 3문장(70만 명·큰 사고·외국인 관광객 국토여행) 0 · 서명은 COMPANY.representative", () => {

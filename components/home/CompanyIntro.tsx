@@ -1,10 +1,10 @@
 /**
  * 섹션 7 — 회사 소개 · 인사말 요약 (#company). 서버 컴포넌트.
  *
- * 문구는 옛 사이트 인사말 원문(docs/ops/legacy-content-inventory.md §2)에서 3문장만 — "한해 70만 명 이상 외국인 관광객"
- * 문장은 실증 불가 수치라 제외했다(브리프 §7). 대표 서명은 원장 COMPANY.representative.
- * /about(P6-3)은 같은 컴포넌트를 재사용하고 `extra` 로 안전한 2문장(ko.json pages.about.more)만 본문 뒤에 덧붙인다 —
- * 인사말 lead·body 가 ko.json 에 두 번 있지 않도록(tests/pages.test.ts). /about 은 `showEyebrow={false}` 로 소제목을 끈다(사장님 요청 3 ·
+ * 문구는 사장님이 준 CEO 인사말 원문 그대로(2026-11-14 — 옛 사이트 인사말 3문장을 대체). 이 인사말만은 원문대로
+ * "베스트투어·베스트모빌리티" 두 이름을 쓴다(tests/brand-bestmobility.test.ts 의 예외). 서명은 회사 이름 줄 + "CEO" + 원장 COMPANY.representative.
+ * /about(P6-3)은 같은 컴포넌트를 재사용한다 — 새 인사말이 "감사합니다." 로 끝나 옛 덧붙임 2문장(pages.about.more)은 뺐다.
+ * `extra` 는 본문 뒤에 문장을 덧붙일 자리로 남겨 둔다. 인사말 lead·body 가 ko.json 에 두 번 있지 않도록(tests/pages.test.ts). /about 은 `showEyebrow={false}` 로 소제목을 끈다(사장님 요청 3 ·
  * tests/about-owner-requests.test.ts). 목업 #company 의 강점 6개는 옮기지 않는다 —
  * 제목만 옮기던 강점 띠(옛 ServiceStrip)는 사장님 요청 23(2026-10-10)으로 지웠다.
  */
@@ -43,6 +43,7 @@ export async function CompanyIntro({
             </p>
           ))}
           <p className={s.companySign} data-testid="company-signature">
+            <span className={s.companySignOrg}>{t("signatureOrg")}</span>
             <span>{t("signaturePrefix")}</span> <b>{ledgerUi(locale).representative}</b>
           </p>
         </div>

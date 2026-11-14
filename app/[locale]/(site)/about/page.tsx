@@ -3,10 +3,10 @@
  * P7-6: 메뉴는 "회사소개" 하나로 이 페이지를 가리킨다(찾아오시는 길 메뉴 항목은 사용자 결정으로 지웠다 — 구역은 그대로).
  * 그래서 페이지 제목은 메뉴 라벨(layout.menu.about), 찾아오시는 길 구역 제목은 이 페이지 카탈로그(pages.about.location.title)다.
  *
- * 인사말은 홈 CompanyIntro(home.company lead·body)를 그대로 재사용하고, 옛 사이트 원문(docs/ops/legacy-content-inventory.md §2 H2)
- * 중 안전한 2문장만 `extra` 로 덧붙인다(ko.json pages.about.more). "한해 70만 명 이상 외국인 관광객"(실증 불가 수치)·
- * "큰 사고 하나 없었던"(실증 불가 안전 주장)·"외국인 관광객을 모시고 국토여행"(BM 노출) 문장은 옮기지 않는다 — 브리프 §/about.
- * 서명은 CompanyIntro 가 원장 대표자로 렌더한다.
+ * 인사말은 홈 CompanyIntro(home.company lead·body)를 그대로 재사용한다 — 2026-11-14 사장님이 준 CEO 인사말 원문으로 바꾸면서
+ * 옛 사이트에서 덧붙이던 2문장(pages.about.more)은 뺐다(새 인사말이 "감사합니다." 로 끝난다). 옛 원문의 "한해 70만 명 이상 외국인 관광객"
+ * (실증 불가 수치)·"큰 사고 하나 없었던"(실증 불가 안전 주장)·"외국인 관광객을 모시고 국토여행"(BM 노출)은 여전히 쓰지 않는다.
+ * 서명은 CompanyIntro 가 회사 이름 줄 + 원장 대표자로 렌더한다.
  *
  * 회사 정보 표는 원장 COMPANY 필드 + 원장 라벨만(리터럴 0) — 법정 페이지의 LegalRecordList 재사용. 개업 값 "{년}년" 은
  * 원장 establishedYear(등록증 개업일) 보간(pages.about.facts.sinceValue) — 연차("N년")는 표시하지 않는다.
@@ -125,7 +125,7 @@ export default async function AboutPage({ params }: { params: Params }) {
         title={tMenu("about")}
       />
 
-      <CompanyIntro extra={t.raw("more") as string[]} showEyebrow={false} />
+      <CompanyIntro showEyebrow={false} />
 
       <section className={`${h.section} ${h.toneLav}`} aria-labelledby="facts-h" data-section="facts">
         <div className={h.wrap}>

@@ -169,6 +169,15 @@ const OLD_BRAND_LATIN = /best\s*t?our/i;
 /** 그대로 두는 것 — 법정 상호(계약 주체) · 도메인 · 회사 메일. 회귀 검사 전에 걷어 낸다. */
 const KEPT = [COMPANY.legalName, COMPANY.email, "bestour.co.kr"];
 const withoutKept = (s: string) => KEPT.reduce((acc, k) => acc.split(k).join(""), s);
+/**
+ * 예외 — CEO 인사말(home.company). 사장님이 준 원문(2026-11-14)이 "베스트투어·베스트모빌리티" 두 이름을 함께 쓴다.
+ * 인사말 한 구역만 빼고 나머지 카탈로그는 그대로 옛 브랜드 0 을 잠근다.
+ */
+const withoutGreeting = (catalog: Record<string, unknown>): Record<string, unknown> => {
+  const home = { ...(catalog.home as Record<string, unknown>) };
+  delete home.company;
+  return { ...catalog, home };
+};
 
 describe("2. 카탈로그 — 옛 브랜드 표기 0, 새 브랜드 표기는 원장 그대로", () => {
   test("전제 — 옛 표기 정규식이 다섯 표기를 모두 잡는다(거짓 초록 방지)", () => {
@@ -178,8 +187,8 @@ describe("2. 카탈로그 — 옛 브랜드 표기 0, 새 브랜드 표기는 �
     expect(withoutKept(`${COMPANY.legalName} ${COMPANY.email} https://bestour.co.kr/`).match(OLD_BRAND_LATIN)).toBeNull();
   });
 
-  test("ko.json 전체(손님 화면 + 관리자)에 옛 브랜드 표기가 없다 — 법정 상호 '합자회사 베스트투어'·도메인·메일만 예외", () => {
-    const text = withoutKept(JSON.stringify(ko));
+  test("ko.json 전체(손님 화면 + 관리자)에 옛 브랜드 표기가 없다 — 법정 상호 '합자회사 베스트투어'·도메인·메일 · CEO 인사말만 예외", () => {
+    const text = withoutKept(JSON.stringify(withoutGreeting(ko)));
     expect(text.match(OLD_BRAND_KO), "베스트투어 · 베스트 투어").toBeNull();
     expect(text.match(OLD_BRAND_LATIN), "BEST TOUR · Best Tour · Bestour").toBeNull();
   });
@@ -195,7 +204,7 @@ describe("2. 카탈로그 — 옛 브랜드 표기 0, 새 브랜드 표기는 �
 
   test("en.json 의 브랜드 표기는 'Bestmobility' 하나 — 옛 표기 0 · 'Best Mobility'·'BESTMOBILITY' 같은 변형 0", () => {
     const text = JSON.stringify(en);
-    expect(withoutKept(text).match(OLD_BRAND_LATIN)).toBeNull();
+    expect(withoutKept(JSON.stringify(withoutGreeting(en))).match(OLD_BRAND_LATIN)).toBeNull();
     const forms = [...text.matchAll(/best[\s-]*mobility/gi)].map((m) => m[0]);
     expect(forms.length).toBeGreaterThan(0);
     expect(new Set(forms)).toEqual(new Set([COMPANY.brandNameEn]));
@@ -210,9 +219,8 @@ describe("2. 카탈로그 — 옛 브랜드 표기 0, 새 브랜드 표기는 �
     "home.hero.sectionLabel",
     "home.hero.carouselLabel",
     "home.company.lead",
-    "home.company.body.0",
     "home.company.body.1",
-    "pages.about.more.0",
+    "home.company.signatureOrg",
     "pages.notices.meta.description",
     "pages.notices.detail.meta.description",
   ] as const;

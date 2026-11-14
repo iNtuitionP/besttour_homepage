@@ -180,11 +180,21 @@
     },
     "company": {
       "eyebrow": "About us",
-      "lead": "Thank you sincerely for visiting the Bestmobility website.",
+      "lead": "Bestour · Bestmobility is with you on every precious journey.",
       "body": [
-        "Through thorough vehicle care and safe driving as an everyday habit, Bestmobility makes \"our customers' safety and a happy trip\" its top management priority.",
-        "Travel gives life a pause. As your companion on that journey, Bestmobility will keep working hard, today as always."
+        "Greetings.",
+        "Thank you sincerely for visiting the Bestour · Bestmobility website.",
+        "Bestour · Bestmobility is a charter bus company that provides high-quality transport services built on safety and trust.",
+        "From corporate and institutional events, group tours in Korea and abroad, and school and educational training trips to airport transfers, we provide comfortable, refined transport tailored to each customer's needs.",
+        "We go beyond simply taking you to your destination. With a sense of responsibility for sharing your valuable time and special moments, we give every journey our all.",
+        "Through systematic vehicle care, professional drivers and attentive, distinctive customer service, we will repay your trust from the moment we first meet until your journey ends.",
+        "Safety first, trust as our foundation, customer satisfaction as our highest value.",
+        "We will go beyond your expectations to move you, and be a dependable partner you can always count on.",
+        "Through constant effort and growth, Bestour · Bestmobility will keep delivering better service and greater value.",
+        "We wish you happiness and joy on every journey.",
+        "Thank you."
       ],
+      "signatureOrg": "Bestour · Bestmobility",
       "signaturePrefix": "CEO"
     },
     "gallery": {
@@ -359,10 +369,6 @@
         "title": "About {brand} · Greeting",
         "description": "Our greeting, business information and directions to our head office."
       },
-      "more": [
-        "Built on the safety of our staff, whom we treat like family, Bestmobility will provide service that brings delight and smiles to our valued customers, so that staff and customers alike can be happy.",
-        "For us, the greatest reward comes \"when customers step off the bus with a happy smile.\""
-      ],
       "facts": {
         "legalName": "Company name",
         "address": "Address",
