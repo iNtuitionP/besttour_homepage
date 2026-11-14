@@ -324,7 +324,10 @@ describe("4. 원장 UI 문구 — ko 는 원장 그대로, en 은 컨트롤러 �
   test("영문 브랜드 표기는 하나 — 원장 COMPANY.brandNameEn('Bestmobility'). 옛 'Bestour'·'Best Tour'·'BEST TOUR' 0 · 'Best Mobility' 같은 변형 0", () => {
     const text = JSON.stringify(en);
     expect(text).toContain(COMPANY.brandNameEn);
-    expect(/best\s*t?our/i.test(text)).toBe(false);
+    // 예외 — CEO 인사말(home.company): 사장님 원문(2026-11-14)이 두 이름을 함께 써서 영문도 'Bestour · Bestmobility' (tests/brand-bestmobility.test.ts 와 같은 예외)
+    const home = { ...(en.home as Record<string, unknown>) };
+    delete home.company;
+    expect(/best\s*t?our/i.test(JSON.stringify({ ...en, home }))).toBe(false);
     expect(new Set([...text.matchAll(/best[\s-]*mobility/gi)].map((m) => m[0]))).toEqual(new Set([COMPANY.brandNameEn]));
     expect((en.common as Record<string, string>).siteName).toBe(COMPANY.brandNameEn);
   });

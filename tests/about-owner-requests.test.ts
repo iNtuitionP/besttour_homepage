@@ -134,8 +134,10 @@ describe.each(["ko", "en"] as const)("3. /about (%s) — 소제목 0 · 큰 제�
     expect(html).toMatch(new RegExp(`<h2 id="company-h"[^>]*>${esc(str(locale, "home.company.lead")).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}</h2>`));
     expect(html).toContain('aria-labelledby="company-h"');
     expect(html).toContain('data-testid="company-signature"');
-    // 덧붙인 두 문장(pages.about.more)도 그대로
-    for (const s of at(CATALOG[locale], "pages.about.more") as string[]) expect(html).toContain(esc(s));
+    // 서명 — 회사 이름 줄(home.company.signatureOrg) 뒤에 CEO 대표자 (2026-11-14 CEO 인사말 교체 · 옛 덧붙임 2문장은 뺐다)
+    expect(html).toContain(esc(str(locale, "home.company.signatureOrg")));
+    const body = at(CATALOG[locale], "home.company.body") as string[];
+    expect(html).toContain(esc(body[body.length - 1]));
   });
 });
 

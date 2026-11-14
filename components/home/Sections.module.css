@@ -305,6 +305,12 @@
   font-size: 14px;
   color: var(--text-secondary);
 }
+.companySignOrg {
+  display: block;
+  margin-bottom: var(--space-stack-xs);
+  font-weight: 700;
+  color: var(--text-primary);
+}
 .companySign b {
   margin-left: var(--space-inline-xs);
   font-size: 16px;
